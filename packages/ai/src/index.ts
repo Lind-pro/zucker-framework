@@ -12,7 +12,12 @@ export type { ApiKeyDecryptor } from './config.service';
 export { AICallWrapper } from './call-wrapper';
 export type { CallOptions } from './call-wrapper';
 export { PromptManager } from './prompt-manager';
-export type { PromptTemplate, PromptVariable } from './prompt-manager';
+export type {
+  PromptTemplate,
+  PromptVariable,
+  ResponseFormat,
+  FindByKeyOptions,
+} from './prompt-manager';
 export type { VectorStore, VectorDocument, VectorSearchResult, EmbeddingModel } from './vector-store';
 export { VECTOR_STORE, EMBEDDING_MODEL } from './vector-store';
 export { CostTracker } from './cost-tracker';
