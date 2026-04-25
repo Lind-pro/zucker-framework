@@ -15,6 +15,15 @@ export interface AIModelConfig {
   /** Request timeout in milliseconds */
   timeoutMs?: number;
   proxyUrl?: string;
+  /**
+   * Provider id（如 'openai' / 'deepseek' / 'anthropic' / 'gemini'）。
+   * 由 AIConfigService.getScenarioConfig 从数据库 record 中提取。
+   * 消费方用此 id 在 AIProviderManager 中查找具体 provider 实例。
+   *
+   * 注：此字段大小写敏感，遵循 provider.id（小写）。从数据库读出的
+   * record.provider（如 'OpenAI'）会自动转小写。
+   */
+  providerId?: string;
 }
 
 export interface AIScenario {

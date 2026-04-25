@@ -94,6 +94,7 @@ export class AIConfigService {
       proxyUrl: model.proxyHost && model.proxyPort
         ? `http://${model.proxyHost}:${model.proxyPort}`
         : undefined,
+      providerId: model.provider ? model.provider.toLowerCase() : undefined,
     };
 
     // Evict oldest entries if cache exceeds max size
