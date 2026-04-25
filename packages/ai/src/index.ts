@@ -8,6 +8,7 @@ export { AIErrorType } from './ai-provider.interface';
 
 export { AIProviderManager } from './provider-manager';
 export { AIConfigService } from './config.service';
+export type { ApiKeyDecryptor } from './config.service';
 export { AICallWrapper } from './call-wrapper';
 export type { CallOptions } from './call-wrapper';
 export { PromptManager } from './prompt-manager';
