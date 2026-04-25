@@ -1,0 +1,19 @@
+{
+  "name": "@zucker/buffer",
+  "version": "0.0.1",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts",
+    "clean": "rm -rf dist",
+    "lint": "eslint src/"
+  },
+  "dependencies": {
+    "@zucker/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0"
+  }
+}

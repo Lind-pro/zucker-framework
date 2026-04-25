@@ -1,0 +1,30 @@
+{
+  "name": "@zucker/cli",
+  "version": "0.0.1",
+  "description": "CLI tool for Zucker Framework — scaffolding, diagnostics, and module management",
+  "bin": {
+    "zucker": "./dist/index.js"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs --dts --banner.js \"#!/usr/bin/env node\"",
+    "dev": "tsx src/index.ts",
+    "clean": "rm -rf dist",
+    "lint": "eslint src/"
+  },
+  "dependencies": {
+    "commander": "^13.0.0",
+    "chalk": "^5.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "tsx": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

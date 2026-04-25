@@ -1,0 +1,37 @@
+{
+  "name": "@zucker/fe-form",
+  "version": "0.0.1",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    }
+  },
+  "sideEffects": false,
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts --external react",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@ant-design/icons": "^5.5.0",
+    "@ant-design/pro-components": "^2.8.6",
+    "antd": "^5.24.2"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "typescript": "~5.7.2"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0"
+  }
+}

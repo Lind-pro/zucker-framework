@@ -1,0 +1,118 @@
+// 规则引擎模型
+
+enum RuleStatus {
+  ENABLED
+  DISABLED
+  DRAFT
+}
+
+enum AlarmLevel {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum AlarmStatus {
+  ACTIVE
+  ACKNOWLEDGED
+  RESOLVED
+  IGNORED
+}
+
+model rules {
+  id          String     @id @default(cuid())
+  name        String
+  description String?
+  status      RuleStatus @default(DRAFT)
+  triggerType String
+  triggerConfig Json
+  modelType   String?
+  modelId     String?
+  creatorId   String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @default(now()) @updatedAt
+
+  conditions ruleConditions[]
+  actions    ruleActions[]
+
+  @@index([status])
+  @@index([triggerType])
+  @@index([modelType, modelId])
+  @@map("rules")
+}
+
+model ruleConditions {
+  id             String   @id @default(cuid())
+  ruleId         String
+  conditionType  String
+  column         String?
+  termType       String?
+  value          Json?
+  expression     String?
+  sortOrder      Int      @default(0)
+  logicOperator  String   @default("and")
+  createdAt      DateTime @default(now())
+
+  rule rules @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@index([ruleId])
+  @@map("rule_conditions")
+}
+
+model ruleActions {
+  id          String   @id @default(cuid())
+  ruleId      String
+  actionType  String
+  config      Json
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  rule rules @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@index([ruleId])
+  @@map("rule_actions")
+}
+
+model alarmConfigs {
+  id            String     @id @default(cuid())
+  name          String
+  description   String?
+  ruleId        String?
+  level         AlarmLevel @default(WARNING)
+  targetType    String?
+  targetId      String?
+  notifyConfig  Json?
+  enabled       Boolean    @default(true)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @default(now()) @updatedAt
+
+  records alarmRecords[]
+
+  @@index([ruleId])
+  @@index([targetType, targetId])
+  @@map("alarm_configs")
+}
+
+model alarmRecords {
+  id             String      @id @default(cuid())
+  alarmConfigId  String
+  level          AlarmLevel
+  status         AlarmStatus @default(ACTIVE)
+  message        String
+  detail         Json?
+  source         String?
+  acknowledgedBy String?
+  acknowledgedAt DateTime?
+  resolvedBy     String?
+  resolvedAt     DateTime?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @default(now()) @updatedAt
+
+  alarmConfig alarmConfigs @relation(fields: [alarmConfigId], references: [id], onDelete: Cascade)
+
+  @@index([alarmConfigId, status])
+  @@index([level, status])
+  @@index([status])
+  @@index([createdAt])
+  @@map("alarm_records")
+}

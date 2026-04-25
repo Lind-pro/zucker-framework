@@ -1,0 +1,82 @@
+{
+  "nav": {
+    "home": "Home",
+    "features": "Features",
+    "pricing": "Pricing",
+    "docs": "Docs",
+    "dashboard": "Dashboard"
+  },
+  "landing": {
+    "heroTitle": "Build Next-Gen SaaS Apps",
+    "heroDescription": "A fast, secure, and scalable full-stack framework that lets you focus on business logic",
+    "getStarted": "Get Started",
+    "learnMore": "Learn More",
+    "featuresTitle": "Core Capabilities",
+    "feature1Title": "Rapid Development",
+    "feature1Desc": "Built-in code generation, CRUD base classes, and reusable components to minimize boilerplate",
+    "feature2Title": "Enterprise Security",
+    "feature2Desc": "Comprehensive access control, data isolation, and audit logging for compliance",
+    "feature3Title": "Flexible & Extensible",
+    "feature3Desc": "Modular architecture with plugin support and custom extensions, integrate as needed",
+    "ctaTitle": "Ready to Get Started?",
+    "ctaDescription": "Sign up for free and experience the full feature set",
+    "ctaButton": "Sign Up Free"
+  },
+  "auth": {
+    "loginTitle": "Sign In",
+    "loginDescription": "Sign in to your account to continue",
+    "registerTitle": "Sign Up",
+    "registerDescription": "Create a new account",
+    "username": "Username",
+    "email": "Email",
+    "password": "Password",
+    "confirmPassword": "Confirm Password",
+    "loginButton": "Sign In",
+    "registerButton": "Sign Up",
+    "noAccount": "Don't have an account?",
+    "hasAccount": "Already have an account?",
+    "goRegister": "Sign Up",
+    "goLogin": "Sign In",
+    "forgotPassword": "Forgot password?"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "welcome": "Welcome back",
+    "overview": "Overview",
+    "recentActivity": "Recent Activity",
+    "quickActions": "Quick Actions",
+    "noData": "No data available"
+  },
+  "common": {
+    "login": "Sign In",
+    "register": "Sign Up",
+    "logout": "Sign Out",
+    "loading": "Loading...",
+    "error": "Error",
+    "retry": "Retry",
+    "save": "Save",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "delete": "Delete",
+    "edit": "Edit",
+    "back": "Back",
+    "close": "Close"
+  },
+  "errors": {
+    "unauthorized": "Please sign in first",
+    "forbidden": "Access denied",
+    "notFound": "Page not found",
+    "serverError": "Server error, please try again later",
+    "networkError": "Network connection failed"
+  },
+  "footer": {
+    "product": "Product",
+    "company": "Company",
+    "support": "Support",
+    "legal": "Legal",
+    "terms": "Terms of Service",
+    "privacy": "Privacy Policy",
+    "contact": "Contact Us",
+    "copyright": "All rights reserved"
+  }
+}

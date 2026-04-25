@@ -1,0 +1,65 @@
+{
+  "$schema": "https://unpkg.com/@changesets/config@3.0.0/schema.json",
+  "changelog": "@changesets/cli/changelog",
+  "commit": false,
+  "fixed": [],
+  "linked": [
+    [
+      "@zucker/common",
+      "@zucker/config",
+      "@zucker/core",
+      "@zucker/event",
+      "@zucker/provider",
+      "@zucker/i18n"
+    ],
+    [
+      "@zucker/datasource",
+      "@zucker/crud",
+      "@zucker/cache",
+      "@zucker/buffer",
+      "@zucker/queue",
+      "@zucker/search"
+    ],
+    [
+      "@zucker/auth",
+      "@zucker/admin",
+      "@zucker/credit",
+      "@zucker/dashboard",
+      "@zucker/dictionary",
+      "@zucker/form",
+      "@zucker/notification",
+      "@zucker/payment",
+      "@zucker/relation",
+      "@zucker/reference",
+      "@zucker/rule-engine",
+      "@zucker/script",
+      "@zucker/tenant",
+      "@zucker/things",
+      "@zucker/timeseries"
+    ],
+    [
+      "@zucker/cluster",
+      "@zucker/gateway",
+      "@zucker/io",
+      "@zucker/logging",
+      "@zucker/monitoring",
+      "@zucker/network",
+      "@zucker/rate-limiter",
+      "@zucker/storage",
+      "@zucker/tracing"
+    ],
+    [
+      "@zucker/fe-analytics",
+      "@zucker/fe-auth",
+      "@zucker/fe-form",
+      "@zucker/fe-http-client",
+      "@zucker/fe-permission",
+      "@zucker/fe-storage",
+      "@zucker/fe-types"
+    ]
+  ],
+  "access": "restricted",
+  "baseBranch": "main",
+  "updateInternalDependencies": "patch",
+  "ignore": []
+}

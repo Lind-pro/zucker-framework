@@ -1,0 +1,31 @@
+{
+  "name": "@zucker/admin",
+  "version": "1.0.0",
+  "description": "Zucker Admin — pluggable management REST API module for NestJS",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts --external @nestjs/common --external @nestjs/core --external @nestjs/event-emitter --external @zucker/auth --external @zucker/crud --external @zucker/core --external @zucker/dictionary --external @zucker/config --external @zucker/credit --external @zucker/logging --external @zucker/notification --external @zucker/form",
+    "clean": "rm -rf dist",
+    "lint": "eslint src/"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.0.0",
+    "@nestjs/core": "^11.0.0",
+    "@nestjs/event-emitter": "^3.0.0",
+    "@zucker/auth": "workspace:*",
+    "@zucker/crud": "workspace:*",
+    "@zucker/core": "workspace:*",
+    "@zucker/dictionary": "workspace:*",
+    "@zucker/config": "workspace:*",
+    "@zucker/credit": "workspace:*",
+    "@zucker/logging": "workspace:*",
+    "@zucker/notification": "workspace:*",
+    "@zucker/form": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0"
+  }
+}

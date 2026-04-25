@@ -1,0 +1,45 @@
+{
+  "name": "zucker-framework",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Full-stack NestJS + Next.js framework - TypeScript port of hsweb-framework",
+  "license": "Apache-2.0",
+  "author": "Lind",
+  "scripts": {
+    "dev": "turbo run dev --filter='@zucker/template-*'",
+    "dev:server": "pnpm --filter @zucker/template-server dev",
+    "dev:admin": "pnpm --filter @zucker/template-admin dev",
+    "dev:web": "pnpm --filter @zucker/template-web dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "clean": "turbo run clean && rm -rf node_modules",
+    "test": "vitest run",
+    "test:e2e:server": "pnpm --filter @zucker/template-server test:e2e",
+    "test:e2e:ui": "playwright test",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "turbo run build && changeset publish"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.27.0",
+    "@playwright/test": "^1.52.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "eslint": "^9.0.0",
+    "jsdom": "^29.0.2",
+    "prettier": "^3.4.0",
+    "tsup": "^8.4.0",
+    "turbo": "^2.4.0",
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.1"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
+  }
+}
