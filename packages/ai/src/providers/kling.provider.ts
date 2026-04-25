@@ -57,7 +57,7 @@ export class KlingProvider implements MediaProvider {
       throw new Error(`Kling API ${response.status}: ${response.statusText}`);
     }
 
-    const data = await response.json();
+    const data = (await response.json()) as any;
     const taskData = data.data;
 
     const statusMap: Record<string, MediaTaskStatus> = {
@@ -177,7 +177,7 @@ export class KlingProvider implements MediaProvider {
       throw new Error(`Kling API ${response.status}: ${error}`);
     }
 
-    const data = await response.json();
+    const data = (await response.json()) as any;
     const image = data.data?.images?.[0] ?? data.data?.[0];
 
     return {
@@ -242,7 +242,7 @@ export class KlingProvider implements MediaProvider {
       throw new Error(`Kling API ${response.status}: ${error}`);
     }
 
-    const data = await response.json();
+    const data = (await response.json()) as any;
     const taskId = data.data?.task_id ?? data.request_id;
 
     if (!taskId) {

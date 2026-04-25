@@ -47,7 +47,7 @@ export class StabilityProvider implements MediaProvider {
       throw new Error(`Stability API ${response.status}: ${error}`);
     }
 
-    const data = await response.json();
+    const data = (await response.json()) as any;
     // v2beta API 返回 data.image (base64)
     const image = data.image;
 

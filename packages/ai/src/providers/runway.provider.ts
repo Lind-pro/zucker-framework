@@ -59,7 +59,7 @@ export class RunwayProvider implements MediaProvider {
       throw new Error(`Runway API ${response.status}: ${error}`);
     }
 
-    const data = await response.json();
+    const data = (await response.json()) as any;
 
     return {
       taskId: data.id,
@@ -85,7 +85,7 @@ export class RunwayProvider implements MediaProvider {
       throw new Error(`Runway API ${response.status}: ${response.statusText}`);
     }
 
-    const data = await response.json();
+    const data = (await response.json()) as any;
 
     const statusMap: Record<string, MediaTaskStatus> = {
       PENDING: MediaTaskStatus.PENDING,

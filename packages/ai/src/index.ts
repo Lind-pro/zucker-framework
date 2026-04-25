@@ -23,6 +23,7 @@ export type { AIModuleOptions, AIModuleAsyncOptions, AIModuleOptionsFactory } fr
 export { OpenAIProvider } from './providers/openai.provider';
 export { AnthropicProvider } from './providers/anthropic.provider';
 export { GeminiProvider } from './providers/gemini.provider';
+export { DeepSeekProvider } from './providers/deepseek.provider';
 
 // Media generation
 export type {
