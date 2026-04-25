@@ -11,6 +11,13 @@ export { AIConfigService } from './config.service';
 export type { ApiKeyDecryptor } from './config.service';
 export { AICallWrapper } from './call-wrapper';
 export type { CallOptions } from './call-wrapper';
+export { AICallObserverRegistry } from './call-observer';
+export type {
+  AICallObserver,
+  AICallEvent,
+  AICallSuccessEvent,
+  AICallErrorEvent,
+} from './call-observer';
 export { PromptManager } from './prompt-manager';
 export type {
   PromptTemplate,

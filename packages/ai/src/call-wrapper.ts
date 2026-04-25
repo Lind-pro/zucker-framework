@@ -1,4 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
+import {
+  AICallObserverRegistry,
+  type AICallSuccessEvent,
+  type AICallErrorEvent,
+} from './call-observer';
 
 export interface CallOptions {
   /** Timeout in milliseconds (default: 60000) */
@@ -13,6 +18,8 @@ export interface CallOptions {
   baseDelayMs?: number;
   /** Maximum delay in ms for exponential backoff (default: 10000) */
   maxDelayMs?: number;
+  /** Caller-supplied metadata, propagated to AICallObserver events */
+  metadata?: Record<string, unknown>;
 }
 
 /** Errors that should typically not be retried */
@@ -35,6 +42,10 @@ function defaultIsRetryable(error: Error): boolean {
 export class AICallWrapper {
   private readonly logger = new Logger(AICallWrapper.name);
 
+  constructor(
+    @Optional() private readonly observerRegistry?: AICallObserverRegistry,
+  ) {}
+
   async callWithRetry<T>(
     fn: () => Promise<T>,
     options: CallOptions = {},
@@ -46,25 +57,43 @@ export class AICallWrapper {
       isRetryable = defaultIsRetryable,
       baseDelayMs = 1000,
       maxDelayMs = 10_000,
+      metadata,
     } = options;
 
     let lastError: Error = new Error(`${context}: 未知错误`);
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const startTime = Date.now();
       try {
-        const startTime = Date.now();
         const result = await this.withTimeout(fn(), timeoutMs);
-        const duration = Date.now() - startTime;
+        const durationMs = Date.now() - startTime;
 
         this.logger.log(
-          `[${context}] 成功 (attempt=${attempt}, ${duration}ms)`,
+          `[${context}] 成功 (attempt=${attempt}, ${durationMs}ms)`,
         );
+        await this.notifySuccess({
+          context,
+          startTime,
+          durationMs,
+          attempt,
+          result,
+          metadata,
+        });
         return result;
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
+        const durationMs = Date.now() - startTime;
         this.logger.warn(
           `[${context}] 失败 (attempt=${attempt}/${maxAttempts}): ${lastError.message}`,
         );
+        await this.notifyError({
+          context,
+          startTime,
+          durationMs,
+          attempt,
+          error: lastError,
+          metadata,
+        });
 
         // Do not retry non-retryable errors
         if (!isRetryable(lastError)) {
@@ -80,6 +109,36 @@ export class AICallWrapper {
     }
 
     throw lastError;
+  }
+
+  /** 通知所有 observer 成功事件（单 observer 失败不影响其他）*/
+  private async notifySuccess(event: AICallSuccessEvent): Promise<void> {
+    if (!this.observerRegistry) return;
+    for (const obs of this.observerRegistry.getAll()) {
+      if (!obs.onSuccess) continue;
+      try {
+        await obs.onSuccess(event);
+      } catch (e) {
+        this.logger.warn(
+          `AI Observer onSuccess 失败: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
+    }
+  }
+
+  /** 通知所有 observer 失败事件 */
+  private async notifyError(event: AICallErrorEvent): Promise<void> {
+    if (!this.observerRegistry) return;
+    for (const obs of this.observerRegistry.getAll()) {
+      if (!obs.onError) continue;
+      try {
+        await obs.onError(event);
+      } catch (e) {
+        this.logger.warn(
+          `AI Observer onError 失败: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
+    }
   }
 
   /** Calculate delay with exponential backoff and jitter to avoid thundering herd */

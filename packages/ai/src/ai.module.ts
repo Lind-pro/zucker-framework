@@ -12,6 +12,7 @@ import { AIConfigService } from './config.service';
 import { AICallWrapper } from './call-wrapper';
 import { PromptManager } from './prompt-manager';
 import { CostTracker } from './cost-tracker';
+import { AICallObserverRegistry } from './call-observer';
 import { MediaProviderManager } from './media-provider-manager';
 import { MediaGenerationService } from './media-generation.service';
 
@@ -47,6 +48,7 @@ export class ZuckerAIModule {
         AIProviderManager,
         AIConfigService,
         AICallWrapper,
+        AICallObserverRegistry,
         PromptManager,
         CostTracker,
         MediaProviderManager,
@@ -57,6 +59,7 @@ export class ZuckerAIModule {
         AIProviderManager,
         AIConfigService,
         AICallWrapper,
+        AICallObserverRegistry,
         PromptManager,
         CostTracker,
         MediaProviderManager,
@@ -75,6 +78,7 @@ export class ZuckerAIModule {
         AIProviderManager,
         AIConfigService,
         AICallWrapper,
+        AICallObserverRegistry,
         PromptManager,
         CostTracker,
         MediaProviderManager,
@@ -85,6 +89,7 @@ export class ZuckerAIModule {
         AIProviderManager,
         AIConfigService,
         AICallWrapper,
+        AICallObserverRegistry,
         PromptManager,
         CostTracker,
         MediaProviderManager,
