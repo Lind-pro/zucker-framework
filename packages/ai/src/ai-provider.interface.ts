@@ -26,9 +26,19 @@ export interface AIScenario {
   maxTokens: number;
 }
 
+/**
+ * Token 使用量，跨框架统一字段命名（input/output/total）。
+ * 与 AIInvocationResult.tokenUsage 同形。
+ */
+export interface TokenUsage {
+  input: number;
+  output: number;
+  total: number;
+}
+
 export interface AIInvocationResult {
   content: string;
-  tokenUsage: { input: number; output: number; total: number };
+  tokenUsage: TokenUsage;
   duration: number;
   cost: number;
   /** The provider ID that handled the request */

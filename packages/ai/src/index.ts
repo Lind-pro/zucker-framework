@@ -3,6 +3,7 @@ export type {
   AIModelConfig,
   AIScenario,
   AIInvocationResult,
+  TokenUsage,
 } from './ai-provider.interface';
 export { AIErrorType } from './ai-provider.interface';
 
@@ -10,7 +11,12 @@ export { AIProviderManager } from './provider-manager';
 export { AIConfigService } from './config.service';
 export type { ApiKeyDecryptor } from './config.service';
 export { AICallWrapper } from './call-wrapper';
-export type { CallOptions } from './call-wrapper';
+export type {
+  CallOptions,
+  StreamCallOptions,
+  StreamResult,
+} from './call-wrapper';
+export { openAIStreamExtractor } from './openai-stream-helper';
 export { AICallObserverRegistry } from './call-observer';
 export type {
   AICallObserver,

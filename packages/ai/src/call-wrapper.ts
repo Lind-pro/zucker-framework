@@ -4,6 +4,7 @@ import {
   type AICallSuccessEvent,
   type AICallErrorEvent,
 } from './call-observer';
+import type { TokenUsage } from './ai-provider.interface';
 
 export interface CallOptions {
   /** Timeout in milliseconds (default: 60000) */
@@ -20,6 +21,28 @@ export interface CallOptions {
   maxDelayMs?: number;
   /** Caller-supplied metadata, propagated to AICallObserver events */
   metadata?: Record<string, unknown>;
+}
+
+/** 流式聚合调用选项 */
+export interface StreamCallOptions {
+  /** 上下文标识，用于日志和 observer 事件 */
+  context?: string;
+  /** 进度日志间隔（毫秒），默认 60000；0 = 不打印进度 */
+  progressIntervalMs?: number;
+  /** 调用方自定义元数据，传给 observer */
+  metadata?: Record<string, unknown>;
+}
+
+/** 流式聚合结果 */
+export interface StreamResult {
+  /** 聚合后的文本内容 */
+  content: string;
+  /** Token 用量（如果流末尾提供）*/
+  usage?: TokenUsage;
+  /** 接收的 chunk 数 */
+  chunkCount: number;
+  /** 总耗时（毫秒）*/
+  durationMs: number;
 }
 
 /** Errors that should typically not be retried */
@@ -138,6 +161,97 @@ export class AICallWrapper {
           `AI Observer onError 失败: ${e instanceof Error ? e.message : String(e)}`,
         );
       }
+    }
+  }
+
+  /**
+   * 流式调用聚合。
+   *
+   * 消费 AsyncIterable<TChunk> 流，按 extractor 提取 content/usage，
+   * 聚合返回。不同 provider chunk 形状不同，extractor 由调用方提供：
+   * - OpenAI / DeepSeek: 用 ship 的 openAIStreamExtractor 助手
+   * - Anthropic / Gemini: 各自实现（chunk 形状不同）
+   *
+   * @example
+   * ```ts
+   * import { openAIStreamExtractor } from '@zucker/ai';
+   * const result = await wrapper.callWithStream(
+   *   () => openai.chat.completions.create({ stream: true, ... }),
+   *   openAIStreamExtractor,
+   *   { context: 'agent.vision', progressIntervalMs: 30000 },
+   * );
+   * console.log(result.content, result.usage);
+   * ```
+   */
+  async callWithStream<TChunk>(
+    streamFactory: () => Promise<AsyncIterable<TChunk>>,
+    extractor: (chunk: TChunk) => { content?: string; usage?: TokenUsage },
+    options: StreamCallOptions = {},
+  ): Promise<StreamResult> {
+    const {
+      context = 'AI 流式调用',
+      progressIntervalMs = 60_000,
+      metadata,
+    } = options;
+
+    const startTime = Date.now();
+    let lastLogTime = startTime;
+    let content = '';
+    let chunkCount = 0;
+    let usage: TokenUsage | undefined;
+
+    try {
+      const stream = await streamFactory();
+      for await (const chunk of stream) {
+        const extracted = extractor(chunk);
+        if (extracted.content) content += extracted.content;
+        if (extracted.usage) usage = extracted.usage;
+        chunkCount += 1;
+
+        if (
+          progressIntervalMs > 0 &&
+          Date.now() - lastLogTime >= progressIntervalMs
+        ) {
+          const elapsed = Math.floor((Date.now() - startTime) / 1000);
+          const lines = content.split('\n').filter(Boolean).length;
+          this.logger.log(
+            `⏳ [${context}] 已耗时 ${elapsed}s，已生成 ${content.length} 字符 / ${lines} 行 / ${chunkCount} chunks`,
+          );
+          lastLogTime = Date.now();
+        }
+      }
+
+      const durationMs = Date.now() - startTime;
+      this.logger.log(
+        `[${context}] 流式完成，${durationMs}ms，${content.length} 字符 / ${chunkCount} chunks`,
+      );
+
+      const result: StreamResult = { content, usage, chunkCount, durationMs };
+      await this.notifySuccess({
+        context,
+        startTime,
+        durationMs,
+        attempt: 1,
+        result,
+        metadata,
+      });
+
+      return result;
+    } catch (error) {
+      const durationMs = Date.now() - startTime;
+      const err = error instanceof Error ? error : new Error(String(error));
+      this.logger.warn(
+        `[${context}] 流式失败 (${durationMs}ms): ${err.message}`,
+      );
+      await this.notifyError({
+        context,
+        startTime,
+        durationMs,
+        attempt: 1,
+        error: err,
+        metadata,
+      });
+      throw err;
     }
   }
 
