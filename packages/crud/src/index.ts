@@ -78,7 +78,11 @@ export { TreeService } from './tree.service';
 export { TreeController, TreeControllerHost } from './tree.controller';
 
 // Prisma Adapter
-export { PrismaAdapter } from './prisma-adapter';
+export { PrismaAdapter, type PrismaAdapterOptions } from './prisma-adapter';
+export {
+  PrismaDatabaseAdapterModule,
+  type PrismaDatabaseAdapterModuleOptions,
+} from './database-adapter.module';
 
 // In-Memory Adapter (development / testing)
 export { InMemoryAdapter } from './in-memory-adapter';
