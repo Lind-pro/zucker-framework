@@ -35,6 +35,7 @@ export type { VectorStore, VectorDocument, VectorSearchResult, EmbeddingModel } 
 export { VECTOR_STORE, EMBEDDING_MODEL } from './vector-store';
 export { CostTracker } from './cost-tracker';
 export type { CostRecord } from './cost-tracker';
+export * from './observers';
 export { TrackAIUsage } from './track-usage.decorator';
 export type { TrackUsageOptions } from './track-usage.decorator';
 export type { AITool, AgentStep, AgentResult, AgentExecutor, AgentContext } from './agent';
