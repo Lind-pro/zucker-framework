@@ -62,6 +62,7 @@ export {
   type DigestEncoding,
 } from './digest-utils';
 export { ContextKey, type Context, MapContext, ContextHolder } from './context';
+export { createScopedContext, type ScopedContext } from './scoped-context';
 export { Warning } from './warning';
 export { toHttpParameters, fromHttpParameters } from './http-parameter-converter';
 export { ValueObject } from './value-object';
