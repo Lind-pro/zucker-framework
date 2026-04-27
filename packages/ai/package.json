@@ -4,7 +4,9 @@
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts",
     "clean": "rm -rf dist",
@@ -12,7 +14,8 @@
   },
   "dependencies": {
     "@zucker/core": "workspace:*",
-    "@zucker/crud": "workspace:*"
+    "@zucker/crud": "workspace:*",
+    "openai": "^6.34.0"
   },
   "devDependencies": {
     "@types/node": "^25.5.0"
