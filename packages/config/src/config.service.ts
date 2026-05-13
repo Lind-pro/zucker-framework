@@ -55,7 +55,7 @@ export class ConfigService {
 
   constructor(
     @Inject(DATABASE_ADAPTER) private readonly db: DatabaseAdapter,
-    private readonly eventEmitter: EventEmitter2,
+    @Optional() private readonly eventEmitter?: EventEmitter2,
     @Optional() private readonly scopeManager?: ConfigScopeManager,
     @Optional() @Inject(CONFIG_ENCRYPTOR) private readonly encryptor?: ConfigEncryptor,
     @Optional() @Inject('TOPIC_EVENT_BUS') private readonly topicEventBus?: TopicEventBusLike,
@@ -178,7 +178,7 @@ export class ConfigService {
     await this.recordHistory(scope, key, oldValue, value);
 
     const payload: ConfigChangePayload = { scope, key, oldValue, newValue: value };
-    this.eventEmitter.emit(CONFIG_CHANGED_EVENT, payload);
+    this.eventEmitter?.emit(CONFIG_CHANGED_EVENT, payload);
     // Publish to TopicEventBus for cross-module event-driven integration
     if (this.topicEventBus) {
       await this.topicEventBus.publish(CONFIG_CHANGED_TOPIC, payload);
@@ -248,7 +248,7 @@ export class ConfigService {
 
     // Emit events after all writes succeed (single batch notification)
     for (const payload of changes) {
-      this.eventEmitter.emit(CONFIG_CHANGED_EVENT, payload);
+      this.eventEmitter?.emit(CONFIG_CHANGED_EVENT, payload);
     }
     if (this.topicEventBus) {
       for (const payload of changes) {
@@ -331,7 +331,7 @@ export class ConfigService {
     this.cache.delete(cacheKey);
 
     const payload: ConfigChangePayload = { scope, key, oldValue, newValue: undefined };
-    this.eventEmitter.emit(CONFIG_CHANGED_EVENT, payload);
+    this.eventEmitter?.emit(CONFIG_CHANGED_EVENT, payload);
     if (this.topicEventBus) {
       await this.topicEventBus.publish(CONFIG_CHANGED_TOPIC, payload);
     }
@@ -343,9 +343,12 @@ export class ConfigService {
    * @returns 订阅句柄，调用 unsubscribe() 取消监听
    */
   onChange(callback: (payload: ConfigChangePayload) => void): { unsubscribe: () => void } {
-    this.eventEmitter.on(CONFIG_CHANGED_EVENT, callback);
+    // eventEmitter 缺失时（host app 未注册 EventEmitterModule）退化为 no-op 订阅。
+    if (!this.eventEmitter) return { unsubscribe: () => undefined };
+    const ee = this.eventEmitter;
+    ee.on(CONFIG_CHANGED_EVENT, callback);
     return {
-      unsubscribe: () => this.eventEmitter.off(CONFIG_CHANGED_EVENT, callback),
+      unsubscribe: () => ee.off(CONFIG_CHANGED_EVENT, callback),
     };
   }
 
@@ -368,9 +371,11 @@ export class ConfigService {
       if (key && payload.key !== key) return;
       callback(payload.newValue as T, payload.oldValue as T | undefined);
     };
-    this.eventEmitter.on(CONFIG_CHANGED_EVENT, handler);
+    if (!this.eventEmitter) return { unsubscribe: () => undefined };
+    const ee = this.eventEmitter;
+    ee.on(CONFIG_CHANGED_EVENT, handler);
     return {
-      unsubscribe: () => this.eventEmitter.off(CONFIG_CHANGED_EVENT, handler),
+      unsubscribe: () => ee.off(CONFIG_CHANGED_EVENT, handler),
     };
   }
 

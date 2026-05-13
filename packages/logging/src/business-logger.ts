@@ -34,7 +34,7 @@ export class BusinessLogger {
   private readonly logger = new Logger(BusinessLogger.name);
 
   constructor(
-    private readonly eventEmitter: EventEmitter2,
+    @Optional() private readonly eventEmitter?: EventEmitter2,
     @Optional()
     @Inject(BUSINESS_LOGGER_BUS)
     private readonly bus?: BusinessLogBus,
@@ -109,7 +109,7 @@ export class BusinessLogger {
     };
 
     // 始终通过事件总线发布
-    this.eventEmitter.emit(BUSINESS_LOG_EVENT, entry);
+    this.eventEmitter?.emit(BUSINESS_LOG_EVENT, entry);
 
     // 通过远程总线发布（如果可用）
     if (this.bus) {

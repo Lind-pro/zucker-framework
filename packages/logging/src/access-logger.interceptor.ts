@@ -47,7 +47,7 @@ const DEFAULT_SENSITIVE_FIELDS = ['password', 'secret', 'token', 'authorization'
 export class AccessLoggerInterceptor implements NestInterceptor {
   constructor(
     private readonly reflector: Reflector,
-    private readonly eventEmitter: EventEmitter2,
+    @Optional() private readonly eventEmitter?: EventEmitter2,
     @Optional()
     @Inject(ACCESS_LOG_BUS)
     private readonly bus?: AccessLogBus,
@@ -163,7 +163,7 @@ export class AccessLoggerInterceptor implements NestInterceptor {
       parameters,
       correlationId,
     };
-    this.eventEmitter.emit(ACCESS_LOG_BEFORE_EVENT, beforePayload);
+    this.eventEmitter?.emit(ACCESS_LOG_BEFORE_EVENT, beforePayload);
 
     return next.handle().pipe(
       tap((result) => {
@@ -216,8 +216,8 @@ export class AccessLoggerInterceptor implements NestInterceptor {
           correlationId,
         };
 
-        this.eventEmitter.emit(ACCESS_LOG_EVENT, accessPayload);
-        this.eventEmitter.emit(OPERATION_LOG_EVENT, operationPayload);
+        this.eventEmitter?.emit(ACCESS_LOG_EVENT, accessPayload);
+        this.eventEmitter?.emit(OPERATION_LOG_EVENT, operationPayload);
         this.bus?.publish('system/access-log', accessPayload);
       }),
       catchError((error) => {
@@ -272,8 +272,8 @@ export class AccessLoggerInterceptor implements NestInterceptor {
           },
         };
 
-        this.eventEmitter.emit(ACCESS_LOG_EVENT, accessPayload);
-        this.eventEmitter.emit(OPERATION_LOG_EVENT, operationPayload);
+        this.eventEmitter?.emit(ACCESS_LOG_EVENT, accessPayload);
+        this.eventEmitter?.emit(OPERATION_LOG_EVENT, operationPayload);
         this.bus?.publish('system/access-log', accessPayload);
 
         return throwError(() => error);

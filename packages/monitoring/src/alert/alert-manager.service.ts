@@ -38,7 +38,7 @@ export class AlertManagerService implements OnModuleInit {
   private readonly activeRuleIds = new Set<string>();
 
   constructor(
-    private readonly eventEmitter: EventEmitter2,
+    @Optional() private readonly eventEmitter?: EventEmitter2,
     @Optional() @Inject('DATABASE_ADAPTER') private readonly db?: any,
   ) {}
 
@@ -167,7 +167,7 @@ export class AlertManagerService implements OnModuleInit {
     alert.acknowledgedAt = Date.now();
     alert.acknowledgedBy = userId;
 
-    this.eventEmitter.emit('alert.acknowledged', { ...alert });
+    this.eventEmitter?.emit('alert.acknowledged', { ...alert });
     this.logger.log(`Alert acknowledged: ${alertId} by ${userId}`);
     return { ...alert };
   }
@@ -185,7 +185,7 @@ export class AlertManagerService implements OnModuleInit {
     if (!Array.from(this.alerts.values()).some(a => a.ruleId === alert.ruleId && a.id !== alertId && a.status !== 'RESOLVED')) {
       this.activeRuleIds.delete(alert.ruleId);
     }
-    this.eventEmitter.emit('alert.resolved', { ...alert });
+    this.eventEmitter?.emit('alert.resolved', { ...alert });
     this.logger.log(`Alert resolved: ${alertId} by ${userId}`);
     return { ...alert };
   }
@@ -235,7 +235,7 @@ export class AlertManagerService implements OnModuleInit {
 
     this.alerts.set(record.id, record);
     this.activeRuleIds.add(rule.id);
-    this.eventEmitter.emit('alert.triggered', { ...record });
+    this.eventEmitter?.emit('alert.triggered', { ...record });
     this.logger.warn(
       `Alert triggered: [${record.severity}] ${record.message}`,
     );
@@ -248,7 +248,7 @@ export class AlertManagerService implements OnModuleInit {
         alert.status = 'RESOLVED';
         alert.resolvedAt = Date.now();
         alert.resolvedBy = 'system';
-        this.eventEmitter.emit('alert.resolved', { ...alert });
+        this.eventEmitter?.emit('alert.resolved', { ...alert });
         this.logger.log(`Alert auto-resolved: ${alert.id} (metric recovered)`);
       }
     }

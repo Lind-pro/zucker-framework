@@ -53,7 +53,7 @@ export class LayeredConfigService {
   constructor(
     @Inject(DATABASE_ADAPTER) private readonly db: DatabaseAdapter,
     private readonly scopeManager: ConfigScopeManager,
-    private readonly eventEmitter: EventEmitter2,
+    @Optional() private readonly eventEmitter?: EventEmitter2,
     @Optional() @Inject('TOPIC_EVENT_BUS') private readonly topicEventBus?: TopicEventBusLike,
   ) {}
 
@@ -132,7 +132,7 @@ export class LayeredConfigService {
       oldValue,
       newValue: value,
     };
-    this.eventEmitter.emit(LAYERED_CONFIG_CHANGED_EVENT, payload);
+    this.eventEmitter?.emit(LAYERED_CONFIG_CHANGED_EVENT, payload);
     if (this.topicEventBus) {
       await this.topicEventBus.publish(LAYERED_CONFIG_CHANGED_TOPIC, payload);
     }
@@ -235,7 +235,7 @@ export class LayeredConfigService {
     });
 
     for (const payload of changes) {
-      this.eventEmitter.emit(LAYERED_CONFIG_CHANGED_EVENT, payload);
+      this.eventEmitter?.emit(LAYERED_CONFIG_CHANGED_EVENT, payload);
     }
     if (this.topicEventBus) {
       for (const payload of changes) {
@@ -268,7 +268,7 @@ export class LayeredConfigService {
     const payload: LayeredConfigChangePayload = {
       scope, key, layer, oldValue, newValue: undefined,
     };
-    this.eventEmitter.emit(LAYERED_CONFIG_CHANGED_EVENT, payload);
+    this.eventEmitter?.emit(LAYERED_CONFIG_CHANGED_EVENT, payload);
     if (this.topicEventBus) {
       await this.topicEventBus.publish(LAYERED_CONFIG_CHANGED_TOPIC, payload);
     }
