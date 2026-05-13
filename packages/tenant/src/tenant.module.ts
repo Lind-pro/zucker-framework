@@ -62,6 +62,7 @@ export class ZuckerTenantModule {
 
     return {
       module: ZuckerTenantModule,
+      global: true,
       providers,
       exports: [TENANT_ISOLATION_STRATEGY, TenantGuard],
     };
@@ -71,6 +72,7 @@ export class ZuckerTenantModule {
     const asyncProviders = this.createAsyncProviders(options);
     return {
       module: ZuckerTenantModule,
+      global: true,
       imports: options.imports ?? [],
       providers: [
         ...asyncProviders,

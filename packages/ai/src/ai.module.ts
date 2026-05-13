@@ -43,6 +43,7 @@ export class ZuckerAIModule {
   static forRoot(options?: AIModuleOptions): DynamicModule {
     return {
       module: ZuckerAIModule,
+      global: true,
       providers: [
         { provide: AI_MODULE_OPTIONS, useValue: options ?? {} },
         AIProviderManager,
@@ -72,6 +73,7 @@ export class ZuckerAIModule {
     const asyncProviders = this.createAsyncProviders(options);
     return {
       module: ZuckerAIModule,
+      global: true,
       imports: options.imports ?? [],
       providers: [
         ...asyncProviders,

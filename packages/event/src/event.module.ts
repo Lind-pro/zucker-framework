@@ -40,6 +40,7 @@ export class ZuckerEventModule implements OnModuleInit, OnModuleDestroy {
   static forRoot(): DynamicModule {
     return {
       module: ZuckerEventModule,
+      global: true,
       providers: [
         { provide: TOPIC_EVENT_BUS, useClass: DefaultTopicEventBus },
         EntityEventListenerConfigure,

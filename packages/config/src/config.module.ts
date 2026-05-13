@@ -53,6 +53,7 @@ export class ZuckerConfigModule {
 
     return {
       module: ZuckerConfigModule,
+      global: true,
       providers,
       exports: [ConfigService, ConfigScopeManager, LayeredConfigService],
     };
@@ -62,6 +63,7 @@ export class ZuckerConfigModule {
     const asyncProviders = this.createAsyncProviders(options);
     return {
       module: ZuckerConfigModule,
+      global: true,
       imports: options.imports ?? [],
       providers: [
         ...asyncProviders,

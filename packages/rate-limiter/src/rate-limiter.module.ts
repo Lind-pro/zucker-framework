@@ -32,6 +32,7 @@ export class ZuckerRateLimiterModule {
   static forRoot(options: RateLimiterModuleOptions): DynamicModule {
     return {
       module: ZuckerRateLimiterModule,
+      global: true,
       providers: [
         {
           provide: RateLimiterService,
@@ -48,6 +49,7 @@ export class ZuckerRateLimiterModule {
     const asyncProviders = this.createAsyncProviders(options);
     return {
       module: ZuckerRateLimiterModule,
+      global: true,
       imports: options.imports ?? [],
       providers: [
         ...asyncProviders,

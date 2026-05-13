@@ -107,6 +107,7 @@ export class ZuckerNotificationModule implements OnModuleDestroy {
 
     return {
       module: ZuckerNotificationModule,
+      global: true,
       providers,
       exports,
     };
@@ -116,6 +117,7 @@ export class ZuckerNotificationModule implements OnModuleDestroy {
     const asyncProviders = this.createAsyncProviders(options);
     return {
       module: ZuckerNotificationModule,
+      global: true,
       imports: options.imports ?? [],
       providers: [
         ...asyncProviders,

@@ -43,6 +43,7 @@ export class ZuckerCacheModule {
   static forRoot(options: CacheModuleOptions): DynamicModule {
     return {
       module: ZuckerCacheModule,
+      global: true,
       providers: [
         {
           provide: CACHE_PROVIDER,
@@ -57,6 +58,7 @@ export class ZuckerCacheModule {
     const asyncProviders = this.createAsyncProviders(options);
     return {
       module: ZuckerCacheModule,
+      global: true,
       imports: options.imports ?? [],
       providers: [
         ...asyncProviders,

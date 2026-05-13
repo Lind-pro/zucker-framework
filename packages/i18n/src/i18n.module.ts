@@ -47,6 +47,7 @@ export class ZuckerI18nModule {
   static forRoot(options: I18nModuleOptions = {}): DynamicModule {
     return {
       module: ZuckerI18nModule,
+      global: true,
       providers: ZuckerI18nModule.buildProviders(options),
       exports: [MESSAGE_SOURCE, LocaleInterceptor],
     };
@@ -56,6 +57,7 @@ export class ZuckerI18nModule {
     const asyncProviders = this.createAsyncProviders(options);
     return {
       module: ZuckerI18nModule,
+      global: true,
       imports: options.imports ?? [],
       providers: [
         ...asyncProviders,

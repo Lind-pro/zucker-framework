@@ -311,6 +311,7 @@ export class ZuckerAuthModule {
 
     return {
       module: ZuckerAuthModule,
+      global: true,
       imports: [
         DiscoveryModule,
         PassportModule.register({ defaultStrategy: 'jwt' }),
@@ -334,6 +335,7 @@ export class ZuckerAuthModule {
 
     return {
       module: ZuckerAuthModule,
+      global: true,
       imports: [
         ...(asyncOptions.imports ?? []),
         DiscoveryModule,

@@ -22,6 +22,7 @@ export class ZuckerPaymentModule {
   static forRoot(options: PaymentModuleOptions = {}): DynamicModule {
     return {
       module: ZuckerPaymentModule,
+      global: true,
       providers: [
         PaymentService,
         OrderService,
@@ -44,6 +45,7 @@ export class ZuckerPaymentModule {
   static forRootAsync(options: PaymentModuleAsyncOptions): DynamicModule {
     return {
       module: ZuckerPaymentModule,
+      global: true,
       imports: options.imports ?? [],
       providers: [
         PaymentService,

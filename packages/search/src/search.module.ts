@@ -33,6 +33,7 @@ export class ZuckerSearchModule {
   static forRoot(options: SearchModuleOptions): DynamicModule {
     return {
       module: ZuckerSearchModule,
+      global: true,
       providers: [
         {
           provide: SEARCH_CLIENT,
@@ -48,6 +49,7 @@ export class ZuckerSearchModule {
     const asyncProviders = this.createAsyncProviders(options);
     return {
       module: ZuckerSearchModule,
+      global: true,
       imports: options.imports ?? [],
       providers: [
         ...asyncProviders,

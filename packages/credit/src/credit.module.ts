@@ -28,6 +28,7 @@ export class ZuckerCreditModule {
   static forRoot(): DynamicModule {
     return {
       module: ZuckerCreditModule,
+      global: true,
       providers: [CreditService],
       exports: [CreditService],
     };
@@ -37,6 +38,7 @@ export class ZuckerCreditModule {
     const asyncProviders = this.createAsyncProviders(options);
     return {
       module: ZuckerCreditModule,
+      global: true,
       imports: options.imports ?? [],
       providers: [
         ...asyncProviders,

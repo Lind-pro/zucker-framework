@@ -39,6 +39,7 @@ export class ZuckerStorageModule {
   static forRoot(options: StorageModuleOptions): DynamicModule {
     return {
       module: ZuckerStorageModule,
+      global: true,
       providers: [
         {
           provide: FILE_MANAGER,
@@ -53,6 +54,7 @@ export class ZuckerStorageModule {
     const asyncProviders = this.createAsyncProviders(options);
     return {
       module: ZuckerStorageModule,
+      global: true,
       imports: options.imports ?? [],
       providers: [
         ...asyncProviders,

@@ -36,6 +36,7 @@ export class ZuckerQueueModule {
   static forRoot(options: QueueModuleOptions = {}): DynamicModule {
     return {
       module: ZuckerQueueModule,
+      global: true,
       providers: [
         {
           provide: QUEUE_PROVIDER,
@@ -51,6 +52,7 @@ export class ZuckerQueueModule {
     const asyncProviders = this.createAsyncProviders(options);
     return {
       module: ZuckerQueueModule,
+      global: true,
       imports: options.imports ?? [],
       providers: [
         ...asyncProviders,

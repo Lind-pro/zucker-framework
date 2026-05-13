@@ -12,6 +12,7 @@ export class ZuckerRelationModule {
 
     return {
       module: ZuckerRelationModule,
+      global: true,
       providers: [
         { provide: RELATION_STORE, useValue: relationStore },
         {

@@ -31,6 +31,7 @@ export class ZuckerCrudModule {
   static forRoot(options: { adapterClass: Type<DatabaseAdapter> }): DynamicModule {
     return {
       module: ZuckerCrudModule,
+      global: true,
       providers: [
         { provide: DATABASE_ADAPTER, useClass: options.adapterClass },
         ...ALL_OPERATORS,
@@ -56,6 +57,7 @@ export class ZuckerCrudModule {
     const adapterProvider = this.createAdapterProvider(options);
     return {
       module: ZuckerCrudModule,
+      global: true,
       imports: options.imports ?? [],
       providers: [
         adapterProvider,

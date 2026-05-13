@@ -18,6 +18,7 @@ export class ZuckerFormModule {
   static forRoot(): DynamicModule {
     return {
       module: ZuckerFormModule,
+      global: true,
       providers: [FormService],
       exports: [FormService],
     };

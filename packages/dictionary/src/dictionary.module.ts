@@ -9,6 +9,7 @@ export class ZuckerDictionaryModule {
   static forRoot(): DynamicModule {
     return {
       module: ZuckerDictionaryModule,
+      global: true,
       providers: [
         DictionaryService,
         DictionaryItemService,

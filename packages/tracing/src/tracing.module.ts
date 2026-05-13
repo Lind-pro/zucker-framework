@@ -21,6 +21,7 @@ export class ZuckerTracingModule implements NestModule {
 
     return {
       module: ZuckerTracingModule,
+      global: true,
       providers: [
         {
           provide: InMemoryTracer,
