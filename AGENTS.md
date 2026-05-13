@@ -3,6 +3,10 @@
 > 这份文档是给 AI 助手（Claude / Cursor / Copilot）看的。**目标：让你不用扫描整个 monorepo 就能在 zucker 上写代码。**
 >
 > 与 `CLAUDE.md` 的分工：CLAUDE.md 讲项目背景和约定；本文档讲「想做某件事用哪个包、怎么用」。
+>
+> **外部文档**：NestJS / Prisma / React 等原生 API 不在本文档范围内，直接调
+> Context7 MCP（`/nestjs/docs.nestjs.com`、`/prisma/docs`、`/reactjs/react.dev`），
+> 比扫官方文档站快 10×。本文档只覆盖 zucker 在这些基础库之上叠加的能力。
 
 ## 一、最重要的两条规则
 
