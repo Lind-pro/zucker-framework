@@ -1,0 +1,36 @@
+{
+  "name": "@zucker/ext-kit",
+  "version": "0.0.1",
+  "description": "Browser extension infrastructure kit — batch engine, capture session, licensing, popup driver. Vendored into extensions as ext-kit.js / ext-kit-popup.js.",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "assets"
+  ],
+  "scripts": {
+    "build": "tsup && node build-vendored.mjs",
+    "clean": "rm -rf dist",
+    "lint": "eslint src/"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.280",
+    "esbuild": "^0.28.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

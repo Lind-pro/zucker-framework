@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>__EXT_BRAND__</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header class="topbar">
+        <div class="brand">
+          <span class="mark" aria-hidden="true"></span>
+          <span class="wordmark">__EXT_BRAND__</span>
+        </div>
+        <div class="quota">
+          <span id="quotaText" class="quotaValue">Loading…</span>
+          <span class="quotaActions">
+            <a class="pro" href="https://ccopyright.ai/__EXT_SLUG__" target="_blank" rel="noreferrer" id="proLink">PRO</a>
+            <button class="ghostLink" id="haveCode" type="button">code</button>
+          </span>
+        </div>
+      </header>
+
+      <section class="drawer hidden" id="licensePanel">
+        <input id="licenseCode" type="text" placeholder="CCPDFPRO-XXXX-XXXX-XXXX" autocomplete="off" spellcheck="false" />
+        <div class="drawerRow">
+          <button id="activateBtn" type="button" class="btn small accent">Activate</button>
+          <button id="deactivateBtn" type="button" class="btn small hidden">Deactivate</button>
+        </div>
+      </section>
+
+      <section class="field">
+        <div class="fieldHead">
+          <label class="microLabel" for="urls">Add URLs</label>
+          <span id="urlCount" class="countChip">0</span>
+        </div>
+        <textarea id="urls" rows="3" placeholder="Paste one or more URLs, one per line" spellcheck="false"></textarea>
+        <div class="fieldTools">
+          <div class="importActions">
+            <button id="addUrls" type="button" class="btn small accent">Add to queue</button>
+            <button id="scanSite" type="button" class="btn small">⌖ Scan site</button>
+          </div>
+          <details class="settings">
+            <summary class="microLabel">Settings</summary>
+            <div class="settingGrid">
+              <label>Format
+                <select id="format">
+                  <option value="png">PNG</option>
+                  <option value="jpeg">JPEG</option>
+                </select>
+              </label>
+              <label>Viewport
+                <select id="viewportWidth">
+                  <option value="1280">1280 · desktop</option>
+                  <option value="1440">1440</option>
+                  <option value="1920">1920</option>
+                  <option value="390">390 · mobile</option>
+                </select>
+              </label>
+              <label>Wait after load
+                <select id="delayMs">
+                  <option value="800">0.8 s</option>
+                  <option value="1500" selected>1.5 s</option>
+                  <option value="3000">3 s</option>
+                  <option value="5000">5 s</option>
+                </select>
+              </label>
+            </div>
+          </details>
+        </div>
+      </section>
+
+      <section class="queuePanel">
+        <div class="queueHead">
+          <div>
+            <span class="microLabel">URL Queue</span>
+            <span id="queueSummary" class="queueSummary">0 selected</span>
+          </div>
+          <div class="queueTools">
+            <button id="selectAll" class="ghostAction" type="button">All</button>
+            <button id="selectNone" class="ghostAction" type="button">None</button>
+            <button id="moreQueueActions" class="ghostAction" type="button" aria-label="More queue actions">•••</button>
+          </div>
+        </div>
+        <div id="queueMenu" class="queueMenu hidden">
+          <button id="removeUnselected" type="button">Remove unselected</button>
+          <button id="clearQueue" type="button" class="dangerText">Clear queue</button>
+        </div>
+        <div id="queueList" class="queueList">
+          <p class="queueEmpty">Add URLs or scan the current site to begin.</p>
+        </div>
+      </section>
+
+      <div class="captureActions">
+        <button class="btn quick" id="captureCurrent" type="button">Capture current page</button>
+        <button class="btn primary" id="start" type="button">Capture selected</button>
+      </div>
+      <button class="btn stop hidden" id="cancel" type="button">Stop</button>
+
+      <section class="run hidden" id="progressWrap">
+        <div class="runMeta">
+          <span id="progressText" class="runCount">0 / 0</span>
+          <div class="runRight">
+            <span id="progressCurrent" class="runCurrent"></span>
+            <button id="clearBatch" class="ghostAction hidden" type="button">Clear</button>
+          </div>
+        </div>
+        <div class="track"><span id="progressBar"></span></div>
+      </section>
+
+      <section class="verify hidden" id="verifyBanner" aria-live="assertive">
+        <div class="verifyBody">
+          <strong>Human verification needed</strong>
+          <span id="verifyText" class="verifyText"></span>
+          <span class="verifyHint">Switch to the opened tab, complete the check — capture resumes automatically.</span>
+        </div>
+        <button class="btn small" id="skipVerify" type="button">Skip this page</button>
+      </section>
+
+      <section id="resultList" class="results" aria-live="polite"></section>
+      <p id="folderNote" class="folder hidden"></p>
+
+      <footer class="statusbar">
+        <span id="status" role="status">Ready</span>
+      </footer>
+    </main>
+    <script src="../lib/ext-kit-popup.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>

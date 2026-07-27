@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "__EXT_NAME__",
+  "description": "__EXT_DESC__",
+  "version": "0.1.0",
+  "minimum_chrome_version": "116",
+  "permissions": [
+    "activeTab",
+    "debugger",
+    "downloads",
+    "offscreen",
+    "scripting",
+    "storage",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://api.ccopyright.ai/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "__EXT_BRAND__"
+  }
+}
