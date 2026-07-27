@@ -133,7 +133,39 @@ const syncCommand = new Command('sync')
     }
   });
 
+// 服务端核心（@zucker/ext-server）以 TS 源码 vendored 进消费方 NestJS 项目：
+// 消费方 CI/Docker 构建拿不到本仓库，npm 也未发布，源码随项目一起编译。
+const SERVER_FILES = ['core.ts', 'stripe.ts', 'types.ts'];
+const SERVER_BANNER =
+  '// AUTO-GENERATED from zucker-framework packages/ext-server — DO NOT EDIT.\n' +
+  '// 修改请改框架源码后运行 `zucker ext sync-server <dir>` 重新分发。\n';
+
+const syncServerCommand = new Command('sync-server')
+  .description('Vendor @zucker/ext-server sources (core/stripe/types) into a NestJS app directory')
+  .argument('<dir>', 'Target directory (e.g. apps/server/src/extension/core)')
+  .action((dir: string) => {
+    const target = resolve(process.cwd(), dir);
+    mkdirSync(target, { recursive: true });
+    const updated: string[] = [];
+    for (const name of SERVER_FILES) {
+      const src = join(monorepoRoot, 'packages', 'ext-server', 'src', name);
+      if (!existsSync(src)) {
+        console.log(`  \x1b[31mError:\x1b[0m Missing ${src}`);
+        process.exit(1);
+      }
+      const content = SERVER_BANNER + readFileSync(src, 'utf8');
+      const dest = join(target, name);
+      if (!existsSync(dest) || readFileSync(dest, 'utf8') !== content) {
+        writeFileSync(dest, content);
+        updated.push(name);
+      }
+    }
+    console.log(`  ${target}: ${updated.length ? `updated ${updated.join(', ')}` : 'already up to date'}`);
+    console.log('  Reminder: prisma 片段见 packages/ext-server/assets/extension-product.prisma（手动并入消费方 schema）');
+  });
+
 export const extCommand = new Command('ext')
   .description('Browser extension scaffolding & vendored kit management')
   .addCommand(createCommand)
-  .addCommand(syncCommand);
+  .addCommand(syncCommand)
+  .addCommand(syncServerCommand);

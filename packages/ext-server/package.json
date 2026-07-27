@@ -1,0 +1,34 @@
+{
+  "name": "@zucker/ext-server",
+  "version": "0.0.1",
+  "description": "Browser extension licensing/payments server core — activation, Stripe webhook, license email, admin stats. Vendored into consuming NestJS apps via `zucker ext sync-server`.",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": { "types": "./dist/index.d.mts", "default": "./dist/index.mjs" },
+      "require": { "types": "./dist/index.d.ts", "default": "./dist/index.js" }
+    }
+  },
+  "files": [
+    "dist",
+    "assets"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts",
+    "clean": "rm -rf dist",
+    "lint": "eslint src/"
+  },
+  "peerDependencies": {
+    "@nestjs/common": "^11.0.0"
+  },
+  "devDependencies": {
+    "@nestjs/common": "^11.0.0",
+    "@types/node": "^25.5.0",
+    "rxjs": "^7.8.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
