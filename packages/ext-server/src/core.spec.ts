@@ -155,6 +155,26 @@ describe('ExtensionCore', () => {
     expect(sentMails[0].subject).toContain('SitePDF Ultra');
   });
 
+  it('100% 折扣码订单（no_payment_required）也要发码', async () => {
+    const { body, header } = stripeEvent('cs_free', {
+      payment_status: 'no_payment_required',
+      amount_total: 0,
+    });
+    await core.handleStripeWebhook(body, header);
+    expect(store.extensionOrder.rows).toHaveLength(1);
+    expect(store.extensionLicense.rows).toHaveLength(1);
+    expect(sentMails).toHaveLength(1);
+  });
+
+  it('unpaid 订单不发码（等 async_payment_succeeded）', async () => {
+    const { body, header } = stripeEvent('cs_unpaid', { payment_status: 'unpaid' });
+    const result = await core.handleStripeWebhook(body, header);
+    expect(result).toEqual({ received: true });
+    expect(store.extensionOrder.rows).toHaveLength(0);
+    expect(store.extensionLicense.rows).toHaveLength(0);
+    expect(sentMails).toHaveLength(0);
+  });
+
   it('webhook 签名错误被拒', async () => {
     const { body } = stripeEvent('cs_3');
     await expect(core.handleStripeWebhook(body, 't=1,v1=bad')).rejects.toThrow('签名');

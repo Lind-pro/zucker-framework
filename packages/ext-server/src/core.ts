@@ -17,6 +17,10 @@ import type {
   ProductInfo,
 } from './types';
 
+// 应当发码的 checkout 支付状态。unpaid（如异步支付待确认）不在此列，
+// 等 async_payment_succeeded 事件再处理。
+const FULFILLABLE_PAYMENT_STATUSES = ['paid', 'no_payment_required'];
+
 // 浏览器扩展变现服务端核心：激活码授权（激活/权益/撤销/补发）、免费额度账本、
 // Stripe webhook 发码、授权邮件、运营统计。产品维度全部参数化：
 // 产品信息先查 ExtensionProduct 表，未登记时用 options.fallbackProducts 兜底。
@@ -220,7 +224,9 @@ export class ExtensionCore {
     }
 
     const session = event.data?.object || {};
-    if (session.payment_status && session.payment_status !== 'paid') {
+    // no_payment_required：100% 折扣码/赠送等免费订单，Stripe 不会标记为 paid，
+    // 但同样需要发码——只认 paid 会让免费订单静默跳过，用户收不到码且后台无记录。
+    if (session.payment_status && !FULFILLABLE_PAYMENT_STATUSES.includes(session.payment_status)) {
       return { received: true };
     }
     const sessionId = String(session.id || '');
