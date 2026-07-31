@@ -11,11 +11,7 @@ export { AIProviderManager } from './provider-manager';
 export { AIConfigService } from './config.service';
 export type { ApiKeyDecryptor } from './config.service';
 export { AICallWrapper } from './call-wrapper';
-export type {
-  CallOptions,
-  StreamCallOptions,
-  StreamResult,
-} from './call-wrapper';
+export type { CallOptions, StreamCallOptions, StreamResult } from './call-wrapper';
 export { openAIStreamExtractor } from './openai-stream-helper';
 export { AICallObserverRegistry } from './call-observer';
 export type {
@@ -31,7 +27,25 @@ export type {
   ResponseFormat,
   FindByKeyOptions,
 } from './prompt-manager';
-export type { VectorStore, VectorDocument, VectorSearchResult, EmbeddingModel } from './vector-store';
+export {
+  PROVIDER_CAPABILITIES,
+  adaptResponseFormat,
+  generateSchemaPrompt,
+  validateAgainstSchema,
+} from './response-format-adapter';
+export type {
+  StructuredOutputProvider,
+  ProviderCapabilities,
+  DesiredResponseFormat,
+  JsonSchemaConfig,
+  AdaptedResponseFormat,
+} from './response-format-adapter';
+export type {
+  VectorStore,
+  VectorDocument,
+  VectorSearchResult,
+  EmbeddingModel,
+} from './vector-store';
 export { VECTOR_STORE, EMBEDDING_MODEL } from './vector-store';
 export { CostTracker } from './cost-tracker';
 export type { CostRecord } from './cost-tracker';
