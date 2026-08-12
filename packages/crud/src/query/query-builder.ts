@@ -1,4 +1,5 @@
 import { type DatabaseAdapter, type GenericEntity } from '@zucker/core';
+import { coerceComparable } from './coerce-comparable';
 
 /** 查询条件节点 */
 interface WhereCondition {
@@ -417,13 +418,13 @@ export class QueryBuilder<T extends GenericEntity> implements IQueryBuilder<T> {
       case 'neq':
         return { [field]: { not: value } };
       case 'gt':
-        return { [field]: { gt: value } };
+        return { [field]: { gt: coerceComparable(value, 'end') } };
       case 'gte':
-        return { [field]: { gte: value } };
+        return { [field]: { gte: coerceComparable(value, 'start') } };
       case 'lt':
-        return { [field]: { lt: value } };
+        return { [field]: { lt: coerceComparable(value, 'start') } };
       case 'lte':
-        return { [field]: { lte: value } };
+        return { [field]: { lte: coerceComparable(value, 'end') } };
       case 'in':
         return { [field]: { in: value } };
       case 'notIn':

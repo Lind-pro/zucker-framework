@@ -1,4 +1,5 @@
 import { Injectable, Inject, Logger } from '@nestjs/common';
+import { coerceComparable } from '../query/coerce-comparable';
 
 export type FilterOperatorType =
   | 'eq'
@@ -65,7 +66,7 @@ export class ContainsOperator implements IFilterOperator {
 export class GtOperator implements IFilterOperator {
   readonly operatorType = 'gt' as const;
   apply(field: string, value: unknown): Record<string, unknown> {
-    return { [field]: { gt: value } };
+    return { [field]: { gt: coerceComparable(value, 'end') } };
   }
 }
 
@@ -73,7 +74,7 @@ export class GtOperator implements IFilterOperator {
 export class GteOperator implements IFilterOperator {
   readonly operatorType = 'gte' as const;
   apply(field: string, value: unknown): Record<string, unknown> {
-    return { [field]: { gte: value } };
+    return { [field]: { gte: coerceComparable(value, 'start') } };
   }
 }
 
@@ -81,7 +82,7 @@ export class GteOperator implements IFilterOperator {
 export class LtOperator implements IFilterOperator {
   readonly operatorType = 'lt' as const;
   apply(field: string, value: unknown): Record<string, unknown> {
-    return { [field]: { lt: value } };
+    return { [field]: { lt: coerceComparable(value, 'start') } };
   }
 }
 
@@ -89,7 +90,7 @@ export class LtOperator implements IFilterOperator {
 export class LteOperator implements IFilterOperator {
   readonly operatorType = 'lte' as const;
   apply(field: string, value: unknown): Record<string, unknown> {
-    return { [field]: { lte: value } };
+    return { [field]: { lte: coerceComparable(value, 'end') } };
   }
 }
 
@@ -124,7 +125,12 @@ export class BetweenOperator implements IFilterOperator {
   readonly operatorType = 'between' as const;
   apply(field: string, value: unknown): Record<string, unknown> | null {
     if (!Array.isArray(value) || value.length !== 2) return null;
-    return { [field]: { gte: value[0], lte: value[1] } };
+    return {
+      [field]: {
+        gte: coerceComparable(value[0], 'start'),
+        lte: coerceComparable(value[1], 'end'),
+      },
+    };
   }
 }
 
