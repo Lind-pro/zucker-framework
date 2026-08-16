@@ -90,10 +90,13 @@ export {
 } from './durable-delivery';
 export type {
   NotificationDeliveryClaim,
+  NotificationDeliveryAttemptEvent,
+  NotificationDeliveryAttemptOutcome,
   NotificationDeliveryErrorClassifier,
   NotificationDeliveryFailure,
   NotificationDeliveryHandler,
   NotificationDeliveryInput,
+  NotificationDeliveryObserver,
   NotificationDeliveryRecord,
   NotificationDeliveryRepository,
   NotificationDeliveryStatus,

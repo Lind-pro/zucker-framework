@@ -257,3 +257,23 @@ export interface NotificationDeliveryHandler {
     signal?: AbortSignal;
   }): Promise<{ providerMessageId?: string }>;
 }
+
+export type NotificationDeliveryAttemptOutcome =
+  | 'DELIVERED'
+  | 'RETRYING'
+  | 'DEAD'
+  | 'LOST_LEASE'
+  | 'ERROR';
+
+/** Safe operational event: deliberately excludes IDs, recipients and content. */
+export interface NotificationDeliveryAttemptEvent {
+  channel: NotifyChannel;
+  outcome: NotificationDeliveryAttemptOutcome;
+  attempt: number;
+  durationMs: number;
+  errorCode?: string;
+}
+
+export interface NotificationDeliveryObserver {
+  onAttemptFinished(event: NotificationDeliveryAttemptEvent): void;
+}

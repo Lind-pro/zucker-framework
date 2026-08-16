@@ -5,6 +5,9 @@ import {
   notificationRetryDelayMs,
   type NotificationDeliveryErrorClassifier,
   type NotificationDeliveryHandler,
+  type NotificationDeliveryClaim,
+  type NotificationDeliveryAttemptOutcome,
+  type NotificationDeliveryObserver,
   type NotificationDeliveryRepository,
   type NotificationRetryPolicy,
 } from './durable-delivery';
@@ -23,6 +26,8 @@ export interface DurableNotificationWorkerOptions {
   classifyError?: NotificationDeliveryErrorClassifier;
   random?: () => number;
   clock?: () => Date;
+  durationClock?: () => number;
+  observer?: NotificationDeliveryObserver;
 }
 
 /** Runs one durable attempt; process loops and concurrency stay application-owned. */
@@ -32,6 +37,7 @@ export class DurableNotificationWorker {
   private readonly random: () => number;
   private readonly clock: () => Date;
   private readonly heartbeatMs: number;
+  private readonly durationClock: () => number;
 
   constructor(
     private readonly repository: NotificationDeliveryRepository,
@@ -54,6 +60,7 @@ export class DurableNotificationWorker {
       options.retryPolicy ?? DEFAULT_NOTIFICATION_RETRY_POLICY;
     this.random = options.random ?? Math.random;
     this.clock = options.clock ?? (() => new Date());
+    this.durationClock = options.durationClock ?? (() => performance.now());
     this.heartbeatMs = heartbeatMs;
   }
 
@@ -70,6 +77,7 @@ export class DurableNotificationWorker {
       leaseMs: this.options.leaseMs,
     });
     if (!claim) return { kind: 'idle' };
+    const startedAtMs = this.durationClock();
 
     const heartbeat = this.startLeaseHeartbeat(
       claim.id,
@@ -94,10 +102,12 @@ export class DurableNotificationWorker {
         providerMessageId: result.providerMessageId,
         now: this.clock(),
       });
+      this.observeAttempt(claim, 'DELIVERED', startedAtMs);
       return { kind: 'delivered', deliveryId: claim.id };
     } catch (error) {
       const deliveryError = heartbeat.failure() ?? error;
       if (deliveryError instanceof NotificationLeaseLostError) {
+        this.observeAttempt(claim, 'LOST_LEASE', startedAtMs);
         return { kind: 'lost-lease', deliveryId: claim.id };
       }
       const failure = input.signal?.aborted
@@ -115,6 +125,7 @@ export class DurableNotificationWorker {
             retryable: failure.retryable,
             now: completedAt,
           });
+          this.observeAttempt(claim, 'DEAD', startedAtMs, failure.code);
           return {
             kind: 'dead',
             deliveryId: claim.id,
@@ -141,6 +152,7 @@ export class DurableNotificationWorker {
           availableAt,
           now: completedAt,
         });
+        this.observeAttempt(claim, 'RETRYING', startedAtMs, failure.code);
         return {
           kind: 'retry-scheduled',
           deliveryId: claim.id,
@@ -148,12 +160,39 @@ export class DurableNotificationWorker {
         };
       } catch (commitError) {
         if (commitError instanceof NotificationLeaseLostError) {
+          this.observeAttempt(claim, 'LOST_LEASE', startedAtMs);
           return { kind: 'lost-lease', deliveryId: claim.id };
         }
+        this.observeAttempt(claim, 'ERROR', startedAtMs);
         throw commitError;
       }
     } finally {
       await heartbeat.stop();
+    }
+  }
+
+  private observeAttempt(
+    claim: NotificationDeliveryClaim,
+    outcome: NotificationDeliveryAttemptOutcome,
+    startedAtMs: number,
+    errorCode?: string,
+  ): void {
+    if (!this.options.observer) return;
+    const endedAtMs = this.durationClock();
+    const durationMs =
+      Number.isFinite(startedAtMs) && Number.isFinite(endedAtMs)
+        ? Math.max(0, endedAtMs - startedAtMs)
+        : 0;
+    try {
+      this.options.observer.onAttemptFinished({
+        channel: claim.channel,
+        outcome,
+        attempt: claim.attempt,
+        durationMs,
+        ...(errorCode ? { errorCode } : {}),
+      });
+    } catch {
+      // Observability must never change delivery semantics.
     }
   }
 

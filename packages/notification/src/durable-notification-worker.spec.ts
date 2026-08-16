@@ -13,6 +13,8 @@ async function setup(options?: {
   maxAttempts?: number;
   handler?: NotificationDeliveryHandler;
   leaseMs?: number;
+  observer?: { onAttemptFinished: ReturnType<typeof vi.fn> };
+  durationClock?: () => number;
 }) {
   const repository = new InMemoryDurableNotificationRepository();
   await repository.enqueue({
@@ -41,6 +43,8 @@ async function setup(options?: {
     },
     random: () => 0.5,
     clock: () => new Date(clock),
+    observer: options?.observer,
+    durationClock: options?.durationClock,
   });
   return {
     repository,
@@ -70,6 +74,70 @@ describe('DurableNotificationWorker', () => {
     expect(await repository.getById('delivery-1')).toMatchObject({
       status: 'DELIVERED',
       providerMessageId: 'provider-1',
+    });
+  });
+
+  it('发布不含业务标识和内容的安全投递观测事件', async () => {
+    const observer = { onAttemptFinished: vi.fn() };
+    const durationClock = vi.fn().mockReturnValueOnce(100).mockReturnValueOnce(125);
+    const { worker } = await setup({ observer, durationClock });
+
+    await worker.runOnce({ workerId: 'worker-1', now: T0 });
+
+    expect(observer.onAttemptFinished).toHaveBeenCalledWith({
+      channel: NotifyChannel.EMAIL,
+      outcome: 'DELIVERED',
+      attempt: 1,
+      durationMs: 25,
+    });
+    const serialized = JSON.stringify(observer.onAttemptFinished.mock.calls);
+    expect(serialized).not.toContain('delivery-1');
+    expect(serialized).not.toContain('delivery-key-1');
+    expect(serialized).not.toContain('notification-row-1');
+  });
+
+  it('观测器失败不会把成功投递改成失败', async () => {
+    const observer = {
+      onAttemptFinished: vi.fn(() => {
+        throw new Error('metrics unavailable');
+      }),
+    };
+    const { repository, worker } = await setup({ observer });
+
+    await expect(
+      worker.runOnce({ workerId: 'worker-1', now: T0 }),
+    ).resolves.toEqual({ kind: 'delivered', deliveryId: 'delivery-1' });
+    await expect(repository.getById('delivery-1')).resolves.toMatchObject({
+      status: 'DELIVERED',
+    });
+  });
+
+  it('持久化投递结果失败时发布安全 ERROR 事件并保留原异常', async () => {
+    const observer = { onAttemptFinished: vi.fn() };
+    const context = await setup({
+      observer,
+      handler: {
+        deliver: vi.fn().mockRejectedValue(
+          new NotificationDeliveryError(
+            'provider unavailable',
+            'PROVIDER_UNAVAILABLE',
+            true,
+          ),
+        ),
+      },
+    });
+    vi.spyOn(context.repository, 'scheduleRetry').mockRejectedValue(
+      new Error('database unavailable'),
+    );
+
+    await expect(
+      context.worker.runOnce({ workerId: 'worker-1', now: T0 }),
+    ).rejects.toThrow('database unavailable');
+    expect(observer.onAttemptFinished).toHaveBeenCalledWith({
+      channel: NotifyChannel.EMAIL,
+      outcome: 'ERROR',
+      attempt: 1,
+      durationMs: expect.any(Number),
     });
   });
 
