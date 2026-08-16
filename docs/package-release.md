@@ -11,7 +11,7 @@ version is not a production release.
 - `@zucker/queue@0.1.0-rc.6`
 - `@zucker/ai@0.1.0-rc.4`
 - `@zucker/logging@0.1.0-rc.2`
-- `@zucker/monitoring@0.1.0-rc.3`
+- `@zucker/monitoring@0.1.0-rc.4`
 - `@zucker/storage@0.1.0-rc.2`
 - `@zucker/credit@0.1.0-rc.4`
 - `@zucker/feature-flags@0.1.0-rc.2`

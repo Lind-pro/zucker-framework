@@ -1,5 +1,6 @@
 import { Controller, Get, Res, SetMetadata } from '@nestjs/common';
 import { HealthCheckService, HealthStatus } from './health-check.service';
+import { getProcessUptime } from './process-uptime';
 
 /** 标记为公开端点，无需认证（与 @zucker/auth 的 @Public() 相同 key） */
 const Public = () => SetMetadata('zucker:auth:isPublic', true);
@@ -22,17 +23,23 @@ export interface HealthOptions {
 @Controller('health')
 @Public()
 export class HealthController {
-  constructor(
-    private readonly healthCheckService: HealthCheckService,
-  ) {}
+  private readonly startedAtMs = Date.now();
+
+  constructor(private readonly healthCheckService: HealthCheckService) {}
 
   @Get()
   async check(@Res() res: any) {
     const result = await this.healthCheckService.checkAll();
     const statusCode = result.status === HealthStatus.DOWN ? 503 : 200;
     res.status(statusCode).json({
-      status: result.status === HealthStatus.UP ? 'up' : result.status === HealthStatus.DEGRADED ? 'degraded' : 'down',
+      status:
+        result.status === HealthStatus.UP
+          ? 'up'
+          : result.status === HealthStatus.DEGRADED
+            ? 'degraded'
+            : 'down',
       checks: this.formatChecks(result.checks),
+      ...getProcessUptime(this.startedAtMs),
       timestamp: result.timestamp.toISOString(),
     });
   }
@@ -44,6 +51,7 @@ export class HealthController {
   live(@Res() res: any) {
     res.status(200).json({
       status: 'up',
+      ...getProcessUptime(this.startedAtMs),
       timestamp: new Date().toISOString(),
     });
   }
@@ -59,17 +67,28 @@ export class HealthController {
     res.status(statusCode).json({
       status: isReady ? 'up' : 'down',
       checks: this.formatChecks(result.checks),
+      ...getProcessUptime(this.startedAtMs),
       timestamp: result.timestamp.toISOString(),
     });
   }
 
   private formatChecks(
-    checks: Array<{ name: string; status: HealthStatus; details: Record<string, unknown>; timestamp: Date }>,
+    checks: Array<{
+      name: string;
+      status: HealthStatus;
+      details: Record<string, unknown>;
+      timestamp: Date;
+    }>,
   ): Record<string, { status: string; details: Record<string, unknown> }> {
     const formatted: Record<string, { status: string; details: Record<string, unknown> }> = {};
     for (const check of checks) {
       formatted[check.name] = {
-        status: check.status === HealthStatus.UP ? 'up' : check.status === HealthStatus.DEGRADED ? 'degraded' : 'down',
+        status:
+          check.status === HealthStatus.UP
+            ? 'up'
+            : check.status === HealthStatus.DEGRADED
+              ? 'degraded'
+              : 'down',
         details: check.details,
       };
     }

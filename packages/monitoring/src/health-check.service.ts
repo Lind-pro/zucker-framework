@@ -47,18 +47,16 @@ export class HealthCheckService {
 
         if (result.status === HealthStatus.DOWN) {
           overallStatus = HealthStatus.DOWN;
-        } else if (
-          result.status === HealthStatus.DEGRADED &&
-          overallStatus !== HealthStatus.DOWN
-        ) {
+        } else if (result.status === HealthStatus.DEGRADED && overallStatus !== HealthStatus.DOWN) {
           overallStatus = HealthStatus.DEGRADED;
         }
       } catch (error) {
-        const err = error instanceof Error ? error : new Error(String(error));
+        const errorType = error instanceof Error ? error.name : 'UnknownError';
+        this.logger.warn(`Health indicator failed: ${indicator.name} (${errorType})`);
         checks.push({
           name: indicator.name,
           status: HealthStatus.DOWN,
-          details: { error: err.message },
+          details: { error: 'Health check failed' },
           timestamp: new Date(),
         });
         overallStatus = HealthStatus.DOWN;

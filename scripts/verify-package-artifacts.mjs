@@ -166,7 +166,7 @@ try {
     `import { DurableWorkerRuntime, PostgresTaskRedriver, PostgresTaskSummaryReader, PostgresTaskTimelineReader, TASK_STATUSES } from '@zucker/task';
 import { BullMqQueueProvider } from '@zucker/queue';
 import { AICallWrapper } from '@zucker/ai';
-import { MetricsRegistry, renderPrometheusMetrics } from '@zucker/monitoring';
+import { getProcessUptime, MetricsRegistry, renderPrometheusMetrics } from '@zucker/monitoring';
 import { WebDavStorage } from '@zucker/storage';
 import { PiiFilter } from '@zucker/logging';
 import { PostgresCreditOperationCoordinator } from '@zucker/credit';
@@ -183,6 +183,7 @@ if (typeof AICallWrapper !== 'function') throw new Error('ai ESM export missing'
 const registry = new MetricsRegistry();
 registry.counter('smoke_total').increment();
 if (!renderPrometheusMetrics(registry).includes('smoke_total 1')) throw new Error('monitoring ESM export missing');
+if (getProcessUptime(1_000, 3_450).uptimeMs !== 2_450) throw new Error('monitoring uptime ESM export missing');
 if (typeof WebDavStorage !== 'function') throw new Error('storage ESM export missing');
 if (new PiiFilter({ sensitiveFields: ['prompt'] }).sanitizeValue({ prompt: 'secret' }).prompt !== '[REDACTED]') throw new Error('logging ESM export missing');
 if (typeof PostgresCreditOperationCoordinator !== 'function') throw new Error('credit coordinator ESM export missing');
@@ -212,6 +213,7 @@ if (typeof ai.AICallWrapper !== 'function') throw new Error('ai CJS export missi
 const registry = new monitoring.MetricsRegistry();
 registry.counter('smoke_total').increment();
 if (!monitoring.renderPrometheusMetrics(registry).includes('smoke_total 1')) throw new Error('monitoring CJS export missing');
+if (monitoring.getProcessUptime(1_000, 3_450).uptimeMs !== 2_450) throw new Error('monitoring uptime CJS export missing');
 if (typeof storage.WebDavStorage !== 'function') throw new Error('storage CJS export missing');
 if (new logging.PiiFilter({ sensitiveFields: ['prompt'] }).sanitizeValue({ prompt: 'secret' }).prompt !== '[REDACTED]') throw new Error('logging CJS export missing');
 if (typeof credit.PostgresCreditOperationCoordinator !== 'function') throw new Error('credit coordinator CJS export missing');
@@ -251,7 +253,7 @@ if (typeof notification.DurableNotificationWorker !== 'function') throw new Erro
     `import { DurableWorkerRuntime, PostgresTaskRedriver, PostgresTaskTimelineReader, TASK_STATUSES } from '@zucker/task';
 import { BullMqQueueProvider } from '@zucker/queue';
 import { AICallWrapper } from '@zucker/ai';
-import { MetricsRegistry, renderPrometheusMetrics } from '@zucker/monitoring';
+import { getProcessUptime, MetricsRegistry, renderPrometheusMetrics } from '@zucker/monitoring';
 import { WebDavStorage } from '@zucker/storage';
 import { PiiFilter } from '@zucker/logging';
 import { PostgresCreditOperationCoordinator } from '@zucker/credit';
@@ -267,6 +269,7 @@ if (typeof AICallWrapper !== 'function') throw new Error('ai pnpm export missing
 const registry = new MetricsRegistry();
 registry.counter('smoke_total').increment();
 if (!renderPrometheusMetrics(registry).includes('smoke_total 1')) throw new Error('monitoring pnpm export missing');
+if (getProcessUptime(1_000, 3_450).uptimeMs !== 2_450) throw new Error('monitoring uptime pnpm export missing');
 if (typeof WebDavStorage !== 'function') throw new Error('storage pnpm export missing');
 if (new PiiFilter({ sensitiveFields: ['prompt'] }).sanitizeValue({ prompt: 'secret' }).prompt !== '[REDACTED]') throw new Error('logging pnpm export missing');
 if (typeof PostgresCreditOperationCoordinator !== 'function') throw new Error('credit coordinator pnpm export missing');
