@@ -30,7 +30,11 @@ export {
 export type { ConfigChangePayload, ConfigEncryptor } from './config.service';
 export { ZuckerConfigModule } from './config.module';
 export { CONFIG_MODULE_OPTIONS } from './config.module';
-export type { ZuckerConfigModuleOptions, ZuckerConfigModuleAsyncOptions, ZuckerConfigModuleOptionsFactory } from './config.module';
+export type {
+  ZuckerConfigModuleOptions,
+  ZuckerConfigModuleAsyncOptions,
+  ZuckerConfigModuleOptionsFactory,
+} from './config.module';
 export { ConfigGuard, CONFIG_SCOPE_REGISTRY } from './config.guard';
 export type { ConfigScopeEntry } from './config.guard';
 export { ConfigScopeManager } from './config-scope-manager';
@@ -47,8 +51,20 @@ export type {
   LayeredConfigContext,
 } from './layered-config.service';
 
-export { FeatureFlagService } from './feature-flags';
-export type { FlagDefinition, FlagRule, FlagRuleType, FlagContext } from './feature-flags';
+export {
+  FeatureFlagEvaluator,
+  FeatureFlagService,
+  defaultFeatureFlagEnvKey,
+} from './feature-flags';
+export type {
+  FeatureFlagDecisionReason,
+  FeatureFlagEnvironmentReader,
+  FeatureFlagEvaluation,
+  FlagDefinition,
+  FlagRule,
+  FlagRuleType,
+  FlagContext,
+} from './feature-flags';
 
 export { ConfigFileWatcher } from './config-watcher';
 export type { ConfigWatcherOptions } from './config-watcher';

@@ -4,7 +4,9 @@
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts",
     "clean": "rm -rf dist",
@@ -13,10 +15,14 @@
   "dependencies": {
     "@zucker/core": "workspace:*",
     "@zucker/crud": "workspace:*",
+    "@zucker/feature-flags": "workspace:*",
     "eventemitter2": "^6.4.9"
   },
   "peerDependencies": {
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0"
   }
 }

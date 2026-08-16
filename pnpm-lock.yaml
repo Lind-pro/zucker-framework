@@ -247,9 +247,16 @@ importers:
       '@zucker/crud':
         specifier: workspace:*
         version: link:../crud
+      '@zucker/feature-flags':
+        specifier: workspace:*
+        version: link:../feature-flags
       eventemitter2:
         specifier: ^6.4.9
         version: 6.4.9
+    devDependencies:
+      '@types/node':
+        specifier: ^25.5.0
+        version: 25.5.0
 
   packages/core:
     dependencies:
@@ -471,6 +478,12 @@ importers:
       zod:
         specifier: ^4.3.6
         version: 4.3.6
+
+  packages/feature-flags:
+    devDependencies:
+      '@types/node':
+        specifier: ^25.5.0
+        version: 25.5.0
 
   packages/form:
     dependencies:
