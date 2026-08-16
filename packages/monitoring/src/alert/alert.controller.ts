@@ -10,8 +10,8 @@ import {
   HttpStatus,
   SetMetadata,
   BadRequestException,
+  NotFoundException,
 } from '@nestjs/common';
-import { NotFoundException } from '@zucker/core';
 import { AlertManagerService } from './alert-manager.service';
 
 /** 标记需要认证但不需要特定权限（等效于 @zucker/auth 的 @Permissions()） */

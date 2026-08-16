@@ -12,9 +12,6 @@
     "clean": "rm -rf dist",
     "lint": "eslint src/"
   },
-  "dependencies": {
-    "@zucker/core": "workspace:*"
-  },
   "devDependencies": {
     "@nestjs/event-emitter": "^3.0.0",
     "@types/node": "^25.5.0"
