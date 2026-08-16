@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { PrometheusExporter } from './prometheus-exporter';
+import { PrometheusExporter, renderPrometheusMetrics } from './prometheus-exporter';
 import { MetricsRegistry } from './metrics-registry';
 
 describe('PrometheusExporter', () => {
@@ -105,6 +105,14 @@ describe('PrometheusExporter', () => {
       const output = exporter.getMetrics();
       expect(output).toBe('\n');
     });
+  });
+
+  it('renders without constructing a Nest controller', () => {
+    registry.counter('worker_tasks_total', 'Worker tasks').increment({ outcome: 'completed' });
+
+    expect(renderPrometheusMetrics(registry)).toContain(
+      'worker_tasks_total{outcome="completed"} 1',
+    );
   });
 
   describe('multiple metric types', () => {

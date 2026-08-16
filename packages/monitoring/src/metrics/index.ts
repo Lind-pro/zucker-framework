@@ -14,4 +14,4 @@ export type { MetricsOptions } from './metrics.decorator';
 export { SystemMetricsCollector } from './system-metrics';
 export type { SystemMetricsOptions } from './system-metrics';
 
-export { PrometheusExporter } from './prometheus-exporter';
+export { PrometheusExporter, renderPrometheusMetrics } from './prometheus-exporter';

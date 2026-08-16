@@ -1,11 +1,15 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { MetricsRegistry, Counter, Gauge, Histogram, Timer, Summary } from './metrics-registry';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { MetricsRegistry, Counter, Histogram, Summary } from './metrics-registry';
 
 describe('MetricsRegistry', () => {
   let registry: MetricsRegistry;
 
   beforeEach(() => {
     registry = new MetricsRegistry();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   describe('Counter', () => {
@@ -121,6 +125,20 @@ describe('MetricsRegistry', () => {
       expect(hist.getCount({ endpoint: '/api' })).toBe(1);
       expect(hist.getCount({ endpoint: '/web' })).toBe(1);
     });
+
+    it('keeps exact aggregates while bounding percentile samples', () => {
+      const hist = new Histogram('bounded', 'Bounded histogram', [5, 10], 3);
+      for (const value of [1, 2, 3, 4, 20]) hist.observe(value);
+
+      expect(hist.getCount()).toBe(5);
+      expect(hist.getSum()).toBe(30);
+      expect(hist.getPercentile(50)).toBe(4);
+      expect(hist.getAll()[0]).toMatchObject({
+        count: 5,
+        sum: 30,
+        bucketCounts: { '5': 4, '10': 4, '+Inf': 5 },
+      });
+    });
   });
 
   describe('Timer', () => {
@@ -157,6 +175,33 @@ describe('MetricsRegistry', () => {
     it('should return 0 for empty summary quantile', () => {
       const summary = registry.summary('empty_sum');
       expect(summary.getQuantile(0.5)).toBe(0);
+    });
+
+    it('expires quantile samples without losing cumulative count and sum', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+      const summary = new Summary('windowed', 'Windowed summary', [0.5], 1_000, 3);
+      summary.observe(10);
+      summary.observe(20);
+      vi.advanceTimersByTime(1_001);
+
+      expect(summary.getQuantile(0.5)).toBe(0);
+      expect(summary.getCount()).toBe(2);
+      expect(summary.getSum()).toBe(30);
+      expect(summary.getAll()[0]).toMatchObject({
+        count: 2,
+        sum: 30,
+        quantileValues: { '0.5': 0 },
+      });
+    });
+
+    it('bounds the active quantile sample window', () => {
+      const summary = new Summary('bounded-summary', 'Bounded summary', [0.5], 60_000, 3);
+      for (const value of [1, 2, 3, 4, 5]) summary.observe(value);
+
+      expect(summary.getQuantile(0.5)).toBe(4);
+      expect(summary.getCount()).toBe(5);
+      expect(summary.getSum()).toBe(15);
     });
   });
 

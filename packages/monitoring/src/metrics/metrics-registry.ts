@@ -104,23 +104,49 @@ export class Gauge {
  * 直方图 — 观测值分布
  */
 export class Histogram {
-  private observations = new Map<string, number[]>();
+  private observations = new Map<
+    string,
+    {
+      count: number;
+      sum: number;
+      bucketCounts: number[];
+      samples: number[];
+    }
+  >();
 
   constructor(
     public readonly name: string,
     public readonly description: string,
     public readonly buckets: number[] = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
-  ) {}
+    private readonly maxSamples = 10_000,
+  ) {
+    if (!Number.isInteger(maxSamples) || maxSamples <= 0) {
+      throw new Error('Histogram maxSamples must be a positive integer');
+    }
+  }
 
   observe(value: number, labels: MetricLabels = {}): void {
     const key = this.labelsKey(labels);
-    const arr = this.observations.get(key) ?? [];
-    arr.push(value);
-    this.observations.set(key, arr);
+    const observation = this.observations.get(key) ?? {
+      count: 0,
+      sum: 0,
+      bucketCounts: this.buckets.map(() => 0),
+      samples: [],
+    };
+    observation.count += 1;
+    observation.sum += value;
+    for (let index = 0; index < this.buckets.length; index += 1) {
+      if (value <= this.buckets[index]) observation.bucketCounts[index] += 1;
+    }
+    observation.samples.push(value);
+    if (observation.samples.length > this.maxSamples) {
+      observation.samples.splice(0, observation.samples.length - this.maxSamples);
+    }
+    this.observations.set(key, observation);
   }
 
   getPercentile(percentile: number, labels: MetricLabels = {}): number {
-    const values = this.observations.get(this.labelsKey(labels)) ?? [];
+    const values = this.observations.get(this.labelsKey(labels))?.samples ?? [];
     if (values.length === 0) return 0;
     const sorted = [...values].sort((a, b) => a - b);
     const idx = Math.ceil((percentile / 100) * sorted.length) - 1;
@@ -128,25 +154,24 @@ export class Histogram {
   }
 
   getCount(labels: MetricLabels = {}): number {
-    return (this.observations.get(this.labelsKey(labels)) ?? []).length;
+    return this.observations.get(this.labelsKey(labels))?.count ?? 0;
   }
 
   getSum(labels: MetricLabels = {}): number {
-    return (this.observations.get(this.labelsKey(labels)) ?? []).reduce((a, b) => a + b, 0);
+    return this.observations.get(this.labelsKey(labels))?.sum ?? 0;
   }
 
   getAll(): Array<{ labels: MetricLabels; count: number; sum: number; bucketCounts: Record<string, number> }> {
-    return Array.from(this.observations.entries()).map(([key, values]) => {
-      const sorted = [...values].sort((a, b) => a - b);
+    return Array.from(this.observations.entries()).map(([key, observation]) => {
       const bucketCounts: Record<string, number> = {};
-      for (const b of this.buckets) {
-        bucketCounts[String(b)] = sorted.filter((v) => v <= b).length;
+      for (let index = 0; index < this.buckets.length; index += 1) {
+        bucketCounts[String(this.buckets[index])] = observation.bucketCounts[index];
       }
-      bucketCounts['+Inf'] = values.length;
+      bucketCounts['+Inf'] = observation.count;
       return {
         labels: this.parseKey(key),
-        count: values.length,
-        sum: values.reduce((a, b) => a + b, 0),
+        count: observation.count,
+        sum: observation.sum,
         bucketCounts,
       };
     });
@@ -202,32 +227,51 @@ export class Timer {
  * Summary — 计算分位数（类似 Prometheus summary 类型）
  */
 export class Summary {
-  private observations = new Map<string, number[]>();
-  private maxAge: number;
+  private observations = new Map<
+    string,
+    {
+      count: number;
+      sum: number;
+      samples: Array<{ value: number; observedAt: number }>;
+    }
+  >();
 
   constructor(
     public readonly name: string,
     public readonly description: string,
     public readonly quantiles: number[] = [0.5, 0.9, 0.95, 0.99],
     /** 观测值最大保留时间（毫秒），默认 10 分钟 */
-    maxAgeMs = 600000,
+    private readonly maxAgeMs = 600_000,
+    private readonly maxSamples = 10_000,
   ) {
-    this.maxAge = maxAgeMs;
+    if (!Number.isFinite(maxAgeMs) || maxAgeMs <= 0) {
+      throw new Error('Summary maxAgeMs must be greater than zero');
+    }
+    if (!Number.isInteger(maxSamples) || maxSamples <= 0) {
+      throw new Error('Summary maxSamples must be a positive integer');
+    }
   }
 
   observe(value: number, labels: MetricLabels = {}): void {
     const key = this.labelsKey(labels);
-    const arr = this.observations.get(key) ?? [];
-    arr.push(value);
-    // 限制内存：保留最近 10000 个观测值
-    if (arr.length > 10000) {
-      arr.splice(0, arr.length - 10000);
-    }
-    this.observations.set(key, arr);
+    const now = Date.now();
+    const observation = this.observations.get(key) ?? {
+      count: 0,
+      sum: 0,
+      samples: [],
+    };
+    observation.count += 1;
+    observation.sum += value;
+    observation.samples.push({ value, observedAt: now });
+    this.prune(observation.samples, now);
+    this.observations.set(key, observation);
   }
 
   getQuantile(quantile: number, labels: MetricLabels = {}): number {
-    const values = this.observations.get(this.labelsKey(labels)) ?? [];
+    const observation = this.observations.get(this.labelsKey(labels));
+    if (!observation) return 0;
+    this.prune(observation.samples, Date.now());
+    const values = observation.samples.map(({ value }) => value);
     if (values.length === 0) return 0;
     const sorted = [...values].sort((a, b) => a - b);
     const idx = Math.ceil(quantile * sorted.length) - 1;
@@ -235,11 +279,11 @@ export class Summary {
   }
 
   getCount(labels: MetricLabels = {}): number {
-    return (this.observations.get(this.labelsKey(labels)) ?? []).length;
+    return this.observations.get(this.labelsKey(labels))?.count ?? 0;
   }
 
   getSum(labels: MetricLabels = {}): number {
-    return (this.observations.get(this.labelsKey(labels)) ?? []).reduce((a, b) => a + b, 0);
+    return this.observations.get(this.labelsKey(labels))?.sum ?? 0;
   }
 
   getAll(): Array<{
@@ -248,20 +292,42 @@ export class Summary {
     sum: number;
     quantileValues: Record<string, number>;
   }> {
-    return Array.from(this.observations.entries()).map(([key, values]) => {
-      const sorted = [...values].sort((a, b) => a - b);
+    const now = Date.now();
+    return Array.from(this.observations.entries()).map(([key, observation]) => {
+      this.prune(observation.samples, now);
+      const sorted = observation.samples
+        .map(({ value }) => value)
+        .sort((a, b) => a - b);
       const quantileValues: Record<string, number> = {};
       for (const q of this.quantiles) {
-        const idx = Math.ceil(q * sorted.length) - 1;
-        quantileValues[String(q)] = sorted[Math.max(0, idx)];
+        if (sorted.length === 0) {
+          quantileValues[String(q)] = 0;
+        } else {
+          const idx = Math.ceil(q * sorted.length) - 1;
+          quantileValues[String(q)] = sorted[Math.max(0, idx)];
+        }
       }
       return {
         labels: this.parseKey(key),
-        count: values.length,
-        sum: values.reduce((a, b) => a + b, 0),
+        count: observation.count,
+        sum: observation.sum,
         quantileValues,
       };
     });
+  }
+
+  private prune(
+    samples: Array<{ value: number; observedAt: number }>,
+    now: number,
+  ): void {
+    const cutoff = now - this.maxAgeMs;
+    let expired = 0;
+    while (expired < samples.length && samples[expired].observedAt < cutoff) {
+      expired += 1;
+    }
+    const excess = samples.length - expired - this.maxSamples;
+    const removeCount = expired + Math.max(0, excess);
+    if (removeCount > 0) samples.splice(0, removeCount);
   }
 
   private labelsKey(labels: MetricLabels): string {

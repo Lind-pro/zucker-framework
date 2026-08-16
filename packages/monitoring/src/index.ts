@@ -41,6 +41,7 @@ export {
   SystemMetricsCollector,
   type SystemMetricsOptions,
   PrometheusExporter,
+  renderPrometheusMetrics,
 } from './metrics/index';
 
 export {
