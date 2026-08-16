@@ -69,51 +69,30 @@ describe('CompositeNotifierService', () => {
     });
   });
 
-  describe('timeout', () => {
-    it('should timeout when provider takes too long', async () => {
+  describe('provider completion', () => {
+    it('should not impose a hidden timeout on a slow provider', async () => {
       vi.useFakeTimers();
-      const slowProvider = createProvider(
-        'EMAIL' as NotifyChannel,
-        vi.fn().mockImplementation(() => new Promise(() => {})), // never resolves
-      );
-      const strategy: FallbackStrategy = {
-        maxAttempts: 1,
-        channelPriority: ['EMAIL' as NotifyChannel],
-        retryDelayMs: 0,
-      };
-      const service = new CompositeNotifierService([slowProvider], historyService, strategy);
-      const sendPromise = service.send(makeMessage());
-      vi.advanceTimersByTime(10_000);
-      await expect(sendPromise).rejects.toThrow('Provider send timeout after 10000ms');
-      vi.useRealTimers();
-    });
+      try {
+        const slowProvider = createProvider(
+          'EMAIL' as NotifyChannel,
+          vi.fn().mockImplementation(
+            () => new Promise<void>((resolve) => setTimeout(resolve, 12_000)),
+          ),
+        );
+        const strategy: FallbackStrategy = {
+          maxAttempts: 1,
+          channelPriority: ['EMAIL' as NotifyChannel],
+          retryDelayMs: 0,
+        };
+        const service = new CompositeNotifierService([slowProvider], historyService, strategy);
+        const sendPromise = service.send(makeMessage());
 
-    it('should clear timeout timer after successful send', async () => {
-      const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
-      const emailProvider = createProvider('EMAIL' as NotifyChannel);
-      const strategy: FallbackStrategy = {
-        maxAttempts: 1,
-        channelPriority: ['EMAIL' as NotifyChannel],
-        retryDelayMs: 0,
-      };
-      const service = new CompositeNotifierService([emailProvider], historyService, strategy);
-      await service.send(makeMessage());
-      expect(clearTimeoutSpy).toHaveBeenCalled();
-      clearTimeoutSpy.mockRestore();
-    });
+        await vi.advanceTimersByTimeAsync(12_000);
 
-    it('should clear timeout timer after provider failure', async () => {
-      const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
-      const failProvider = createProvider('EMAIL' as NotifyChannel, vi.fn().mockRejectedValue(new Error('boom')));
-      const strategy: FallbackStrategy = {
-        maxAttempts: 1,
-        channelPriority: ['EMAIL' as NotifyChannel],
-        retryDelayMs: 0,
-      };
-      const service = new CompositeNotifierService([failProvider], historyService, strategy);
-      await service.send(makeMessage()).catch(() => {});
-      expect(clearTimeoutSpy).toHaveBeenCalled();
-      clearTimeoutSpy.mockRestore();
+        await expect(sendPromise).resolves.toMatchObject({ success: true });
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 

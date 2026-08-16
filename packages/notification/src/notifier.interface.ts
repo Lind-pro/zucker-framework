@@ -148,7 +148,7 @@ export function convertVariableValue(
   def: VariableDefinition,
   value: unknown,
 ): string {
-  let val = value ?? def.defaultValue ?? undefined;
+  const val = value ?? def.defaultValue ?? undefined;
 
   if (def.required && (val === undefined || val === null || val === '')) {
     throw new Error(`Template variable '${def.id}' (${def.name}) is required`);

@@ -9,6 +9,20 @@ import type {
   NotifierConfig,
   ConfigMetadataItem,
 } from '../notifier.interface';
+import { notificationDeliveryLog } from '../delivery-log';
+
+interface ResendClient {
+  emails: {
+    send(input: {
+      from: string;
+      to: string[];
+      subject: string;
+      html: string;
+    }): Promise<{ error?: { message?: string } | null }>;
+  };
+}
+
+type ResendConstructor = new (apiKey: string) => ResendClient;
 
 export interface ResendEmailProviderOptions {
   apiKey: string;
@@ -23,7 +37,7 @@ export interface ResendEmailProviderOptions {
 export class ResendEmailProvider implements SimpleNotifierProvider {
   private readonly logger = new Logger(ResendEmailProvider.name);
   readonly channel = 'EMAIL' as NotifyChannel;
-  private client: any;
+  private client?: ResendClient;
   private readonly from: string;
 
   constructor(options: ResendEmailProviderOptions) {
@@ -33,8 +47,12 @@ export class ResendEmailProvider implements SimpleNotifierProvider {
 
   private async initClient(apiKey: string): Promise<void> {
     try {
-      const mod = await import('resend' as string);
+      const mod = (await import('resend' as string)) as unknown as {
+        Resend?: ResendConstructor;
+        default?: ResendConstructor;
+      };
       const Resend = mod.Resend ?? mod.default;
+      if (!Resend) throw new Error('Resend constructor is unavailable');
       this.client = new Resend(apiKey);
       this.logger.log('Resend email service initialized');
     } catch {
@@ -59,14 +77,14 @@ export class ResendEmailProvider implements SimpleNotifierProvider {
     });
 
     if (error) {
-      throw new Error(`Resend API error: ${error.message}`);
+      throw new Error(`Resend API error: ${error.message ?? 'unknown'}`);
     }
 
-    this.logger.log(`Email sent via Resend: to=${to.join(',')}, subject=${message.subject}`);
+    this.logger.log(notificationDeliveryLog('EMAIL', 'resend', to));
   }
 
   async close(): Promise<void> {
-    this.client = null;
+    this.client = undefined;
   }
 }
 

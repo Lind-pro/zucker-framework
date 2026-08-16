@@ -1,26 +1,39 @@
 import {
   Module,
-  DynamicModule,
   Global,
   Inject,
-  OnModuleDestroy,
+  type DynamicModule,
+  type OnModuleDestroy,
   type Provider,
   type Type,
   type InjectionToken,
   type OptionalFactoryDependency,
 } from '@nestjs/common';
 import { TemplateService } from './template.service';
-import { EmailProvider, EmailNotifierProvider } from './providers/email';
-import type { EmailProviderOptions } from './providers/email';
-import { WebhookProvider, WebhookNotifierProvider } from './providers/webhook';
-import type { WebhookProviderOptions } from './providers/webhook';
+import {
+  EmailProvider,
+  EmailNotifierProvider,
+  type EmailProviderOptions,
+} from './providers/email';
+import {
+  WebhookProvider,
+  WebhookNotifierProvider,
+  type WebhookProviderOptions,
+} from './providers/webhook';
 import { SmsNotifierAdapter } from './providers/sms-notifier';
 import { SmsNotifierProvider } from './providers/sms/sms-notifier.provider';
-import { AliyunSmsProvider } from './providers/sms/aliyun-sms.provider';
-import type { AliyunSmsOptions } from './providers/sms/aliyun-sms.provider';
-import { TencentSmsProvider } from './providers/sms/tencent-sms.provider';
-import type { TencentSmsOptions } from './providers/sms/tencent-sms.provider';
-import type { SimpleNotifierProvider, NotifierProvider, NotifyChannel } from './notifier.interface';
+import {
+  AliyunSmsProvider,
+  type AliyunSmsOptions,
+} from './providers/sms/aliyun-sms.provider';
+import {
+  TencentSmsProvider,
+  type TencentSmsOptions,
+} from './providers/sms/tencent-sms.provider';
+import type {
+  SimpleNotifierProvider,
+  NotifierProvider,
+} from './notifier.interface';
 import { CompositeNotifierService } from './composite-notifier.service';
 import { NotifierManagerService } from './notifier-manager.service';
 import { NotifyHistoryService } from './notify-history.service';
@@ -184,10 +197,16 @@ export class ZuckerNotificationModule implements OnModuleDestroy {
         },
       ];
     }
+    const factoryToken = options.useClass ?? options.useExisting;
+    if (!factoryToken) {
+      throw new Error(
+        'NotificationModuleAsyncOptions requires useFactory, useClass, or useExisting',
+      );
+    }
     const optionsProvider: Provider = {
       provide: NOTIFICATION_MODULE_OPTIONS,
       useFactory: async (factory: NotificationModuleOptionsFactory) => factory.createNotificationOptions(),
-      inject: [options.useClass ?? options.useExisting!],
+      inject: [factoryToken],
     };
     if (options.useClass) {
       return [{ provide: options.useClass, useClass: options.useClass }, optionsProvider];

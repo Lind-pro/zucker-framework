@@ -1,6 +1,5 @@
 import { Injectable, Logger, Inject, Optional } from '@nestjs/common';
 import type {
-  Notifier,
   NotifyMessage,
   NotifyChannel,
   NotifyResult,
@@ -8,6 +7,7 @@ import type {
 } from './notifier.interface';
 import { NOTIFIER_PROVIDERS } from './notification.module';
 import { NotifyHistoryService } from './notify-history.service';
+import { notificationFailureCode } from './delivery-log';
 
 export interface FallbackStrategy {
   /** Maximum retry attempts (including first attempt) */
@@ -47,7 +47,9 @@ export class CompositeNotifierService {
 
   constructor(
     @Inject(NOTIFIER_PROVIDERS) private readonly providers: SimpleNotifierProvider[],
-    @Optional() private readonly historyService?: NotifyHistoryService,
+    @Optional()
+    @Inject(NotifyHistoryService)
+    private readonly historyService?: NotifyHistoryService,
     @Optional() private readonly strategy: FallbackStrategy = DEFAULT_FALLBACK_STRATEGY,
   ) {
     for (const provider of providers) {
@@ -85,17 +87,7 @@ export class CompositeNotifierService {
         }
 
         try {
-          const sendPromise = provider.send({ ...message, channel, to: recipients.join(',') });
-          const timeoutMs = 10000; // 10秒超时
-          let timer: ReturnType<typeof setTimeout> | undefined;
-          const timeoutPromise = new Promise<never>((_, reject) => {
-            timer = setTimeout(() => reject(new Error(`Provider send timeout after ${timeoutMs}ms`)), timeoutMs);
-          });
-          try {
-            await Promise.race([sendPromise, timeoutPromise]);
-          } finally {
-            if (timer !== undefined) clearTimeout(timer);
-          }
+          await provider.send({ ...message, channel, to: recipients.join(',') });
 
           const result: NotifyResult = {
             success: true,
@@ -110,7 +102,7 @@ export class CompositeNotifierService {
         } catch (err) {
           lastError = err instanceof Error ? err : new Error(String(err));
           this.logger.warn(
-            `Failed to send via ${channel} (attempt ${attempts}): ${lastError.message}`,
+            `Notification failed: channel=${channel}, attempt=${attempts}, code=${notificationFailureCode(err)}`,
           );
 
           const failResult: NotifyResult = {

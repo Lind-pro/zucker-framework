@@ -1,28 +1,38 @@
 {
   "name": "@zucker/notification",
-  "version": "0.0.1",
+  "version": "0.1.0-rc.1",
+  "description": "Notification providers and durable delivery primitives for Zucker applications",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
-  "files": ["dist"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts",
     "clean": "rm -rf dist",
-    "lint": "eslint src/"
+    "lint": "eslint src/",
+    "test": "vitest run --root ../.. packages/notification/src"
   },
   "dependencies": {
-    "@zucker/core": "workspace:*",
     "nodemailer": "^6.9.0"
   },
   "devDependencies": {
+    "@types/node": "^25.5.0",
+    "@zucker/core": "workspace:*",
     "@types/nodemailer": "^6.4.0"
   },
   "peerDependencies": {
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0",
-    "@zucker/event": "workspace:*"
+    "@zucker/core": ">=0.1.0-rc.2 <0.2.0"
   },
-  "peerDependenciesMeta": {
-    "@zucker/event": { "optional": true }
-  }
+  "license": "Apache-2.0"
 }

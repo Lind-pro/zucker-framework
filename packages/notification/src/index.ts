@@ -26,7 +26,10 @@ export type {
 } from './notifier.interface';
 
 export { NotifierEventDispatcher, NotifierEventTopics } from './notifier-event-dispatcher';
-export type { NotifierEvent } from './notifier-event-dispatcher';
+export type {
+  NotificationEventBus,
+  NotifierEvent,
+} from './notifier-event-dispatcher';
 
 export { EmailProvider, EmailNotifierProvider } from './providers/email';
 export type { EmailProviderOptions } from './providers/email';
@@ -75,3 +78,29 @@ export type { NotificationDedup } from './dedup.service';
 
 export { WebhookRegistry } from './webhook-registry';
 export type { WebhookDefinition, DeliveryRecord, DeliveryStatus } from './webhook-registry';
+
+export {
+  DEFAULT_NOTIFICATION_RETRY_POLICY,
+  NotificationDeliveryError,
+  NotificationIdempotencyConflictError,
+  NotificationLeaseLostError,
+  classifyNotificationDeliveryError,
+  notificationRetryDelayMs,
+} from './durable-delivery';
+export type {
+  NotificationDeliveryClaim,
+  NotificationDeliveryErrorClassifier,
+  NotificationDeliveryFailure,
+  NotificationDeliveryHandler,
+  NotificationDeliveryInput,
+  NotificationDeliveryRecord,
+  NotificationDeliveryRepository,
+  NotificationDeliveryStatus,
+  NotificationRetryPolicy,
+} from './durable-delivery';
+export { InMemoryDurableNotificationRepository } from './in-memory-durable-delivery.repository';
+export { DurableNotificationWorker } from './durable-notification-worker';
+export type {
+  DurableNotificationWorkerOptions,
+  NotificationWorkerOutcome,
+} from './durable-notification-worker';

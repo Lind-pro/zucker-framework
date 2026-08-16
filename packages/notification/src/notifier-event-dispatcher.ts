@@ -1,11 +1,15 @@
 import { Logger } from '@nestjs/common';
-import type { TopicEventBus } from '@zucker/event';
 import type {
   Notifier,
   NotifyChannel,
   NotifyMessage,
   NotifyResult,
 } from './notifier.interface';
+import { notificationFailureCode } from './delivery-log';
+
+export interface NotificationEventBus {
+  publish(topic: string, payload: unknown): Promise<unknown>;
+}
 
 /**
  * Notification event payload — mirrors jetlinks SerializableNotifierEvent.
@@ -18,8 +22,8 @@ export interface NotifierEvent {
   success: boolean;
   /** Error type name on failure */
   errorType?: string;
-  /** Error details on failure */
-  cause?: string;
+  /** Low-cardinality error code safe for metrics and audit events */
+  errorCode?: string;
   /** Notifier instance ID */
   notifierId: string;
   /** Notification channel type */
@@ -28,10 +32,8 @@ export interface NotifierEvent {
   provider: string;
   /** Template ID if used */
   templateId?: string;
-  /** Variables/context passed to the notification */
-  context: Record<string, unknown>;
-  /** Recipient */
-  to?: string;
+  /** Number of recipients without exposing their identifiers */
+  recipientCount: number;
   /** Timestamp of the event */
   timestamp: Date;
 }
@@ -63,9 +65,9 @@ export const NotifierEventTopics = {
 export class NotifierEventDispatcher implements Notifier {
   private readonly logger = new Logger(NotifierEventDispatcher.name);
   private readonly target: Notifier;
-  private readonly eventBus?: TopicEventBus;
+  private readonly eventBus?: NotificationEventBus;
 
-  constructor(target: Notifier, eventBus?: TopicEventBus) {
+  constructor(target: Notifier, eventBus?: NotificationEventBus) {
     this.target = target;
     this.eventBus = eventBus;
   }
@@ -83,7 +85,7 @@ export class NotifierEventDispatcher implements Notifier {
   }
 
   async send(message: NotifyMessage): Promise<NotifyResult> {
-    const to = Array.isArray(message.to) ? message.to.join(',') : message.to;
+    const recipientCount = Array.isArray(message.to) ? message.to.length : 1;
 
     try {
       const result = await this.target.send(message);
@@ -95,8 +97,7 @@ export class NotifierEventDispatcher implements Notifier {
         channel: this.channel,
         provider: this.provider,
         templateId: message.templateId,
-        context: message.variables,
-        to,
+        recipientCount,
         timestamp: new Date(),
       });
 
@@ -108,13 +109,12 @@ export class NotifierEventDispatcher implements Notifier {
       await this.emitEvent({
         success: false,
         errorType: error.constructor.name,
-        cause: error.message,
+        errorCode: notificationFailureCode(error),
         notifierId: this.notifierId,
         channel: this.channel,
         provider: this.provider,
         templateId: message.templateId,
-        context: message.variables,
-        to,
+        recipientCount,
         timestamp: new Date(),
       });
 

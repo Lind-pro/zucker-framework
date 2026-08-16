@@ -1,3 +1,4 @@
+/* eslint-disable no-template-curly-in-string -- placeholders are test fixtures */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { TemplateService } from './template.service';
 import type { VariableDefinition, NotifyChannel } from './notifier.interface';

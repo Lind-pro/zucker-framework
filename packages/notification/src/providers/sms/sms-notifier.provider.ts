@@ -7,10 +7,14 @@ import type {
   NotifierConfig,
   ConfigMetadataItem,
 } from '../../notifier.interface';
-import { AliyunSmsProvider } from './aliyun-sms.provider';
-import type { AliyunSmsOptions } from './aliyun-sms.provider';
-import { TencentSmsProvider } from './tencent-sms.provider';
-import type { TencentSmsOptions } from './tencent-sms.provider';
+import {
+  AliyunSmsProvider,
+  type AliyunSmsOptions,
+} from './aliyun-sms.provider';
+import {
+  TencentSmsProvider,
+  type TencentSmsOptions,
+} from './tencent-sms.provider';
 import type { SmsProvider } from './sms.interface';
 import { SmsNotifierAdapter } from '../sms-notifier';
 

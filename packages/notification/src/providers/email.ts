@@ -10,6 +10,7 @@ import type {
   NotifierConfig,
   ConfigMetadataItem,
 } from '../notifier.interface';
+import { notificationDeliveryLog } from '../delivery-log';
 
 export interface EmailProviderOptions {
   host: string;
@@ -42,7 +43,7 @@ export class EmailProvider implements SimpleNotifierProvider {
       secure: options.secure ?? false,
       auth: options.auth,
     });
-    this.logger.log(`Email service initialized: ${options.host}:${options.port}`);
+    this.logger.log('Email service initialized');
   }
 
   async send(message: NotifyMessage): Promise<void> {
@@ -53,7 +54,7 @@ export class EmailProvider implements SimpleNotifierProvider {
       subject: message.subject ?? '',
       html: message.content ?? '',
     });
-    this.logger.log(`Email sent: to=${recipients}, subject=${message.subject}`);
+    this.logger.log(notificationDeliveryLog('EMAIL', 'smtp', message.to));
   }
 
   async close(): Promise<void> {

@@ -1,12 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { parseTemplate, NotFoundException, type ParseTemplateOptions } from '@zucker/core';
-import type {
-  NotifyTemplate,
-  NotifyChannel,
-  VariableDefinition,
-  NotifierConfig,
+import {
+  convertVariableValue,
+  renderVariableMap,
+  type NotifyTemplate,
+  type NotifyChannel,
+  type VariableDefinition,
 } from './notifier.interface';
-import { convertVariableValue, renderVariableMap } from './notifier.interface';
 
 /**
  * Template properties for creating/updating templates.

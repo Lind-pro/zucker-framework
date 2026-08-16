@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { NotifierManagerService, CompositeNotifyConfigManager } from './notifier-manager.service';
-import type { NotifyConfigManager } from './notifier-manager.service';
+import {
+  NotifierManagerService,
+  CompositeNotifyConfigManager,
+  type NotifyConfigManager,
+} from './notifier-manager.service';
 import type { Notifier, NotifierProvider, NotifierConfig, NotifyChannel } from './notifier.interface';
 
 function createMockNotifier(id: string, channel: NotifyChannel = 'EMAIL' as NotifyChannel): Notifier {
@@ -73,7 +76,7 @@ describe('NotifierManagerService', () => {
         provider: 'test',
         configuration: {},
       };
-      const first = await service.createNotifier(config);
+      await service.createNotifier(config);
       await service.createNotifier(config);
       // The first notifier's close should have been called via the dispatcher
       // (NotifierEventDispatcher wraps, but delegates close)

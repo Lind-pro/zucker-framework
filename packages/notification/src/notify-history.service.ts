@@ -102,7 +102,7 @@ export class NotifyHistoryService {
 
     if (!result.success) {
       this.logger.warn(
-        `Notification failed: channel=${record.channel}, to=${record.to}, error=${record.error}`,
+        `Notification delivery failed: channel=${record.channel}, retryCount=${record.retryCount}`,
       );
     }
   }
@@ -119,7 +119,7 @@ export class NotifyHistoryService {
     limit?: number;
     offset?: number;
   }): NotifyHistoryRecord[] {
-    let results = this.records.filter((r) => {
+    const results = this.records.filter((r) => {
       if (filter.channel && r.channel !== filter.channel) return false;
       if (filter.to && r.to !== filter.to) return false;
       if (filter.success !== undefined && r.success !== filter.success) return false;

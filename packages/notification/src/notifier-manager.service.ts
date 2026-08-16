@@ -1,6 +1,11 @@
-import { Injectable, Logger, Inject, Optional, OnModuleDestroy } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  Inject,
+  Optional,
+  type OnModuleDestroy,
+} from '@nestjs/common';
 import { NotFoundException, BusinessException } from '@zucker/core';
-import type { TopicEventBus } from '@zucker/event';
 import type {
   Notifier,
   NotifierProvider,
@@ -8,7 +13,11 @@ import type {
   NotifyChannel,
   NotifyType,
 } from './notifier.interface';
-import { NotifierEventDispatcher, NotifierEventTopics } from './notifier-event-dispatcher';
+import {
+  NotifierEventDispatcher,
+  NotifierEventTopics,
+  type NotificationEventBus,
+} from './notifier-event-dispatcher';
 import { NOTIFIER_PROVIDER_REGISTRY, NOTIFY_CONFIG_MANAGER, TOPIC_EVENT_BUS_TOKEN } from './notification.tokens';
 
 /**
@@ -94,7 +103,7 @@ export class NotifierManagerService implements OnModuleDestroy {
     private readonly configManager?: NotifyConfigManager,
     @Optional()
     @Inject(TOPIC_EVENT_BUS_TOKEN)
-    private readonly eventBus?: TopicEventBus,
+    private readonly eventBus?: NotificationEventBus,
   ) {}
 
   /**
