@@ -1,10 +1,26 @@
-name: Release
+name: Release framework RC packages
 
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
+    inputs:
+      registry_url:
+        description: Private npm-compatible registry URL
+        required: true
+        type: string
+      dist_tag:
+        description: npm distribution tag
+        required: true
+        default: rc
+        type: string
+      dry_run:
+        description: Verify publish metadata without uploading packages
+        required: true
+        default: true
+        type: boolean
 
-concurrency: ${{ github.workflow }}-${{ github.ref }}
+concurrency:
+  group: framework-rc-release
+  cancel-in-progress: false
 
 env:
   NODE_VERSION: '20'
@@ -12,11 +28,11 @@ env:
 
 jobs:
   release:
-    name: Version & Publish
+    name: Verify and publish immutable RCs
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
 
@@ -27,23 +43,41 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
-          registry-url: 'https://registry.npmjs.org'
+          cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build all packages
-        run: pnpm build
+      - name: Build, test, and lint
+        run: |
+          pnpm build
+          pnpm test
+          pnpm lint
 
-      - name: Create Release Pull Request or Publish
-        id: changesets
-        uses: changesets/action@v1
+      - name: Build audited RC bundle
+        run: pnpm pack:rc
+
+      - name: Upload audited bundle
+        uses: actions/upload-artifact@v4
         with:
-          version: pnpm version-packages
-          publish: pnpm release
-          title: 'chore: version packages'
-          commit: 'chore: version packages'
+          name: zucker-framework-rc-${{ github.sha }}
+          path: artifacts/rc
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Validate npm publish metadata
+        if: inputs.dry_run
+        run: >-
+          pnpm publish:rc --
+          --dry-run
+          --registry=${{ inputs.registry_url }}
+          --tag=${{ inputs.dist_tag }}
+
+      - name: Publish immutable RCs
+        if: ${{ !inputs.dry_run }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.PACKAGE_REGISTRY_TOKEN || secrets.NPM_TOKEN }}
+        run: >-
+          pnpm publish:rc --
+          --registry=${{ inputs.registry_url }}
+          --tag=${{ inputs.dist_tag }}

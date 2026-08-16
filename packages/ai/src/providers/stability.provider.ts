@@ -1,10 +1,11 @@
-import type {
-  MediaProvider,
-  MediaGenerationConfig,
-  MediaGenerationResult,
-  MediaModelInfo,
+import {
+  MediaType,
+  type MediaProvider,
+  type MediaGenerationConfig,
+  type MediaGenerationResult,
+  type MediaModelInfo,
 } from '../media.interface';
-import { MediaType } from '../media.interface';
+import { providerRequestSignal } from '../abort-signal';
 
 const STABILITY_API_BASE = 'https://api.stability.ai';
 
@@ -18,10 +19,7 @@ export class StabilityProvider implements MediaProvider {
   name = 'Stability AI';
   supportedTypes = [MediaType.IMAGE];
 
-  async generate(
-    prompt: string,
-    config: MediaGenerationConfig,
-  ): Promise<MediaGenerationResult> {
+  async generate(prompt: string, config: MediaGenerationConfig): Promise<MediaGenerationResult> {
     const modelId = config.modelId || 'sd3.5-large';
     const baseURL = config.baseURL || STABILITY_API_BASE;
     const startTime = Date.now();
@@ -37,9 +35,7 @@ export class StabilityProvider implements MediaProvider {
         Accept: 'application/json',
       },
       body,
-      signal: config.timeoutMs
-        ? AbortSignal.timeout(config.timeoutMs)
-        : undefined,
+      signal: providerRequestSignal(config.signal, config.timeoutMs),
     });
 
     if (!response.ok) {

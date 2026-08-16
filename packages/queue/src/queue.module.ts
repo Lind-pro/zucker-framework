@@ -1,7 +1,7 @@
 import {
   Module,
-  DynamicModule,
   Global,
+  type DynamicModule,
   type Provider,
   type Type,
   type InjectionToken,
@@ -78,10 +78,14 @@ export class ZuckerQueueModule {
         },
       ];
     }
+    const factoryType = options.useClass ?? options.useExisting;
+    if (!factoryType) {
+      throw new Error('QueueModuleAsyncOptions requires useFactory, useClass, or useExisting');
+    }
     const optionsProvider: Provider = {
       provide: QUEUE_MODULE_OPTIONS,
       useFactory: async (factory: QueueModuleOptionsFactory) => factory.createQueueOptions(),
-      inject: [options.useClass ?? options.useExisting!],
+      inject: [factoryType],
     };
     if (options.useClass) {
       return [{ provide: options.useClass, useClass: options.useClass }, optionsProvider];

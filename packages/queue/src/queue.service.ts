@@ -1,5 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { QUEUE_PROVIDER, type QueueProvider, type Job, type JobOptions, type QueueStats } from './queue.interface';
+import {
+  QUEUE_PROVIDER,
+  type QueueProvider,
+  type Job,
+  type JobOptions,
+  type QueueStats,
+} from './queue.interface';
 
 /**
  * QueueService — 队列管理服务，对 QueueProvider 做薄封装，
@@ -17,13 +23,28 @@ export class QueueService {
     return this.provider.add(queueName, data, options);
   }
 
+  /** Ensure a stable transport job exists for durable queued work. */
+  ensure<T>(queueName: string, data: T, options: JobOptions & { jobId: string }): Promise<Job<T>> {
+    return this.provider.ensure(queueName, data, options);
+  }
+
   /** 添加延迟任务 */
-  addDelayed<T>(queueName: string, data: T, delayMs: number, options?: JobOptions): Promise<Job<T>> {
+  addDelayed<T>(
+    queueName: string,
+    data: T,
+    delayMs: number,
+    options?: JobOptions,
+  ): Promise<Job<T>> {
     return this.provider.addDelayed(queueName, data, delayMs, options);
   }
 
   /** 添加定时任务 */
-  addRepeatable<T>(queueName: string, data: T, pattern: string, options?: JobOptions): Promise<Job<T>> {
+  addRepeatable<T>(
+    queueName: string,
+    data: T,
+    pattern: string,
+    options?: JobOptions,
+  ): Promise<Job<T>> {
     return this.provider.addRepeatable(queueName, data, pattern, options);
   }
 

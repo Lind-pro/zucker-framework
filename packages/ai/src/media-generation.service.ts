@@ -3,12 +3,13 @@ import { NotFoundException } from '@zucker/core';
 import { AICallWrapper } from './call-wrapper';
 import { CostTracker } from './cost-tracker';
 import { MediaProviderManager } from './media-provider-manager';
-import type {
-  MediaGenerationConfig,
-  MediaGenerationResult,
-  MediaTaskResult,
+import {
+  MediaTaskStatus,
+  MediaType,
+  type MediaGenerationConfig,
+  type MediaGenerationResult,
+  type MediaTaskResult,
 } from './media.interface';
-import { MediaTaskStatus, MediaType } from './media.interface';
 
 /** 图片生成选项 */
 export interface ImageGenerationOptions {
@@ -38,6 +39,8 @@ export interface ImageGenerationOptions {
   seed?: number;
   /** 超时 (ms) */
   timeoutMs?: number;
+  /** 调用方取消信号 */
+  signal?: AbortSignal;
   /** 用户 ID（用于计费追踪） */
   userId?: string;
 }
@@ -60,6 +63,8 @@ export interface VideoGenerationOptions {
   cameraMotion?: string;
   /** 超时 (ms) */
   timeoutMs?: number;
+  /** 调用方取消信号 */
+  signal?: AbortSignal;
   /** 用户 ID */
   userId?: string;
 }
@@ -91,11 +96,12 @@ export class MediaGenerationService {
 
     const startTime = Date.now();
     const result = await this.callWrapper.callWithRetry(
-      () => provider.generate(prompt, config),
+      ({ signal }) => provider.generate(prompt, { ...config, signal }),
       {
-        timeoutMs: options.timeoutMs ?? 120_000,
+        timeoutMs: options.timeoutMs,
         maxAttempts: 2,
         context: `图片生成 [${provider.id}]`,
+        signal: options.signal,
       },
     );
 
@@ -119,9 +125,7 @@ export class MediaGenerationService {
       return result.result;
     }
 
-    throw new Error(
-      `图片生成返回异步任务 (taskId=${result.taskId})，请使用 getTaskStatus 查询`,
-    );
+    throw new Error(`图片生成返回异步任务 (taskId=${result.taskId})，请使用 getTaskStatus 查询`);
   }
 
   /**
@@ -136,7 +140,7 @@ export class MediaGenerationService {
     const config: MediaGenerationConfig = {
       apiKey,
       modelId: options.modelId ?? provider.getModels()[0]?.id ?? '',
-      timeoutMs: options.timeoutMs ?? 300_000,
+      timeoutMs: options.timeoutMs,
       duration: options.duration,
       resolution: options.resolution,
       firstFrameUrl: options.firstFrameUrl,
@@ -146,11 +150,12 @@ export class MediaGenerationService {
 
     const startTime = Date.now();
     const result = await this.callWrapper.callWithRetry(
-      () => provider.generate(prompt, config),
+      ({ signal }) => provider.generate(prompt, { ...config, signal }),
       {
-        timeoutMs: options.timeoutMs ?? 300_000,
+        timeoutMs: options.timeoutMs,
         maxAttempts: 2,
         context: `视频生成 [${provider.id}]`,
+        signal: options.signal,
       },
     );
 
@@ -204,20 +209,16 @@ export class MediaGenerationService {
       return byType[0];
     }
 
-    throw new NotFoundException(
-      `没有支持 ${type} 的 MediaProvider，请先注册`,
-    );
+    throw new NotFoundException(`没有支持 ${type} 的 MediaProvider，请先注册`);
   }
 
   /** 构建配置 */
-  private buildConfig(
-    apiKey: string,
-    options: ImageGenerationOptions,
-  ): MediaGenerationConfig {
+  private buildConfig(apiKey: string, options: ImageGenerationOptions): MediaGenerationConfig {
     return {
       apiKey,
       modelId: options.modelId ?? '',
       timeoutMs: options.timeoutMs,
+      signal: options.signal,
       width: options.width,
       height: options.height,
       quality: options.quality,

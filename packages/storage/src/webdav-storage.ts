@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ReadStream } from 'fs';
 import * as path from 'path';
+import { Readable } from 'stream';
 import type { WebDAVClient, FileStat } from 'webdav';
 import { FileManager, UploadOptions, UploadResult, FileInfo } from './storage.interface';
 
@@ -18,35 +19,43 @@ export interface WebDavStorageOptions {
 @Injectable()
 export class WebDavStorage implements FileManager {
   private readonly logger = new Logger(WebDavStorage.name);
-  private client!: WebDAVClient;
+  private clientPromise?: Promise<WebDAVClient>;
   private readonly publicUrl: string;
   private readonly basePath: string;
+  private readonly directoryPromises = new Map<string, Promise<void>>();
   readonly providerType = 'webdav' as const;
 
   private readonly options: WebDavStorageOptions;
 
   constructor(options: WebDavStorageOptions) {
+    if (!options.url || !options.username || !options.password) {
+      throw new Error('WebDAV url, username and password are required');
+    }
     this.options = options;
-    this.publicUrl = options.publicUrl ?? '';
-    this.basePath = options.basePath ?? '/';
-    this.initClient();
-    this.logger.log(`WebDAV 存储已初始化: ${options.url}`);
+    this.publicUrl = (options.publicUrl ?? '').replace(/\/$/, '');
+    this.basePath = options.basePath?.trim() || '/';
+    this.logger.log('WebDAV storage initialized');
   }
 
-  private initClient(): void {
-    // 动态引入 webdav，避免未安装时模块加载失败
-    const { createClient } = require('webdav') as typeof import('webdav');
-    this.client = createClient(this.options.url, {
+  private async initClient(): Promise<WebDAVClient> {
+    const { createClient } = await import('webdav');
+    return createClient(this.options.url, {
       username: this.options.username,
       password: this.options.password,
     });
   }
 
+  private getClient(): Promise<WebDAVClient> {
+    this.clientPromise ??= this.initClient();
+    return this.clientPromise;
+  }
+
   isConfigured(): boolean {
-    return !!this.client;
+    return true;
   }
 
   async upload(buffer: Buffer, key: string, options?: UploadOptions): Promise<UploadResult> {
+    const client = await this.getClient();
     const remotePath = this.resolvePath(key);
 
     // 确保父目录存在
@@ -55,12 +64,10 @@ export class WebDavStorage implements FileManager {
       await this.ensureDirectory(parentDir);
     }
 
-    await this.client.putFileContents(remotePath, buffer, {
+    await client.putFileContents(remotePath, buffer, {
       contentLength: buffer.length,
       overwrite: true,
-      headers: options?.contentType
-        ? { 'Content-Type': options.contentType }
-        : undefined,
+      headers: options?.contentType ? { 'Content-Type': options.contentType } : undefined,
     });
 
     return {
@@ -70,7 +77,11 @@ export class WebDavStorage implements FileManager {
     };
   }
 
-  async uploadStream(stream: ReadStream, key: string, options?: UploadOptions): Promise<UploadResult> {
+  async uploadStream(
+    stream: ReadStream,
+    key: string,
+    options?: UploadOptions,
+  ): Promise<UploadResult> {
     const chunks: Buffer[] = [];
     for await (const chunk of stream) {
       chunks.push(Buffer.from(chunk));
@@ -79,12 +90,11 @@ export class WebDavStorage implements FileManager {
   }
 
   async download(key: string): Promise<{ stream: ReadStream; size: number }> {
+    const client = await this.getClient();
     const remotePath = this.resolvePath(key);
-    const stat = await this.client.stat(remotePath) as FileStat;
-    const buffer = await this.client.getFileContents(remotePath) as Buffer;
+    const stat = (await client.stat(remotePath)) as FileStat;
+    const buffer = (await client.getFileContents(remotePath)) as Buffer;
 
-    // 将 Buffer 包装为 Readable 并兼容 ReadStream 类型
-    const { Readable } = require('stream');
     const readable = Readable.from(buffer);
 
     return {
@@ -94,9 +104,10 @@ export class WebDavStorage implements FileManager {
   }
 
   async delete(key: string): Promise<void> {
+    const client = await this.getClient();
     const remotePath = this.resolvePath(key);
     try {
-      await this.client.deleteFile(remotePath);
+      await client.deleteFile(remotePath);
     } catch (error: unknown) {
       const err = error as { status?: number };
       // 忽略 404（文件不存在）
@@ -106,8 +117,9 @@ export class WebDavStorage implements FileManager {
   }
 
   async exists(key: string): Promise<boolean> {
+    const client = await this.getClient();
     const remotePath = this.resolvePath(key);
-    return this.client.exists(remotePath);
+    return client.exists(remotePath);
   }
 
   async getPublicUrl(key: string): Promise<string> {
@@ -115,10 +127,11 @@ export class WebDavStorage implements FileManager {
   }
 
   async list(prefix: string): Promise<FileInfo[]> {
+    const client = await this.getClient();
     const remotePath = this.resolvePath(prefix);
 
     try {
-      const items = await this.client.getDirectoryContents(remotePath) as FileStat[];
+      const items = (await client.getDirectoryContents(remotePath)) as FileStat[];
 
       return items
         .filter((item: FileStat) => item.type === 'file')
@@ -136,9 +149,10 @@ export class WebDavStorage implements FileManager {
   }
 
   async getFileInfo(key: string): Promise<FileInfo | undefined> {
+    const client = await this.getClient();
     const remotePath = this.resolvePath(key);
     try {
-      const stat = await this.client.stat(remotePath) as FileStat;
+      const stat = (await client.stat(remotePath)) as FileStat;
       if (stat.type === 'directory') return undefined;
       return {
         key,
@@ -154,37 +168,59 @@ export class WebDavStorage implements FileManager {
   }
 
   async copy(sourceKey: string, destKey: string): Promise<void> {
+    const client = await this.getClient();
     const src = this.resolvePath(sourceKey);
     const dest = this.resolvePath(destKey);
     const parentDir = dest.substring(0, dest.lastIndexOf('/'));
     if (parentDir && parentDir !== '/') {
       await this.ensureDirectory(parentDir);
     }
-    await this.client.copyFile(src, dest);
+    await client.copyFile(src, dest);
   }
 
   async move(sourceKey: string, destKey: string): Promise<void> {
+    const client = await this.getClient();
     const src = this.resolvePath(sourceKey);
     const dest = this.resolvePath(destKey);
     const parentDir = dest.substring(0, dest.lastIndexOf('/'));
     if (parentDir && parentDir !== '/') {
       await this.ensureDirectory(parentDir);
     }
-    await this.client.moveFile(src, dest);
+    await client.moveFile(src, dest);
   }
 
   /**
    * 递归创建目录
    */
   private async ensureDirectory(dirPath: string): Promise<void> {
-    const exists = await this.client.exists(dirPath);
-    if (!exists) {
-      // 递归确保父目录
-      const parent = dirPath.substring(0, dirPath.lastIndexOf('/'));
-      if (parent && parent !== '/') {
-        await this.ensureDirectory(parent);
+    const inflight = this.directoryPromises.get(dirPath);
+    if (inflight) return inflight;
+
+    const creation = this.createDirectoryIfMissing(dirPath);
+    this.directoryPromises.set(dirPath, creation);
+    try {
+      await creation;
+    } finally {
+      if (this.directoryPromises.get(dirPath) === creation) {
+        this.directoryPromises.delete(dirPath);
       }
-      await this.client.createDirectory(dirPath);
+    }
+  }
+
+  private async createDirectoryIfMissing(dirPath: string): Promise<void> {
+    const client = await this.getClient();
+    if (await client.exists(dirPath)) return;
+
+    const parent = dirPath.substring(0, dirPath.lastIndexOf('/'));
+    if (parent && parent !== '/') {
+      await this.ensureDirectory(parent);
+    }
+    try {
+      await client.createDirectory(dirPath);
+    } catch (error: unknown) {
+      const status = (error as { status?: number }).status;
+      if ([405, 409].includes(status ?? 0) && (await client.exists(dirPath))) return;
+      throw error;
     }
   }
 

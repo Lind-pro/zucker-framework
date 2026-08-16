@@ -1,22 +1,60 @@
+import { Logger } from '@nestjs/common';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { S3Storage } from './s3-storage';
 
 // Mock AWS SDK
 const mockSend = vi.fn();
 const mockDestroy = vi.fn();
+const loggerLog = vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
 
 vi.mock('@aws-sdk/client-s3', () => {
+  class MockCommand {
+    constructor(
+      readonly _type: string,
+      readonly input: Record<string, unknown>,
+    ) {}
+  }
+
   return {
-    S3Client: vi.fn().mockImplementation(() => ({
-      send: mockSend,
-      destroy: mockDestroy,
-    })),
-    PutObjectCommand: vi.fn().mockImplementation((input) => ({ _type: 'PutObject', input })),
-    GetObjectCommand: vi.fn().mockImplementation((input) => ({ _type: 'GetObject', input })),
-    DeleteObjectCommand: vi.fn().mockImplementation((input) => ({ _type: 'DeleteObject', input })),
-    HeadObjectCommand: vi.fn().mockImplementation((input) => ({ _type: 'HeadObject', input })),
-    ListObjectsV2Command: vi.fn().mockImplementation((input) => ({ _type: 'ListObjects', input })),
-    CopyObjectCommand: vi.fn().mockImplementation((input) => ({ _type: 'CopyObject', input })),
+    S3Client: class MockS3Client {
+      send(...arguments_: unknown[]) {
+        return mockSend(...arguments_);
+      }
+
+      destroy() {
+        mockDestroy();
+      }
+    },
+    PutObjectCommand: class extends MockCommand {
+      constructor(input: Record<string, unknown>) {
+        super('PutObject', input);
+      }
+    },
+    GetObjectCommand: class extends MockCommand {
+      constructor(input: Record<string, unknown>) {
+        super('GetObject', input);
+      }
+    },
+    DeleteObjectCommand: class extends MockCommand {
+      constructor(input: Record<string, unknown>) {
+        super('DeleteObject', input);
+      }
+    },
+    HeadObjectCommand: class extends MockCommand {
+      constructor(input: Record<string, unknown>) {
+        super('HeadObject', input);
+      }
+    },
+    ListObjectsV2Command: class extends MockCommand {
+      constructor(input: Record<string, unknown>) {
+        super('ListObjects', input);
+      }
+    },
+    CopyObjectCommand: class extends MockCommand {
+      constructor(input: Record<string, unknown>) {
+        super('CopyObject', input);
+      }
+    },
   };
 });
 
@@ -46,6 +84,11 @@ describe('S3Storage', () => {
 
   it('should always be configured', () => {
     expect(storage.isConfigured()).toBe(true);
+  });
+
+  it('does not disclose the bucket in lifecycle logs', () => {
+    expect(loggerLog).toHaveBeenCalledWith('S3 storage initialized');
+    expect(JSON.stringify(loggerLog.mock.calls)).not.toContain(defaultOptions.bucket);
   });
 
   // ---- upload ----
@@ -94,7 +137,13 @@ describe('S3Storage', () => {
   it('should throw when download body is empty', async () => {
     mockSend.mockResolvedValueOnce({ Body: null });
 
-    await expect(storage.download('missing.txt')).rejects.toThrow('文件不存在');
+    const error = await storage
+      .download('missing.txt')
+      .then(() => undefined)
+      .catch((candidate: unknown) => candidate);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe('Stored object response had no body');
+    expect((error as Error).message).not.toContain('missing.txt');
   });
 
   // ---- delete ----

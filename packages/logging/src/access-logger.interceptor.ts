@@ -20,6 +20,7 @@ import {
   OperationLogPayload,
 } from './events';
 import { getCorrelationId } from './correlation-id';
+import { PiiFilter } from './pii-filter';
 
 export const ACCESS_LOG_BUS = Symbol('ACCESS_LOG_BUS');
 
@@ -45,6 +46,8 @@ const DEFAULT_SENSITIVE_FIELDS = ['password', 'secret', 'token', 'authorization'
 
 @Injectable()
 export class AccessLoggerInterceptor implements NestInterceptor {
+  private readonly piiFilter = new PiiFilter();
+
   constructor(
     private readonly reflector: Reflector,
     @Optional() private readonly eventEmitter?: EventEmitter2,
@@ -83,24 +86,24 @@ export class AccessLoggerInterceptor implements NestInterceptor {
     const startTime = Date.now();
 
     const userId = request.user?.id;
-    const username = request.user?.username || request.user?.email;
+    const username = this.sanitizeOptional(request.user?.username || request.user?.email);
     const method = request.method;
-    const requestUrl = request.url;
-    const ip = this.getClientIp(request);
-    const userAgent = request.headers?.['user-agent'];
+    const requestUrl = this.piiFilter.sanitize(request.url);
+    const ip = this.piiFilter.sanitize(this.getClientIp(request));
+    const userAgent = this.sanitizeOptional(request.headers?.['user-agent']);
 
     // 对齐 hsweb AccessLoggerInfo.httpHeaders — 完整请求头
-    const httpHeaders: Record<string, string | undefined> = request.headers
-      ? { ...request.headers }
+    const httpHeaders = request.headers
+      ? (this.piiFilter.sanitizeObject({
+          ...request.headers,
+        }) as Record<string, string | undefined>)
       : {};
 
     // 对齐 hsweb DefaultAccessLoggerParser.parse — 类+方法 action 用 "-" 拼接
     const classAction = classOptions?.action;
     const methodAction = methodOptions?.action || context.getHandler().name;
     const action =
-      classAction && methodAction
-        ? `${classAction}-${methodAction}`
-        : classAction || methodAction;
+      classAction && methodAction ? `${classAction}-${methodAction}` : classAction || methodAction;
 
     // 对齐 hsweb DefaultAccessLoggerParser.parse — 类+方法 describe 用 "\n" 拼接
     const classDescribe = classOptions?.describe;
@@ -111,8 +114,7 @@ export class AccessLoggerInterceptor implements NestInterceptor {
         : methodDescribe || classDescribe || '';
 
     const module =
-      loggerOptions.module ||
-      context.getClass().name.replace('Controller', '').toLowerCase();
+      loggerOptions.module || context.getClass().name.replace('Controller', '').toLowerCase();
 
     // 对齐 hsweb AccessLoggerInfo.id — 每条日志唯一标识
     const logId = randomUUID();
@@ -129,10 +131,7 @@ export class AccessLoggerInterceptor implements NestInterceptor {
     const parameters =
       loggerOptions.logParameters !== false && !ignoreAll
         ? this.sanitizeParameters(
-            this.filterIgnoredParameters(
-              this.extractParameters(request),
-              ignoreParams,
-            ),
+            this.filterIgnoredParameters(this.extractParameters(request), ignoreParams),
             sensitiveFields,
           )
         : undefined;
@@ -169,9 +168,7 @@ export class AccessLoggerInterceptor implements NestInterceptor {
       tap((result) => {
         const duration = Date.now() - startTime;
         const logResult =
-          loggerOptions.logResult === true
-            ? this.simplifyResult(result)
-            : undefined;
+          loggerOptions.logResult === true ? this.simplifyResult(result) : undefined;
         const targetId = this.extractTargetId(request, result);
 
         const response = context.switchToHttp().getResponse();
@@ -225,10 +222,9 @@ export class AccessLoggerInterceptor implements NestInterceptor {
         const targetId = this.extractTargetId(request, null);
 
         // 对齐 hsweb AccessLoggerInfo.toSimpleMap — exception 包含完整堆栈
-        const exceptionStr =
-          error instanceof Error
-            ? (error.stack ?? error.message)
-            : String(error);
+        const exceptionStr = this.piiFilter.sanitize(
+          error instanceof Error ? (error.stack ?? error.message) : String(error),
+        );
 
         const accessPayload: AccessLogPayload = {
           id: logId,
@@ -265,10 +261,15 @@ export class AccessLoggerInterceptor implements NestInterceptor {
           userAgent,
           duration,
           requestData: parameters,
-          errorMessage: error instanceof Error ? error.message : String(error),
+          errorMessage: this.piiFilter.sanitize(
+            error instanceof Error ? error.message : String(error),
+          ),
           correlationId,
           metadata: {
-            errorStack: error instanceof Error ? error.stack : undefined,
+            errorStack:
+              error instanceof Error && error.stack
+                ? this.piiFilter.sanitize(error.stack)
+                : undefined,
           },
         };
 
@@ -292,13 +293,7 @@ export class AccessLoggerInterceptor implements NestInterceptor {
   }
 
   private getClientIp(request: HttpRequest): string {
-    return (
-      request.ip ||
-      request.headers?.['x-forwarded-for'] ||
-      request.headers?.['x-real-ip'] ||
-      request.socket?.remoteAddress ||
-      ''
-    );
+    return request.ip || request.socket?.remoteAddress || '';
   }
 
   private extractParameters(request: HttpRequest): Record<string, unknown> | undefined {
@@ -357,12 +352,9 @@ export class AccessLoggerInterceptor implements NestInterceptor {
     sensitiveFields: string[],
   ): Record<string, unknown> | undefined {
     if (!params) return undefined;
-    return JSON.parse(JSON.stringify(params, (key, value) => {
-      if (sensitiveFields.some((f) => key.toLowerCase().includes(f.toLowerCase()))) {
-        return '***';
-      }
-      return value;
-    }));
+    return new PiiFilter({
+      sensitiveFields,
+    }).sanitizeObject(params);
   }
 
   private simplifyResult(result: unknown): unknown {
@@ -375,7 +367,11 @@ export class AccessLoggerInterceptor implements NestInterceptor {
         if (sampleStr.length > 5120) {
           return { type: 'array', length: result.length, sample: '[数据过大]' };
         }
-        return { type: 'array', length: result.length, sample };
+        return this.piiFilter.sanitizeValue({
+          type: 'array',
+          length: result.length,
+          sample,
+        });
       } catch {
         return { type: 'array', length: result.length, sample: '[无法序列化]' };
       }
@@ -388,12 +384,16 @@ export class AccessLoggerInterceptor implements NestInterceptor {
         if (str.length > 10240) {
           return { type: 'large_object', size: str.length, keys: Object.keys(obj) };
         }
-        return obj;
+        return this.piiFilter.sanitizeValue(obj);
       } catch {
         return { type: 'circular_object', keys: Object.keys(obj) };
       }
     }
 
-    return result;
+    return typeof result === 'string' ? this.piiFilter.sanitize(result) : result;
+  }
+
+  private sanitizeOptional(value: string | undefined): string | undefined {
+    return value === undefined ? undefined : this.piiFilter.sanitize(value);
   }
 }

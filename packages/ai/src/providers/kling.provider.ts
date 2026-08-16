@@ -1,11 +1,13 @@
-import type {
-  MediaProvider,
-  MediaGenerationConfig,
-  MediaGenerationResult,
-  MediaModelInfo,
-  MediaTaskResult,
+import {
+  MediaTaskStatus,
+  MediaType,
+  type MediaProvider,
+  type MediaGenerationConfig,
+  type MediaGenerationResult,
+  type MediaModelInfo,
+  type MediaTaskResult,
 } from '../media.interface';
-import { MediaTaskStatus, MediaType } from '../media.interface';
+import { providerRequestSignal } from '../abort-signal';
 
 const KLING_API_BASE = 'https://api.klingai.com/v1';
 
@@ -35,10 +37,7 @@ export class KlingProvider implements MediaProvider {
     return this.generateVideo(prompt, config, baseURL);
   }
 
-  async getTaskStatus(
-    taskId: string,
-    config: MediaGenerationConfig,
-  ): Promise<MediaTaskResult> {
+  async getTaskStatus(taskId: string, config: MediaGenerationConfig): Promise<MediaTaskResult> {
     const baseURL = config.baseURL || KLING_API_BASE;
 
     // 根据 firstFrameUrl 判断是图生视频还是文生视频
@@ -51,6 +50,7 @@ export class KlingProvider implements MediaProvider {
         Authorization: `Bearer ${config.apiKey}`,
         'Content-Type': 'application/json',
       },
+      signal: providerRequestSignal(config.signal, config.timeoutMs),
     });
 
     if (!response.ok) {
@@ -67,18 +67,14 @@ export class KlingProvider implements MediaProvider {
       failed: MediaTaskStatus.FAILED,
     };
 
-    const status =
-      statusMap[taskData?.task_status] ?? MediaTaskStatus.PROCESSING;
+    const status = statusMap[taskData?.task_status] ?? MediaTaskStatus.PROCESSING;
     const result: MediaTaskResult = {
       taskId,
       status,
       provider: this.id,
     };
 
-    if (
-      status === MediaTaskStatus.COMPLETED &&
-      taskData?.task_result?.videos?.length
-    ) {
+    if (status === MediaTaskStatus.COMPLETED && taskData?.task_result?.videos?.length) {
       const video = taskData.task_result.videos[0];
       result.result = {
         url: video.url,
@@ -167,9 +163,7 @@ export class KlingProvider implements MediaProvider {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(body),
-      signal: config.timeoutMs
-        ? AbortSignal.timeout(config.timeoutMs)
-        : undefined,
+      signal: providerRequestSignal(config.signal, config.timeoutMs),
     });
 
     if (!response.ok) {
@@ -232,9 +226,7 @@ export class KlingProvider implements MediaProvider {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(body),
-      signal: config.timeoutMs
-        ? AbortSignal.timeout(config.timeoutMs)
-        : undefined,
+      signal: providerRequestSignal(config.signal, config.timeoutMs),
     });
 
     if (!response.ok) {

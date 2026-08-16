@@ -1,11 +1,17 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
+import { PiiFilter } from './pii-filter';
 
 /**
- * 审计日志系统 — 不可变审计追踪
+ * 审计日志系统 — 追加式审计事件接口
  *
- * 记录敏感操作的完整上下文（谁在什么时间做了什么，影响了哪些数据）。
+ * 记录敏感操作的最小必要上下文（谁在什么时间做了什么，影响了哪些数据）。
  * 与 AccessLoggerInterceptor 的区别：审计日志是 **业务语义级** 的，
  * 而访问日志是 **HTTP 级** 的。
+ *
+ * 注意：AuditLogger 只负责构建、脱敏和 append 事件；持久化、不可变约束、
+ * retention 与告警必须由业务提供的 AuditStore 和运行环境保证。默认内存 store
+ * 仅用于开发/测试，不是 durable 或 immutable store。
  *
  * 用法:
  * ```ts
@@ -20,24 +26,31 @@ import { Injectable, Logger } from '@nestjs/common';
  */
 
 export type AuditAction =
-  | 'create' | 'update' | 'delete' | 'read'
-  | 'login' | 'logout' | 'login_failed'
-  | 'permission.grant' | 'permission.revoke'
+  | 'create'
+  | 'update'
+  | 'delete'
+  | 'read'
+  | 'login'
+  | 'logout'
+  | 'login_failed'
+  | 'permission.grant'
+  | 'permission.revoke'
   | 'config.change'
-  | 'export' | 'import'
+  | 'export'
+  | 'import'
   | string; // 允许自定义
 
 export type AuditSeverity = 'info' | 'warning' | 'critical';
 
 export interface AuditActor {
   id: string;
-  type: 'user' | 'system' | 'api_key' | 'service';
+  type: 'user' | 'system' | 'api_key' | 'service' | 'anonymous';
   name?: string;
   ip?: string;
 }
 
 export interface AuditTarget {
-  type: string;     // 'user', 'role', 'config', 'file', ...
+  type: string; // 'user', 'role', 'config', 'file', ...
   id?: string;
   name?: string;
 }
@@ -104,6 +117,7 @@ export interface AuditQueryOptions {
   targetId?: string;
   tenantId?: string;
   severity?: AuditSeverity;
+  success?: boolean;
   startTime?: number;
   endTime?: number;
   page?: number;
@@ -111,8 +125,6 @@ export interface AuditQueryOptions {
 }
 
 export const AUDIT_STORE = Symbol('AUDIT_STORE');
-
-let auditIdCounter = 0;
 
 /** 内存审计存储（开发/测试用） */
 export class InMemoryAuditStore implements AuditStore {
@@ -134,10 +146,14 @@ export class InMemoryAuditStore implements AuditStore {
     let filtered = this.entries;
     if (options.action) filtered = filtered.filter((e) => e.action === options.action);
     if (options.actorId) filtered = filtered.filter((e) => e.actor.id === options.actorId);
-    if (options.targetType) filtered = filtered.filter((e) => e.target?.type === options.targetType);
+    if (options.targetType)
+      filtered = filtered.filter((e) => e.target?.type === options.targetType);
     if (options.targetId) filtered = filtered.filter((e) => e.target?.id === options.targetId);
     if (options.tenantId) filtered = filtered.filter((e) => e.tenantId === options.tenantId);
     if (options.severity) filtered = filtered.filter((e) => e.severity === options.severity);
+    if (options.success !== undefined) {
+      filtered = filtered.filter((e) => e.success === options.success);
+    }
     if (options.startTime) filtered = filtered.filter((e) => e.timestamp >= options.startTime!);
     if (options.endTime) filtered = filtered.filter((e) => e.timestamp <= options.endTime!);
 
@@ -157,9 +173,11 @@ export class InMemoryAuditStore implements AuditStore {
 export class AuditLogger {
   private readonly logger = new Logger(AuditLogger.name);
   private store: AuditStore;
+  private readonly piiFilter: PiiFilter;
 
-  constructor(store?: AuditStore) {
+  constructor(store?: AuditStore, piiFilter?: PiiFilter) {
     this.store = store ?? new InMemoryAuditStore();
+    this.piiFilter = piiFilter ?? new PiiFilter();
   }
 
   setStore(store: AuditStore): void {
@@ -167,13 +185,30 @@ export class AuditLogger {
   }
 
   /**
-   * 记录审计事件
+   * 记录审计事件。
+   *
+   * 兼容历史调用：存储失败会写入脱敏后的服务日志，但不会阻断业务。
+   * 对必须与业务事务共同提交的安全事件，请使用 `logRequired`。
    */
   async log(input: AuditLogInput): Promise<AuditEntry> {
+    return this.write(input, false);
+  }
+
+  /**
+   * 记录必须成功持久化的审计事件。
+   *
+   * 存储失败时抛出通用错误，使调用方能够回滚同一数据库事务。原始错误只会经过
+   * PII 过滤后写入服务日志，不会进入面向客户端的异常消息。
+   */
+  async logRequired(input: AuditLogInput): Promise<AuditEntry> {
+    return this.write(input, true);
+  }
+
+  private async write(input: AuditLogInput, required: boolean): Promise<AuditEntry> {
     const changes = this.normalizeChanges(input.changes);
 
-    const entry: AuditEntry = {
-      id: `audit_${Date.now()}_${++auditIdCounter}`,
+    const entry = this.piiFilter.sanitizeValue({
+      id: `audit_${randomUUID()}`,
       action: input.action,
       severity: input.severity ?? this.inferSeverity(input.action),
       actor: input.actor,
@@ -186,13 +221,22 @@ export class AuditLogger {
       tenantId: input.tenantId,
       timestamp: Date.now(),
       metadata: input.metadata,
-    };
+    }) as AuditEntry;
 
     try {
       await this.store.append(entry);
     } catch (err) {
       // 审计日志写入失败不应阻塞业务，但必须记录
-      this.logger.error(`Failed to write audit log: ${err}`);
+      this.logger.error(
+        this.piiFilter.sanitize(
+          `Failed to write audit log: ${err instanceof Error ? err.message : String(err)}`,
+        ),
+      );
+      if (required) {
+        throw new Error('Required audit log write failed', {
+          cause: err,
+        });
+      }
     }
 
     return entry;

@@ -117,3 +117,9 @@ export { withVcrFixture, getFixturePath } from './vcr';
 export type { VcrOptions, Dehydrator } from './vcr';
 export { Mailbox } from './mailbox';
 export { CleanupRegistry } from './cleanup-registry';
+export {
+  assertAllowedOutboundUrl,
+  OutboundUrlRejectedError,
+  type OutboundUrlPolicy,
+  type OutboundUrlRejectionReason,
+} from './outbound-url-policy';

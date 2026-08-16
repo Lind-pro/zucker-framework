@@ -97,6 +97,24 @@ describe('Correlation ID', () => {
       expect(res.setHeader).toHaveBeenCalledWith(CORRELATION_ID_HEADER, expect.any(String));
     });
 
+    it('should replace an unsafe client-supplied correlation ID', () => {
+      const middleware = new CorrelationIdMiddleware();
+      const req = {
+        headers: {
+          [CORRELATION_ID_HEADER]: 'unsafe\nforged-log-line',
+        },
+      };
+      const res = { setHeader: vi.fn() };
+      let captured: string | undefined;
+
+      middleware.use(req, res, () => {
+        captured = getCorrelationId();
+      });
+
+      expect(captured).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+      expect(captured).not.toContain('unsafe');
+    });
+
     it('should set response header with the correlation ID', () => {
       const middleware = new CorrelationIdMiddleware();
       const req = { headers: {} };
@@ -104,10 +122,7 @@ describe('Correlation ID', () => {
 
       middleware.use(req, res, () => {});
 
-      expect(res.setHeader).toHaveBeenCalledWith(
-        CORRELATION_ID_HEADER,
-        expect.any(String),
-      );
+      expect(res.setHeader).toHaveBeenCalledWith(CORRELATION_ID_HEADER, expect.any(String));
     });
   });
 

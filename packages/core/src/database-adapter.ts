@@ -1,5 +1,8 @@
 import { TransactionHolder, type TransactionContext } from './transaction-context';
 
+/** Shared Nest injection token for the framework database adapter port. */
+export const DATABASE_ADAPTER = 'DATABASE_ADAPTER';
+
 /**
  * Database model operations interface — abstracts Prisma-like CRUD operations.
  * Each method maps to a corresponding Prisma client method.

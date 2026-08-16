@@ -43,7 +43,7 @@ export class S3Storage implements FileManager, OnModuleDestroy {
       forcePathStyle: !!options.endpoint,
     });
 
-    this.logger.log(`S3 存储已初始化: bucket=${this.bucket}`);
+    this.logger.log('S3 storage initialized');
   }
 
   onModuleDestroy(): void {
@@ -56,14 +56,16 @@ export class S3Storage implements FileManager, OnModuleDestroy {
   }
 
   async upload(buffer: Buffer, key: string, options?: UploadOptions): Promise<UploadResult> {
-    await this.client.send(new PutObjectCommand({
-      Bucket: this.bucket,
-      Key: key,
-      Body: buffer,
-      ContentType: options?.contentType ?? 'application/octet-stream',
-      Metadata: options?.metadata,
-      ACL: options?.acl,
-    }));
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Body: buffer,
+        ContentType: options?.contentType ?? 'application/octet-stream',
+        Metadata: options?.metadata,
+        ACL: options?.acl,
+      }),
+    );
 
     return {
       key,
@@ -72,7 +74,11 @@ export class S3Storage implements FileManager, OnModuleDestroy {
     };
   }
 
-  async uploadStream(stream: ReadStream, key: string, options?: UploadOptions): Promise<UploadResult> {
+  async uploadStream(
+    stream: ReadStream,
+    key: string,
+    options?: UploadOptions,
+  ): Promise<UploadResult> {
     const chunks: Buffer[] = [];
     for await (const chunk of stream) {
       chunks.push(Buffer.from(chunk));
@@ -81,12 +87,16 @@ export class S3Storage implements FileManager, OnModuleDestroy {
   }
 
   async download(key: string): Promise<{ stream: ReadStream; size: number }> {
-    const response = await this.client.send(new GetObjectCommand({
-      Bucket: this.bucket,
-      Key: key,
-    }));
+    const response = await this.client.send(
+      new GetObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+      }),
+    );
 
-    if (!response.Body) throw new Error(`文件不存在: ${key}`);
+    if (!response.Body) {
+      throw new Error('Stored object response had no body');
+    }
 
     return {
       stream: response.Body as unknown as ReadStream,
@@ -95,18 +105,22 @@ export class S3Storage implements FileManager, OnModuleDestroy {
   }
 
   async delete(key: string): Promise<void> {
-    await this.client.send(new DeleteObjectCommand({
-      Bucket: this.bucket,
-      Key: key,
-    }));
+    await this.client.send(
+      new DeleteObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+      }),
+    );
   }
 
   async exists(key: string): Promise<boolean> {
     try {
-      await this.client.send(new HeadObjectCommand({
-        Bucket: this.bucket,
-        Key: key,
-      }));
+      await this.client.send(
+        new HeadObjectCommand({
+          Bucket: this.bucket,
+          Key: key,
+        }),
+      );
       return true;
     } catch (error: unknown) {
       const s3Err = error as { name?: string; $metadata?: { httpStatusCode?: number } };
@@ -119,17 +133,23 @@ export class S3Storage implements FileManager, OnModuleDestroy {
 
   async getPublicUrl(key: string, expiresIn = 3600): Promise<string> {
     if (this.publicUrl) return `${this.publicUrl}/${key}`;
-    return getSignedUrl(this.client, new GetObjectCommand({
-      Bucket: this.bucket,
-      Key: key,
-    }), { expiresIn });
+    return getSignedUrl(
+      this.client,
+      new GetObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+      }),
+      { expiresIn },
+    );
   }
 
   async list(prefix: string): Promise<FileInfo[]> {
-    const response = await this.client.send(new ListObjectsV2Command({
-      Bucket: this.bucket,
-      Prefix: prefix,
-    }));
+    const response = await this.client.send(
+      new ListObjectsV2Command({
+        Bucket: this.bucket,
+        Prefix: prefix,
+      }),
+    );
 
     return (response.Contents ?? []).map((item) => ({
       key: item.Key ?? '',
@@ -140,10 +160,12 @@ export class S3Storage implements FileManager, OnModuleDestroy {
 
   async getFileInfo(key: string): Promise<FileInfo | undefined> {
     try {
-      const response = await this.client.send(new HeadObjectCommand({
-        Bucket: this.bucket,
-        Key: key,
-      }));
+      const response = await this.client.send(
+        new HeadObjectCommand({
+          Bucket: this.bucket,
+          Key: key,
+        }),
+      );
       return {
         key,
         size: response.ContentLength ?? 0,
@@ -160,11 +182,13 @@ export class S3Storage implements FileManager, OnModuleDestroy {
   }
 
   async copy(sourceKey: string, destKey: string): Promise<void> {
-    await this.client.send(new CopyObjectCommand({
-      Bucket: this.bucket,
-      CopySource: `${this.bucket}/${sourceKey}`,
-      Key: destKey,
-    }));
+    await this.client.send(
+      new CopyObjectCommand({
+        Bucket: this.bucket,
+        CopySource: `${this.bucket}/${sourceKey}`,
+        Key: destKey,
+      }),
+    );
   }
 
   async move(sourceKey: string, destKey: string): Promise<void> {

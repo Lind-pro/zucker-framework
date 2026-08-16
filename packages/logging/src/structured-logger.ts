@@ -1,5 +1,6 @@
 import { LoggerService } from '@nestjs/common';
 import { getCorrelationId } from './correlation-id';
+import { PiiFilter } from './pii-filter';
 
 export enum LogLevel {
   DEBUG = 'DEBUG',
@@ -51,12 +52,15 @@ export class StructuredLogger implements LoggerService {
   private minLevel: LogLevel;
   /** 日志采样率 (0.0 - 1.0)，对 DEBUG 级别生效 */
   private debugSampleRate = 1.0;
+  private readonly piiFilter: PiiFilter;
 
   constructor(
     private readonly module?: string,
     minLevel: LogLevel = LogLevel.DEBUG,
+    piiFilter?: PiiFilter,
   ) {
     this.minLevel = minLevel;
+    this.piiFilter = piiFilter ?? new PiiFilter();
   }
 
   setMinLevel(level: LogLevel): void {
@@ -108,12 +112,12 @@ export class StructuredLogger implements LoggerService {
     const entry: StructuredLogEntry = {
       timestamp: new Date().toISOString(),
       level,
-      message,
+      message: this.piiFilter.sanitize(message),
       correlationId: getCorrelationId(),
       traceId: traceIdResolver?.(),
       spanId: spanIdResolver?.(),
-      module: module || this.module,
-      data,
+      module: this.piiFilter.sanitize(module || this.module || ''),
+      data: data ? (this.piiFilter.sanitizeValue(data) as Record<string, unknown>) : undefined,
     };
 
     const output = JSON.stringify(entry);

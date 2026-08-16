@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { NotFoundException, ValidationException } from '@zucker/core';
-import type { MediaProvider } from './media.interface';
-import { MediaType } from './media.interface';
+import { MediaType, type MediaProvider } from './media.interface';
 
 /**
  * 媒体生成 Provider 管理器
@@ -70,9 +69,7 @@ export class MediaProviderManager {
     const provider = this.providers.get(providerId);
     if (!provider) {
       const available = [...this.providers.keys()].join(', ') || '(无)';
-      throw new NotFoundException(
-        `MediaProvider '${providerId}' 不存在 (可用: ${available})`,
-      );
+      throw new NotFoundException(`MediaProvider '${providerId}' 不存在 (可用: ${available})`);
     }
     return provider;
   }
@@ -106,9 +103,7 @@ export class MediaProviderManager {
 
   /** 按媒体类型筛选可用 provider */
   getByMediaType(type: MediaType): MediaProvider[] {
-    return [...this.providers.values()].filter((p) =>
-      p.supportedTypes.includes(type),
-    );
+    return [...this.providers.values()].filter((p) => p.supportedTypes.includes(type));
   }
 
   /** 获取所有 provider */

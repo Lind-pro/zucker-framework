@@ -1,10 +1,6 @@
-import { CreditTransactionType as _CreditTransactionType } from './credit.service';
+import type { CreditTransactionType as _CreditTransactionType } from './credit.service';
 
-export {
-  CreditTransactionType,
-  CreditService,
-  CREDIT_EVENT_TOPICS,
-} from './credit.service';
+export { CreditTransactionType, CreditService, CREDIT_EVENT_TOPICS } from './credit.service';
 
 export type {
   CreditQueryOptions,
@@ -28,3 +24,16 @@ export interface CreditTransaction {
 
 export { ZuckerCreditModule } from './credit.module';
 export type { CreditModuleAsyncOptions, CreditModuleAdapterFactory } from './credit.module';
+
+export {
+  CreditOperationConflictError,
+  CreditOperationValidationError,
+  PostgresCreditOperationCoordinator,
+} from './postgres-credit-operation-coordinator';
+export type {
+  CreditOperationInput,
+  CreditOperationReceipt,
+  CreditSqlClient,
+  CreditSqlQueryResult,
+  PreparedCreditOperation,
+} from './postgres-credit-operation-coordinator';

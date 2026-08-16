@@ -1,4 +1,4 @@
-import { Logger, OnModuleDestroy } from '@nestjs/common';
+import { Logger, type OnModuleDestroy } from '@nestjs/common';
 import type { QueueProvider, Job, JobOptions, QueueStats } from './queue.interface';
 
 /**
@@ -41,7 +41,25 @@ export class InMemoryQueue implements QueueProvider, OnModuleDestroy {
     return job;
   }
 
-  async addDelayed<T>(queueName: string, data: T, delayMs: number, options?: JobOptions): Promise<Job<T>> {
+  async ensure<T>(
+    queueName: string,
+    data: T,
+    options: JobOptions & { jobId: string },
+  ): Promise<Job<T>> {
+    const existing = await this.getJob<T>(queueName, options.jobId);
+    if (existing && existing.status !== 'completed' && existing.status !== 'failed') {
+      return existing;
+    }
+    if (existing) await this.removeJob(queueName, options.jobId);
+    return this.add(queueName, data, options);
+  }
+
+  async addDelayed<T>(
+    queueName: string,
+    data: T,
+    delayMs: number,
+    options?: JobOptions,
+  ): Promise<Job<T>> {
     const q = this.getQueue(queueName);
     const id = options?.jobId ?? this.nextId();
     const job: Job<T> = {
@@ -68,8 +86,15 @@ export class InMemoryQueue implements QueueProvider, OnModuleDestroy {
     return job;
   }
 
-  async addRepeatable<T>(queueName: string, data: T, pattern: string, options?: JobOptions): Promise<Job<T>> {
-    this.logger.warn(`InMemoryQueue 不支持定时任务。pattern "${pattern}" 被忽略，仅创建一次性任务。生产环境请使用 BullMQ。`);
+  async addRepeatable<T>(
+    queueName: string,
+    data: T,
+    pattern: string,
+    options?: JobOptions,
+  ): Promise<Job<T>> {
+    this.logger.warn(
+      `InMemoryQueue 不支持定时任务。pattern "${pattern}" 被忽略，仅创建一次性任务。生产环境请使用 BullMQ。`,
+    );
     return this.add(queueName, data, options);
   }
 
@@ -102,7 +127,7 @@ export class InMemoryQueue implements QueueProvider, OnModuleDestroy {
     const q = this.getQueue(queueName);
     const stats: QueueStats = { waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0 };
     for (const job of q.values()) {
-      stats[job.status]++;
+      if (job.status !== 'unknown') stats[job.status]++;
     }
     return stats;
   }

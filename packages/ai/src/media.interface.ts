@@ -20,6 +20,8 @@ export interface MediaGenerationConfig {
   modelId: string;
   /** 请求超时 (ms) */
   timeoutMs?: number;
+  /** 取消当前 Provider 请求 */
+  signal?: AbortSignal;
   /** 代理地址 */
   proxyUrl?: string;
 

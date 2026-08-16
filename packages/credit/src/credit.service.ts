@@ -1,7 +1,7 @@
 import { Injectable, Inject, Logger, Optional } from '@nestjs/common';
 import { type DatabaseAdapter, BusinessException, ValidationException } from '@zucker/core';
 
-import { DATABASE_ADAPTER } from '@zucker/crud';
+const DATABASE_ADAPTER = 'DATABASE_ADAPTER';
 
 /** Minimal TopicEventBus interface to avoid hard dependency on @zucker/event */
 interface TopicEventBusLike {
@@ -143,11 +143,23 @@ export class CreditService {
       return bal;
     });
 
-    await this.emitCreditEvent('granted', CREDIT_EVENT_TOPICS.GRANTED, userId, amount, newBalance, description);
+    await this.emitCreditEvent(
+      'granted',
+      CREDIT_EVENT_TOPICS.GRANTED,
+      userId,
+      amount,
+      newBalance,
+      description,
+    );
     this.logger.log(`积分发放: userId=${userId}, amount=${amount}`);
   }
 
-  async consume(userId: string, amount: number, description: string, orderId?: string): Promise<void> {
+  async consume(
+    userId: string,
+    amount: number,
+    description: string,
+    orderId?: string,
+  ): Promise<void> {
     this.validateAmount(amount);
     this.validateUserId(userId);
 
@@ -187,11 +199,24 @@ export class CreditService {
       return bal;
     });
 
-    await this.emitCreditEvent('consumed', CREDIT_EVENT_TOPICS.CONSUMED, userId, amount, newBalance, description, orderId);
+    await this.emitCreditEvent(
+      'consumed',
+      CREDIT_EVENT_TOPICS.CONSUMED,
+      userId,
+      amount,
+      newBalance,
+      description,
+      orderId,
+    );
     this.logger.log(`积分消费: userId=${userId}, amount=${amount}`);
   }
 
-  async refund(userId: string, amount: number, description: string, orderId?: string): Promise<void> {
+  async refund(
+    userId: string,
+    amount: number,
+    description: string,
+    orderId?: string,
+  ): Promise<void> {
     this.validateAmount(amount);
     this.validateUserId(userId);
 
@@ -218,7 +243,15 @@ export class CreditService {
       return bal;
     });
 
-    await this.emitCreditEvent('refunded', CREDIT_EVENT_TOPICS.REFUNDED, userId, amount, newBalance, description, orderId);
+    await this.emitCreditEvent(
+      'refunded',
+      CREDIT_EVENT_TOPICS.REFUNDED,
+      userId,
+      amount,
+      newBalance,
+      description,
+      orderId,
+    );
     this.logger.log(`积分退还: userId=${userId}, amount=${amount}`);
   }
 
@@ -226,20 +259,14 @@ export class CreditService {
   async query(userId: string, options: CreditQueryOptions = {}): Promise<CreditQueryResult> {
     this.validateUserId(userId);
 
-    const {
-      page = 1,
-      pageSize = 20,
-      type,
-      startDate,
-      endDate,
-    } = options;
+    const { page = 1, pageSize = 20, type, startDate, endDate } = options;
 
     const safePage = Math.max(1, Math.floor(page));
     const safePageSize = Math.min(100, Math.max(1, Math.floor(pageSize)));
 
-    const account = await this.db.model('creditAccount').findUnique({
+    const account = (await this.db.model('creditAccount').findUnique({
       where: { userId },
-    }) as CreditAccount | null;
+    })) as CreditAccount | null;
 
     const where: Record<string, unknown> = { userId };
     if (type) where.type = type;
@@ -281,14 +308,7 @@ export class CreditService {
     pageSize: number;
     totalPages: number;
   }> {
-    const {
-      page = 1,
-      pageSize = 20,
-      type,
-      startDate,
-      endDate,
-      userId,
-    } = options;
+    const { page = 1, pageSize = 20, type, startDate, endDate, userId } = options;
 
     const safePage = Math.max(1, Math.floor(page));
     const safePageSize = Math.min(100, Math.max(1, Math.floor(pageSize)));
@@ -335,9 +355,9 @@ export class CreditService {
   async getBalance(userId: string): Promise<{ balance: number; frozenBalance: number }> {
     this.validateUserId(userId);
 
-    const account = await this.db.model('creditAccount').findUnique({
+    const account = (await this.db.model('creditAccount').findUnique({
       where: { userId },
-    }) as CreditAccount | null;
+    })) as CreditAccount | null;
 
     return {
       balance: account?.balance ?? 0,
@@ -360,10 +380,7 @@ export class CreditService {
     this.validateAmount(amount);
 
     if (fromUserId === toUserId) {
-      throw new ValidationException(
-        { userId: ['不能向自己转账'] },
-        '不能向自己转账',
-      );
+      throw new ValidationException({ userId: ['不能向自己转账'] }, '不能向自己转账');
     }
 
     // NOTE: 并发安全依赖于数据库事务隔离级别。
@@ -416,7 +433,14 @@ export class CreditService {
       return { fromBalance, toBalance };
     });
 
-    await this.emitCreditEvent('transferred', CREDIT_EVENT_TOPICS.TRANSFERRED, fromUserId, amount, result.fromBalance, `${description} → ${toUserId}`);
+    await this.emitCreditEvent(
+      'transferred',
+      CREDIT_EVENT_TOPICS.TRANSFERRED,
+      fromUserId,
+      amount,
+      result.fromBalance,
+      `${description} → ${toUserId}`,
+    );
     this.logger.log(`积分转账: from=${fromUserId}, to=${toUserId}, amount=${amount}`);
     return result;
   }
@@ -466,7 +490,14 @@ export class CreditService {
         },
       });
 
-      await this.emitCreditEvent('frozen', CREDIT_EVENT_TOPICS.FROZEN, userId, amount, balance, description);
+      await this.emitCreditEvent(
+        'frozen',
+        CREDIT_EVENT_TOPICS.FROZEN,
+        userId,
+        amount,
+        balance,
+        description,
+      );
 
       return { balance, frozenBalance };
     });
@@ -517,7 +548,14 @@ export class CreditService {
         },
       });
 
-      await this.emitCreditEvent('unfrozen', CREDIT_EVENT_TOPICS.UNFROZEN, userId, amount, balance, description);
+      await this.emitCreditEvent(
+        'unfrozen',
+        CREDIT_EVENT_TOPICS.UNFROZEN,
+        userId,
+        amount,
+        balance,
+        description,
+      );
 
       return { balance, frozenBalance };
     });
@@ -525,7 +563,7 @@ export class CreditService {
 
   async checkExpired(): Promise<number> {
     const now = new Date();
-    const expiredTransactions = await this.db.model('creditTransaction').findMany({
+    const expiredTransactions = (await this.db.model('creditTransaction').findMany({
       where: {
         type: CreditTransactionType.GRANT,
         expireAt: { lte: now },
@@ -533,7 +571,7 @@ export class CreditService {
       },
       take: EXPIRE_BATCH_SIZE,
       orderBy: { expireAt: 'asc' },
-    }) as CreditTransactionRecord[];
+    })) as CreditTransactionRecord[];
 
     let count = 0;
     for (const tx of expiredTransactions) {
@@ -548,9 +586,9 @@ export class CreditService {
             return;
           }
 
-          const account = await dbTx.model('creditAccount').findUnique({
+          const account = (await dbTx.model('creditAccount').findUnique({
             where: { userId: tx.userId },
-          }) as CreditAccount | null;
+          })) as CreditAccount | null;
           if (!account) return;
 
           const deduction = Math.min(tx.amount, account.balance);
@@ -626,13 +664,15 @@ export class CreditService {
    * 批量查询多个用户的余额
    * 对标 hsweb CreditService.getBalances
    */
-  async getBalances(userIds: string[]): Promise<Map<string, { balance: number; frozenBalance: number }>> {
+  async getBalances(
+    userIds: string[],
+  ): Promise<Map<string, { balance: number; frozenBalance: number }>> {
     const result = new Map<string, { balance: number; frozenBalance: number }>();
     if (userIds.length === 0) return result;
 
-    const accounts = await this.db.model('creditAccount').findMany({
+    const accounts = (await this.db.model('creditAccount').findMany({
       where: { userId: { in: userIds } },
-    }) as CreditAccount[];
+    })) as CreditAccount[];
 
     for (const account of accounts) {
       result.set(account.userId, {
@@ -664,10 +704,7 @@ export class CreditService {
   /** Validate that userId is a non-empty string */
   private validateUserId(userId: string): void {
     if (!userId || typeof userId !== 'string' || userId.trim().length === 0) {
-      throw new ValidationException(
-        { userId: ['用户ID不能为空'] },
-        '用户ID不能为空',
-      );
+      throw new ValidationException({ userId: ['用户ID不能为空'] }, '用户ID不能为空');
     }
   }
 
@@ -694,14 +731,14 @@ export class CreditService {
   }
 
   private async ensureAccount(tx: DatabaseAdapter, userId: string): Promise<CreditAccount> {
-    let account = await tx.model('creditAccount').findUnique({
+    let account = (await tx.model('creditAccount').findUnique({
       where: { userId },
-    }) as CreditAccount | null;
+    })) as CreditAccount | null;
 
     if (!account) {
-      account = await tx.model('creditAccount').create({
+      account = (await tx.model('creditAccount').create({
         data: { userId, balance: 0, frozenBalance: 0 },
-      }) as CreditAccount;
+      })) as CreditAccount;
     }
 
     return account;

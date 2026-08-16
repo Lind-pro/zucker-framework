@@ -11,32 +11,21 @@ export {
   SYSTEM_LOG_EVENT,
   accessLogToSimpleMap,
 } from './events';
-export type {
-  AccessLogPayload,
-  OperationLogPayload,
-  SystemLogPayload,
-} from './events';
+export type { AccessLogPayload, OperationLogPayload, SystemLogPayload } from './events';
 
 export {
   CorrelationIdMiddleware,
   getCorrelationId,
+  normalizeCorrelationId,
   runWithCorrelationId,
   runWithNewCorrelationId,
   CORRELATION_ID_HEADER,
 } from './correlation-id';
 
-export {
-  StructuredLogger,
-  LogLevel,
-  registerTraceIdResolver,
-} from './structured-logger';
+export { StructuredLogger, LogLevel, registerTraceIdResolver } from './structured-logger';
 export type { StructuredLogEntry } from './structured-logger';
 
-export {
-  BusinessLogger,
-  BUSINESS_LOGGER_BUS,
-  BUSINESS_LOG_EVENT,
-} from './business-logger';
+export { BusinessLogger, BUSINESS_LOGGER_BUS, BUSINESS_LOG_EVENT } from './business-logger';
 export type { BusinessLogEntry, BusinessLogBus } from './business-logger';
 
 export { ZuckerLoggingModule } from './logging.module';

@@ -1,6 +1,7 @@
 import { Injectable, Inject, Optional, Logger } from '@nestjs/common';
 import { EventEmitter2 } from 'eventemitter2';
 import { getCorrelationId } from './correlation-id';
+import { PiiFilter } from './pii-filter';
 
 export const BUSINESS_LOGGER_BUS = Symbol('BUSINESS_LOGGER_BUS');
 export const BUSINESS_LOG_EVENT = 'zucker.business-log';
@@ -32,6 +33,7 @@ export interface BusinessLogBus {
 @Injectable()
 export class BusinessLogger {
   private readonly logger = new Logger(BusinessLogger.name);
+  private readonly piiFilter = new PiiFilter();
 
   constructor(
     @Optional() private readonly eventEmitter?: EventEmitter2,
@@ -99,14 +101,12 @@ export class BusinessLogger {
   /**
    * 完整日志记录
    */
-  async log(
-    params: Omit<BusinessLogEntry, 'correlationId' | 'timestamp'>,
-  ): Promise<void> {
-    const entry: BusinessLogEntry = {
+  async log(params: Omit<BusinessLogEntry, 'correlationId' | 'timestamp'>): Promise<void> {
+    const entry = this.piiFilter.sanitizeValue({
       ...params,
       correlationId: getCorrelationId(),
       timestamp: new Date().toISOString(),
-    };
+    }) as BusinessLogEntry;
 
     // 始终通过事件总线发布
     this.eventEmitter?.emit(BUSINESS_LOG_EVENT, entry);
@@ -117,7 +117,11 @@ export class BusinessLogger {
         await this.bus.publish('system/business-log', entry);
       } catch (err) {
         this.logger.warn(
-          `Failed to publish business log via bus: ${err instanceof Error ? err.message : String(err)}`,
+          this.piiFilter.sanitize(
+            `Failed to publish business log via bus: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          ),
         );
       }
     }

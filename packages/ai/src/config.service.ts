@@ -1,8 +1,12 @@
 import { Injectable, Inject, Logger } from '@nestjs/common';
-import { type DatabaseAdapter, ValidationException, NotFoundException, BusinessException } from '@zucker/core';
+import {
+  DATABASE_ADAPTER,
+  type DatabaseAdapter,
+  ValidationException,
+  NotFoundException,
+  BusinessException,
+} from '@zucker/core';
 import { AIScenario, AIModelConfig } from './ai-provider.interface';
-
-import { DATABASE_ADAPTER } from '@zucker/crud';
 
 /** Maximum number of cached scenario configs to prevent memory leaks */
 const MAX_CACHE_SIZE = 200;
@@ -43,9 +47,7 @@ export class AIConfigService {
   private cacheTtl = 60_000;
   private apiKeyDecryptor: ApiKeyDecryptor | null = null;
 
-  constructor(
-    @Inject(DATABASE_ADAPTER) private readonly db: DatabaseAdapter,
-  ) {}
+  constructor(@Inject(DATABASE_ADAPTER) private readonly db: DatabaseAdapter) {}
 
   /** Update the cache TTL (in milliseconds). Existing cached entries use the new TTL on next access. */
   setCacheTtl(ttlMs: number): void {
@@ -66,10 +68,7 @@ export class AIConfigService {
 
   async getScenarioConfig(scenario: string): Promise<AIModelConfig> {
     if (!scenario || typeof scenario !== 'string') {
-      throw new ValidationException(
-        { scenario: ['场景名称不能为空'] },
-        '场景名称不能为空',
-      );
+      throw new ValidationException({ scenario: ['场景名称不能为空'] }, '场景名称不能为空');
     }
 
     const cached = this.cache.get(scenario);
@@ -91,9 +90,10 @@ export class AIConfigService {
       modelId: model.modelId,
       temperature: model.temperature ?? 0.7,
       maxTokens: model.maxTokens ?? 4096,
-      proxyUrl: model.proxyHost && model.proxyPort
-        ? `http://${model.proxyHost}:${model.proxyPort}`
-        : undefined,
+      proxyUrl:
+        model.proxyHost && model.proxyPort
+          ? `http://${model.proxyHost}:${model.proxyPort}`
+          : undefined,
       providerId: model.provider ? model.provider.toLowerCase() : undefined,
     };
 
@@ -123,7 +123,9 @@ export class AIConfigService {
         maxTokens: m.maxTokens ?? 4096,
       }));
     } catch (error) {
-      this.logger.error(`获取 AI 场景列表失败: ${error instanceof Error ? error.message : String(error)}`);
+      this.logger.error(
+        `获取 AI 场景列表失败: ${error instanceof Error ? error.message : String(error)}`,
+      );
       return [];
     }
   }

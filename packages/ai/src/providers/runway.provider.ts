@@ -1,11 +1,12 @@
-import type {
-  MediaProvider,
-  MediaGenerationConfig,
-  MediaGenerationResult,
-  MediaModelInfo,
-  MediaTaskResult,
+import {
+  MediaTaskStatus,
+  MediaType,
+  type MediaProvider,
+  type MediaGenerationConfig,
+  type MediaModelInfo,
+  type MediaTaskResult,
 } from '../media.interface';
-import { MediaTaskStatus, MediaType } from '../media.interface';
+import { providerRequestSignal } from '../abort-signal';
 
 const RUNWAY_API_BASE = 'https://api.dev.runwayml.com/v1';
 
@@ -19,10 +20,7 @@ export class RunwayProvider implements MediaProvider {
   name = 'Runway';
   supportedTypes = [MediaType.VIDEO];
 
-  async generate(
-    prompt: string,
-    config: MediaGenerationConfig,
-  ): Promise<MediaTaskResult> {
+  async generate(prompt: string, config: MediaGenerationConfig): Promise<MediaTaskResult> {
     const baseURL = config.baseURL || RUNWAY_API_BASE;
     const modelId = config.modelId || 'gen3a_turbo';
 
@@ -49,9 +47,7 @@ export class RunwayProvider implements MediaProvider {
         'X-Runway-Version': '2024-11-06',
       },
       body: JSON.stringify(body),
-      signal: config.timeoutMs
-        ? AbortSignal.timeout(config.timeoutMs)
-        : undefined,
+      signal: providerRequestSignal(config.signal, config.timeoutMs),
     });
 
     if (!response.ok) {
@@ -68,10 +64,7 @@ export class RunwayProvider implements MediaProvider {
     };
   }
 
-  async getTaskStatus(
-    taskId: string,
-    config: MediaGenerationConfig,
-  ): Promise<MediaTaskResult> {
+  async getTaskStatus(taskId: string, config: MediaGenerationConfig): Promise<MediaTaskResult> {
     const baseURL = config.baseURL || RUNWAY_API_BASE;
 
     const response = await fetch(`${baseURL}/tasks/${taskId}`, {
@@ -79,6 +72,7 @@ export class RunwayProvider implements MediaProvider {
         Authorization: `Bearer ${config.apiKey}`,
         'X-Runway-Version': '2024-11-06',
       },
+      signal: providerRequestSignal(config.signal, config.timeoutMs),
     });
 
     if (!response.ok) {

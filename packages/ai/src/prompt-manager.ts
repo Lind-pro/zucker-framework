@@ -1,6 +1,5 @@
 import { Injectable, Logger, Inject, Optional } from '@nestjs/common';
-import type { DatabaseAdapter } from '@zucker/core';
-import { DATABASE_ADAPTER } from '@zucker/crud';
+import { DATABASE_ADAPTER, type DatabaseAdapter } from '@zucker/core';
 
 /** 期望的响应格式（对齐 OpenAI Chat Completions API response_format 字段）*/
 export type ResponseFormat = 'json_object' | 'json_array' | 'text' | 'json_schema';
@@ -66,9 +65,7 @@ export class PromptManager {
   private readonly logger = new Logger(PromptManager.name);
   private readonly cache = new Map<string, PromptTemplate>();
 
-  constructor(
-    @Inject(DATABASE_ADAPTER) @Optional() private readonly db?: DatabaseAdapter,
-  ) {}
+  constructor(@Inject(DATABASE_ADAPTER) @Optional() private readonly db?: DatabaseAdapter) {}
 
   /** 获取提示词模板 */
   async getTemplate(id: string): Promise<PromptTemplate | null> {
@@ -94,7 +91,9 @@ export class PromptManager {
     }
 
     try {
-      const existing = await this.db.model('promptTemplate').findUnique({ where: { id: template.id } });
+      const existing = await this.db
+        .model('promptTemplate')
+        .findUnique({ where: { id: template.id } });
       const data = { ...template, updatedAt: new Date() } as unknown as Record<string, unknown>;
 
       if (existing) {
@@ -111,7 +110,9 @@ export class PromptManager {
         template.version = 1;
       }
     } catch (err) {
-      this.logger.warn(`Prompt template save to DB failed, using cache: ${err instanceof Error ? err.message : String(err)}`);
+      this.logger.warn(
+        `Prompt template save to DB failed, using cache: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
 
     this.cache.set(template.id, template);
@@ -150,9 +151,8 @@ export class PromptManager {
     if (!this.db) {
       // 内存 cache 模式
       const all = Array.from(this.cache.values());
-      const matched = all.filter((t) =>
-        candidates.includes(t.key ?? '') &&
-        (activeOnly ? t.isActive !== false : true),
+      const matched = all.filter(
+        (t) => candidates.includes(t.key ?? '') && (activeOnly ? t.isActive !== false : true),
       );
       if (matched.length === 0) return null;
       return matched.sort((a, b) => (b.version ?? 0) - (a.version ?? 0))[0];
@@ -170,7 +170,9 @@ export class PromptManager {
       const list = records as unknown as PromptTemplate[];
       return list[0] ?? null;
     } catch (err) {
-      this.logger.warn(`findActiveByKey 数据库失败: ${err instanceof Error ? err.message : String(err)}`);
+      this.logger.warn(
+        `findActiveByKey 数据库失败: ${err instanceof Error ? err.message : String(err)}`,
+      );
       return null;
     }
   }
@@ -184,9 +186,14 @@ export class PromptManager {
    * - json_schema 缺 schema → 降级 json_object（warn）
    * - json_array / text / undefined → undefined（消费方自行处理）
    */
-  getResponseFormat(template: PromptTemplate):
+  getResponseFormat(
+    template: PromptTemplate,
+  ):
     | { type: 'json_object' }
-    | { type: 'json_schema'; json_schema: { name?: string; schema: Record<string, unknown>; strict?: boolean } }
+    | {
+        type: 'json_schema';
+        json_schema: { name?: string; schema: Record<string, unknown>; strict?: boolean };
+      }
     | undefined {
     switch (template.responseFormat) {
       case 'json_object':
@@ -211,7 +218,9 @@ export class PromptManager {
     if (!this.db) return Array.from(this.cache.values());
     try {
       const where = tags?.length ? { tags: { hasSome: tags } } : {};
-      return await this.db.model('promptTemplate').findMany({ where }) as unknown as PromptTemplate[];
+      return (await this.db
+        .model('promptTemplate')
+        .findMany({ where })) as unknown as PromptTemplate[];
     } catch {
       return Array.from(this.cache.values());
     }

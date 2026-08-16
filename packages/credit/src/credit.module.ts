@@ -1,10 +1,10 @@
 import {
-  Module,
-  DynamicModule,
   Global,
-  type Provider,
+  Module,
+  type DynamicModule,
   type InjectionToken,
   type OptionalFactoryDependency,
+  type Provider,
   type Type,
 } from '@nestjs/common';
 import { CreditService } from './credit.service';
@@ -40,10 +40,7 @@ export class ZuckerCreditModule {
       module: ZuckerCreditModule,
       global: true,
       imports: options.imports ?? [],
-      providers: [
-        ...asyncProviders,
-        CreditService,
-      ],
+      providers: [...asyncProviders, CreditService],
       exports: [CreditService],
     };
   }
@@ -58,10 +55,14 @@ export class ZuckerCreditModule {
         },
       ];
     }
+    const factoryType = options.useClass ?? options.useExisting;
+    if (!factoryType) {
+      throw new TypeError('CreditModuleAsyncOptions requires useFactory, useClass or useExisting');
+    }
     const adapterProvider: Provider = {
       provide: 'DATABASE_ADAPTER',
       useFactory: async (factory: CreditModuleAdapterFactory) => factory.createDatabaseAdapter(),
-      inject: [options.useClass ?? options.useExisting!],
+      inject: [factoryType],
     };
     if (options.useClass) {
       return [{ provide: options.useClass, useClass: options.useClass }, adapterProvider];

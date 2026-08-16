@@ -72,4 +72,10 @@ export enum AIErrorType {
   SERVER_ERROR = 'SERVER_ERROR',
   /** Unknown error */
   UNKNOWN = 'UNKNOWN',
+  /** Network or connection failure */
+  NETWORK = 'NETWORK',
+  /** Provider content or safety policy rejection */
+  CONTENT_POLICY = 'CONTENT_POLICY',
+  /** Explicit caller cancellation */
+  CANCELLED = 'CANCELLED',
 }

@@ -5,9 +5,21 @@ import {
   type AICallErrorEvent,
 } from './call-observer';
 import type { TokenUsage } from './ai-provider.interface';
+import { AICallTimeoutError, classifyAIError } from './ai-call-errors';
+import { abortError, abortableDelay, createAbortScope, waitForAbortable } from './abort-signal';
+import { sanitizeAIObserverError, sanitizeAIObserverMetadata } from './observer-sanitizer';
 
-export interface CallOptions {
-  /** Timeout in milliseconds (default: 60000) */
+export type ObserverResultMode<T> = 'omit' | 'full' | ((result: T) => unknown);
+export type ObserverMetadataMode = 'sanitize' | 'omit' | 'full';
+
+export interface AICallAttemptContext {
+  attempt: number;
+  signal: AbortSignal;
+  deadlineAt?: number;
+}
+
+export interface CallOptions<T = unknown> {
+  /** Per-attempt timeout. Undefined means no framework deadline. */
   timeoutMs?: number;
   /** Maximum number of retry attempts (default: 3) */
   maxAttempts?: number;
@@ -21,6 +33,14 @@ export interface CallOptions {
   maxDelayMs?: number;
   /** Caller-supplied metadata, propagated to AICallObserver events */
   metadata?: Record<string, unknown>;
+  /** Cancels the current attempt and any retry delay. */
+  signal?: AbortSignal;
+  /** Timeout retries are disabled by default to avoid duplicate provider work. */
+  retryTimeouts?: boolean;
+  /** Full AI output is omitted from observers unless explicitly enabled. */
+  observerResult?: ObserverResultMode<T>;
+  /** Metadata is sanitized by default; raw values require explicit opt-in. */
+  observerMetadata?: ObserverMetadataMode;
 }
 
 /** 流式聚合调用选项 */
@@ -31,6 +51,14 @@ export interface StreamCallOptions {
   progressIntervalMs?: number;
   /** 调用方自定义元数据，传给 observer */
   metadata?: Record<string, unknown>;
+  /** Optional total stream timeout. Undefined means no framework deadline. */
+  timeoutMs?: number;
+  /** Caller cancellation signal. */
+  signal?: AbortSignal;
+  /** Full aggregated content is omitted from observers by default. */
+  observerResult?: ObserverResultMode<StreamResult>;
+  /** Metadata is sanitized by default; raw values require explicit opt-in. */
+  observerMetadata?: ObserverMetadataMode;
 }
 
 /** 流式聚合结果 */
@@ -45,77 +73,82 @@ export interface StreamResult {
   durationMs: number;
 }
 
-/** Errors that should typically not be retried */
-const NON_RETRYABLE_PATTERNS = [
-  'authentication',
-  'unauthorized',
-  'forbidden',
-  'invalid_api_key',
-  'insufficient_quota',
-  'invalid_request',
-] as const;
-
-/** Default retryable error check: rate limits and server errors are retryable, auth errors are not */
-function defaultIsRetryable(error: Error): boolean {
-  const msg = error.message.toLowerCase();
-  return !NON_RETRYABLE_PATTERNS.some((pattern) => msg.includes(pattern));
-}
-
 @Injectable()
 export class AICallWrapper {
   private readonly logger = new Logger(AICallWrapper.name);
 
-  constructor(
-    @Optional() private readonly observerRegistry?: AICallObserverRegistry,
-  ) {}
+  constructor(@Optional() private readonly observerRegistry?: AICallObserverRegistry) {}
 
   async callWithRetry<T>(
-    fn: () => Promise<T>,
-    options: CallOptions = {},
+    fn: (context: AICallAttemptContext) => Promise<T>,
+    options: CallOptions<T> = {},
   ): Promise<T> {
     const {
-      timeoutMs = 60_000,
+      timeoutMs,
       maxAttempts = 3,
       context = 'AI 调用',
-      isRetryable = defaultIsRetryable,
       baseDelayMs = 1000,
       maxDelayMs = 10_000,
       metadata,
+      signal,
+      retryTimeouts = false,
+      observerResult = 'omit',
+      observerMetadata = 'sanitize',
     } = options;
+    if (maxAttempts < 1) throw new RangeError('maxAttempts must be at least 1');
+    const isRetryable =
+      options.isRetryable ??
+      ((error: Error) => {
+        if (error instanceof AICallTimeoutError) return retryTimeouts;
+        return classifyAIError(error).retryable;
+      });
 
     let lastError: Error = new Error(`${context}: 未知错误`);
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const startTime = Date.now();
+      const abortScope = createAbortScope(signal, timeoutMs);
       try {
-        const result = await this.withTimeout(fn(), timeoutMs);
+        const result = await waitForAbortable(
+          Promise.resolve().then(() =>
+            fn({
+              attempt,
+              signal: abortScope.signal,
+              deadlineAt: timeoutMs === undefined ? undefined : startTime + timeoutMs,
+            }),
+          ),
+          abortScope.signal,
+        );
         const durationMs = Date.now() - startTime;
 
-        this.logger.log(
-          `[${context}] 成功 (attempt=${attempt}, ${durationMs}ms)`,
-        );
+        this.logger.log(`[${context}] 成功 (attempt=${attempt}, ${durationMs}ms)`);
         await this.notifySuccess({
           context,
           startTime,
           durationMs,
           attempt,
-          result,
-          metadata,
+          result: this.selectObserverResult(result, observerResult),
+          metadata: this.selectObserverMetadata(metadata, observerMetadata),
         });
         return result;
       } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error));
+        lastError = abortScope.signal.aborted
+          ? abortError(abortScope.signal)
+          : error instanceof Error
+            ? error
+            : new Error(String(error));
         const durationMs = Date.now() - startTime;
+        const safeError = sanitizeAIObserverError(lastError);
         this.logger.warn(
-          `[${context}] 失败 (attempt=${attempt}/${maxAttempts}): ${lastError.message}`,
+          `[${context}] 失败 (attempt=${attempt}/${maxAttempts}): ${safeError.message}`,
         );
         await this.notifyError({
           context,
           startTime,
           durationMs,
           attempt,
-          error: lastError,
-          metadata,
+          error: safeError,
+          metadata: this.selectObserverMetadata(metadata, observerMetadata),
         });
 
         // Do not retry non-retryable errors
@@ -126,8 +159,10 @@ export class AICallWrapper {
 
         if (attempt < maxAttempts) {
           const delay = this.calculateDelay(attempt, baseDelayMs, maxDelayMs);
-          await this.sleep(delay);
+          await abortableDelay(delay, signal);
         }
+      } finally {
+        abortScope.dispose();
       }
     }
 
@@ -157,9 +192,7 @@ export class AICallWrapper {
       try {
         await obs.onError(event);
       } catch (e) {
-        this.logger.warn(
-          `AI Observer onError 失败: ${e instanceof Error ? e.message : String(e)}`,
-        );
+        this.logger.warn(`AI Observer onError 失败: ${e instanceof Error ? e.message : String(e)}`);
       }
     }
   }
@@ -184,7 +217,7 @@ export class AICallWrapper {
    * ```
    */
   async callWithStream<TChunk>(
-    streamFactory: () => Promise<AsyncIterable<TChunk>>,
+    streamFactory: (context: AICallAttemptContext) => Promise<AsyncIterable<TChunk>>,
     extractor: (chunk: TChunk) => { content?: string; usage?: TokenUsage },
     options: StreamCallOptions = {},
   ): Promise<StreamResult> {
@@ -192,26 +225,42 @@ export class AICallWrapper {
       context = 'AI 流式调用',
       progressIntervalMs = 60_000,
       metadata,
+      timeoutMs,
+      signal,
+      observerResult = 'omit',
+      observerMetadata = 'sanitize',
     } = options;
 
     const startTime = Date.now();
+    const abortScope = createAbortScope(signal, timeoutMs);
     let lastLogTime = startTime;
     let content = '';
     let chunkCount = 0;
     let usage: TokenUsage | undefined;
+    let iterator: AsyncIterator<TChunk> | undefined;
 
     try {
-      const stream = await streamFactory();
-      for await (const chunk of stream) {
+      const stream = await waitForAbortable(
+        Promise.resolve().then(() =>
+          streamFactory({
+            attempt: 1,
+            signal: abortScope.signal,
+            deadlineAt: timeoutMs === undefined ? undefined : startTime + timeoutMs,
+          }),
+        ),
+        abortScope.signal,
+      );
+      iterator = stream[Symbol.asyncIterator]();
+      while (true) {
+        const next = await waitForAbortable(iterator.next(), abortScope.signal);
+        if (next.done) break;
+        const chunk = next.value;
         const extracted = extractor(chunk);
         if (extracted.content) content += extracted.content;
         if (extracted.usage) usage = extracted.usage;
         chunkCount += 1;
 
-        if (
-          progressIntervalMs > 0 &&
-          Date.now() - lastLogTime >= progressIntervalMs
-        ) {
+        if (progressIntervalMs > 0 && Date.now() - lastLogTime >= progressIntervalMs) {
           const elapsed = Math.floor((Date.now() - startTime) / 1000);
           const lines = content.split('\n').filter(Boolean).length;
           this.logger.log(
@@ -232,26 +281,38 @@ export class AICallWrapper {
         startTime,
         durationMs,
         attempt: 1,
-        result,
-        metadata,
+        result: this.selectObserverResult(result, observerResult),
+        metadata: this.selectObserverMetadata(metadata, observerMetadata),
       });
 
       return result;
     } catch (error) {
       const durationMs = Date.now() - startTime;
-      const err = error instanceof Error ? error : new Error(String(error));
-      this.logger.warn(
-        `[${context}] 流式失败 (${durationMs}ms): ${err.message}`,
-      );
+      const err = abortScope.signal.aborted
+        ? abortError(abortScope.signal)
+        : error instanceof Error
+          ? error
+          : new Error(String(error));
+      const safeError = sanitizeAIObserverError(err);
+      this.logger.warn(`[${context}] 流式失败 (${durationMs}ms): ${safeError.message}`);
       await this.notifyError({
         context,
         startTime,
         durationMs,
         attempt: 1,
-        error: err,
-        metadata,
+        error: safeError,
+        metadata: this.selectObserverMetadata(metadata, observerMetadata),
       });
       throw err;
+    } finally {
+      if (abortScope.signal.aborted && iterator?.return) {
+        try {
+          await iterator.return();
+        } catch {
+          // Provider cancellation is best effort; preserve the original abort error.
+        }
+      }
+      abortScope.dispose();
     }
   }
 
@@ -264,35 +325,18 @@ export class AICallWrapper {
     return Math.floor(cappedDelay * jitter);
   }
 
-  private withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-    return new Promise<T>((resolve, reject) => {
-      let settled = false;
-      const timer = setTimeout(() => {
-        if (!settled) {
-          settled = true;
-          reject(new Error(`调用超时 (${ms}ms)`));
-        }
-      }, ms);
-
-      promise
-        .then((val) => {
-          if (!settled) {
-            settled = true;
-            clearTimeout(timer);
-            resolve(val);
-          }
-        })
-        .catch((err) => {
-          if (!settled) {
-            settled = true;
-            clearTimeout(timer);
-            reject(err);
-          }
-        });
-    });
+  private selectObserverResult<T>(result: T, mode: ObserverResultMode<T>): unknown {
+    if (mode === 'omit') return undefined;
+    if (mode === 'full') return result;
+    return mode(result);
   }
 
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+  private selectObserverMetadata(
+    metadata: Record<string, unknown> | undefined,
+    mode: ObserverMetadataMode,
+  ): Record<string, unknown> | undefined {
+    if (mode === 'omit') return undefined;
+    if (mode === 'full') return metadata;
+    return sanitizeAIObserverMetadata(metadata);
   }
 }

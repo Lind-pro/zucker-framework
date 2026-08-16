@@ -1,23 +1,24 @@
 {
   "name": "@zucker/queue",
-  "version": "0.0.1",
+  "version": "0.1.0-rc.6",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts",
     "clean": "rm -rf dist",
     "lint": "eslint src/"
   },
-  "dependencies": {
-    "@zucker/core": "workspace:*"
-  },
   "devDependencies": {
-    "@types/node": "^25.5.0"
+    "@types/node": "^25.5.0",
+    "ioredis": "5.11.1"
   },
   "peerDependencies": {
     "@nestjs/common": "^11.0.0",
-    "@nestjs/core": "^11.0.0"
+    "@nestjs/core": "^11.0.0",
+    "bullmq": "^5.48.1"
   }
 }

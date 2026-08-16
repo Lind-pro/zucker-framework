@@ -1,17 +1,18 @@
 {
   "name": "@zucker/logging",
-  "version": "0.0.1",
+  "version": "0.1.0-rc.2",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
-    "build": "tsup src/index.ts --format cjs,esm --dts",
+    "build": "tsup src/index.ts --format cjs,esm --dts --external @nestjs/common --external @nestjs/core --external rxjs",
     "clean": "rm -rf dist",
     "lint": "eslint src/"
   },
   "dependencies": {
-    "@zucker/core": "workspace:*",
     "eventemitter2": "^6.4.9"
   },
   "devDependencies": {

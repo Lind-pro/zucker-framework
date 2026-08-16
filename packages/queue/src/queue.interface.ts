@@ -4,10 +4,17 @@
 export interface QueueProvider {
   /** 添加任务到队列 */
   add<T>(queueName: string, data: T, options?: JobOptions): Promise<Job<T>>;
+  /** Ensure a stable job exists, replacing a stale terminal transport record when necessary. */
+  ensure<T>(queueName: string, data: T, options: JobOptions & { jobId: string }): Promise<Job<T>>;
   /** 添加延迟任务 */
   addDelayed<T>(queueName: string, data: T, delayMs: number, options?: JobOptions): Promise<Job<T>>;
   /** 添加定时任务 */
-  addRepeatable<T>(queueName: string, data: T, pattern: string, options?: JobOptions): Promise<Job<T>>;
+  addRepeatable<T>(
+    queueName: string,
+    data: T,
+    pattern: string,
+    options?: JobOptions,
+  ): Promise<Job<T>>;
   /** 获取任务状态 */
   getJob<T>(queueName: string, jobId: string): Promise<Job<T> | null>;
   /** 移除任务 */
@@ -21,7 +28,9 @@ export interface QueueProvider {
 }
 
 export interface JobOptions {
+  name?: string;
   jobId?: string;
+  deduplicationId?: string;
   priority?: number;
   attempts?: number;
   backoff?: { type: 'fixed' | 'exponential'; delay: number };
@@ -29,11 +38,13 @@ export interface JobOptions {
   removeOnFail?: boolean | number;
 }
 
+export type JobProgress = number | string | boolean | object;
+
 export interface Job<T = unknown> {
   id: string;
   data: T;
-  status: 'waiting' | 'active' | 'completed' | 'failed' | 'delayed';
-  progress: number;
+  status: 'waiting' | 'active' | 'completed' | 'failed' | 'delayed' | 'unknown';
+  progress: JobProgress;
   attempts: number;
   failedReason?: string;
   createdAt: Date;

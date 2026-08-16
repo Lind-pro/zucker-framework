@@ -1,11 +1,13 @@
-import type {
-  MediaProvider,
-  MediaGenerationConfig,
-  MediaGenerationResult,
-  MediaModelInfo,
-  MediaTaskResult,
+import {
+  MediaTaskStatus,
+  MediaType,
+  type MediaProvider,
+  type MediaGenerationConfig,
+  type MediaGenerationResult,
+  type MediaModelInfo,
+  type MediaTaskResult,
 } from '../media.interface';
-import { MediaTaskStatus, MediaType } from '../media.interface';
+import { providerRequestSignal } from '../abort-signal';
 
 /** Replicate 预定义模型映射 */
 const REPLICATE_MODELS: Record<
@@ -22,7 +24,7 @@ const REPLICATE_MODELS: Record<
     model: 'flux-schnell',
     mediaType: MediaType.IMAGE,
   },
-  'sdxl': {
+  sdxl: {
     owner: 'stability-ai',
     model: 'sdxl',
     mediaType: MediaType.IMAGE,
@@ -61,19 +63,18 @@ export class ReplicateProvider implements MediaProvider {
     if (config.format) input.output_format = config.format;
     if (config.count) input.num_outputs = config.count;
 
-    const modelRef = mapping
-      ? `${mapping.owner}/${mapping.model}`
-      : modelId;
+    const modelRef = mapping ? `${mapping.owner}/${mapping.model}` : modelId;
 
     // run() 是阻塞调用，等待完成后返回结果
-    const output = await (client as any).run(modelRef, { input });
+    const output = await (client as any).run(modelRef, {
+      input,
+      signal: providerRequestSignal(config.signal, config.timeoutMs),
+    });
     const durationMs = Date.now() - startTime;
 
     // Replicate run() 返回 URL 数组或单个 URL（FileOutput）
     const url = Array.isArray(output) ? output[0] : output;
-    const urlStr = typeof url === 'string'
-      ? url
-      : url?.url?.() ?? String(url);
+    const urlStr = typeof url === 'string' ? url : (url?.url?.() ?? String(url));
 
     return {
       url: urlStr,
@@ -88,12 +89,11 @@ export class ReplicateProvider implements MediaProvider {
     };
   }
 
-  async getTaskStatus(
-    taskId: string,
-    config: MediaGenerationConfig,
-  ): Promise<MediaTaskResult> {
+  async getTaskStatus(taskId: string, config: MediaGenerationConfig): Promise<MediaTaskResult> {
     const client = await this.createClient(config);
-    const prediction = await (client as any).predictions.get(taskId);
+    const prediction = await (client as any).predictions.get(taskId, {
+      signal: providerRequestSignal(config.signal, config.timeoutMs),
+    });
 
     const statusMap: Record<string, MediaTaskStatus> = {
       starting: MediaTaskStatus.PENDING,
@@ -111,18 +111,14 @@ export class ReplicateProvider implements MediaProvider {
     };
 
     if (status === MediaTaskStatus.COMPLETED && prediction.output) {
-      const url = Array.isArray(prediction.output)
-        ? prediction.output[0]
-        : prediction.output;
+      const url = Array.isArray(prediction.output) ? prediction.output[0] : prediction.output;
       result.result = {
         url,
         mediaType: MediaType.IMAGE,
         cost: this.estimateCost(prediction.model ?? ''),
         provider: this.id,
         model: prediction.model ?? '',
-        durationMs: prediction.metrics?.predict_time
-          ? prediction.metrics.predict_time * 1000
-          : 0,
+        durationMs: prediction.metrics?.predict_time ? prediction.metrics.predict_time * 1000 : 0,
       };
     }
 
@@ -168,9 +164,7 @@ export class ReplicateProvider implements MediaProvider {
       const Replicate = mod.default ?? mod.Replicate;
       return new Replicate({ auth: config.apiKey });
     } catch {
-      throw new Error(
-        'replicate package not installed. Run: npm install replicate',
-      );
+      throw new Error('replicate package not installed. Run: npm install replicate');
     }
   }
 

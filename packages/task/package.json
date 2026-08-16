@@ -1,0 +1,38 @@
+{
+  "name": "@zucker/task",
+  "version": "0.1.0-rc.12",
+  "description": "Durable task lifecycle contracts and state machine for Zucker applications",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "assets"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts",
+    "clean": "rm -rf dist",
+    "lint": "eslint src/"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.5",
+    "@types/node": "^25.5.0",
+    "@types/pg": "8.21.0",
+    "pg": "8.23.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

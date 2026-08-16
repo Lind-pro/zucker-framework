@@ -23,10 +23,7 @@ export function getCorrelationId(): string | undefined {
  * });
  * ```
  */
-export function runWithCorrelationId<T>(
-  correlationId: string,
-  fn: () => T,
-): T {
+export function runWithCorrelationId<T>(correlationId: string, fn: () => T): T {
   return correlationStorage.run(correlationId, fn);
 }
 
@@ -38,15 +35,23 @@ export function runWithNewCorrelationId<T>(fn: () => T): T {
 }
 
 export const CORRELATION_ID_HEADER = 'x-correlation-id';
+const SAFE_CORRELATION_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+
+export function normalizeCorrelationId(value: unknown): string {
+  return typeof value === 'string' && SAFE_CORRELATION_ID.test(value) ? value : randomUUID();
+}
 
 /**
  * NestJS 中间件：从请求头提取或生成 Correlation ID，存入 AsyncLocalStorage
  */
 @Injectable()
 export class CorrelationIdMiddleware implements NestMiddleware {
-  use(req: { headers: Record<string, string | undefined> }, res: { setHeader(name: string, value: string): void }, next: () => void): void {
-    const correlationId =
-      (req.headers[CORRELATION_ID_HEADER] as string) || randomUUID();
+  use(
+    req: { headers: Record<string, string | string[] | undefined> },
+    res: { setHeader(name: string, value: string): void },
+    next: () => void,
+  ): void {
+    const correlationId = normalizeCorrelationId(req.headers[CORRELATION_ID_HEADER]);
 
     res.setHeader(CORRELATION_ID_HEADER, correlationId);
 

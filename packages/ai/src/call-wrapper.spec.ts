@@ -69,7 +69,10 @@ describe('AICallWrapper.callWithStream（A4 反哺）', () => {
         throw new Error('mid-stream boom');
       }
       await expect(
-        wrapper.callWithStream(() => Promise.resolve(badStream()), (c: any) => c),
+        wrapper.callWithStream(
+          () => Promise.resolve(badStream()),
+          (c: any) => c,
+        ),
       ).rejects.toThrow('mid-stream boom');
     });
 
@@ -83,7 +86,11 @@ describe('AICallWrapper.callWithStream（A4 反哺）', () => {
       await w.callWithStream(
         () => Promise.resolve(asAsyncIterable([{ content: 'hi' }])),
         (c: any) => c,
-        { context: 'test-stream', metadata: { foo: 'bar' } },
+        {
+          context: 'test-stream',
+          metadata: { foo: 'bar' },
+          observerResult: 'full',
+        },
       );
 
       expect(onSuccess).toHaveBeenCalledTimes(1);
@@ -123,8 +130,8 @@ describe('AICallWrapper.callWithStream（A4 反哺）', () => {
       );
 
       // 只有"流式完成"那一条 log，没有"进行中"
-      const progressLogs = logSpy.mock.calls.filter((c) =>
-        String(c[0]).includes('进行中') || String(c[0]).includes('已耗时'),
+      const progressLogs = logSpy.mock.calls.filter(
+        (c) => String(c[0]).includes('进行中') || String(c[0]).includes('已耗时'),
       );
       expect(progressLogs.length).toBe(0);
     });
@@ -141,12 +148,7 @@ describe('AICallWrapper.callWithStream（A4 反哺）', () => {
         choices: [
           {
             delta: {
-              content: [
-                { text: 'a' },
-                { text: 'b' },
-                { text: { content: 'c' } },
-                'd',
-              ],
+              content: [{ text: 'a' }, { text: 'b' }, { text: { content: 'c' } }, 'd'],
             },
           },
         ],

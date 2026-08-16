@@ -16,7 +16,10 @@ describe('StructuredLogger', () => {
     stdoutSpy.mockRestore();
     stderrSpy.mockRestore();
     // Reset trace resolvers
-    registerTraceIdResolver(() => undefined, () => undefined);
+    registerTraceIdResolver(
+      () => undefined,
+      () => undefined,
+    );
   });
 
   describe('JSON format output', () => {
@@ -53,6 +56,28 @@ describe('StructuredLogger', () => {
       const output = (stderrSpy.mock.calls[0][0] as string).trim();
       const parsed = JSON.parse(output);
       expect(parsed.data).toEqual({ trace: 'stack trace here' });
+    });
+
+    it('should redact PII and credentials from messages, data and traces', () => {
+      logger.writeLog(
+        LogLevel.ERROR,
+        'failed for attorney@example.com at 203.0.113.8',
+        'Security',
+        {
+          authorization: 'Bearer secret-token',
+          nested: { password: 'do-not-log' },
+          trace: 'owner@example.com',
+        },
+      );
+
+      const output = (stderrSpy.mock.calls[0][0] as string).trim();
+      const parsed = JSON.parse(output);
+      expect(parsed.message).toBe('failed for [EMAIL] at [IP]');
+      expect(parsed.data).toEqual({
+        authorization: '[REDACTED]',
+        nested: { password: '[REDACTED]' },
+        trace: '[EMAIL]',
+      });
     });
   });
 
@@ -100,7 +125,10 @@ describe('StructuredLogger', () => {
 
   describe('traceId integration', () => {
     it('should include traceId when resolver is registered', () => {
-      registerTraceIdResolver(() => 'trace-123', () => 'span-456');
+      registerTraceIdResolver(
+        () => 'trace-123',
+        () => 'span-456',
+      );
       logger.log('traced');
       const output = (stdoutSpy.mock.calls[0][0] as string).trim();
       const parsed = JSON.parse(output);

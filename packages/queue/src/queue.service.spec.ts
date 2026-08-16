@@ -13,6 +13,7 @@ function createMockProvider(): QueueProvider {
 
   return {
     add: vi.fn().mockResolvedValue(mockJob),
+    ensure: vi.fn().mockResolvedValue(mockJob),
     addDelayed: vi.fn().mockResolvedValue({ ...mockJob, status: 'delayed' }),
     addRepeatable: vi.fn().mockResolvedValue(mockJob),
     getJob: vi.fn().mockResolvedValue(mockJob),
@@ -46,10 +47,24 @@ describe('QueueService', () => {
     });
   });
 
+  describe('ensure', () => {
+    it('should delegate to provider.ensure', async () => {
+      const options = { jobId: 'job-1', attempts: 3 };
+      const job = await service.ensure('emails', { to: 'a@b.com' }, options);
+      expect(provider.ensure).toHaveBeenCalledWith('emails', { to: 'a@b.com' }, options);
+      expect(job.id).toBe('job-1');
+    });
+  });
+
   describe('addDelayed', () => {
     it('should delegate to provider.addDelayed', async () => {
       const job = await service.addDelayed('emails', { to: 'a@b.com' }, 5000);
-      expect(provider.addDelayed).toHaveBeenCalledWith('emails', { to: 'a@b.com' }, 5000, undefined);
+      expect(provider.addDelayed).toHaveBeenCalledWith(
+        'emails',
+        { to: 'a@b.com' },
+        5000,
+        undefined,
+      );
       expect(job.status).toBe('delayed');
     });
   });

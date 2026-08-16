@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { WebDavStorage } from './webdav-storage';
 
@@ -34,6 +35,8 @@ const defaultOptions = {
   basePath: '/files',
 };
 
+const loggerLog = vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+
 describe('WebDavStorage', () => {
   let storage: WebDavStorage;
 
@@ -48,6 +51,19 @@ describe('WebDavStorage', () => {
 
   it('should be configured after construction', () => {
     expect(storage.isConfigured()).toBe(true);
+  });
+
+  it('rejects incomplete credentials before creating a client', () => {
+    expect(() => new WebDavStorage({ ...defaultOptions, password: '' })).toThrow(
+      'WebDAV url, username and password are required',
+    );
+  });
+
+  it('does not disclose the endpoint or credentials in lifecycle logs', () => {
+    expect(loggerLog).toHaveBeenCalledWith('WebDAV storage initialized');
+    expect(JSON.stringify(loggerLog.mock.calls)).not.toContain(defaultOptions.url);
+    expect(JSON.stringify(loggerLog.mock.calls)).not.toContain(defaultOptions.username);
+    expect(JSON.stringify(loggerLog.mock.calls)).not.toContain(defaultOptions.password);
   });
 
   // ---- upload ----
@@ -69,6 +85,31 @@ describe('WebDavStorage', () => {
     expect(result.key).toBe('doc.txt');
     expect(result.url).toBe('https://public.example.com/doc.txt');
     expect(result.size).toBe(5);
+  });
+
+  it('coalesces concurrent creation of the same directory', async () => {
+    mockExists.mockImplementation(async (remotePath: string) => remotePath === '/files');
+    mockCreateDirectory.mockResolvedValueOnce(undefined);
+    mockPutFileContents.mockResolvedValue(undefined);
+
+    await Promise.all([
+      storage.upload(Buffer.from('a'), 'shared/a.txt'),
+      storage.upload(Buffer.from('b'), 'shared/b.txt'),
+    ]);
+
+    expect(mockCreateDirectory).toHaveBeenCalledTimes(1);
+    expect(mockCreateDirectory).toHaveBeenCalledWith('/files/shared');
+    expect(mockPutFileContents).toHaveBeenCalledTimes(2);
+  });
+
+  it('accepts a cross-process directory creation conflict after verifying existence', async () => {
+    mockExists.mockResolvedValueOnce(false).mockResolvedValueOnce(true).mockResolvedValueOnce(true);
+    mockCreateDirectory.mockRejectedValueOnce({ status: 409 });
+    mockPutFileContents.mockResolvedValueOnce(undefined);
+
+    await expect(storage.upload(Buffer.from('a'), 'shared/a.txt')).resolves.toEqual(
+      expect.objectContaining({ key: 'shared/a.txt' }),
+    );
   });
 
   // ---- download ----
@@ -130,8 +171,20 @@ describe('WebDavStorage', () => {
 
   it('should list files in a directory', async () => {
     mockGetDirectoryContents.mockResolvedValueOnce([
-      { type: 'file', filename: '/files/dir/a.txt', size: 100, lastmod: '2024-01-01', mime: 'text/plain' },
-      { type: 'file', filename: '/files/dir/b.txt', size: 200, lastmod: '2024-02-01', mime: 'text/plain' },
+      {
+        type: 'file',
+        filename: '/files/dir/a.txt',
+        size: 100,
+        lastmod: '2024-01-01',
+        mime: 'text/plain',
+      },
+      {
+        type: 'file',
+        filename: '/files/dir/b.txt',
+        size: 200,
+        lastmod: '2024-02-01',
+        mime: 'text/plain',
+      },
       { type: 'directory', filename: '/files/dir/sub', size: 0, lastmod: '2024-01-01' },
     ]);
 
@@ -202,9 +255,9 @@ describe('WebDavStorage', () => {
   // ---- path traversal protection ----
 
   it('should reject path traversal on upload', async () => {
-    await expect(
-      storage.upload(Buffer.from('evil'), '../../../etc/passwd'),
-    ).rejects.toThrow('Path traversal detected');
+    await expect(storage.upload(Buffer.from('evil'), '../../../etc/passwd')).rejects.toThrow(
+      'Path traversal detected',
+    );
   });
 
   it('should reject path traversal on download', async () => {
@@ -224,7 +277,9 @@ describe('WebDavStorage', () => {
   });
 
   it('should reject path traversal on getFileInfo', async () => {
-    await expect(storage.getFileInfo('../../secret.txt')).rejects.toThrow('Path traversal detected');
+    await expect(storage.getFileInfo('../../secret.txt')).rejects.toThrow(
+      'Path traversal detected',
+    );
   });
 
   // ---- uploadStream ----

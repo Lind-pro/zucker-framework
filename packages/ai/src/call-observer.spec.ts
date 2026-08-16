@@ -65,16 +65,38 @@ describe('AICallObserver + Registry（A3 反哺）', () => {
       const event: AICallSuccessEvent = onSuccess.mock.calls[0][0];
       expect(event.context).toBe('test');
       expect(event.attempt).toBe(1);
-      expect(event.result).toBe('hello');
+      expect(event.result).toBeUndefined();
       expect(event.metadata).toEqual({ tag: 'unit' });
       expect(event.durationMs).toBeGreaterThanOrEqual(0);
     });
 
+    it('只有显式 opt-in 才把完整结果交给 observer', async () => {
+      const onSuccess = vi.fn();
+      registry.register({ onSuccess });
+      await wrapper.callWithRetry(async () => 'sensitive-result', {
+        observerResult: 'full',
+      });
+
+      expect(onSuccess.mock.calls[0][0].result).toBe('sensitive-result');
+    });
+
     it('多个 observer 顺序遍历', async () => {
       const calls: number[] = [];
-      registry.register({ onSuccess: () => { calls.push(1); } });
-      registry.register({ onSuccess: () => { calls.push(2); } });
-      registry.register({ onSuccess: () => { calls.push(3); } });
+      registry.register({
+        onSuccess: () => {
+          calls.push(1);
+        },
+      });
+      registry.register({
+        onSuccess: () => {
+          calls.push(2);
+        },
+      });
+      registry.register({
+        onSuccess: () => {
+          calls.push(3);
+        },
+      });
 
       await wrapper.callWithRetry(async () => 1);
       expect(calls).toEqual([1, 2, 3]);
@@ -95,7 +117,9 @@ describe('AICallObserver + Registry（A3 反哺）', () => {
 
     it('observer 抛错不影响主返回值', async () => {
       registry.register({
-        onSuccess: () => { throw new Error('boom'); },
+        onSuccess: () => {
+          throw new Error('boom');
+        },
       });
       const result = await wrapper.callWithRetry(async () => 'ok');
       expect(result).toBe('ok');
@@ -112,7 +136,12 @@ describe('AICallObserver + Registry（A3 反哺）', () => {
 
       onSuccess.mockClear();
       await expect(
-        wrapper.callWithRetry(async () => { throw new Error('bad'); }, { maxAttempts: 1 }),
+        wrapper.callWithRetry(
+          async () => {
+            throw new Error('bad');
+          },
+          { maxAttempts: 1 },
+        ),
       ).rejects.toThrow('bad');
       expect(onSuccess).not.toHaveBeenCalled();
       expect(onError).toHaveBeenCalledTimes(1);
@@ -127,10 +156,15 @@ describe('AICallObserver + Registry（A3 反哺）', () => {
       registry.register({ onError });
 
       await expect(
-        wrapper.callWithRetry(async () => { throw new Error('flaky'); }, {
-          maxAttempts: 3,
-          baseDelayMs: 1,
-        }),
+        wrapper.callWithRetry(
+          async () => {
+            throw new Error('flaky');
+          },
+          {
+            maxAttempts: 3,
+            baseDelayMs: 1,
+          },
+        ),
       ).rejects.toThrow('flaky');
 
       // 3 次 attempt 都应触发
@@ -158,7 +192,12 @@ describe('AICallObserver + Registry（A3 反哺）', () => {
       registry.register({ onSuccess: vi.fn() });
       // 应该不抛错
       await expect(
-        wrapper.callWithRetry(async () => { throw new Error('x'); }, { maxAttempts: 1 }),
+        wrapper.callWithRetry(
+          async () => {
+            throw new Error('x');
+          },
+          { maxAttempts: 1 },
+        ),
       ).rejects.toThrow('x');
     });
   });
