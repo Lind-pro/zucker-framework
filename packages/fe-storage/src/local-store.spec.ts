@@ -1,5 +1,5 @@
 import { LocalStore } from './local-store';
-import { TOKEN_KEY, USER_KEY, REFRESH_TOKEN_KEY } from './constants';
+import { TOKEN_KEY, REFRESH_TOKEN_KEY } from './constants';
 
 describe('LocalStore', () => {
   beforeEach(() => {
@@ -58,13 +58,13 @@ describe('LocalStore', () => {
     it('should get/set access token', () => {
       LocalStore.setToken('my-token');
       expect(LocalStore.getToken()).toBe('my-token');
-      expect(localStorage.getItem(TOKEN_KEY)).toBe('"my-token"');
+      expect(localStorage.getItem(TOKEN_KEY)).toBe('my-token');
     });
 
     it('should get/set refresh token', () => {
       LocalStore.setRefreshToken('refresh-123');
       expect(LocalStore.getRefreshToken()).toBe('refresh-123');
-      expect(localStorage.getItem(REFRESH_TOKEN_KEY)).toBe('"refresh-123"');
+      expect(localStorage.getItem(REFRESH_TOKEN_KEY)).toBe('refresh-123');
     });
 
     it('should get/set user info', () => {

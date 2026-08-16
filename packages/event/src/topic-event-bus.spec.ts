@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { Logger } from '@nestjs/common';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { DefaultTopicEventBus, matchesTopic, createTopicPayload } from './topic-event-bus';
 import { SubscribeFeature } from './subscribe.decorator';
 
@@ -79,6 +80,10 @@ describe('DefaultTopicEventBus', () => {
     bus = new DefaultTopicEventBus();
   });
 
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('should deliver messages to matching subscribers', async () => {
     const received: unknown[] = [];
     bus.subscribe('/device/status', (msg) => {
@@ -116,9 +121,27 @@ describe('DefaultTopicEventBus', () => {
 
   it('should deliver in priority order', async () => {
     const order: number[] = [];
-    bus.subscribe('/test', () => { order.push(3); }, 3);
-    bus.subscribe('/test', () => { order.push(1); }, 1);
-    bus.subscribe('/test', () => { order.push(2); }, 2);
+    bus.subscribe(
+      '/test',
+      () => {
+        order.push(3);
+      },
+      3,
+    );
+    bus.subscribe(
+      '/test',
+      () => {
+        order.push(1);
+      },
+      1,
+    );
+    bus.subscribe(
+      '/test',
+      () => {
+        order.push(2);
+      },
+      2,
+    );
 
     await bus.publish('/test', null);
     expect(order).toEqual([1, 2, 3]);
@@ -126,7 +149,9 @@ describe('DefaultTopicEventBus', () => {
 
   it('should unsubscribe correctly', async () => {
     let count = 0;
-    const sub = bus.subscribe('/test', () => { count++; });
+    const sub = bus.subscribe('/test', () => {
+      count++;
+    });
 
     await bus.publish('/test', null);
     expect(count).toBe(1);
@@ -138,39 +163,53 @@ describe('DefaultTopicEventBus', () => {
 
   it('should deliver to multiple subscribers on the same topic', async () => {
     const calls: string[] = [];
-    bus.subscribe('/test', () => { calls.push('handler-a'); });
-    bus.subscribe('/test', () => { calls.push('handler-b'); });
-    bus.subscribe('/test', () => { calls.push('handler-c'); });
+    bus.subscribe('/test', () => {
+      calls.push('handler-a');
+    });
+    bus.subscribe('/test', () => {
+      calls.push('handler-b');
+    });
+    bus.subscribe('/test', () => {
+      calls.push('handler-c');
+    });
 
     await bus.publish('/test', null);
     expect(calls).toEqual(['handler-a', 'handler-b', 'handler-c']);
   });
 
   it('should not throw when subscriber errors', async () => {
-    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    bus.subscribe('/test', () => { throw new Error('boom'); });
+    const loggerSpy = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => {});
+    bus.subscribe('/test', () => {
+      throw new Error('boom');
+    });
 
     await expect(bus.publish('/test', null)).resolves.toBeUndefined();
-    expect(consoleSpy).toHaveBeenCalled();
-    consoleSpy.mockRestore();
+    expect(loggerSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Subscriber error on topic "/test": boom'),
+    );
   });
 
   it('should isolate errors — other handlers still execute after one throws', async () => {
-    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(Logger.prototype, 'error').mockImplementation(() => {});
     const calls: string[] = [];
 
-    bus.subscribe('/test', () => { calls.push('before'); });
-    bus.subscribe('/test', () => { throw new Error('boom'); });
-    bus.subscribe('/test', () => { calls.push('after'); });
+    bus.subscribe('/test', () => {
+      calls.push('before');
+    });
+    bus.subscribe('/test', () => {
+      throw new Error('boom');
+    });
+    bus.subscribe('/test', () => {
+      calls.push('after');
+    });
 
     await bus.publish('/test', null);
     expect(calls).toEqual(['before', 'after']);
-    consoleSpy.mockRestore();
   });
 
   it('should support legacy handler (payload, topic)', async () => {
     let receivedPayload: unknown;
-    let receivedTopic: string = '';
+    let receivedTopic = '';
 
     bus.subscribe('/test', (payload: unknown, topic: string) => {
       receivedPayload = payload;
@@ -190,7 +229,9 @@ describe('DefaultTopicEventBus', () => {
         topics: ['/a/**', '/b/**'],
         features: [SubscribeFeature.LOCAL],
       },
-      (msg) => { received.push(msg.topic); },
+      (msg) => {
+        received.push(msg.topic);
+      },
     );
 
     await bus.publish('/a/1', null);
@@ -202,10 +243,9 @@ describe('DefaultTopicEventBus', () => {
 
   it('should unsubscribe all topics from SubscriptionInfo', async () => {
     let count = 0;
-    const sub = bus.subscribe(
-      { subscriberId: 'x', topics: ['/a', '/b'] },
-      () => { count++; },
-    );
+    const sub = bus.subscribe({ subscriberId: 'x', topics: ['/a', '/b'] }, () => {
+      count++;
+    });
 
     await bus.publish('/a', null);
     await bus.publish('/b', null);
@@ -247,8 +287,12 @@ describe('DefaultTopicEventBus', () => {
 
   it('should remove all listeners', async () => {
     let count = 0;
-    bus.subscribe('/a', () => { count++; });
-    bus.subscribe('/b', () => { count++; });
+    bus.subscribe('/a', () => {
+      count++;
+    });
+    bus.subscribe('/b', () => {
+      count++;
+    });
 
     bus.removeAllListeners();
     await bus.publish('/a', null);
