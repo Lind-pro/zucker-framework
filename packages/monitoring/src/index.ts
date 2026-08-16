@@ -4,6 +4,16 @@ export {
 } from './error-tracker';
 
 export {
+  ERROR_REPORTER,
+  NoopErrorReporter,
+} from './error-reporter';
+export type {
+  ErrorContext,
+  ErrorReporter,
+  ErrorReporterUser,
+} from './error-reporter';
+
+export {
   HealthStatus,
   type HealthCheck,
   type HealthIndicator,
