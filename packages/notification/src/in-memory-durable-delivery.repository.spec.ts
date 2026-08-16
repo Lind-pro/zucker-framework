@@ -53,6 +53,20 @@ describe('InMemoryDurableNotificationRepository', () => {
     ).rejects.toBeInstanceOf(NotificationIdempotencyConflictError);
   });
 
+  it('在进入存储实现前拒绝非法投递参数', async () => {
+    const repository = new InMemoryDurableNotificationRepository();
+
+    await expect(
+      repository.enqueue(input({ maxAttempts: 0 })),
+    ).rejects.toThrow('maxAttempts must be a positive integer');
+    await expect(
+      repository.enqueue(input({ priority: Number.NaN })),
+    ).rejects.toThrow('priority must be finite');
+    await expect(
+      repository.enqueue(input({ availableAt: new Date(Number.NaN) })),
+    ).rejects.toThrow('delivery dates must be valid');
+  });
+
   it('按优先级和可用时间原子认领', async () => {
     const repository = new InMemoryDurableNotificationRepository();
     await repository.enqueue(input({ id: 'normal', priority: 0 }));

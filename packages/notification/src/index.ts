@@ -86,6 +86,7 @@ export {
   NotificationLeaseLostError,
   classifyNotificationDeliveryError,
   notificationRetryDelayMs,
+  validateNotificationDeliveryInput,
 } from './durable-delivery';
 export type {
   NotificationDeliveryClaim,

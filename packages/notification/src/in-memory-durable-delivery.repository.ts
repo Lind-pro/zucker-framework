@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import {
   NotificationIdempotencyConflictError,
   NotificationLeaseLostError,
+  validateNotificationDeliveryInput,
   type NotificationDeliveryClaim,
   type NotificationDeliveryInput,
   type NotificationDeliveryRecord,
@@ -33,7 +34,7 @@ export class InMemoryDurableNotificationRepository
     delivery: NotificationDeliveryRecord;
     created: boolean;
   }> {
-    this.validateInput(input);
+    validateNotificationDeliveryInput(input);
     const existingId = this.idempotencyIndex.get(input.idempotencyKey);
     if (existingId) {
       const existing = this.records.get(existingId);
@@ -238,20 +239,4 @@ export class InMemoryDurableNotificationRepository
     record.leaseExpiresAt = undefined;
   }
 
-  private validateInput(input: NotificationDeliveryInput): void {
-    if (
-      !input.id ||
-      !input.idempotencyKey ||
-      !input.idempotencyFingerprint ||
-      !input.deliveryRef
-    ) {
-      throw new RangeError('delivery identifiers must not be empty');
-    }
-    if (!Number.isInteger(input.maxAttempts) || input.maxAttempts < 1) {
-      throw new RangeError('maxAttempts must be a positive integer');
-    }
-    if (input.priority !== undefined && !Number.isFinite(input.priority)) {
-      throw new RangeError('priority must be finite');
-    }
-  }
 }

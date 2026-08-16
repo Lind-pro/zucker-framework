@@ -47,6 +47,37 @@ export interface NotificationDeliveryRecord {
   version: number;
 }
 
+/**
+ * Validates the storage-independent notification delivery contract.
+ * Repository adapters should call this before persisting an enqueue request.
+ */
+export function validateNotificationDeliveryInput(
+  input: NotificationDeliveryInput,
+): void {
+  if (
+    !input.id ||
+    !input.idempotencyKey ||
+    !input.idempotencyFingerprint ||
+    !input.deliveryRef
+  ) {
+    throw new RangeError('delivery identifiers must not be empty');
+  }
+  if (!Number.isInteger(input.maxAttempts) || input.maxAttempts < 1) {
+    throw new RangeError('maxAttempts must be a positive integer');
+  }
+  if (input.priority !== undefined && !Number.isFinite(input.priority)) {
+    throw new RangeError('priority must be finite');
+  }
+  if (
+    (input.createdAt !== undefined &&
+      !Number.isFinite(input.createdAt.getTime())) ||
+    (input.availableAt !== undefined &&
+      !Number.isFinite(input.availableAt.getTime()))
+  ) {
+    throw new RangeError('delivery dates must be valid');
+  }
+}
+
 export interface NotificationDeliveryClaim extends NotificationDeliveryRecord {
   status: 'PROCESSING';
   workerId: string;
