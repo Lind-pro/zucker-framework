@@ -8,6 +8,11 @@ export interface UploadOptions {
 
 export interface UploadResult {
   key: string;
+  /**
+   * Stable public URL when the provider is configured for public delivery.
+   * Private providers may return an empty string; callers must persist `key`
+   * and request a short-lived URL with `getDownloadUrl` when needed.
+   */
   url: string;
   size: number;
 }
@@ -241,7 +246,8 @@ export interface FileManager {
   download(key: string): Promise<{ stream: ReadStream; size: number }>;
   delete(key: string): Promise<void>;
   exists(key: string): Promise<boolean>;
-  getPublicUrl(key: string, expiresIn?: number): Promise<string>;
+  getPublicUrl(key: string): Promise<string>;
+  getDownloadUrl(key: string, expiresIn?: number): Promise<string>;
   list(prefix: string): Promise<FileInfo[]>;
 
   /**

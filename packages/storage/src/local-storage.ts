@@ -77,6 +77,10 @@ export class LocalFileStorage implements FileManager {
     return this.buildUrl(key);
   }
 
+  async getDownloadUrl(key: string): Promise<string> {
+    return this.getPublicUrl(key);
+  }
+
   async list(prefix: string): Promise<FileInfo[]> {
     const dirPath = this.resolvePath(prefix);
     if (!fs.existsSync(dirPath)) return [];

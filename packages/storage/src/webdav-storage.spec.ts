@@ -192,6 +192,7 @@ describe('WebDavStorage', () => {
     expect(files).toHaveLength(2);
     expect(files[0].key).toBe('dir/a.txt');
     expect(files[1].size).toBe(200);
+    expect(mockGetDirectoryContents).toHaveBeenCalledWith('/files/dir', { deep: true });
   });
 
   it('should return empty list on 404', async () => {

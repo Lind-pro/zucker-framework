@@ -5,6 +5,7 @@ import { S3Storage } from './s3-storage';
 // Mock AWS SDK
 const mockSend = vi.fn();
 const mockDestroy = vi.fn();
+const clientConfigurations: Array<Record<string, unknown>> = [];
 const loggerLog = vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
 
 vi.mock('@aws-sdk/client-s3', () => {
@@ -17,6 +18,10 @@ vi.mock('@aws-sdk/client-s3', () => {
 
   return {
     S3Client: class MockS3Client {
+      constructor(configuration: Record<string, unknown>) {
+        clientConfigurations.push(configuration);
+      }
+
       send(...arguments_: unknown[]) {
         return mockSend(...arguments_);
       }
@@ -75,6 +80,7 @@ describe('S3Storage', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    clientConfigurations.length = 0;
     storage = new S3Storage(defaultOptions);
   });
 
@@ -118,6 +124,46 @@ describe('S3Storage', () => {
 
     const cmd = mockSend.mock.calls[0][0];
     expect(cmd.input.ContentType).toBe('application/octet-stream');
+  });
+
+  it('omits ACL headers for providers without object ACL support', async () => {
+    const r2 = new S3Storage({
+      ...defaultOptions,
+      endpoint: 'https://account.r2.cloudflarestorage.com',
+      region: 'auto',
+      publicUrl: undefined,
+      forcePathStyle: false,
+      objectAclMode: 'none',
+      uploadUrlMode: 'public-only',
+    });
+    mockSend.mockResolvedValueOnce({});
+
+    const result = await r2.upload(Buffer.from('private'), 'private/test.txt', {
+      contentType: 'text/plain',
+      acl: 'private',
+    });
+
+    expect(mockSend.mock.calls[0][0].input).not.toHaveProperty('ACL');
+    expect(result).toEqual({ key: 'private/test.txt', url: '', size: 7 });
+    expect(clientConfigurations.at(-1)).toMatchObject({
+      endpoint: 'https://account.r2.cloudflarestorage.com',
+      region: 'auto',
+      forcePathStyle: false,
+    });
+  });
+
+  it('rejects public object ACL requests when ACL support is disabled', async () => {
+    const r2 = new S3Storage({
+      ...defaultOptions,
+      publicUrl: undefined,
+      objectAclMode: 'none',
+      uploadUrlMode: 'public-only',
+    });
+
+    await expect(
+      r2.upload(Buffer.from('public'), 'public/test.txt', { acl: 'public-read' }),
+    ).rejects.toThrow('Object-level public ACL is disabled');
+    expect(mockSend).not.toHaveBeenCalled();
   });
 
   // ---- download ----
@@ -188,14 +234,18 @@ describe('S3Storage', () => {
   // ---- getPublicUrl ----
 
   it('should return publicUrl-based URL', async () => {
-    const url = await storage.getPublicUrl('path/file.txt');
-    expect(url).toBe('https://cdn.example.com/path/file.txt');
+    const url = await storage.getPublicUrl('path/file name.txt');
+    expect(url).toBe('https://cdn.example.com/path/file%20name.txt');
   });
 
-  it('should use signed URL when no publicUrl', async () => {
+  it('should keep public and signed URL contracts separate', async () => {
     const noPublicUrl = new S3Storage({ ...defaultOptions, publicUrl: undefined });
-    const url = await noPublicUrl.getPublicUrl('secret.txt');
-    expect(url).toBe('https://signed-url.example.com/test');
+    await expect(noPublicUrl.getPublicUrl('secret.txt')).rejects.toThrow(
+      'No public URL is configured',
+    );
+    await expect(noPublicUrl.getDownloadUrl('secret.txt', 300)).resolves.toBe(
+      'https://signed-url.example.com/test',
+    );
   });
 
   // ---- list ----
@@ -220,6 +270,24 @@ describe('S3Storage', () => {
 
     const files = await storage.list('empty/');
     expect(files).toEqual([]);
+  });
+
+  it('should follow every list continuation token', async () => {
+    mockSend
+      .mockResolvedValueOnce({
+        Contents: [{ Key: 'dir/a.txt', Size: 1 }],
+        IsTruncated: true,
+        NextContinuationToken: 'next-page',
+      })
+      .mockResolvedValueOnce({
+        Contents: [{ Key: 'dir/b.txt', Size: 2 }],
+        IsTruncated: false,
+      });
+
+    const files = await storage.list('dir/');
+
+    expect(files.map((file) => file.key)).toEqual(['dir/a.txt', 'dir/b.txt']);
+    expect(mockSend.mock.calls[1][0].input.ContinuationToken).toBe('next-page');
   });
 
   // ---- getFileInfo ----
@@ -250,10 +318,10 @@ describe('S3Storage', () => {
   it('should copy a file within S3', async () => {
     mockSend.mockResolvedValueOnce({});
 
-    await storage.copy!('src.txt', 'dst.txt');
+    await storage.copy!('folder/source file.txt', 'dst.txt');
 
     const cmd = mockSend.mock.calls[0][0];
-    expect(cmd.input.CopySource).toBe('test-bucket/src.txt');
+    expect(cmd.input.CopySource).toBe('test-bucket/folder/source%20file.txt');
     expect(cmd.input.Key).toBe('dst.txt');
   });
 

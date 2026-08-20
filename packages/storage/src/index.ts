@@ -18,7 +18,11 @@ export enum StorageProvider {
 
 export { LocalFileStorage } from './local-storage';
 export { S3Storage } from './s3-storage';
-export type { S3StorageOptions } from './s3-storage';
+export type {
+  S3StorageOptions,
+  S3ObjectAclMode,
+  S3UploadUrlMode,
+} from './s3-storage';
 export { WebDavStorage } from './webdav-storage';
 export type { WebDavStorageOptions } from './webdav-storage';
 export {

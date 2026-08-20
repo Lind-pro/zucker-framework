@@ -126,12 +126,16 @@ export class WebDavStorage implements FileManager {
     return this.buildUrl(key);
   }
 
+  async getDownloadUrl(key: string): Promise<string> {
+    return this.getPublicUrl(key);
+  }
+
   async list(prefix: string): Promise<FileInfo[]> {
     const client = await this.getClient();
     const remotePath = this.resolvePath(prefix);
 
     try {
-      const items = (await client.getDirectoryContents(remotePath)) as FileStat[];
+      const items = (await client.getDirectoryContents(remotePath, { deep: true })) as FileStat[];
 
       return items
         .filter((item: FileStat) => item.type === 'file')

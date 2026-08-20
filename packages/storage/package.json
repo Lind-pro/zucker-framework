@@ -1,6 +1,6 @@
 {
   "name": "@zucker/storage",
-  "version": "0.1.0-rc.2",
+  "version": "0.1.0-rc.3",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -9,6 +9,7 @@
   ],
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts --external @nestjs/common --external @nestjs/core --external webdav",
+    "canary:r2": "pnpm build && node scripts/r2-storage-canary.mjs",
     "clean": "rm -rf dist",
     "lint": "eslint src/"
   },
