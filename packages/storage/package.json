@@ -5,13 +5,15 @@
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "scripts/r2-storage-canary.mjs"
   ],
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts --external @nestjs/common --external @nestjs/core --external webdav",
-    "canary:r2": "pnpm build && node scripts/r2-storage-canary.mjs",
+    "canary:r2": "node scripts/r2-storage-canary.mjs",
     "clean": "rm -rf dist",
-    "lint": "eslint src/"
+    "lint": "eslint src/",
+    "verify:package": "node scripts/verify-package.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.600.0",

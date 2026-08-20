@@ -1,12 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { S3Storage } from '../dist/index.mjs';
 
-const required = [
-  'R2_ENDPOINT',
-  'R2_ACCESS_KEY_ID',
-  'R2_SECRET_ACCESS_KEY',
-  'R2_BUCKET',
-];
+const required = ['R2_ENDPOINT', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET'];
 
 if (process.env.R2_CANARY !== '1') {
   throw new Error('Set R2_CANARY=1 to run the disposable R2 storage canary');
@@ -49,7 +44,10 @@ try {
   assert(sha256(downloaded) === expectedHash, 'download hash');
 
   const listed = await storage.list(prefix);
-  assert(listed.some((file) => file.key === sourceKey), 'list prefix');
+  assert(
+    listed.some((file) => file.key === sourceKey),
+    'list prefix',
+  );
 
   await storage.copy(sourceKey, copyKey);
   const copied = await read(await storage.download(copyKey));
