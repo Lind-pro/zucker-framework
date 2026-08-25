@@ -56,9 +56,7 @@ export class ResendEmailProvider implements SimpleNotifierProvider {
       this.client = new Resend(apiKey);
       this.logger.log('Resend email service initialized');
     } catch {
-      this.logger.error(
-        'resend package not installed. Run: npm install resend',
-      );
+      this.logger.error('resend package not installed. Run: npm install resend');
     }
   }
 

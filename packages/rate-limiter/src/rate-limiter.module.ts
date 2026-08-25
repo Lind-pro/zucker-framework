@@ -8,12 +8,13 @@ import {
   type OptionalFactoryDependency,
 } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
-import { RateLimiterService } from './rate-limiter.service';
-import type { RateLimiterModuleOptions } from './rate-limiter.service';
+import { RateLimiterService, type RateLimiterModuleOptions } from './rate-limiter.service';
 import { RateLimitGuard } from './guards/rate-limit.guard';
 
 export interface RateLimiterModuleAsyncOptions {
   imports?: Array<Type | DynamicModule>;
+  /** Register the rate-limit guard globally. Defaults to true. */
+  globalGuard?: boolean;
   useFactory?: (...args: unknown[]) => RateLimiterModuleOptions | Promise<RateLimiterModuleOptions>;
   useClass?: Type<RateLimiterModuleOptionsFactory>;
   useExisting?: Type<RateLimiterModuleOptionsFactory>;
@@ -30,38 +31,46 @@ const RATE_LIMITER_MODULE_OPTIONS = Symbol('RATE_LIMITER_MODULE_OPTIONS');
 @Module({})
 export class ZuckerRateLimiterModule {
   static forRoot(options: RateLimiterModuleOptions): DynamicModule {
+    const providers: Provider[] = [
+      {
+        provide: RateLimiterService,
+        useFactory: () => new RateLimiterService(options),
+      },
+      { provide: 'RATE_LIMITER_SERVICE', useExisting: RateLimiterService },
+      RateLimitGuard,
+    ];
+    if (options.globalGuard !== false) {
+      providers.push({ provide: APP_GUARD, useExisting: RateLimitGuard });
+    }
     return {
       module: ZuckerRateLimiterModule,
       global: true,
-      providers: [
-        {
-          provide: RateLimiterService,
-          useFactory: () => new RateLimiterService(options),
-        },
-        { provide: 'RATE_LIMITER_SERVICE', useExisting: RateLimiterService },
-        { provide: APP_GUARD, useClass: RateLimitGuard },
-      ],
-      exports: [RateLimiterService, 'RATE_LIMITER_SERVICE'],
+      providers,
+      exports: [RateLimiterService, RateLimitGuard, 'RATE_LIMITER_SERVICE'],
     };
   }
 
   static forRootAsync(options: RateLimiterModuleAsyncOptions): DynamicModule {
     const asyncProviders = this.createAsyncProviders(options);
+    const providers: Provider[] = [
+      ...asyncProviders,
+      {
+        provide: RateLimiterService,
+        useFactory: (opts: RateLimiterModuleOptions) => new RateLimiterService(opts),
+        inject: [RATE_LIMITER_MODULE_OPTIONS],
+      },
+      { provide: 'RATE_LIMITER_SERVICE', useExisting: RateLimiterService },
+      RateLimitGuard,
+    ];
+    if (options.globalGuard !== false) {
+      providers.push({ provide: APP_GUARD, useExisting: RateLimitGuard });
+    }
     return {
       module: ZuckerRateLimiterModule,
       global: true,
       imports: options.imports ?? [],
-      providers: [
-        ...asyncProviders,
-        {
-          provide: RateLimiterService,
-          useFactory: (opts: RateLimiterModuleOptions) => new RateLimiterService(opts),
-          inject: [RATE_LIMITER_MODULE_OPTIONS],
-        },
-        { provide: 'RATE_LIMITER_SERVICE', useExisting: RateLimiterService },
-        { provide: APP_GUARD, useClass: RateLimitGuard },
-      ],
-      exports: [RateLimiterService, 'RATE_LIMITER_SERVICE'],
+      providers,
+      exports: [RateLimiterService, RateLimitGuard, 'RATE_LIMITER_SERVICE'],
     };
   }
 
@@ -77,7 +86,8 @@ export class ZuckerRateLimiterModule {
     }
     const optionsProvider: Provider = {
       provide: RATE_LIMITER_MODULE_OPTIONS,
-      useFactory: async (factory: RateLimiterModuleOptionsFactory) => factory.createRateLimiterOptions(),
+      useFactory: async (factory: RateLimiterModuleOptionsFactory) =>
+        factory.createRateLimiterOptions(),
       inject: [options.useClass ?? options.useExisting!],
     };
     if (options.useClass) {

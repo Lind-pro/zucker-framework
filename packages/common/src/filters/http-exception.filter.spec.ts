@@ -14,7 +14,8 @@ import { HttpExceptionFilter } from './http-exception.filter';
 function createMockHost() {
   const json = vi.fn();
   const status = vi.fn().mockReturnValue({ json });
-  const response = { status };
+  const setHeader = vi.fn();
+  const response = { status, setHeader };
 
   const host = {
     switchToHttp: () => ({
@@ -23,15 +24,16 @@ function createMockHost() {
     }),
   } as unknown as ArgumentsHost;
 
-  return { host, status, json };
+  return { host, status, json, setHeader };
 }
 
 function catchAndGetResponse(filter: HttpExceptionFilter, exception: unknown) {
-  const { host, status, json } = createMockHost();
+  const { host, status, json, setHeader } = createMockHost();
   filter.catch(exception, host);
   return {
     statusCode: status.mock.calls[0][0],
     body: json.mock.calls[0][0],
+    setHeader,
   };
 }
 
@@ -66,20 +68,14 @@ describe('HttpExceptionFilter', () => {
     });
 
     it('should handle UnauthorizedException', () => {
-      const { statusCode, body } = catchAndGetResponse(
-        filter,
-        new UnauthorizedException(),
-      );
+      const { statusCode, body } = catchAndGetResponse(filter, new UnauthorizedException());
 
       expect(statusCode).toBe(401);
       expect(body.code).toBe('UNAUTHORIZED');
     });
 
     it('should handle ForbiddenException', () => {
-      const { statusCode, body } = catchAndGetResponse(
-        filter,
-        new ForbiddenException(),
-      );
+      const { statusCode, body } = catchAndGetResponse(filter, new ForbiddenException());
 
       expect(statusCode).toBe(403);
       expect(body.code).toBe('FORBIDDEN');
@@ -106,9 +102,7 @@ describe('HttpExceptionFilter', () => {
 
       expect(statusCode).toBe(400);
       expect(body.code).toBe('VALIDATION_ERROR');
-      expect(body.result).toEqual([
-        { property: 'email', message: 'invalid email format' },
-      ]);
+      expect(body.result).toEqual([{ property: 'email', message: 'invalid email format' }]);
     });
 
     it('should handle multiple validation errors', () => {
@@ -154,7 +148,7 @@ describe('HttpExceptionFilter', () => {
     });
 
     it('should handle 429 TooManyRequests with retryAfter', () => {
-      const { statusCode, body } = catchAndGetResponse(
+      const { statusCode, body, setHeader } = catchAndGetResponse(
         filter,
         new HttpException(
           { message: 'rate limited', retryAfter: 60 },
@@ -164,6 +158,27 @@ describe('HttpExceptionFilter', () => {
 
       expect(statusCode).toBe(429);
       expect(body.result).toEqual({ retryAfter: 60 });
+      expect(setHeader).toHaveBeenCalledWith('Retry-After', '60');
+    });
+
+    it('should not emit Retry-After from invalid or non-429 metadata', () => {
+      const invalid = catchAndGetResponse(
+        filter,
+        new HttpException(
+          { message: 'rate limited', retryAfter: '60' },
+          HttpStatus.TOO_MANY_REQUESTS,
+        ),
+      );
+      const wrongStatus = catchAndGetResponse(
+        filter,
+        new HttpException(
+          { message: 'temporarily unavailable', retryAfter: 60 },
+          HttpStatus.SERVICE_UNAVAILABLE,
+        ),
+      );
+
+      expect(invalid.setHeader).not.toHaveBeenCalled();
+      expect(wrongStatus.setHeader).not.toHaveBeenCalled();
     });
   });
 
@@ -171,14 +186,11 @@ describe('HttpExceptionFilter', () => {
 
   describe('Unknown errors', () => {
     it('should handle generic Error as 500', () => {
-      const { statusCode, body } = catchAndGetResponse(
-        filter,
-        new Error('unexpected failure'),
-      );
+      const { statusCode, body } = catchAndGetResponse(filter, new Error('unexpected failure'));
 
       expect(statusCode).toBe(500);
       expect(body.code).toBe('INTERNAL_ERROR');
-      expect(body.message).toBe('unexpected failure');
+      expect(body.message).toBe('服务器内部错误');
     });
 
     it('should handle non-Error throws as 500', () => {
@@ -186,7 +198,7 @@ describe('HttpExceptionFilter', () => {
 
       expect(statusCode).toBe(500);
       expect(body.code).toBe('INTERNAL_ERROR');
-      expect(body.message).toBe('string error');
+      expect(body.message).toBe('服务器内部错误');
     });
   });
 

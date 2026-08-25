@@ -1,5 +1,9 @@
-import type { DataAccessConfig, FieldFilterDataAccessConfig, ScopeDataAccessConfig } from '../data-access/data-access-config';
-import { DefaultDataAccessType } from '../data-access/data-access-config';
+import {
+  DefaultDataAccessType,
+  type DataAccessConfig,
+  type FieldFilterDataAccessConfig,
+  type ScopeDataAccessConfig,
+} from '../data-access/data-access-config';
 
 // ============================================================
 // Permission & Role
@@ -47,7 +51,10 @@ export interface Permission {
   findScope(action: string, type: string, scopeType: string): unknown[];
 
   /** Deep copy this permission */
-  copy(actionFilter?: (action: string) => boolean, dataAccessFilter?: (config: DataAccessConfig) => boolean): Permission;
+  copy(
+    actionFilter?: (action: string) => boolean,
+    dataAccessFilter?: (config: DataAccessConfig) => boolean,
+  ): Permission;
 }
 
 /**
@@ -86,8 +93,7 @@ export class SimplePermission implements Permission {
   findDenyFields(action: string): string[] {
     const config = this.dataAccesses.find(
       (c) =>
-        this.actionMatches(c.action, action) &&
-        c.type.id === DefaultDataAccessType.DENY_FIELDS.id,
+        this.actionMatches(c.action, action) && c.type.id === DefaultDataAccessType.DENY_FIELDS.id,
     ) as FieldFilterDataAccessConfig | undefined;
     return config?.fields || [];
   }
@@ -105,8 +111,7 @@ export class SimplePermission implements Permission {
   findFieldFilter(action: string): FieldFilterDataAccessConfig | undefined {
     return this.dataAccesses.find(
       (c) =>
-        this.actionMatches(c.action, action) &&
-        c.type.id === DefaultDataAccessType.DENY_FIELDS.id,
+        this.actionMatches(c.action, action) && c.type.id === DefaultDataAccessType.DENY_FIELDS.id,
     ) as FieldFilterDataAccessConfig | undefined;
   }
 
@@ -270,6 +275,14 @@ export interface Authentication {
 
 export interface ZuckerAuthModuleOptions {
   jwtSecret?: string;
+  /**
+   * Register the framework's generic authorization, menu, and third-party
+   * account controllers. Defaults to true for backwards compatibility.
+   *
+   * Products that provide their own authentication surface should disable
+   * these controllers to avoid exposing unused routes.
+   */
+  registerControllers?: boolean;
   dimensionProviders?: Array<new (...args: unknown[]) => DimensionProvider>;
   /** 缓存 provider token（用于 Token 黑名单），指向 ICache 的注入 token */
   cacheProvider?: string | symbol;
@@ -327,7 +340,12 @@ export class SimpleDimension implements Dimension {
     this.options = options;
   }
 
-  static of(id: string, name: string, type: DimensionType, options?: Record<string, unknown>): SimpleDimension {
+  static of(
+    id: string,
+    name: string,
+    type: DimensionType,
+    options?: Record<string, unknown>,
+  ): SimpleDimension {
     return new SimpleDimension(id, name, type, options);
   }
 }
@@ -458,7 +476,11 @@ export function createSettingValueHolder(
     asList: <T>() => {
       if (Array.isArray(value)) return value as T[];
       if (typeof value === 'string') {
-        try { return JSON.parse(value) as T[]; } catch { return undefined; }
+        try {
+          return JSON.parse(value) as T[];
+        } catch {
+          return undefined;
+        }
       }
       return undefined;
     },

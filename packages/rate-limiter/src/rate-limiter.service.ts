@@ -1,6 +1,19 @@
-import { Injectable, Logger, HttpException, HttpStatus, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
-import { RateLimiterMemory, RateLimiterRedis, RateLimiterRes, IRateLimiterOptions } from 'rate-limiter-flexible';
+import {
+  Injectable,
+  Logger,
+  HttpException,
+  HttpStatus,
+  OnModuleInit,
+  OnModuleDestroy,
+} from '@nestjs/common';
+import {
+  RateLimiterMemory,
+  RateLimiterRedis,
+  RateLimiterRes,
+  IRateLimiterOptions,
+} from 'rate-limiter-flexible';
 import { BusinessException, NotFoundException } from '@zucker/core';
+import { createHmac } from 'node:crypto';
 
 type RateLimiterUnion = RateLimiterMemory | RateLimiterRedis;
 
@@ -17,7 +30,16 @@ export interface LimiterConfig {
 
 export interface RateLimiterModuleOptions {
   redisClient?: unknown;
+  /** Optional secret used to HMAC consumer keys before memory/Redis storage. */
+  keyHashSecret?: string;
+  /** Register the rate-limit guard globally. Set false when guard ordering matters. */
+  globalGuard?: boolean;
   limiters: Record<string, LimiterConfig>;
+}
+
+export function deriveRateLimitKey(key: string, secret?: string): string {
+  if (!secret) return key;
+  return `v1:${createHmac('sha256', secret).update(key).digest('hex')}`;
 }
 
 /** Result returned from consume with remaining quota info */
@@ -56,7 +78,9 @@ export class RateLimiterService implements OnModuleInit, OnModuleDestroy {
 
     for (const [name, config] of Object.entries(this.options.limiters)) {
       if (config.points <= 0 || config.duration <= 0) {
-        this.logger.warn(`限流器 '${name}' 配置无效 (points=${config.points}, duration=${config.duration})，已跳过`);
+        this.logger.warn(
+          `限流器 '${name}' 配置无效 (points=${config.points}, duration=${config.duration})，已跳过`,
+        );
         continue;
       }
 
@@ -67,11 +91,14 @@ export class RateLimiterService implements OnModuleInit, OnModuleDestroy {
       };
 
       if (this.useRedis) {
-        this.limiters.set(name, new RateLimiterRedis({
-          ...opts,
-          storeClient: this.options.redisClient,
-          keyPrefix: config.keyPrefix ?? `rl:${name}:`,
-        }));
+        this.limiters.set(
+          name,
+          new RateLimiterRedis({
+            ...opts,
+            storeClient: this.options.redisClient,
+            keyPrefix: config.keyPrefix ?? `rl:${name}:`,
+          }),
+        );
       } else {
         this.limiters.set(name, new RateLimiterMemory(opts));
       }
@@ -98,13 +125,14 @@ export class RateLimiterService implements OnModuleInit, OnModuleDestroy {
     errorMessage = '请求过于频繁，请稍后再试',
   ): Promise<ConsumeResult> {
     const limiter = this.getLimiter(limiterName);
+    const storageKey = this.toStorageKey(key);
 
     if (pointsToConsume <= 0 || !Number.isFinite(pointsToConsume)) {
       throw new BusinessException(`消费点数无效: ${pointsToConsume}`, 'INVALID_POINTS', 400);
     }
 
     try {
-      const res = await limiter.consume(key, pointsToConsume);
+      const res = await limiter.consume(storageKey, pointsToConsume);
       return {
         remaining: res.remainingPoints,
         msBeforeNext: res.msBeforeNext,
@@ -113,9 +141,13 @@ export class RateLimiterService implements OnModuleInit, OnModuleDestroy {
     } catch (error) {
       // rate-limiter-flexible 限流时抛出的是 RateLimiterRes 对象（含 msBeforeNext）
       if (error && typeof error === 'object' && 'msBeforeNext' in error) {
-        const res = error as { msBeforeNext: number; remainingPoints: number; consumedPoints: number };
+        const res = error as {
+          msBeforeNext: number;
+          remainingPoints: number;
+          consumedPoints: number;
+        };
         const retryAfter = Math.ceil(res.msBeforeNext / 1000);
-        this.logger.warn(`限流触发: limiter=${limiterName}, key=${key}, retryAfter=${retryAfter}s`);
+        this.logger.warn(`限流触发: limiter=${limiterName}, retryAfter=${retryAfter}s`);
         throw new TooManyRequestsException(errorMessage, retryAfter);
       }
       // 其他错误（连接失败等）直接抛出
@@ -129,8 +161,8 @@ export class RateLimiterService implements OnModuleInit, OnModuleDestroy {
    */
   async penalty(limiterName: string, key: string, points = 1): Promise<void> {
     const limiter = this.getLimiter(limiterName);
-    await limiter.penalty(key, points);
-    this.logger.log(`限流惩罚: limiter=${limiterName}, key=${key}, points=${points}`);
+    await limiter.penalty(this.toStorageKey(key), points);
+    this.logger.log(`限流惩罚: limiter=${limiterName}, points=${points}`);
   }
 
   /**
@@ -138,13 +170,16 @@ export class RateLimiterService implements OnModuleInit, OnModuleDestroy {
    */
   async reward(limiterName: string, key: string, points = 1): Promise<void> {
     const limiter = this.getLimiter(limiterName);
-    await limiter.reward(key, points);
+    await limiter.reward(this.toStorageKey(key), points);
   }
 
-  async getRemaining(limiterName: string, key: string): Promise<{ remaining: number; resetAt: Date }> {
+  async getRemaining(
+    limiterName: string,
+    key: string,
+  ): Promise<{ remaining: number; resetAt: Date }> {
     const limiter = this.getLimiter(limiterName);
 
-    const res = await limiter.get(key);
+    const res = await limiter.get(this.toStorageKey(key));
     if (!res) {
       const config = this.options.limiters[limiterName];
       return {
@@ -161,7 +196,7 @@ export class RateLimiterService implements OnModuleInit, OnModuleDestroy {
 
   async reset(limiterName: string, key: string): Promise<void> {
     const limiter = this.getLimiter(limiterName);
-    await limiter.delete(key);
+    await limiter.delete(this.toStorageKey(key));
   }
 
   /**
@@ -187,7 +222,12 @@ export class RateLimiterService implements OnModuleInit, OnModuleDestroy {
   async checkAILimit(userId: string, operation: string, points = 1): Promise<void> {
     const limiterName = 'ai-default';
     if (!this.has(limiterName)) return; // graceful: if no AI limiter configured, skip
-    await this.consume(limiterName, userId, points, `AI 操作"${operation}"请求过于频繁，请稍后再试`);
+    await this.consume(
+      limiterName,
+      userId,
+      points,
+      `AI 操作"${operation}"请求过于频繁，请稍后再试`,
+    );
   }
 
   /** Check if a limiter exists by name */
@@ -208,8 +248,14 @@ export class RateLimiterService implements OnModuleInit, OnModuleDestroy {
   private getLimiter(limiterName: string): RateLimiterUnion {
     const limiter = this.limiters.get(limiterName);
     if (!limiter) {
-      throw new NotFoundException(`限流器 '${limiterName}' 不存在 (可用: ${this.getLimiterNames().join(', ')})`);
+      throw new NotFoundException(
+        `限流器 '${limiterName}' 不存在 (可用: ${this.getLimiterNames().join(', ')})`,
+      );
     }
     return limiter;
+  }
+
+  private toStorageKey(key: string): string {
+    return deriveRateLimitKey(key, this.options.keyHashSecret);
   }
 }

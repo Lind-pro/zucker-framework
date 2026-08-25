@@ -25,20 +25,21 @@ export class RateLimitGuard implements CanActivate {
       return true;
     } catch (err) {
       if (err instanceof TooManyRequestsException) {
-        throw new TooManyRequestsException(
-          options.message ?? 'Too many requests',
-          err.retryAfter,
-        );
+        throw new TooManyRequestsException(options.message ?? 'Too many requests', err.retryAfter);
       }
       throw err;
     }
   }
 
   private extractKey(request: any, options: RateLimitOptions): string {
+    const networkKey = request.ip ?? request.socket?.remoteAddress ?? 'unknown-client';
     switch (options.keyExtractor) {
-      case '#userId': return request.user?.id ?? request.ip;
-      case '#username': return request.user?.username ?? request.ip;
-      default: return request.ip;
+      case '#userId':
+        return request.user?.id ?? networkKey;
+      case '#username':
+        return request.user?.username ?? networkKey;
+      default:
+        return networkKey;
     }
   }
 }

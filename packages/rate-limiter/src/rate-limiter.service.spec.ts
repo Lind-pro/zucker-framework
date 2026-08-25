@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { RateLimiterService, TooManyRequestsException } from './rate-limiter.service';
+import {
+  deriveRateLimitKey,
+  RateLimiterService,
+  TooManyRequestsException,
+} from './rate-limiter.service';
 
 // Suppress NestJS Logger output
 vi.mock('@nestjs/common', async (importOriginal) => {
@@ -74,9 +78,7 @@ describe('RateLimiterService', () => {
     await service.consume('login', 'pen-user', 3);
     await service.penalty('login', 'pen-user', 2);
     // After 3 consumed + 2 penalty = 5, next should be rejected
-    await expect(service.consume('login', 'pen-user')).rejects.toThrow(
-      TooManyRequestsException,
-    );
+    await expect(service.consume('login', 'pen-user')).rejects.toThrow(TooManyRequestsException);
   });
 
   it('reward reduces consumed points', async () => {
@@ -134,5 +136,18 @@ describe('RateLimiterService', () => {
       expect(e).toBeInstanceOf(TooManyRequestsException);
       expect((e as TooManyRequestsException).retryAfter).toBeGreaterThan(0);
     }
+  });
+
+  it('derives stable non-reversible storage keys when a secret is configured', () => {
+    const first = deriveRateLimitKey('203.0.113.9', 'test-only-secret-with-at-least-32-characters');
+    const repeated = deriveRateLimitKey(
+      '203.0.113.9',
+      'test-only-secret-with-at-least-32-characters',
+    );
+
+    expect(first).toBe(repeated);
+    expect(first).toMatch(/^v1:[a-f0-9]{64}$/u);
+    expect(first).not.toContain('203.0.113.9');
+    expect(deriveRateLimitKey('203.0.113.9')).toBe('203.0.113.9');
   });
 });

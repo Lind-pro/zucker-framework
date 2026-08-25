@@ -4,9 +4,11 @@
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
-    "build": "tsup src/index.ts --format cjs,esm --dts",
+    "build": "tsup src/index.ts --format cjs,esm --dts --external @nestjs/common --external @nestjs/core --external @nestjs/event-emitter --external @zucker/core",
     "clean": "rm -rf dist",
     "lint": "eslint src/"
   },
@@ -15,6 +17,10 @@
   },
   "peerDependencies": {
     "@nestjs/common": "^11.0.0",
-    "@nestjs/core": "^11.0.0"
+    "@nestjs/core": "^11.0.0",
+    "@nestjs/event-emitter": "^3.0.0"
+  },
+  "devDependencies": {
+    "@nestjs/event-emitter": "^3.0.0"
   }
 }

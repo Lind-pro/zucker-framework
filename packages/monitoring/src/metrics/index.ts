@@ -1,11 +1,4 @@
-export {
-  MetricsRegistry,
-  Counter,
-  Gauge,
-  Histogram,
-  Summary,
-  Timer,
-} from './metrics-registry';
+export { MetricsRegistry, Counter, Gauge, Histogram, Summary, Timer } from './metrics-registry';
 export type { MetricLabels } from './metrics-registry';
 
 export { Metrics } from './metrics.decorator';

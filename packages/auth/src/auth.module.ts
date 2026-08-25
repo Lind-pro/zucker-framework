@@ -7,13 +7,16 @@ import {
   type InjectionToken,
   type OptionalFactoryDependency,
 } from '@nestjs/common';
-import { DiscoveryModule } from '@nestjs/core';
+import { DiscoveryModule, Reflector } from '@nestjs/core';
 import { PassportModule } from '@nestjs/passport';
 import { JwtModule, JwtService } from '@nestjs/jwt';
 import type { DatabaseAdapter } from '@zucker/core';
 import type { ICache } from '@zucker/cache';
-import type { DimensionProvider, ZuckerAuthModuleOptions } from './interfaces';
-import { DIMENSION_PROVIDERS } from './interfaces';
+import {
+  DIMENSION_PROVIDERS,
+  type DimensionProvider,
+  type ZuckerAuthModuleOptions,
+} from './interfaces';
 import { PermissionService } from './services/permission.service';
 import { PermissionScannerService } from './services/permission-scanner.service';
 import { DimensionService } from './services/dimension.service';
@@ -27,7 +30,10 @@ import { DataPermissionGuard, DATABASE_ADAPTER } from './guards/data-permission.
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { MenuController } from './controllers/menu.controller';
 import { ThirdPartyAccountController } from './controllers/third-party-account.controller';
-import { AuthorizationController, AUTHENTICATION_MANAGER } from './controllers/authorization.controller';
+import {
+  AuthorizationController,
+  AUTHENTICATION_MANAGER,
+} from './controllers/authorization.controller';
 import { BcryptEncoder } from './password/bcrypt-encoder';
 import { UserSettingsService } from './services/user-settings.service';
 import { UserService } from './services/user.service';
@@ -50,6 +56,11 @@ import { AUTHENTICATION_SUPPLIERS } from './authentication/authentication-suppli
 
 export interface ZuckerAuthModuleAsyncOptions {
   imports?: Array<Type | DynamicModule>;
+  /**
+   * Register the framework's generic HTTP controllers.
+   * Defaults to true for backwards compatibility.
+   */
+  registerControllers?: boolean;
   useFactory?: (...args: unknown[]) => ZuckerAuthModuleOptions | Promise<ZuckerAuthModuleOptions>;
   useClass?: Type<ZuckerAuthModuleOptionsFactory>;
   useExisting?: Type<ZuckerAuthModuleOptionsFactory>;
@@ -73,15 +84,13 @@ function resolveJwtSecret(options: ZuckerAuthModuleOptions): string {
   if (nodeEnv === 'production' || nodeEnv === 'staging') {
     throw new Error(
       '[ZuckerAuthModule] jwtSecret is required in production/staging. ' +
-      'Set it via ZuckerAuthModule.forRoot({ jwtSecret }) or the JWT_SECRET environment variable.',
+        'Set it via ZuckerAuthModule.forRoot({ jwtSecret }) or the JWT_SECRET environment variable.',
     );
   }
 
   // Development fallback — logged as warning so it's never silent
   const logger = new (require('@nestjs/common').Logger)('ZuckerAuthModule');
-  logger.warn(
-    'Using insecure default JWT secret. Set jwtSecret for production use.',
-  );
+  logger.warn('Using insecure default JWT secret. Set jwtSecret for production use.');
   return '__zucker_dev_only_secret__';
 }
 
@@ -134,8 +143,7 @@ export class ZuckerAuthModule {
       // --- JWT strategy ---
       {
         provide: JwtStrategy,
-        useFactory: (opts: ZuckerAuthModuleOptions) =>
-          new JwtStrategy(resolveJwtSecret(opts)),
+        useFactory: (opts: ZuckerAuthModuleOptions) => new JwtStrategy(resolveJwtSecret(opts)),
         inject: [optionsToken],
       },
 
@@ -217,6 +225,7 @@ export class ZuckerAuthModule {
       { provide: TWO_FACTOR_PROVIDERS, useValue: null },
 
       // --- Services without external deps ---
+      Reflector,
       DimensionService,
       PermissionScannerService,
 
@@ -275,9 +284,7 @@ export class ZuckerAuthModule {
    * Build option-specific providers (cache, dimensions) that differ
    * between forRoot (has direct options) and forRootAsync (reads from token).
    */
-  private static buildOptionSpecificProviders(
-    options: ZuckerAuthModuleOptions,
-  ): Provider[] {
+  private static buildOptionSpecificProviders(options: ZuckerAuthModuleOptions): Provider[] {
     const providers: Provider[] = [];
 
     // Token cache (optional injection)
@@ -320,7 +327,7 @@ export class ZuckerAuthModule {
           signOptions: { expiresIn: '7d' },
         }),
       ],
-      controllers: MODULE_CONTROLLERS,
+      controllers: options.registerControllers === false ? [] : MODULE_CONTROLLERS,
       providers: [
         optionsProvider,
         ...this.buildProviders(AUTH_MODULE_OPTIONS),
@@ -348,7 +355,7 @@ export class ZuckerAuthModule {
           inject: [AUTH_MODULE_OPTIONS],
         }),
       ],
-      controllers: MODULE_CONTROLLERS,
+      controllers: asyncOptions.registerControllers === false ? [] : MODULE_CONTROLLERS,
       providers: [
         ...asyncProviders,
         ...this.buildProviders(AUTH_MODULE_OPTIONS),

@@ -1,10 +1,8 @@
 import { Injectable, Logger, Optional, Inject } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { OrderService } from './order.service';
-import type { Order } from './order.service';
+import { OrderService, type Order } from './order.service';
 import { PaymentService } from './payment.service';
-import { PaymentEvents } from './payment.events';
-import type { PaymentRecoverySentEvent } from './payment.events';
+import { PaymentEvents, type PaymentRecoverySentEvent } from './payment.events';
 
 /** 挽回邮件发送接口 — 由业务项目实现 */
 export interface RecoveryMailSender {
@@ -73,11 +71,14 @@ export class PaymentRecoveryService {
   constructor(
     private readonly orderService: OrderService,
     private readonly paymentService: PaymentService,
-    @Optional() @Inject(RECOVERY_MAIL_SENDER)
+    @Optional()
+    @Inject(RECOVERY_MAIL_SENDER)
     private readonly mailSender?: RecoveryMailSender,
-    @Optional() @Inject(RECOVERY_USER_LOOKUP)
+    @Optional()
+    @Inject(RECOVERY_USER_LOOKUP)
     private readonly userLookup?: RecoveryUserLookup,
-    @Optional() @Inject(RECOVERY_URL_GENERATOR)
+    @Optional()
+    @Inject(RECOVERY_URL_GENERATOR)
     private readonly urlGenerator?: RecoveryUrlGenerator,
     @Optional()
     private readonly eventEmitter?: EventEmitter2,
@@ -170,7 +171,7 @@ export class PaymentRecoveryService {
     } else {
       this.logger.log(
         `[Recovery:NoMailSender] 订单 ${orderId} 需要挽回, ` +
-        `email=${email}, retryUrl=${retryUrl}, reason=${errorReason}`,
+          `email=${email}, retryUrl=${retryUrl}, reason=${errorReason}`,
       );
     }
 

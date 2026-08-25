@@ -5,9 +5,7 @@ export interface MetricLabels {
 }
 
 function normalizeLabels(labels: MetricLabels): MetricLabels {
-  return Object.fromEntries(
-    Object.entries(labels).sort(([a], [b]) => a.localeCompare(b)),
-  );
+  return Object.fromEntries(Object.entries(labels).sort(([a], [b]) => a.localeCompare(b)));
 }
 
 function serializeLabels(labels: MetricLabels): string {

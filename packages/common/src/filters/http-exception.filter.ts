@@ -7,10 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Response } from 'express';
-import {
-  BusinessException,
-  ValidationException,
-} from '@zucker/core';
+import { BusinessException, ValidationException } from '@zucker/core';
 
 interface ValidationErrorLike {
   property: string;
@@ -42,6 +39,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     let code = 'INTERNAL_ERROR';
     let message = '服务器内部错误';
     let result: unknown = null;
+    let retryAfterSeconds: number | undefined;
 
     if (exception instanceof ValidationException || this.isValidationLike(exception)) {
       // ValidationException is a BusinessException subclass — handle first for detail extraction
@@ -93,16 +91,26 @@ export class HttpExceptionFilter implements ExceptionFilter {
         // Forward extra fields (e.g. retryAfter from TooManyRequestsException)
         if ('retryAfter' in resp) {
           result = { retryAfter: resp.retryAfter };
+          if (
+            status === HttpStatus.TOO_MANY_REQUESTS &&
+            typeof resp.retryAfter === 'number' &&
+            Number.isFinite(resp.retryAfter) &&
+            resp.retryAfter >= 0
+          ) {
+            retryAfterSeconds = Math.ceil(resp.retryAfter);
+          }
         }
       } else {
         message = exception.message;
       }
     } else if (exception instanceof Error) {
-      message = exception.message;
       this.logger.error(`Unhandled error: ${exception.message}`, exception.stack);
     } else {
-      message = String(exception);
-      this.logger.error(`Unhandled non-Error exception: ${message}`);
+      this.logger.error(`Unhandled non-Error exception: ${String(exception)}`);
+    }
+
+    if (retryAfterSeconds !== undefined) {
+      response.setHeader('Retry-After', String(retryAfterSeconds));
     }
 
     response.status(status).json({
@@ -139,21 +147,36 @@ export class HttpExceptionFilter implements ExceptionFilter {
    */
   private statusToCode(status: number): string {
     switch (status) {
-      case 400: return 'BAD_REQUEST';
-      case 401: return 'UNAUTHORIZED';
-      case 403: return 'FORBIDDEN';
-      case 404: return 'NOT_FOUND';
-      case 405: return 'METHOD_NOT_ALLOWED';
-      case 406: return 'NOT_ACCEPTABLE';
-      case 409: return 'CONFLICT';
-      case 415: return 'UNSUPPORTED_MEDIA_TYPE';
-      case 422: return 'UNPROCESSABLE_ENTITY';
-      case 429: return 'TOO_MANY_REQUESTS';
-      case 500: return 'INTERNAL_ERROR';
-      case 502: return 'BAD_GATEWAY';
-      case 503: return 'SERVICE_UNAVAILABLE';
-      case 504: return 'GATEWAY_TIMEOUT';
-      default: return 'INTERNAL_ERROR';
+      case 400:
+        return 'BAD_REQUEST';
+      case 401:
+        return 'UNAUTHORIZED';
+      case 403:
+        return 'FORBIDDEN';
+      case 404:
+        return 'NOT_FOUND';
+      case 405:
+        return 'METHOD_NOT_ALLOWED';
+      case 406:
+        return 'NOT_ACCEPTABLE';
+      case 409:
+        return 'CONFLICT';
+      case 415:
+        return 'UNSUPPORTED_MEDIA_TYPE';
+      case 422:
+        return 'UNPROCESSABLE_ENTITY';
+      case 429:
+        return 'TOO_MANY_REQUESTS';
+      case 500:
+        return 'INTERNAL_ERROR';
+      case 502:
+        return 'BAD_GATEWAY';
+      case 503:
+        return 'SERVICE_UNAVAILABLE';
+      case 504:
+        return 'GATEWAY_TIMEOUT';
+      default:
+        return 'INTERNAL_ERROR';
     }
   }
 

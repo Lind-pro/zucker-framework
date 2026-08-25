@@ -47,24 +47,43 @@ interface Term { column: string; termType: string; value: unknown; type?: 'and' 
 ### 异常类
 
 ```typescript
-class BusinessException extends Error { readonly code: string; constructor(message: string, code?: string); }
-class NotFoundException extends BusinessException { constructor(message?: string); }
-class ValidationException extends BusinessException { readonly errors: Record<string, string[]>; }
-class UnauthorizedException extends BusinessException { constructor(message?: string); }
-class ForbiddenException extends BusinessException { constructor(message?: string); }
+class BusinessException extends Error {
+  readonly code: string;
+  constructor(message: string, code?: string);
+}
+class NotFoundException extends BusinessException {
+  constructor(message?: string);
+}
+class ValidationException extends BusinessException {
+  readonly errors: Record<string, string[]>;
+}
+class UnauthorizedException extends BusinessException {
+  constructor(message?: string);
+}
+class ForbiddenException extends BusinessException {
+  constructor(message?: string);
+}
 ```
 
 ### 函数
 
 ```typescript
 // ID 生成
-function generateId(): string;            // CUID2
-function generateUUID(): string;          // Node.js crypto UUID
-function generateSnowflakeId(): string;   // 雪花算法
+function generateId(): string; // CUID2
+function generateUUID(): string; // Node.js crypto UUID
+function generateSnowflakeId(): string; // 雪花算法
 
 // 对象 Diff
-interface FieldChange { field: string; oldValue: unknown; newValue: unknown; }
-function diff(oldObj: Record<string, unknown>, newObj: Record<string, unknown>, ignoreFields?: string[]): FieldChange[];
+interface FieldChange {
+  field: string;
+  oldValue: unknown;
+  newValue: unknown;
+}
+function diff(
+  oldObj: Record<string, unknown>,
+  newObj: Record<string, unknown>,
+  ignoreFields?: string[],
+): FieldChange[];
 
 // 模板解析
 function parseTemplate(template: string, variables: Record<string, unknown>): string;
@@ -102,20 +121,43 @@ class ZuckerCommonModule      // 模块（自动注册以上组件）
 ### 枚举和接口
 
 ```typescript
-enum EntityEventType { CREATE = 'create', UPDATE = 'update', DELETE = 'delete', QUERY = 'query' }
-enum EntityEventPhase { PREPARE = 'prepare', BEFORE = 'before', AFTER = 'after' }
+enum EntityEventType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  QUERY = 'query',
+}
+enum EntityEventPhase {
+  PREPARE = 'prepare',
+  BEFORE = 'before',
+  AFTER = 'after',
+}
 
 interface EntityEvent<T = unknown> {
-  type: EntityEventType; phase: EntityEventPhase; entityType: string; entity: T | T[]; timestamp: number;
+  type: EntityEventType;
+  phase: EntityEventPhase;
+  entityType: string;
+  entity: T | T[];
+  timestamp: number;
 }
 
 interface TopicEventBus {
   publish(topic: string, payload: unknown): Promise<void>;
-  subscribe(topicPattern: string, handler: (payload: unknown, topic: string) => void | Promise<void>): { unsubscribe: () => void };
+  subscribe(
+    topicPattern: string,
+    handler: (payload: unknown, topic: string) => void | Promise<void>,
+  ): { unsubscribe: () => void };
 }
 
-interface EntityEventListener<T = unknown> { onEvent(event: EntityEvent<T>): void | Promise<void>; }
-interface AsyncEvent<T = unknown> { payload: T; timestamp: number; handled: boolean; markHandled(): void; }
+interface EntityEventListener<T = unknown> {
+  onEvent(event: EntityEvent<T>): void | Promise<void>;
+}
+interface AsyncEvent<T = unknown> {
+  payload: T;
+  timestamp: number;
+  handled: boolean;
+  markHandled(): void;
+}
 ```
 
 ### 函数和类
@@ -175,18 +217,22 @@ class PrismaAdapter implements DatabaseAdapter;
 
 ```typescript
 interface DynamicQueryParam {
-  filters?: string;          // JSON 编码的 FilterMap
-  orderBy?: string;          // "field desc,field2 asc"
-  page?: number;             // 默认 1
-  pageSize?: number;         // 默认 10
-  total?: number;            // 传入跳过 count
-  parallelPager?: boolean;   // count + findMany 并发
-  includes?: string[];       // 只选字段
-  excludes?: string[];       // 排除字段
+  filters?: string; // JSON 编码的 FilterMap
+  orderBy?: string; // "field desc,field2 asc"
+  page?: number; // 默认 1
+  pageSize?: number; // 默认 10
+  total?: number; // 传入跳过 count
+  parallelPager?: boolean; // count + findMany 并发
+  includes?: string[]; // 只选字段
+  excludes?: string[]; // 排除字段
 }
 
 class DynamicQueryService {
-  findMany(model: string, queryParam: DynamicQueryParam, defaultOrderField?: string): Promise<PaginatedResult>;
+  findMany(
+    model: string,
+    queryParam: DynamicQueryParam,
+    defaultOrderField?: string,
+  ): Promise<PaginatedResult>;
   findOne(model: string, id: string, includes?: string[], excludes?: string[]): Promise<any>;
 }
 
@@ -201,14 +247,28 @@ class DynamicQueryParamService {
 ### 表达式解析
 
 ```typescript
-function parseExpression(expression: string): Term[];       // SQL 风格: "name = '张三' and age > 16"
-function parseFilterMap(filterMap: Record<string, unknown>): Term[];  // {"name$like": "张"}
+function parseExpression(expression: string): Term[]; // SQL 风格: "name = '张三' and age > 16"
+function parseFilterMap(filterMap: Record<string, unknown>): Term[]; // {"name$like": "张"}
 ```
 
 ### 操作符
 
 ```typescript
-type FilterOperatorType = 'eq' | 'neq' | 'like' | 'contains' | 'gt' | 'gte' | 'lt' | 'lte' | 'in' | 'notIn' | 'isNull' | 'between' | 'has' | 'hasSome';
+type FilterOperatorType =
+  | 'eq'
+  | 'neq'
+  | 'like'
+  | 'contains'
+  | 'gt'
+  | 'gte'
+  | 'lt'
+  | 'lte'
+  | 'in'
+  | 'notIn'
+  | 'isNull'
+  | 'between'
+  | 'has'
+  | 'hasSome';
 
 interface IFilterOperator {
   readonly operatorType: FilterOperatorType;
@@ -233,7 +293,7 @@ class FilterOperatorFactory {
 class ZuckerCrudModule {
   static forRoot(options: { adapterClass: Type<DatabaseAdapter> }): DynamicModule;
 }
-const DATABASE_ADAPTER: string;  // DI token
+const DATABASE_ADAPTER: string; // DI token
 ```
 
 ---
@@ -247,7 +307,7 @@ const DATABASE_ADAPTER: string;  // DI token
 ```typescript
 const Public: () => ClassDecorator & MethodDecorator;
 const Permissions: (...permissions: string[]) => MethodDecorator;
-const RequirePermissions: typeof Permissions;  // 别名
+const RequirePermissions: typeof Permissions; // 别名
 const Resource: (options: ResourceOptions) => ClassDecorator;
 const Action: (options: ActionOptions) => MethodDecorator;
 const QueryAction: (name?: string, description?: string) => MethodDecorator;
@@ -255,13 +315,25 @@ const CreateAction: (name?: string, description?: string) => MethodDecorator;
 const UpdateAction: (name?: string, description?: string) => MethodDecorator;
 const DeleteAction: (name?: string, description?: string) => MethodDecorator;
 const SaveAction: (name?: string, description?: string) => MethodDecorator;
-const CurrentUser: ParameterDecorator;  // @CurrentUser() 或 @CurrentUser('id')
+const CurrentUser: ParameterDecorator; // @CurrentUser() 或 @CurrentUser('id')
 const DataPermission: (options?: DataPermissionOptions | string) => MethodDecorator;
 const SkipDataPermission: () => MethodDecorator;
 
-interface ResourceOptions { id: string; name: string; description?: string; optionalFields?: Array<{ name: string; description: string }>; }
-interface ActionOptions { action: string; name: string; description?: string; }
-interface DataPermissionOptions { dataType?: string; skipDataPermission?: boolean; }
+interface ResourceOptions {
+  id: string;
+  name: string;
+  description?: string;
+  optionalFields?: Array<{ name: string; description: string }>;
+}
+interface ActionOptions {
+  action: string;
+  name: string;
+  description?: string;
+}
+interface DataPermissionOptions {
+  dataType?: string;
+  skipDataPermission?: boolean;
+}
 ```
 
 ### Guards
@@ -306,11 +378,38 @@ interface DimensionProvider {
   getUserIdsByDimensionId(dimensionId: string): Promise<string[]>;
 }
 
-enum TokenState { NORMAL, EXPIRED, LOCK, DENY, OFFLINE }
-interface TokenInfo { token: string; userId: string; state: TokenState; signInTime: Date; lastRequestTime: Date; maxInactiveInterval?: number; }
-interface Permission { id: string; name: string; actions: string[]; describe?: string; }
-interface Role { id: string; name: string; permissions: Permission[]; parentId?: string; }
-interface AuthUser { id: string; username: string; [key: string]: unknown; }
+enum TokenState {
+  NORMAL,
+  EXPIRED,
+  LOCK,
+  DENY,
+  OFFLINE,
+}
+interface TokenInfo {
+  token: string;
+  userId: string;
+  state: TokenState;
+  signInTime: Date;
+  lastRequestTime: Date;
+  maxInactiveInterval?: number;
+}
+interface Permission {
+  id: string;
+  name: string;
+  actions: string[];
+  describe?: string;
+}
+interface Role {
+  id: string;
+  name: string;
+  permissions: Permission[];
+  parentId?: string;
+}
+interface AuthUser {
+  id: string;
+  username: string;
+  [key: string]: unknown;
+}
 ```
 
 ### 模块
@@ -319,14 +418,18 @@ interface AuthUser { id: string; username: string; [key: string]: unknown; }
 class ZuckerAuthModule {
   static forRoot(options: ZuckerAuthModuleOptions): DynamicModule;
 }
-interface ZuckerAuthModuleOptions { jwtSecret?: string; dimensionProviders?: Array<...>; }
+interface ZuckerAuthModuleOptions {
+  jwtSecret?: string;
+  registerControllers?: boolean;
+  dimensionProviders?: Array<...>;
+}
 ```
 
 ---
 
 ## @zucker/logging
 
-访问日志 + 操作日志。
+访问日志、结构化日志、PII 脱敏与业务语义审计事件。
 
 ```typescript
 // 装饰器
@@ -338,6 +441,19 @@ interface AccessLoggerOptions {
 
 // 拦截器
 class AccessLoggerInterceptor;  // 自动记录标记了 @AccessLogger 的端点
+
+// 所有 StructuredLogger / AccessLogger / BusinessLogger / AuditLogger 输出
+// 都在写出前经过 PiiFilter；字段名和内容模式均会脱敏，并限制深度与字符串长度。
+class PiiFilter {
+  sanitize(text: string): string;
+  sanitizeObject<T extends Record<string, unknown>>(value: T): T;
+  sanitizeValue(value: unknown): unknown;
+}
+
+class StructuredLogger; // JSON 日志，自动关联 correlationId 并统一脱敏
+
+function normalizeCorrelationId(value: unknown): string;
+// 只接受长度不超过 128 的安全字符；不可信值会替换为服务端 UUID。
 
 // 事件（通过 @OnEvent 监听）
 const ACCESS_LOG_EVENT = 'zucker.access-log';
@@ -357,8 +473,26 @@ interface OperationLogPayload {
   requestData?: unknown; responseData?: unknown; errorMessage?: string;
 }
 
+interface AuditStore {
+  append(entry: AuditEntry): Promise<void>;
+  query(options: AuditQueryOptions): Promise<{ entries: AuditEntry[]; total: number }>;
+}
+
+class AuditLogger {
+  constructor(store?: AuditStore, piiFilter?: PiiFilter);
+  log(input: AuditLogInput): Promise<AuditEntry>;
+  logRequired(input: AuditLogInput): Promise<AuditEntry>;
+  query(options: AuditQueryOptions): Promise<{ entries: AuditEntry[]; total: number }>;
+}
+
 class ZuckerLoggingModule { static forRoot(): DynamicModule; }
 ```
+
+`AuditLogger` 提供业务语义事件、统一脱敏和追加接口。兼容方法 `log()` 在存储失败
+时记录脱敏错误但不阻断业务；安全敏感写操作应在业务事务中使用 fail-closed 的
+`logRequired()`。框架不会自行保证持久化、不可变性、retention 或告警。默认
+`InMemoryAuditStore` 只适用于开发/测试；生产业务必须提供自己的 `AuditStore`，
+并在数据库/日志基础设施层实现相应约束。
 
 ---
 
@@ -367,8 +501,20 @@ class ZuckerLoggingModule { static forRoot(): DynamicModule; }
 动态配置管理（DB + 缓存 + 变更事件）。
 
 ```typescript
-interface ConfigScope { id: string; name: string; isPublic: boolean; properties: ConfigPropertyDef[]; }
-interface ConfigPropertyDef { key: string; name: string; type: string; defaultValue: unknown; description: string; readonly: boolean; }
+interface ConfigScope {
+  id: string;
+  name: string;
+  isPublic: boolean;
+  properties: ConfigPropertyDef[];
+}
+interface ConfigPropertyDef {
+  key: string;
+  name: string;
+  type: string;
+  defaultValue: unknown;
+  description: string;
+  readonly: boolean;
+}
 
 class ConfigService {
   get<T = string>(scope: string, key: string): Promise<T | undefined>;
@@ -378,10 +524,17 @@ class ConfigService {
   clearCache(scope?: string): void;
 }
 
-interface ConfigChangePayload { scope: string; key: string; oldValue: unknown; newValue: unknown; }
+interface ConfigChangePayload {
+  scope: string;
+  key: string;
+  oldValue: unknown;
+  newValue: unknown;
+}
 const CONFIG_CHANGED_EVENT = 'zucker.config-changed';
 
-class ZuckerConfigModule { static forRoot(): DynamicModule; }
+class ZuckerConfigModule {
+  static forRoot(): DynamicModule;
+}
 ```
 
 ---
@@ -440,10 +593,33 @@ class ZuckerNotificationModule { static forRoot(options?: NotificationModuleOpti
 AI 多供应商管理 + 调用包装。
 
 ```typescript
-interface AIProvider { id: string; name: string; createModel(config: AIModelConfig): unknown; }
-interface AIModelConfig { apiKey: string; baseURL?: string; modelId: string; temperature?: number; maxTokens?: number; proxyUrl?: string; }
-interface AIScenario { id: string; name: string; provider: string; model: string; temperature: number; maxTokens: number; }
-interface AIInvocationResult { content: string; tokenUsage: { input: number; output: number }; duration: number; cost: number; }
+interface AIProvider {
+  id: string;
+  name: string;
+  createModel(config: AIModelConfig): unknown;
+}
+interface AIModelConfig {
+  apiKey: string;
+  baseURL?: string;
+  modelId: string;
+  temperature?: number;
+  maxTokens?: number;
+  proxyUrl?: string;
+}
+interface AIScenario {
+  id: string;
+  name: string;
+  provider: string;
+  model: string;
+  temperature: number;
+  maxTokens: number;
+}
+interface AIInvocationResult {
+  content: string;
+  tokenUsage: { input: number; output: number };
+  duration: number;
+  cost: number;
+}
 
 class AIProviderManager {
   register(provider: AIProvider): void;
@@ -455,7 +631,7 @@ class AIProviderManager {
 }
 
 class AIConfigService {
-  getScenarioConfig(scenario: string): Promise<AIModelConfig>;  // 从 DB 加载配置（带 TTL 缓存）
+  getScenarioConfig(scenario: string): Promise<AIModelConfig>; // 从 DB 加载配置（带 TTL 缓存）
   getScenarios(): Promise<AIScenario[]>;
   clearCache(): void;
 }
@@ -464,9 +640,15 @@ class AICallWrapper {
   callWithRetry<T>(fn: () => Promise<T>, options?: CallOptions): Promise<T>;
   // 指数退避重试 + 超时控制
 }
-interface CallOptions { timeoutMs?: number; maxAttempts?: number; context?: string; }
+interface CallOptions {
+  timeoutMs?: number;
+  maxAttempts?: number;
+  context?: string;
+}
 
-class ZuckerAIModule { static forRoot(): DynamicModule; }
+class ZuckerAIModule {
+  static forRoot(): DynamicModule;
+}
 ```
 
 ---
@@ -519,10 +701,22 @@ const DictField: (options: DictFieldOptions) => PropertyDecorator;  // 字段装
 ### @zucker/rate-limiter
 
 ```typescript
-interface RateLimiterOptions { points: number; duration: number; blockDuration: number; }
+interface LimiterConfig { points: number; duration: number; blockDuration?: number; }
+interface RateLimiterModuleOptions {
+  redisClient?: unknown;
+  keyHashSecret?: string;
+  globalGuard?: boolean;
+  limiters: Record<string, LimiterConfig>;
+}
 class RateLimiterService;
-class ZuckerRateLimiterModule { static forRoot(options: { limiters: RateLimiterConfig[] }): DynamicModule; }
+class ZuckerRateLimiterModule {
+  static forRoot(options: RateLimiterModuleOptions): DynamicModule;
+  static forRootAsync(options: RateLimiterModuleAsyncOptions): DynamicModule;
+}
 ```
+
+`globalGuard: false` 可用于同步或异步注册，以便产品在应用组合根显式控制 Guard 顺序。
+`keyHashSecret` 会在限流 key 写入内存或 Redis 前进行 HMAC-SHA256 派生。
 
 ### @zucker/storage
 
@@ -543,7 +737,12 @@ class S3Storage implements FileManager;
 ### @zucker/credit
 
 ```typescript
-enum CreditTransactionType { GRANT, CONSUME, REFUND, EXPIRE }
+enum CreditTransactionType {
+  GRANT,
+  CONSUME,
+  REFUND,
+  EXPIRE,
+}
 class CreditService {
   grant(userId: string, amount: number, description: string, expireAt?: Date): Promise<void>;
   consume(userId: string, amount: number, description: string, orderId?: string): Promise<void>;
@@ -592,6 +791,8 @@ class TimerTrigger;         // 定时触发器
 class ErrorTracker;               // 错误追踪（分类 + 聚合）
 class HealthCheckService;          // 健康检查
 class InMemoryMetricsCollector;    // 指标收集
+function renderPrometheusMetrics(registry: MetricsRegistry): string;
+function getProcessUptime(startedAtMs: number, nowMs?: number): ProcessUptimeSnapshot;
 enum HealthStatus { UP, DOWN, DEGRADED }
 ```
 

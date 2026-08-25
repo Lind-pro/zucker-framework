@@ -586,6 +586,8 @@ importers:
         specifier: ^25.5.0
         version: 25.5.0
 
+  packages/media: {}
+
   packages/monitoring:
     dependencies:
       '@nestjs/common':
@@ -654,6 +656,10 @@ importers:
       '@zucker/core':
         specifier: workspace:*
         version: link:../core
+    devDependencies:
+      '@nestjs/event-emitter':
+        specifier: ^3.0.0
+        version: 3.0.1(@nestjs/common@11.1.17(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.17)
 
   packages/provider:
     dependencies:
@@ -704,6 +710,10 @@ importers:
       rate-limiter-flexible:
         specifier: ^5.0.0
         version: 5.0.5
+    devDependencies:
+      '@types/node':
+        specifier: ^25.5.0
+        version: 25.5.0
 
   packages/reference:
     dependencies:
@@ -4887,6 +4897,7 @@ packages:
   eslint@9.39.4:
     resolution: {integrity: sha512-XoMjdBOwe/esVgEvLmNsD3IRHkm7fbKIUGvrleloJXUZgDHig2IPWNniv+GwjyJXzuNqVjlr5+4yVUZjycJwfQ==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+    deprecated: This version is no longer supported. Please see https://eslint.org/version-support for other options.
     hasBin: true
     peerDependencies:
       jiti: '*'

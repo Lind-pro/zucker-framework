@@ -13,10 +13,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { AlertManagerService } from './alert-manager.service';
+import type { AlertRule } from './alert.interfaces';
 
 /** 标记需要认证但不需要特定权限（等效于 @zucker/auth 的 @Permissions()） */
 const Permissions = () => SetMetadata('zucker:auth:permissions', []);
-import type { AlertRule } from './alert.interfaces';
 
 /**
  * AlertController — 告警管理接口
@@ -49,9 +49,7 @@ export class AlertController {
   @HttpCode(HttpStatus.CREATED)
   createRule(@Body() body: AlertRule) {
     if (!body.id || !body.name || !body.metric || body.threshold === undefined) {
-      throw new BadRequestException(
-        'Missing required fields: id, name, metric, threshold',
-      );
+      throw new BadRequestException('Missing required fields: id, name, metric, threshold');
     }
     const rule: AlertRule = {
       id: body.id,
@@ -80,35 +78,25 @@ export class AlertController {
   // ─── 告警操作 ───────────────────────────────────────
 
   @Put(':id/acknowledge')
-  acknowledgeAlert(
-    @Param('id') id: string,
-    @Body('userId') userId: string,
-  ) {
+  acknowledgeAlert(@Param('id') id: string, @Body('userId') userId: string) {
     if (!userId) {
       throw new BadRequestException('userId is required');
     }
     const result = this.alertManager.acknowledgeAlert(id, userId);
     if (!result) {
-      throw new NotFoundException(
-        `Alert ${id} not found or not in ACTIVE status`,
-      );
+      throw new NotFoundException(`Alert ${id} not found or not in ACTIVE status`);
     }
     return result;
   }
 
   @Put(':id/resolve')
-  resolveAlert(
-    @Param('id') id: string,
-    @Body('userId') userId: string,
-  ) {
+  resolveAlert(@Param('id') id: string, @Body('userId') userId: string) {
     if (!userId) {
       throw new BadRequestException('userId is required');
     }
     const result = this.alertManager.resolveAlert(id, userId);
     if (!result) {
-      throw new NotFoundException(
-        `Alert ${id} not found or already resolved`,
-      );
+      throw new NotFoundException(`Alert ${id} not found or already resolved`);
     }
     return result;
   }

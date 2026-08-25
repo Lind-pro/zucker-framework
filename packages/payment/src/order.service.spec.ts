@@ -1,6 +1,5 @@
-import { OrderService } from './order.service';
+import { OrderService, type CreateOrderParams } from './order.service';
 import { PaymentService } from './payment.service';
-import type { CreateOrderParams } from './order.service';
 
 function createMockPaymentService() {
   return {
@@ -50,7 +49,10 @@ describe('OrderService', () => {
       expect(order.paymentIntentId).toBe('intent-1');
       expect(order.amount).toBe(1000);
       expect(order.currency).toBe('CNY');
-      expect(paymentService.createPaymentIntent).toHaveBeenCalledWith('stripe', defaultParams.payment);
+      expect(paymentService.createPaymentIntent).toHaveBeenCalledWith(
+        'stripe',
+        defaultParams.payment,
+      );
     });
 
     it('should throw when order already exists', async () => {
@@ -59,7 +61,9 @@ describe('OrderService', () => {
     });
 
     it('should set status to failed when payment initiation fails', async () => {
-      (paymentService.createPaymentIntent as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('payment error'));
+      (paymentService.createPaymentIntent as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new Error('payment error'),
+      );
       await expect(service.createOrder(defaultParams)).rejects.toThrow('payment error');
 
       const order = service.getOrder('order-1');
@@ -160,8 +164,12 @@ describe('OrderService', () => {
     });
 
     it('should allow cancelling a failed order', async () => {
-      (paymentService.createPaymentIntent as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('fail'));
-      try { await service.createOrder(defaultParams); } catch {}
+      (paymentService.createPaymentIntent as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new Error('fail'),
+      );
+      try {
+        await service.createOrder(defaultParams);
+      } catch {}
       const cancelled = service.cancelOrder('order-1');
       expect(cancelled.status).toBe('cancelled');
     });
