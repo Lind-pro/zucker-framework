@@ -1,0 +1,14 @@
+/// 扩展产品注册表：新插件上架只需插一行（slug 与 Stripe client_reference_id 一致），
+/// 邮件品牌/显示名由此驱动，未登记的 slug 走代码内 fallback。
+model ExtensionProduct {
+  slug        String  @id // "siteshots" | "sitepdf" | …
+  displayName String // 邮件里的产品名，如 "SiteShots Pro"
+  senderBrand String // 发件人品牌，如 "SiteShots"
+  purchaseUrl String?
+  active      Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("extension_products")
+}

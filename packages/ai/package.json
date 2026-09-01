@@ -1,0 +1,33 @@
+{
+  "name": "@zucker/ai",
+  "version": "0.1.0-rc.4",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@zucker/ai-access": "workspace:*"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts",
+    "clean": "rm -rf dist",
+    "lint": "eslint src/"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "openai": "^6.34.0"
+  },
+  "peerDependencies": {
+    "@zucker/core": "workspace:*",
+    "@nestjs/common": "^11.0.0",
+    "@nestjs/core": "^11.0.0",
+    "openai": ">=4.80.0 <7"
+  },
+  "peerDependenciesMeta": {
+    "openai": {
+      "optional": true
+    }
+  }
+}

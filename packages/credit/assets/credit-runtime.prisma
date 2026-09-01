@@ -1,0 +1,19 @@
+model creditAccountLocks {
+  accountId String   @id @db.VarChar(191)
+  createdAt DateTime @default(now())
+
+  @@map("credit_account_locks")
+}
+
+model creditOperationReceipts {
+  idempotencyKey String   @id @db.VarChar(200)
+  accountId      String   @db.VarChar(191)
+  operationType  String   @db.VarChar(64)
+  amount         Int
+  resourceType   String   @db.VarChar(64)
+  resourceId     String?  @db.VarChar(191)
+  createdAt      DateTime @default(now())
+
+  @@index([accountId, createdAt])
+  @@map("credit_operation_receipts")
+}

@@ -1,0 +1,10 @@
+{
+  "name": "__EXT_SLUG__-extension",
+  "version": "0.1.0",
+  "private": true,
+  "extensionSlug": "__EXT_SLUG__",
+  "description": "__EXT_DESC__",
+  "scripts": {
+    "package": "node scripts/package.mjs"
+  }
+}

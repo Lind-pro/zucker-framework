@@ -1,0 +1,78 @@
+// 日志模型
+
+enum OperationStatus {
+  SUCCESS
+  FAILED
+  PENDING
+}
+
+enum LogLevel {
+  DEBUG
+  INFO
+  WARN
+  ERROR
+}
+
+model accessLogs {
+  id           String   @id @default(cuid())
+  action       String
+  describe     String?
+  module       String?
+  userId       String?
+  username     String?
+  requestUrl   String?
+  method       String?
+  ip           String?
+  userAgent    String?
+  requestTime  DateTime @default(now())
+  responseTime Int?
+  parameters   Json?
+  result       Json?
+  exception    String?
+
+  @@index([action])
+  @@index([module])
+  @@index([requestTime])
+  @@index([userId])
+  @@map("access_logs")
+}
+
+model operationLogs {
+  id           String          @id @default(cuid())
+  module       String
+  action       String
+  status       OperationStatus @default(SUCCESS)
+  userId       String?
+  targetId     String?
+  targetType   String?
+  method       String?
+  path         String?
+  ipAddress    String?
+  userAgent    String?
+  duration     Int?
+  errorMessage String?
+  requestData  Json?
+  responseData Json?
+  metadata     Json?
+  createdAt    DateTime        @default(now())
+
+  @@index([module, createdAt])
+  @@index([status])
+  @@index([userId])
+  @@map("operation_logs")
+}
+
+model systemLogs {
+  id        Int      @id @default(autoincrement())
+  timestamp DateTime
+  level     LogLevel @default(INFO)
+  message   String
+  context   String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([context])
+  @@index([level])
+  @@index([timestamp])
+  @@map("system_logs")
+}

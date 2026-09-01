@@ -1,0 +1,82 @@
+{
+  "nav": {
+    "home": "首页",
+    "features": "功能",
+    "pricing": "定价",
+    "docs": "文档",
+    "dashboard": "控制台"
+  },
+  "landing": {
+    "heroTitle": "构建下一代 SaaS 应用",
+    "heroDescription": "快速、安全、可扩展的全栈开发框架，让您专注于业务逻辑",
+    "getStarted": "立即开始",
+    "learnMore": "了解更多",
+    "featuresTitle": "核心能力",
+    "feature1Title": "极速开发",
+    "feature1Desc": "内置代码生成、CRUD 基类和通用组件，大幅减少重复工作",
+    "feature2Title": "企业级安全",
+    "feature2Desc": "完善的权限控制、数据隔离和审计日志，满足企业合规要求",
+    "feature3Title": "灵活扩展",
+    "feature3Desc": "模块化架构设计，支持插件机制和自定义扩展，按需集成",
+    "ctaTitle": "准备好开始了吗？",
+    "ctaDescription": "免费注册，立即体验完整功能",
+    "ctaButton": "免费注册"
+  },
+  "auth": {
+    "loginTitle": "登录",
+    "loginDescription": "登录您的账户以继续",
+    "registerTitle": "注册",
+    "registerDescription": "创建新账户",
+    "username": "用户名",
+    "email": "邮箱",
+    "password": "密码",
+    "confirmPassword": "确认密码",
+    "loginButton": "登录",
+    "registerButton": "注册",
+    "noAccount": "还没有账户？",
+    "hasAccount": "已有账户？",
+    "goRegister": "去注册",
+    "goLogin": "去登录",
+    "forgotPassword": "忘记密码？"
+  },
+  "dashboard": {
+    "title": "控制台",
+    "welcome": "欢迎回来",
+    "overview": "概览",
+    "recentActivity": "最近活动",
+    "quickActions": "快捷操作",
+    "noData": "暂无数据"
+  },
+  "common": {
+    "login": "登录",
+    "register": "注册",
+    "logout": "退出登录",
+    "loading": "加载中...",
+    "error": "错误",
+    "retry": "重试",
+    "save": "保存",
+    "cancel": "取消",
+    "confirm": "确认",
+    "delete": "删除",
+    "edit": "编辑",
+    "back": "返回",
+    "close": "关闭"
+  },
+  "errors": {
+    "unauthorized": "请先登录",
+    "forbidden": "无权访问",
+    "notFound": "页面不存在",
+    "serverError": "服务器错误，请稍后重试",
+    "networkError": "网络连接失败"
+  },
+  "footer": {
+    "product": "产品",
+    "company": "关于",
+    "support": "支持",
+    "legal": "法律",
+    "terms": "服务条款",
+    "privacy": "隐私政策",
+    "contact": "联系我们",
+    "copyright": "版权所有"
+  }
+}

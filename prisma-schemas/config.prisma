@@ -1,0 +1,33 @@
+// 系统配置模型
+
+model configScopes {
+  id           String   @id @default(cuid())
+  name         String   @unique
+  description  String?
+  publicAccess Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now()) @updatedAt
+
+  properties configProperties[]
+
+  @@map("config_scopes")
+}
+
+model configProperties {
+  id          String   @id @default(cuid())
+  scopeId     String
+  key         String
+  value       String?
+  valueType   String   @default("string")
+  description String?
+  encrypted   Boolean  @default(false)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  scope configScopes @relation(fields: [scopeId], references: [id], onDelete: Cascade)
+
+  @@unique([scopeId, key])
+  @@index([scopeId])
+  @@map("config_properties")
+}

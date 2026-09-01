@@ -1,0 +1,118 @@
+/// Reference schema fragment for the durable task control plane.
+///
+/// Copy these models and enums into the consuming application's Prisma schema,
+/// then add application-owned relations and migrations there. The framework
+/// package intentionally does not generate or ship a Prisma Client.
+enum AsyncJobStatus {
+  QUEUED
+  PROCESSING
+  WAITING_PROVIDER
+  RETRYING
+  COMPLETED
+  FAILED
+  CANCELLED
+
+  @@map("async_job_status")
+}
+
+enum AsyncJobOutboxStatus {
+  PENDING
+  PUBLISHING
+  PUBLISHED
+
+  @@map("async_job_outbox_status")
+}
+
+model AsyncJob {
+  id                     String           @id
+  kind                   String
+  resourceType           String
+  resourceId             String
+  userId                 String?
+  orderId                String?
+  status                 AsyncJobStatus   @default(QUEUED)
+  stage                  String?
+  progress               Int              @default(0)
+  attempt                Int              @default(0)
+  maxAttempts            Int
+  idempotencyKey         String           @unique
+  idempotencyFingerprint String
+  handlerVersion         String
+  payload                Json
+  result                 Json?
+  errorCode              String?
+  errorCategory          String?
+  errorSummary           String?
+  errorRetryable         Boolean?
+  errorMetadata          Json?
+  providerRequestId      String?
+  workerId               String?
+  leaseToken             String?
+  leaseExpiresAt         DateTime?
+  heartbeatAt            DateTime?
+  availableAt            DateTime         @default(now())
+  startedAt              DateTime?
+  completedAt            DateTime?
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @default(now()) @updatedAt
+  version                Int              @default(0)
+  outboxEvents           AsyncJobOutbox[]
+  timelineEvents         AsyncJobEvent[]
+
+  @@index([kind, status, availableAt])
+  @@index([status, leaseExpiresAt])
+  @@index([resourceType, resourceId])
+  @@index([userId, status, createdAt(sort: Desc)])
+  @@index([orderId])
+  @@index([providerRequestId])
+  @@map("async_jobs")
+}
+
+/// Append-only, payload-free task history suitable for support timelines.
+/// Install assets/task-events.postgresql.sql to populate this model atomically.
+model AsyncJobEvent {
+  id                String          @id
+  taskId            String
+  sequence          Int
+  eventType         String
+  fromStatus        AsyncJobStatus?
+  toStatus          AsyncJobStatus
+  stage             String?
+  progress          Int
+  attempt           Int
+  maxAttempts       Int
+  errorCode         String?
+  errorCategory     String?
+  errorRetryable    Boolean?
+  workerId          String?
+  providerRequestId String?
+  createdAt         DateTime        @default(now())
+  task              AsyncJob        @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, sequence])
+  @@index([taskId, createdAt])
+  @@map("async_job_events")
+}
+
+model AsyncJobOutbox {
+  id             String               @id
+  taskId         String
+  topic          String
+  payload        Json
+  status         AsyncJobOutboxStatus @default(PENDING)
+  attempt        Int                  @default(0)
+  availableAt    DateTime             @default(now())
+  workerId       String?
+  leaseToken     String?
+  leaseExpiresAt DateTime?
+  publishedAt    DateTime?
+  lastError      String?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @default(now()) @updatedAt
+  task           AsyncJob             @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([status, availableAt])
+  @@index([status, leaseExpiresAt])
+  @@index([taskId, createdAt])
+  @@map("async_job_outbox")
+}

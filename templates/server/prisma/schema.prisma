@@ -1,0 +1,836 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Auth ─────────────────────────────────────────────────────────────────────
+
+model users {
+  id            String    @id @default(cuid())
+  username      String    @unique
+  name          String
+  typeId        String
+  status        Boolean   @default(true)
+  createTime    DateTime? @default(now())
+  creatorId     String?
+  password      String?
+  email         String?   @unique
+  emailVerified Boolean   @default(false)
+  locale        String    @default("en")
+  deviceInfo    Json?
+  firstVisitAt  DateTime?
+  lastLoginAt   DateTime?
+  lastLoginIp   String?
+  loginCount    Int       @default(0)
+
+  loginHistory    userLoginHistory[]
+  userTokens      userTokens[]
+  thirdPartyBinds thirdPartyBinds[]
+}
+
+model userLoginHistory {
+  id          String   @id @default(cuid())
+  userId      String
+  loginMethod String
+  ip          String
+  userAgent   String?
+  country     String?
+  city        String?
+  success     Boolean  @default(true)
+  failReason  String?
+  createdAt   DateTime @default(now())
+
+  user users @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([ip])
+  @@index([createdAt])
+  @@map("user_login_history")
+}
+
+model roles {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  status      Boolean? @default(true)
+  parentId    String?
+  groupId     String?
+  creatorId   String?
+  createTime  DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  roleMenus       roleMenus[]
+  rolePermissions rolePermissions[]
+
+  @@index([parentId])
+}
+
+model permissions {
+  id             String   @id @default(cuid())
+  name           String
+  description    String?
+  status         Boolean  @default(true)
+  actions        Json?
+  optionalFields Json?
+  parents        Json?
+  properties     Json?
+  createdAt      DateTime @default(now())
+  creatorId      String?
+  updatedAt      DateTime @default(now()) @updatedAt
+  modifierId     String?
+
+  rolePermissions rolePermissions[]
+  userPermissions userPermissions[]
+}
+
+model rolePermissions {
+  id           String   @id @default(cuid())
+  roleId       String
+  permissionId String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now()) @updatedAt
+
+  role       roles       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission permissions @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@index([permissionId])
+  @@index([roleId])
+  @@map("role_permissions")
+}
+
+model userRoles {
+  id        String   @id @default(cuid())
+  userId    String
+  roleId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@unique([userId, roleId])
+  @@index([roleId])
+  @@index([userId])
+  @@map("user_roles")
+}
+
+model userPermissions {
+  id           String   @id @default(cuid())
+  userId       String
+  permissionId String
+  grantType    String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now()) @updatedAt
+
+  permission permissions @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, permissionId])
+  @@index([permissionId])
+  @@index([userId])
+  @@map("user_permissions")
+}
+
+model userDataPermissions {
+  id        String   @id @default(cuid())
+  userId    String
+  dataType  String
+  dataId    String
+  actions   String[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@unique([userId, dataType, dataId])
+  @@index([userId])
+  @@map("user_data_permissions")
+}
+
+model userSettings {
+  id        String   @id @default(cuid())
+  userId    String
+  scope     String
+  key       String
+  value     String?
+  permission String?
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@unique([userId, scope, key])
+  @@index([userId])
+  @@map("user_settings")
+}
+
+model authorizationSettings {
+  id              String   @id @default(cuid())
+  permission      String
+  dimensionType   String
+  dimensionTarget String?
+  actions         String[]
+  dataAccesses    Json?
+  merge           Boolean  @default(true)
+  priority        Int      @default(0)
+  status          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @default(now()) @updatedAt
+
+  @@index([permission])
+  @@index([dimensionType])
+  @@map("authorization_settings")
+}
+
+// 维度/组织架构
+model dimensions {
+  id         String   @id @default(cuid())
+  typeId     String
+  name       String
+  parentId   String?
+  path       String?
+  sortOrder  Int      @default(0)
+  status     Boolean  @default(true)
+  properties Json?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @default(now()) @updatedAt
+
+  dimensionUsers dimensionUsers[]
+
+  @@index([typeId])
+  @@index([parentId])
+  @@map("dimensions")
+}
+
+model dimensionTypes {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  @@map("dimension_types")
+}
+
+model dimensionUsers {
+  id          String   @id @default(cuid())
+  dimensionId String
+  userId      String
+  createdAt   DateTime @default(now())
+
+  dimension dimensions @relation(fields: [dimensionId], references: [id], onDelete: Cascade)
+
+  @@unique([dimensionId, userId])
+  @@index([userId])
+  @@map("dimension_users")
+}
+
+// 用户令牌
+model userTokens {
+  id           String    @id @default(cuid())
+  userId       String
+  token        String    @unique
+  refreshToken String?   @unique
+  type         String    @default("access")
+  status       String    @default("normal")
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  userAgent    String?
+  ip           String?
+  createdAt    DateTime  @default(now())
+
+  user users @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([status])
+  @@map("user_tokens")
+}
+
+// OAuth 客户端
+model oauthClients {
+  id           String   @id @default(cuid())
+  clientId     String   @unique
+  clientSecret String
+  name         String
+  redirectUris String[]
+  grantTypes   String[]
+  scopes       String[]
+  status       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now()) @updatedAt
+
+  @@map("oauth_clients")
+}
+
+// 第三方绑定
+model thirdPartyBinds {
+  id                String    @id @default(cuid())
+  userId            String
+  provider          String
+  providerAccountId String
+  email             String?
+  accessToken       String?
+  refreshToken      String?
+  expiresAt         DateTime?
+  displayName       String?
+  avatarUrl         String?
+  profileData       Json?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @default(now()) @updatedAt
+
+  user users @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@unique([userId, provider])
+  @@index([userId])
+  @@map("third_party_binds")
+}
+
+// 菜单
+model menus {
+  id          String   @id @default(cuid())
+  name        String
+  path        String?
+  icon        String?
+  parentId    String?
+  sortOrder   Int      @default(0)
+  status      Boolean  @default(true)
+  permissions String[]
+  properties  Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  roleMenus roleMenus[]
+
+  @@index([parentId])
+  @@map("menus")
+}
+
+model roleMenus {
+  id        String   @id @default(cuid())
+  roleId    String
+  menuId    String
+  createdAt DateTime @default(now())
+
+  role roles @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  menu menus @relation(fields: [menuId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, menuId])
+  @@index([roleId])
+  @@index([menuId])
+  @@map("role_menus")
+}
+
+// ─── Config ───────────────────────────────────────────────────────────────────
+
+model configScopes {
+  id           String   @id @default(cuid())
+  name         String   @unique
+  description  String?
+  publicAccess Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now()) @updatedAt
+
+  properties configProperties[]
+
+  @@map("config_scopes")
+}
+
+model configProperties {
+  id          String   @id @default(cuid())
+  scopeId     String
+  key         String
+  value       String?
+  valueType   String   @default("string")
+  description String?
+  encrypted   Boolean  @default(false)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  scope configScopes @relation(fields: [scopeId], references: [id], onDelete: Cascade)
+
+  @@unique([scopeId, key])
+  @@index([scopeId])
+  @@map("config_properties")
+}
+
+// ─── Dictionary ───────────────────────────────────────────────────────────────
+
+model dictionaries {
+  id          String   @id @default(cuid())
+  classified  String   @default("")
+  name        String
+  describe    String?
+  status      Boolean  @default(true)
+  creatorId   String?
+  createTime  DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  items dictionaryItems[]
+
+  @@map("dictionaries")
+}
+
+model dictionaryItems {
+  id         String   @id @default(cuid())
+  dictId     String
+  text       String
+  value      String
+  describe   String?
+  ordinal    Int      @default(0)
+  status     Boolean  @default(true)
+  parentId   String?
+  path       String?
+  searchCode String?
+  properties Json?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @default(now()) @updatedAt
+
+  dictionary dictionaries @relation(fields: [dictId], references: [id], onDelete: Cascade)
+
+  @@unique([dictId, value])
+  @@index([dictId, ordinal])
+  @@index([parentId])
+  @@map("dictionary_items")
+}
+
+// ─── Credit ───────────────────────────────────────────────────────────────────
+
+enum CreditSource {
+  PURCHASE
+  SUBSCRIPTION
+  GIFT
+  REWARD
+  REFUND
+  ADJUSTMENT
+}
+
+enum CreditTransactionType {
+  DEPOSIT
+  CONSUME
+  EXPIRE
+  REFUND
+  TRANSFER
+}
+
+model credits {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  balance   Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@map("credits")
+}
+
+model creditTransactions {
+  id            String                @id @default(cuid())
+  userId        String
+  type          CreditTransactionType
+  amount        Int
+  balanceBefore Int
+  balanceAfter  Int
+  orderId       String?
+  ledgerIds     String[]
+  description   String?
+  metadata      Json?
+  createdAt     DateTime              @default(now())
+
+  @@index([type])
+  @@index([userId, createdAt])
+  @@map("credit_transactions")
+}
+
+// ─── Logging ──────────────────────────────────────────────────────────────────
+
+enum OperationStatus {
+  SUCCESS
+  FAILED
+  PENDING
+}
+
+enum LogLevel {
+  DEBUG
+  INFO
+  WARN
+  ERROR
+}
+
+model accessLogs {
+  id           String   @id @default(cuid())
+  action       String
+  describe     String?
+  module       String?
+  userId       String?
+  username     String?
+  requestUrl   String?
+  method       String?
+  ip           String?
+  userAgent    String?
+  requestTime  DateTime @default(now())
+  responseTime Int?
+  parameters   Json?
+  result       Json?
+  exception    String?
+
+  @@index([action])
+  @@index([module])
+  @@index([requestTime])
+  @@index([userId])
+  @@map("access_logs")
+}
+
+model operationLogs {
+  id           String          @id @default(cuid())
+  module       String
+  action       String
+  status       OperationStatus @default(SUCCESS)
+  userId       String?
+  targetId     String?
+  targetType   String?
+  method       String?
+  path         String?
+  ipAddress    String?
+  userAgent    String?
+  duration     Int?
+  errorMessage String?
+  requestData  Json?
+  responseData Json?
+  metadata     Json?
+  createdAt    DateTime        @default(now())
+
+  @@index([module, createdAt])
+  @@index([status])
+  @@index([userId])
+  @@map("operation_logs")
+}
+
+model systemLogs {
+  id        Int      @id @default(autoincrement())
+  timestamp DateTime
+  level     LogLevel @default(INFO)
+  message   String
+  context   String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([context])
+  @@index([level])
+  @@index([timestamp])
+  @@map("system_logs")
+}
+
+// ─── Notification ─────────────────────────────────────────────────────────────
+
+enum NotifyChannelType {
+  EMAIL
+  SMS
+  WEBHOOK
+  IN_APP
+  PUSH
+}
+
+enum NotifyStatus {
+  PENDING
+  SENT
+  FAILED
+  READ
+}
+
+model notifyTemplates {
+  id          String            @id @default(cuid())
+  code        String            @unique
+  name        String
+  channel     NotifyChannelType
+  subject     String?
+  content     String
+  contentType String            @default("text")
+  variables   Json?
+  isActive    Boolean           @default(true)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @default(now()) @updatedAt
+
+  @@map("notify_templates")
+}
+
+model notifySubscribers {
+  id        String            @id @default(cuid())
+  userId    String
+  channel   NotifyChannelType
+  topicCode String
+  enabled   Boolean           @default(true)
+  config    Json?
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @default(now()) @updatedAt
+
+  @@unique([userId, channel, topicCode])
+  @@index([userId])
+  @@index([topicCode])
+  @@map("notify_subscribers")
+}
+
+model notifyChannels {
+  id        String            @id @default(cuid())
+  name      String
+  type      NotifyChannelType
+  config    Json
+  isDefault Boolean           @default(false)
+  status    Boolean           @default(true)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @default(now()) @updatedAt
+
+  @@map("notify_channels")
+}
+
+model notifyHistory {
+  id           String            @id @default(cuid())
+  templateCode String?
+  channel      NotifyChannelType
+  recipient    String
+  subject      String?
+  content      String
+  status       NotifyStatus      @default(PENDING)
+  sendAt       DateTime?
+  readAt       DateTime?
+  errorMessage String?
+  metadata     Json?
+  retryCount   Int               @default(0)
+  createdAt    DateTime          @default(now())
+
+  @@index([channel, status])
+  @@index([recipient, createdAt])
+  @@index([status])
+  @@map("notify_history")
+}
+
+// ─── Rule Engine ──────────────────────────────────────────────────────────────
+
+enum RuleStatus {
+  ENABLED
+  DISABLED
+  DRAFT
+}
+
+enum AlarmLevel {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum AlarmStatus {
+  ACTIVE
+  ACKNOWLEDGED
+  RESOLVED
+  IGNORED
+}
+
+model rules {
+  id            String     @id @default(cuid())
+  name          String
+  description   String?
+  status        RuleStatus @default(DRAFT)
+  triggerType   String
+  triggerConfig Json
+  modelType     String?
+  modelId       String?
+  creatorId     String?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @default(now()) @updatedAt
+
+  conditions ruleConditions[]
+  actions    ruleActions[]
+
+  @@index([status])
+  @@index([triggerType])
+  @@index([modelType, modelId])
+  @@map("rules")
+}
+
+model ruleConditions {
+  id            String   @id @default(cuid())
+  ruleId        String
+  conditionType String
+  column        String?
+  termType      String?
+  value         Json?
+  expression    String?
+  sortOrder     Int      @default(0)
+  logicOperator String   @default("and")
+  createdAt     DateTime @default(now())
+
+  rule rules @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@index([ruleId])
+  @@map("rule_conditions")
+}
+
+model ruleActions {
+  id         String   @id @default(cuid())
+  ruleId     String
+  actionType String
+  config     Json
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  rule rules @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@index([ruleId])
+  @@map("rule_actions")
+}
+
+model alarmConfigs {
+  id           String     @id @default(cuid())
+  name         String
+  description  String?
+  ruleId       String?
+  level        AlarmLevel @default(WARNING)
+  targetType   String?
+  targetId     String?
+  notifyConfig Json?
+  enabled      Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @default(now()) @updatedAt
+
+  records alarmRecords[]
+
+  @@index([ruleId])
+  @@index([targetType, targetId])
+  @@map("alarm_configs")
+}
+
+model alarmRecords {
+  id             String      @id @default(cuid())
+  alarmConfigId  String
+  level          AlarmLevel
+  status         AlarmStatus @default(ACTIVE)
+  message        String
+  detail         Json?
+  source         String?
+  acknowledgedBy String?
+  acknowledgedAt DateTime?
+  resolvedBy     String?
+  resolvedAt     DateTime?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @default(now()) @updatedAt
+
+  alarmConfig alarmConfigs @relation(fields: [alarmConfigId], references: [id], onDelete: Cascade)
+
+  @@index([alarmConfigId, status])
+  @@index([level, status])
+  @@index([status])
+  @@index([createdAt])
+  @@map("alarm_records")
+}
+
+// ─── 以下为代码引用但此前缺失的模型 ─────────────────────────────────────────
+
+// CreditService 使用 db.model('creditAccount') / db.model('creditTransaction')
+model creditAccount {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  balance       Int      @default(0)
+  frozenBalance Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @default(now()) @updatedAt
+
+  @@map("credit_account")
+}
+
+model creditTransaction {
+  id          String   @id @default(cuid())
+  userId      String
+  type        String
+  amount      Int
+  balance     Int
+  description String?
+  orderId     String?
+  expireAt    DateTime?
+  expired     Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([type])
+  @@index([expireAt])
+  @@map("credit_transaction")
+}
+
+// ConfigService 使用 db.model('config') / db.model('configHistory')
+model config {
+  id        String   @id @default(cuid())
+  scope     String
+  key       String
+  value     Json?
+  updatedAt DateTime @default(now()) @updatedAt
+  createdAt DateTime @default(now())
+
+  @@unique([scope, key], name: "scope_key")
+  @@index([scope])
+  @@map("config")
+}
+
+model configHistory {
+  id        String   @id @default(cuid())
+  scope     String
+  key       String
+  oldValue  String?
+  newValue  String?
+  changedAt DateTime @default(now())
+
+  @@index([scope, key])
+  @@index([changedAt])
+  @@map("config_history")
+}
+
+// FormService 使用 db.model('formDefinition')
+model formDefinition {
+  id          String   @id @default(cuid())
+  name        String
+  fields      Json
+  layout      Json?
+  description String?
+  version     Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  @@map("form_definition")
+}
+
+// AlertManagerService 使用 db.model('alertRules')
+model alertRules {
+  id             String   @id @default(cuid())
+  name           String
+  metric         String
+  condition      String   @default(">")
+  threshold      Float
+  duration       Int      @default(0)
+  severity       String   @default("MEDIUM")
+  enabled        Boolean  @default(true)
+  notifyChannels String[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @default(now()) @updatedAt
+
+  @@map("alert_rules")
+}
+
+// PromptManager 使用 db.model('promptTemplate')
+model promptTemplate {
+  id           String   @id @default(cuid())
+  name         String
+  content      String
+  systemPrompt String?
+  variables    Json?
+  tags         String[]
+  version      Int      @default(1)
+  model        String?
+  provider     String?
+  temperature  Float?
+  maxTokens    Int?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now()) @updatedAt
+
+  @@map("prompt_template")
+}
+
+// DictionaryService 使用 db.model('dictionary') / db.model('dictionaryItem')
+// 注意：Prisma 已有 dictionaries/dictionaryItems 模型，
+// 但代码使用的是 singular 形式。PrismaAdapter 需要做名称映射。
+// 这里添加 @@map 别名注释供参考，实际应在 PrismaAdapter 中处理。

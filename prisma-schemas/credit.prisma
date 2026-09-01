@@ -1,0 +1,46 @@
+// 积分/额度模型
+
+enum CreditSource {
+  PURCHASE
+  SUBSCRIPTION
+  GIFT
+  REWARD
+  REFUND
+  ADJUSTMENT
+}
+
+enum CreditTransactionType {
+  DEPOSIT
+  CONSUME
+  EXPIRE
+  REFUND
+  TRANSFER
+}
+
+model credits {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  balance   Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@map("credits")
+}
+
+model creditTransactions {
+  id            String                @id @default(cuid())
+  userId        String
+  type          CreditTransactionType
+  amount        Int
+  balanceBefore Int
+  balanceAfter  Int
+  orderId       String?
+  ledgerIds     String[]
+  description   String?
+  metadata      Json?
+  createdAt     DateTime              @default(now())
+
+  @@index([type])
+  @@index([userId, createdAt])
+  @@map("credit_transactions")
+}

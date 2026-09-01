@@ -1,0 +1,278 @@
+// 用户认证与权限模型
+
+model users {
+  id               String    @id @default(cuid())
+  username         String    @unique
+  name             String
+  typeId           String
+  status           Boolean   @default(true)
+  createTime       DateTime? @default(now())
+  creatorId        String?
+  password         String?
+  email            String?   @unique
+  emailVerified    Boolean   @default(false)
+  locale           String    @default("en")
+  deviceInfo       Json?
+  firstVisitAt     DateTime?
+  lastLoginAt      DateTime?
+  lastLoginIp      String?
+  loginCount       Int       @default(0)
+
+  loginHistory     userLoginHistory[]
+  userTokens       userTokens[]
+  thirdPartyBinds  thirdPartyBinds[]
+}
+
+model userLoginHistory {
+  id          String   @id @default(cuid())
+  userId      String
+  loginMethod String
+  ip          String
+  userAgent   String?
+  country     String?
+  city        String?
+  success     Boolean  @default(true)
+  failReason  String?
+  createdAt   DateTime @default(now())
+
+  user users @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([ip])
+  @@index([createdAt])
+  @@map("user_login_history")
+}
+
+model roles {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  status      Boolean? @default(true)
+  parentId    String?
+  groupId     String?
+  creatorId   String?
+  createTime  DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  roleMenus       roleMenus[]
+  rolePermissions rolePermissions[]
+
+  @@index([parentId])
+}
+
+model permissions {
+  id             String   @id @default(cuid())
+  name           String
+  description    String?
+  status         Boolean  @default(true)
+  actions        Json?
+  optionalFields Json?
+  parents        Json?
+  properties     Json?
+  createdAt      DateTime @default(now())
+  creatorId      String?
+  updatedAt      DateTime @default(now()) @updatedAt
+  modifierId     String?
+
+  rolePermissions rolePermissions[]
+  userPermissions userPermissions[]
+}
+
+model rolePermissions {
+  id           String   @id @default(cuid())
+  roleId       String
+  permissionId String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now()) @updatedAt
+
+  role       roles       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission permissions @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@index([permissionId])
+  @@index([roleId])
+  @@map("role_permissions")
+}
+
+model userRoles {
+  id        String   @id @default(cuid())
+  userId    String
+  roleId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@unique([userId, roleId])
+  @@index([roleId])
+  @@index([userId])
+  @@map("user_roles")
+}
+
+model userPermissions {
+  id           String   @id @default(cuid())
+  userId       String
+  permissionId String
+  grantType    String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now()) @updatedAt
+
+  permission permissions @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, permissionId])
+  @@index([permissionId])
+  @@index([userId])
+  @@map("user_permissions")
+}
+
+model userDataPermissions {
+  id        String   @id @default(cuid())
+  userId    String
+  dataType  String
+  dataId    String
+  actions   String[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@unique([userId, dataType, dataId])
+  @@index([userId])
+  @@map("user_data_permissions")
+}
+
+// 维度/组织架构
+model dimensions {
+  id          String   @id @default(cuid())
+  typeId      String
+  name        String
+  parentId    String?
+  path        String?
+  sortOrder   Int      @default(0)
+  status      Boolean  @default(true)
+  properties  Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  dimensionUsers dimensionUsers[]
+
+  @@index([typeId])
+  @@index([parentId])
+  @@map("dimensions")
+}
+
+model dimensionTypes {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  @@map("dimension_types")
+}
+
+model dimensionUsers {
+  id          String   @id @default(cuid())
+  dimensionId String
+  userId      String
+  createdAt   DateTime @default(now())
+
+  dimension dimensions @relation(fields: [dimensionId], references: [id], onDelete: Cascade)
+
+  @@unique([dimensionId, userId])
+  @@index([userId])
+  @@map("dimension_users")
+}
+
+// 用户令牌
+model userTokens {
+  id           String    @id @default(cuid())
+  userId       String
+  token        String    @unique
+  refreshToken String?   @unique
+  type         String    @default("access")
+  status       String    @default("normal") // normal | locked | revoked
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  userAgent    String?
+  ip           String?
+  createdAt    DateTime  @default(now())
+
+  user users @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([status])
+  @@map("user_tokens")
+}
+
+// OAuth 客户端
+model oauthClients {
+  id           String   @id @default(cuid())
+  clientId     String   @unique
+  clientSecret String
+  name         String
+  redirectUris String[]
+  grantTypes   String[]
+  scopes       String[]
+  status       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now()) @updatedAt
+
+  @@map("oauth_clients")
+}
+
+// 第三方绑定
+model thirdPartyBinds {
+  id                String   @id @default(cuid())
+  userId            String
+  provider          String
+  providerAccountId String
+  email             String?
+  accessToken       String?
+  refreshToken      String?
+  expiresAt         DateTime?
+  displayName       String?
+  avatarUrl         String?
+  profileData       Json?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @default(now()) @updatedAt
+
+  user users @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@unique([userId, provider])
+  @@index([userId])
+  @@map("third_party_binds")
+}
+
+// 菜单
+model menus {
+  id          String   @id @default(cuid())
+  name        String
+  path        String?
+  icon        String?
+  parentId    String?
+  sortOrder   Int      @default(0)
+  status      Boolean  @default(true)
+  permissions String[]
+  properties  Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  roleMenus roleMenus[]
+
+  @@index([parentId])
+  @@map("menus")
+}
+
+model roleMenus {
+  id        String   @id @default(cuid())
+  roleId    String
+  menuId    String
+  createdAt DateTime @default(now())
+
+  role roles @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  menu menus @relation(fields: [menuId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, menuId])
+  @@index([roleId])
+  @@index([menuId])
+  @@map("role_menus")
+}

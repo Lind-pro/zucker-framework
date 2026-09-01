@@ -1,0 +1,37 @@
+// 数据字典模型
+
+model dictionaries {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  description String?
+  status      Boolean  @default(true)
+  creatorId   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  items dictionaryItems[]
+
+  @@map("dictionaries")
+}
+
+model dictionaryItems {
+  id           String   @id @default(cuid())
+  dictionaryId String
+  label        String
+  value        String
+  description  String?
+  sortOrder    Int      @default(0)
+  status       Boolean  @default(true)
+  parentId     String?
+  properties   Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now()) @updatedAt
+
+  dictionary dictionaries @relation(fields: [dictionaryId], references: [id], onDelete: Cascade)
+
+  @@unique([dictionaryId, value])
+  @@index([dictionaryId, sortOrder])
+  @@index([parentId])
+  @@map("dictionary_items")
+}
