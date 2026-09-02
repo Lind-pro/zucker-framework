@@ -10,7 +10,9 @@ const packageNames = [
   'core',
   'task',
   'queue',
+  'ai-access',
   'ai',
+  'cli',
   'monitoring',
   'storage',
   'logging',
@@ -166,6 +168,7 @@ try {
     `import { DurableWorkerRuntime, PostgresTaskRedriver, PostgresTaskSummaryReader, PostgresTaskTimelineReader, TASK_STATUSES } from '@zucker/task';
 import { BullMqQueueProvider } from '@zucker/queue';
 import { AICallWrapper } from '@zucker/ai';
+import { AIAccessProviderRegistry, PostgresCredentialProfileStore } from '@zucker/ai-access';
 import { getProcessUptime, MetricsRegistry, renderPrometheusMetrics } from '@zucker/monitoring';
 import { WebDavStorage } from '@zucker/storage';
 import { PiiFilter } from '@zucker/logging';
@@ -180,6 +183,8 @@ if (typeof PostgresTaskTimelineReader !== 'function') throw new Error('task time
 if (typeof PostgresTaskRedriver !== 'function') throw new Error('task redriver ESM export missing');
 if (typeof BullMqQueueProvider !== 'function') throw new Error('queue ESM export missing');
 if (typeof AICallWrapper !== 'function') throw new Error('ai ESM export missing');
+if (typeof AIAccessProviderRegistry !== 'function') throw new Error('ai-access registry ESM export missing');
+if (typeof PostgresCredentialProfileStore !== 'function') throw new Error('ai-access PostgreSQL store ESM export missing');
 const registry = new MetricsRegistry();
 registry.counter('smoke_total').increment();
 if (!renderPrometheusMetrics(registry).includes('smoke_total 1')) throw new Error('monitoring ESM export missing');
@@ -196,6 +201,7 @@ if (typeof DurableNotificationWorker !== 'function') throw new Error('notificati
     `const task = require('@zucker/task');
 const queue = require('@zucker/queue');
 const ai = require('@zucker/ai');
+const aiAccess = require('@zucker/ai-access');
 const monitoring = require('@zucker/monitoring');
 const storage = require('@zucker/storage');
 const logging = require('@zucker/logging');
@@ -210,6 +216,8 @@ if (typeof task.PostgresTaskTimelineReader !== 'function') throw new Error('task
 if (typeof task.PostgresTaskRedriver !== 'function') throw new Error('task redriver CJS export missing');
 if (typeof queue.BullMqQueueProvider !== 'function') throw new Error('queue CJS export missing');
 if (typeof ai.AICallWrapper !== 'function') throw new Error('ai CJS export missing');
+if (typeof aiAccess.AIAccessProviderRegistry !== 'function') throw new Error('ai-access registry CJS export missing');
+if (typeof aiAccess.PostgresCredentialProfileStore !== 'function') throw new Error('ai-access PostgreSQL store CJS export missing');
 const registry = new monitoring.MetricsRegistry();
 registry.counter('smoke_total').increment();
 if (!monitoring.renderPrometheusMetrics(registry).includes('smoke_total 1')) throw new Error('monitoring CJS export missing');
@@ -233,6 +241,11 @@ if (typeof notification.DurableNotificationWorker !== 'function') throw new Erro
       dependencies: Object.fromEntries(
         artifacts.map(({ manifest, tarball }) => [manifest.name, `file:${tarball}`]),
       ),
+      pnpm: {
+        overrides: Object.fromEntries(
+          artifacts.map(({ manifest, tarball }) => [manifest.name, `file:${tarball}`]),
+        ),
+      },
       devDependencies: {
         '@nestjs/common': '^11.0.0',
         '@nestjs/core': '^11.0.0',
@@ -253,6 +266,7 @@ if (typeof notification.DurableNotificationWorker !== 'function') throw new Erro
     `import { DurableWorkerRuntime, PostgresTaskRedriver, PostgresTaskTimelineReader, TASK_STATUSES } from '@zucker/task';
 import { BullMqQueueProvider } from '@zucker/queue';
 import { AICallWrapper } from '@zucker/ai';
+import { AIAccessProviderRegistry, PostgresCredentialProfileStore } from '@zucker/ai-access';
 import { getProcessUptime, MetricsRegistry, renderPrometheusMetrics } from '@zucker/monitoring';
 import { WebDavStorage } from '@zucker/storage';
 import { PiiFilter } from '@zucker/logging';
@@ -266,6 +280,8 @@ if (typeof PostgresTaskTimelineReader !== 'function') throw new Error('task time
 if (typeof PostgresTaskRedriver !== 'function') throw new Error('task redriver pnpm export missing');
 if (typeof BullMqQueueProvider !== 'function') throw new Error('queue pnpm export missing');
 if (typeof AICallWrapper !== 'function') throw new Error('ai pnpm export missing');
+if (typeof AIAccessProviderRegistry !== 'function') throw new Error('ai-access registry pnpm export missing');
+if (typeof PostgresCredentialProfileStore !== 'function') throw new Error('ai-access PostgreSQL store pnpm export missing');
 const registry = new MetricsRegistry();
 registry.counter('smoke_total').increment();
 if (!renderPrometheusMetrics(registry).includes('smoke_total 1')) throw new Error('monitoring pnpm export missing');
