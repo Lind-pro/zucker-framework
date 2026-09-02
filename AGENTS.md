@@ -56,8 +56,10 @@
 | ----------------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------- |
 | 调用 LLM（OpenAI / Claude / Gemini / DeepSeek）             | `@zucker/ai` | `AICallWrapper.callWithRetry(fn, { context, timeoutMs, maxAttempts })`                                  |
 | 流式调用（聚合后返回完整 content）                          | `@zucker/ai` | `AICallWrapper.callWithStream(fn, openAIStreamExtractor, opts)`                                         |
-| 按场景动态加载模型配置（DB 驱动）                           | `@zucker/ai` | `AIConfigService.getScenarioConfig(scenario)` — **要求：项目侧 ai_models 表 + 已注册 DATABASE_ADAPTER** |
+| 按场景动态加载模型配置（env / API / DB / 静态）             | `@zucker/ai` | `AIConfigService.getScenarioConfig(scenario)` + `EnvironmentAIConfigSource` / `RemoteAIConfigSource` / `DatabaseAIConfigSource` |
 | 注册 Provider                                               | `@zucker/ai` | `AIProviderManager.register(new OpenAIProvider())` 等 4 个内置                                          |
+| 管理 Provider 认证与 PostgreSQL Profile                    | `@zucker/ai-access` | `AIAccessProviderRegistry` + `PostgresCredentialProfileStore`                                          |
+| 在可信内部任务中使用 Codex 订阅                            | `@zucker/ai-access` | `OpenAICodexCliSubscriptionProvider`（官方 CLI，默认）；直连 Responses 仅为实验兼容路径                  |
 | 把 AI 调用日志写入业务 OperationLog 表                      | `@zucker/ai` | `PrismaOperationLogObserver`（提供 `OperationLogSink` 即可）                                            |
 | 持久化 AI 成本统计（按 5 分钟周期聚合）                     | `@zucker/ai` | `extends PersistedCostTracker`，提供 `CostPersister` 实现                                               |
 | 把不同 AI 调用结果归一化（chat / stream / embedding）       | `@zucker/ai` | `summarizeAIResult(result, { previewMax })`                                                             |
@@ -120,6 +122,7 @@
 | 新建 zucker 项目 | `@zucker/cli` | `npx @zucker/cli init` |
 | 诊断环境         | `@zucker/cli` | `zucker doctor`        |
 | 添加模块         | `@zucker/cli` | `zucker add <module>`  |
+| 管理 AI Profile  | `@zucker/cli` | `zucker ai store init/login/status/profile import/smoke` |
 
 ## 四、绝不要做（反模式清单）
 
@@ -156,6 +159,20 @@
 export class AppModule {}
 ```
 
+不使用数据库时，直接配置环境变量源：
+
+```ts
+import { EnvironmentAIConfigSource, ZuckerAIModule } from '@zucker/ai';
+
+ZuckerAIModule.forRoot({
+  configSources: [
+    new EnvironmentAIConfigSource({ env: process.env }),
+  ],
+});
+```
+
+配置源按 `priority` 从高到低匹配，首个返回配置的来源生效。默认优先级为：环境变量 `300`、远程 API `200`、数据库/静态配置 `100`。基础包不直接读取 `process.env`，业务侧负责加载 `.env` 后传入。
+
 ```ts
 // my-agent.context.ts
 import { createScopedContext } from '@zucker/core';
@@ -185,6 +202,8 @@ const completion = await wrapper.callWithRetry(
 | PrismaAdapter                          | `packages/crud/src/prisma-adapter.spec.ts`     |
 | AICallObserver                         | `packages/ai/src/observers/observers.spec.ts`  |
 | AICallWrapper                          | `packages/ai/src/call-wrapper.spec.ts`         |
+| AI 多配置源                            | `packages/ai/src/config-sources/config-sources.spec.ts` |
+| AI Access 与 Codex Provider            | `packages/ai-access/src/*.spec.ts` |
 | TypedConfig                            | `packages/config/src/typed-config.spec.ts`     |
 | EventBus                               | `packages/event/src/unified-event-bus.spec.ts` |
 | 持久化任务状态机与 fencing             | `packages/task/src/*.spec.ts`                  |

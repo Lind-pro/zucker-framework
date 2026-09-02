@@ -10,9 +10,28 @@ export { AICallAbortedError, AICallTimeoutError, classifyAIError } from './ai-ca
 export type { ClassifiedAIError } from './ai-call-errors';
 export { providerRequestSignal } from './abort-signal';
 
+export {
+  CodexSubscriptionAuthClient,
+  CodexSubscriptionAuthError,
+  CodexSubscriptionCredentialManager,
+} from './codex-subscription-auth';
+export type {
+  CodexSubscriptionAuthClientOptions,
+  CodexSubscriptionAuthErrorCode,
+  CodexSubscriptionCredentialManagerOptions,
+  CodexSubscriptionCredentials,
+} from './codex-subscription-auth';
+
 export { AIProviderManager } from './provider-manager';
 export { AIConfigService } from './config.service';
 export type { ApiKeyDecryptor } from './config.service';
+export { AI_CONFIG_SOURCES } from './config-source';
+export type {
+  AIConfigSource,
+  AIConfigSourceFailureMode,
+  AIConfigSourceOptions,
+} from './config-source';
+export * from './config-sources';
 export { AICallWrapper } from './call-wrapper';
 export type {
   AICallAttemptContext,
@@ -68,6 +87,20 @@ export { ToolRegistry, ChainPipeline } from './agent';
 export { ZuckerAIModule, AI_MODULE_OPTIONS } from './ai.module';
 export type { AIModuleOptions, AIModuleAsyncOptions, AIModuleOptionsFactory } from './ai.module';
 export { OpenAIProvider } from './providers/openai.provider';
+export {
+  CodexCliSubscriptionError,
+  OpenAICodexCliSubscriptionClient,
+  OpenAICodexCliSubscriptionProvider,
+  OpenAICodexSubscriptionClient,
+  OpenAICodexSubscriptionProvider,
+} from './providers/openai-codex.provider';
+export type {
+  CodexCliCommand,
+  CodexCliCommandRunner,
+  CodexCliSubscriptionErrorCode,
+  OpenAICodexCliSubscriptionProviderOptions,
+  OpenAICodexSubscriptionProviderOptions,
+} from './providers/openai-codex.provider';
 export { AnthropicProvider } from './providers/anthropic.provider';
 export { GeminiProvider } from './providers/gemini.provider';
 export { DeepSeekProvider } from './providers/deepseek.provider';

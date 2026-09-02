@@ -631,10 +631,26 @@ class AIProviderManager {
 }
 
 class AIConfigService {
-  getScenarioConfig(scenario: string): Promise<AIModelConfig>; // 从 DB 加载配置（带 TTL 缓存）
+  getScenarioConfig(scenario: string): Promise<AIModelConfig>; // 从优先级配置源链加载（带 TTL 缓存）
   getScenarios(): Promise<AIScenario[]>;
+  registerSource(source: AIConfigSource): void;
+  unregisterSource(sourceId: string): boolean;
+  getSources(): readonly AIConfigSource[];
   clearCache(): void;
 }
+
+interface AIConfigSource {
+  id: string;
+  priority?: number;
+  failureMode?: 'continue' | 'throw';
+  getScenarioConfig(scenario: string): Promise<AIModelConfig | null>;
+  getScenarios?(): Promise<AIScenario[]>;
+}
+
+class EnvironmentAIConfigSource implements AIConfigSource {}
+class RemoteAIConfigSource implements AIConfigSource {}
+class DatabaseAIConfigSource implements AIConfigSource {}
+class StaticAIConfigSource implements AIConfigSource {}
 
 class AICallWrapper {
   callWithRetry<T>(fn: () => Promise<T>, options?: CallOptions): Promise<T>;
@@ -647,9 +663,22 @@ interface CallOptions {
 }
 
 class ZuckerAIModule {
-  static forRoot(): DynamicModule;
+  static forRoot(options?: { configSources?: AIConfigSource[] }): DynamicModule;
 }
 ```
+
+### Codex 订阅 Provider（可信内部自动化）
+
+```typescript
+const provider = new OpenAICodexCliSubscriptionProvider({
+  executable: '/opt/codex/bin/codex',
+  codexHome: '/secure/codex-service',
+  workingDirectory: '/var/empty/codex-inference',
+  environment: { PATH: '/usr/bin:/bin' },
+});
+```
+
+默认 Provider 通过 OpenAI 官方 `codex exec` 使用专用 `CODEX_HOME` 中的 ChatGPT 登录，固定启用临时会话、严格配置、最小权限、环境白名单和结构化输出。参考 OpenClaw/Hermes 的直连 Responses Provider 仍保留为实验兼容路径，不应作为生产默认。完整说明见 [Codex 订阅 Provider](./codex-subscription-provider.md)。
 
 ---
 

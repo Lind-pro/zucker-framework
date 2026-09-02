@@ -1,5 +1,12 @@
 // Text providers
 export { OpenAIProvider } from './openai.provider';
+export {
+  OpenAICodexSubscriptionClient,
+  OpenAICodexSubscriptionProvider,
+} from './openai-codex.provider';
+export type {
+  OpenAICodexSubscriptionProviderOptions,
+} from './openai-codex.provider';
 export { AnthropicProvider } from './anthropic.provider';
 export { GeminiProvider } from './gemini.provider';
 export { DeepSeekProvider } from './deepseek.provider';

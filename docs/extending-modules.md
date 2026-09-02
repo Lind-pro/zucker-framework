@@ -607,3 +607,29 @@ export class SummaryService {
   }
 }
 ```
+
+### 组合多个 AI 配置源
+
+```typescript
+import {
+  EnvironmentAIConfigSource,
+  RemoteAIConfigSource,
+  ZuckerAIModule,
+} from '@zucker/ai';
+
+ZuckerAIModule.forRoot({
+  configSources: [
+    new EnvironmentAIConfigSource({
+      env: process.env,
+      priority: 300,
+    }),
+    new RemoteAIConfigSource({
+      baseUrl: 'https://config.internal.example/ai/scenarios',
+      headers: () => ({ Authorization: `Bearer ${internalToken}` }),
+      priority: 200,
+    }),
+  ],
+});
+```
+
+场景级环境变量使用 `AI_{SCENARIO}_{FIELD}`，并回退到全局 `AI_{FIELD}`。例如 `source-blueprint` 会先读取 `AI_SOURCE_BLUEPRINT_MODEL`，未设置时读取 `AI_MODEL`。如果应用同时注册了 `DATABASE_ADAPTER`，`AIConfigService` 会自动追加默认数据库配置源；无需手工构造 `DatabaseAIConfigSource`。
