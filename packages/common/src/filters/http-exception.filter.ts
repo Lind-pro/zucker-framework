@@ -69,8 +69,12 @@ export class HttpExceptionFilter implements ExceptionFilter {
       } else if (typeof exceptionResponse === 'object' && exceptionResponse !== null) {
         const resp = exceptionResponse as Record<string, unknown>;
 
-        // Preserve error code if provided (e.g. TooManyRequestsException)
-        if (typeof resp.error === 'string') {
+        // Preserve an explicit product code before falling back to Nest's
+        // conventional `error` field. Product services use `{ code }` for
+        // recoverable conflicts such as optimistic version mismatches.
+        if (typeof resp.code === 'string') {
+          code = resp.code;
+        } else if (typeof resp.error === 'string') {
           code = resp.error;
         }
 

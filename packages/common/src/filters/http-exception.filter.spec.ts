@@ -1,5 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
-import { HttpException, HttpStatus, ArgumentsHost } from '@nestjs/common';
+import {
+  ArgumentsHost,
+  ConflictException,
+  HttpException,
+  HttpStatus,
+} from '@nestjs/common';
 import {
   BusinessException,
   ValidationException,
@@ -145,6 +150,19 @@ describe('HttpExceptionFilter', () => {
       expect(body.code).toBe('VALIDATION');
       expect(body.message).toBe('field1 is required');
       expect(body.result).toEqual(['field1 is required', 'field2 must be a number']);
+    });
+
+    it('should preserve an explicit product code from a NestJS exception', () => {
+      const { statusCode, body } = catchAndGetResponse(
+        filter,
+        new ConflictException({
+          code: 'CLAIM_MAPPING_VERSION_CONFLICT',
+          currentVersion: 2,
+        }),
+      );
+
+      expect(statusCode).toBe(409);
+      expect(body.code).toBe('CLAIM_MAPPING_VERSION_CONFLICT');
     });
 
     it('should handle 429 TooManyRequests with retryAfter', () => {
