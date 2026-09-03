@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
-import { CachedDataSourceSwitchStrategyMatcher } from './datasource-strategy';
-import type { DataSourceSwitchStrategy } from './datasource-strategy';
+import {
+  CachedDataSourceSwitchStrategyMatcher,
+  type DataSourceSwitchStrategy,
+} from './datasource-strategy';
 
 function makeStrategy(id = 'ds1'): DataSourceSwitchStrategy {
   return { useDefaultDataSource: false, fallbackDefault: false, dataSourceId: id };

@@ -6,6 +6,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const rootManifest = JSON.parse(readFileSync(join(rootDir, 'package.json'), 'utf8'));
 const packageNames = [
   'core',
   'task',
@@ -99,8 +100,8 @@ try {
     if (!sourceManifest.version.includes('-rc.')) {
       throw new Error(`${sourceManifest.name} must use an immutable RC version`);
     }
-    run('pnpm', ['--filter', sourceManifest.name, 'clean']);
-    run('pnpm', ['--filter', sourceManifest.name, 'build']);
+    run('pnpm', ['--filter', sourceManifest.name, 'run', 'clean']);
+    run('pnpm', ['--filter', sourceManifest.name, 'run', 'build']);
     run('pnpm', ['pack', '--pack-destination', packDirectory], {
       cwd: packageDirectory,
     });
@@ -151,14 +152,15 @@ try {
       '--no-fund',
       '--no-package-lock',
       ...tarballs,
-      '@nestjs/common@^11.0.0',
-      '@nestjs/core@^11.0.0',
-      '@nestjs/event-emitter@^3.0.0',
-      '@nestjs/swagger@^11.0.0',
-      'openai@^6.34.0',
-      'webdav@^5.0.0',
-      'reflect-metadata@^0.2.0',
-      'rxjs@^7.8.0',
+      '@nestjs/common@12.0.1',
+      '@nestjs/core@12.0.1',
+      '@nestjs/event-emitter@12.0.0',
+      '@nestjs/swagger@12.0.1',
+      'bullmq@6.3.4',
+      'openai@7.8.0',
+      'webdav@5.10.0',
+      'reflect-metadata@0.2.2',
+      'rxjs@7.8.2',
     ],
     { cwd: consumerDirectory },
   );
@@ -238,29 +240,35 @@ if (typeof notification.DurableNotificationWorker !== 'function') throw new Erro
       name: 'zucker-package-pnpm-smoke',
       private: true,
       type: 'module',
+      packageManager: rootManifest.packageManager,
       dependencies: Object.fromEntries(
         artifacts.map(({ manifest, tarball }) => [manifest.name, `file:${tarball}`]),
       ),
-      pnpm: {
-        overrides: Object.fromEntries(
-          artifacts.map(({ manifest, tarball }) => [manifest.name, `file:${tarball}`]),
-        ),
-      },
       devDependencies: {
-        '@nestjs/common': '^11.0.0',
-        '@nestjs/core': '^11.0.0',
-        '@nestjs/event-emitter': '^3.0.0',
-        bullmq: '^5.48.1',
-        openai: '^6.34.0',
-        webdav: '^5.0.0',
-        'reflect-metadata': '^0.2.0',
-        rxjs: '^7.8.0',
+        '@nestjs/common': '12.0.1',
+        '@nestjs/core': '12.0.1',
+        '@nestjs/event-emitter': '12.0.0',
+        bullmq: '6.3.4',
+        openai: '7.8.0',
+        webdav: '5.10.0',
+        'reflect-metadata': '0.2.2',
+        rxjs: '7.8.2',
       },
     }),
+  );
+  writeFileSync(
+    join(pnpmConsumerDirectory, 'pnpm-workspace.yaml'),
+    `packages:\n  - .\n\noverrides:\n${artifacts
+      .map(
+        ({ manifest, tarball }) =>
+          `  ${JSON.stringify(manifest.name)}: ${JSON.stringify(`file:${tarball}`)}`,
+      )
+      .join('\n')}\n`,
   );
   run('pnpm', ['install', '--ignore-scripts', '--no-frozen-lockfile'], {
     cwd: pnpmConsumerDirectory,
   });
+  run('pnpm', ['peers', 'check'], { cwd: pnpmConsumerDirectory });
   writeFileSync(
     join(pnpmConsumerDirectory, 'smoke.mjs'),
     `import { DurableWorkerRuntime, PostgresTaskRedriver, PostgresTaskTimelineReader, TASK_STATUSES } from '@zucker/task';

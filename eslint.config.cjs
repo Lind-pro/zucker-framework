@@ -47,7 +47,7 @@ module.exports = [
       // --- Code quality ---
       'no-console': ['warn', { allow: ['warn', 'error'] }],
       'no-debugger': 'error',
-      'no-duplicate-imports': 'error',
+      'no-duplicate-imports': ['error', { allowSeparateTypeImports: true }],
       'no-template-curly-in-string': 'warn',
       'prefer-const': 'warn',
       'eqeqeq': ['error', 'always', { null: 'ignore' }],

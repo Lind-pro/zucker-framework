@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { DataSourceManager } from './datasource-manager';
-import type { DatabaseAdapter, DataSourceConfig } from './datasource-manager';
+import {
+  DataSourceManager,
+  type DatabaseAdapter,
+  type DataSourceConfig,
+} from './datasource-manager';
 import { DataSourceNotFoundException, DataSourceClosedException } from './datasource-errors';
 
 function makeAdapter(): DatabaseAdapter {

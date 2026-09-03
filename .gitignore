@@ -9,3 +9,4 @@ artifacts
 .DS_Store
 .claude/worktrees/
 .next/
+templates/server/src/generated/prisma/

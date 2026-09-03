@@ -27,8 +27,8 @@
     "lint": "eslint src/"
   },
   "devDependencies": {
-    "@types/chrome": "^0.0.280",
-    "esbuild": "^0.28.1"
+    "@types/chrome": "^0.2.8",
+    "esbuild": "^0.28.2"
   },
   "engines": {
     "node": ">=20"

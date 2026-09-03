@@ -11,8 +11,7 @@ import {
   CloudServerOutlined,
   ApiOutlined,
 } from '@ant-design/icons';
-import httpClient from '@/lib/http-client';
-import { queryRequest } from '@/lib/http-client';
+import httpClient, { queryRequest } from '@/lib/http-client';
 
 interface HealthResult {
   status: string;

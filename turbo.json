@@ -19,7 +19,7 @@
       "dependsOn": ["^build"],
       "inputs": [
         "src/**",
-        "../../eslint.config.js",
+        "../../eslint.config.cjs",
         "../../tsconfig.base.json"
       ]
     },

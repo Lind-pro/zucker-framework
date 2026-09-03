@@ -9,8 +9,7 @@ import {
 import type { ActionType, ProColumns } from '@ant-design/pro-components';
 import { Button, Drawer, Form, Input, Modal, Table, message, Popconfirm, Space } from 'antd';
 import { PlusOutlined, EyeOutlined, EditOutlined } from '@ant-design/icons';
-import { queryRequest } from '@/lib/http-client';
-import httpClient from '@/lib/http-client';
+import httpClient, { queryRequest } from '@/lib/http-client';
 import { PermissionGuard } from '@/lib/permission';
 import { DynamicForm } from '@zucker/fe-form';
 import type { FormDefinition, FieldDefinition } from '@zucker/fe-form';

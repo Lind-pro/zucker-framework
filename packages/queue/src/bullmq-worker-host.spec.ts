@@ -1,17 +1,22 @@
 import type { Job, Worker } from 'bullmq';
 import { BullMqWorkerHost } from './bullmq-worker-host';
 
-const createWorker = (running = true) => ({
-  on: vi.fn(),
-  waitUntilReady: vi.fn().mockResolvedValue(undefined),
-  isRunning: vi.fn(() => running),
-  client: Promise.resolve({ get: vi.fn().mockResolvedValue(null) }),
-  toKey: vi.fn((suffix: string) => `queue:${suffix}`),
-  run: vi.fn().mockResolvedValue(undefined),
-  pause: vi.fn().mockResolvedValue(undefined),
-  resume: vi.fn().mockResolvedValue(undefined),
-  close: vi.fn().mockResolvedValue(undefined),
-});
+const createWorker = (running = true) => {
+  const backend = {
+    client: Promise.resolve({ get: vi.fn().mockResolvedValue(null) }),
+  };
+  return {
+    on: vi.fn(),
+    waitUntilReady: vi.fn().mockResolvedValue(undefined),
+    isRunning: vi.fn(() => running),
+    getBackend: vi.fn(() => backend),
+    toKey: vi.fn((suffix: string) => `queue:${suffix}`),
+    run: vi.fn().mockResolvedValue(undefined),
+    pause: vi.fn().mockResolvedValue(undefined),
+    resume: vi.fn().mockResolvedValue(undefined),
+    close: vi.fn().mockResolvedValue(undefined),
+  };
+};
 
 describe('BullMqWorkerHost', () => {
   it('registers a handler with explicit concurrency and maps the job context', async () => {
@@ -155,7 +160,7 @@ describe('BullMqWorkerHost', () => {
 
   it('actively detects a half-open Redis connection without losing recovery state', async () => {
     const worker = createWorker();
-    const client = await worker.client;
+    const client = await worker.getBackend().client;
     const host = new BullMqWorkerHost({
       connection: { host: 'redis', port: 6379 },
       workerFactory: () => worker as unknown as Worker,

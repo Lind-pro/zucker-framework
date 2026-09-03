@@ -1,6 +1,7 @@
 {
   "name": "zucker-framework",
   "version": "0.0.0",
+  "type": "module",
   "private": true,
   "description": "Full-stack NestJS + Next.js framework - TypeScript port of hsweb-framework",
   "license": "Apache-2.0",
@@ -25,33 +26,27 @@
     "release": "turbo run build && changeset publish"
   },
   "devDependencies": {
-    "@changesets/cli": "^2.27.0",
-    "@playwright/test": "^1.52.0",
-    "@testing-library/jest-dom": "^6.9.1",
-    "@testing-library/react": "^16.3.2",
-    "@typescript-eslint/eslint-plugin": "^8.0.0",
-    "@typescript-eslint/parser": "^8.0.0",
-    "eslint": "^9.0.0",
-    "jsdom": "^29.0.2",
-    "prettier": "^3.4.0",
-    "react": "19.2.4",
-    "react-dom": "19.2.4",
-    "tsup": "^8.4.0",
-    "turbo": "^2.4.0",
-    "typescript": "^5.7.0",
-    "vitest": "^4.1.1"
+    "@changesets/cli": "^3.0.1",
+    "@playwright/test": "^1.62.1",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@typescript-eslint/eslint-plugin": "^8.69.0",
+    "@typescript-eslint/parser": "^8.69.0",
+    "eslint": "^9.39.5",
+    "jsdom": "^30.0.1",
+    "prettier": "^3.9.6",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "tsup": "^8.5.1",
+    "turbo": "^2.10.12",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.11"
   },
-  "packageManager": "pnpm@9.15.0",
-  "pnpm": {
-    "overrides": {
-      "react": "19.2.4",
-      "react-dom": "19.2.4"
-    }
-  },
+  "packageManager": "pnpm@11.25.0",
   "engines": {
-    "node": ">=20"
+    "node": ">=20.19.0"
   },
   "dependencies": {
-    "zod": "^4.3.6"
+    "zod": "^4.5.4"
   }
 }

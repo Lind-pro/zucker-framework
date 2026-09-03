@@ -1,4 +1,3 @@
-import React from 'react';
 import { Form, Button, Spin, Alert, Row, Col } from 'antd';
 import type { FormDefinition, FieldOption } from './types';
 import { DynamicFormField } from './DynamicFormField';
@@ -59,11 +58,11 @@ export function DynamicForm(props: DynamicFormProps) {
   const definition = propDefinition ?? loadedDefinition;
 
   if (loading) {
-    return <Spin tip="加载表单中..." />;
+    return <Spin description="加载表单中..." />;
   }
 
   if (error) {
-    return <Alert type="error" message={`加载表单失败：${error}`} />;
+    return <Alert type="error" title={`加载表单失败：${error}`} />;
   }
 
   if (!definition) {

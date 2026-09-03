@@ -4,7 +4,8 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ZuckerEventModule } from '@zucker/event';
 import { ZuckerCommonModule } from '@zucker/common';
 import { ZuckerCrudModule, PrismaAdapter, InMemoryAdapter } from '@zucker/crud';
-import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { PrismaClient } from './generated/prisma/client';
 import { ZuckerAuthModule, JwtAuthGuard, PermissionsGuard } from '@zucker/auth';
 import { ZuckerLoggingModule } from '@zucker/logging';
 import { ZuckerConfigModule } from '@zucker/config';
@@ -23,6 +24,8 @@ import { ZuckerMonitoringModule } from '@zucker/monitoring';
 import { ZuckerAdminModule } from '@zucker/admin';
 import { ZuckerFormModule } from '@zucker/form';
 
+const databaseUrl = process.env.DATABASE_URL;
+
 @Module({
   providers: [
     // 全局认证 Guard — 未标记 @Public() 的端点默认需要认证
@@ -38,11 +41,16 @@ import { ZuckerFormModule } from '@zucker/form';
     // ============ Layer 2: 框架核心 ============
     // When DATABASE_URL is set, instantiate a real PrismaClient via factory.
     // Otherwise fall back to InMemoryAdapter for local dev (no DB required).
-    ...(process.env.DATABASE_URL
+    ...(databaseUrl
       ? [
           ZuckerCrudModule.forRootAsync({
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            useFactory: () => new PrismaAdapter(new PrismaClient() as any),
+            useFactory: () =>
+              new PrismaAdapter(
+                new PrismaClient({
+                  adapter: new PrismaPg({ connectionString: databaseUrl }),
+                }) as any,
+              ),
           }),
         ]
       : [ZuckerCrudModule.forRoot({ adapterClass: InMemoryAdapter })]),

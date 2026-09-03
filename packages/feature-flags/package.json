@@ -1,6 +1,6 @@
 {
   "name": "@zucker/feature-flags",
-  "version": "0.1.0-rc.2",
+  "version": "0.1.0-rc.3",
   "description": "Deterministic, auditable feature flag evaluation for Zucker applications",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -23,7 +23,7 @@
     "verify:package": "node scripts/verify-package.mjs"
   },
   "devDependencies": {
-    "@types/node": "^25.5.0"
+    "@types/node": "^20.19.43"
   },
   "license": "Apache-2.0"
 }

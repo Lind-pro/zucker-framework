@@ -17,6 +17,7 @@ const createBullJob = (overrides: Record<string, unknown> = {}) => ({
 
 const createQueue = () => ({
   add: vi.fn(),
+  upsertJobScheduler: vi.fn(),
   getJob: vi.fn(),
   pause: vi.fn().mockResolvedValue(undefined),
   resume: vi.fn().mockResolvedValue(undefined),

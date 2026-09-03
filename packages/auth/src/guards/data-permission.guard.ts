@@ -7,15 +7,22 @@ import {
   Optional,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { IS_PUBLIC_KEY, DATA_PERMISSION_KEY } from '../decorators/constants';
-import type { DataPermissionOptions } from '../decorators';
+import {
+  IS_PUBLIC_KEY,
+  DATA_PERMISSION_KEY,
+  RESOURCE_KEY,
+  ACTION_KEY,
+} from '../decorators/constants';
+import type {
+  DataPermissionOptions,
+  ResourceOptions,
+  ActionOptions,
+} from '../decorators';
 import type { Authentication } from '../interfaces';
 import type { DataAccessHandler, AuthorizingContext } from '../data-access/data-access-handler';
 import { DATA_ACCESS_HANDLERS } from '../data-access/data-access-handler';
 import { mergeResults, allowResult } from '../data-access/data-access-result';
 import type { DataAccessResult } from '../data-access/data-access-result';
-import { RESOURCE_KEY, ACTION_KEY } from '../decorators/constants';
-import type { ResourceOptions, ActionOptions } from '../decorators';
 import { DATABASE_ADAPTER } from '@zucker/crud';
 export { DATABASE_ADAPTER };
 

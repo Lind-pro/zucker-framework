@@ -9,8 +9,7 @@ import {
 import type { ActionType, ProColumns } from '@ant-design/pro-components';
 import { Button, message, Popconfirm, Card, Col, Row } from 'antd';
 import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
-import { queryRequest } from '@/lib/http-client';
-import httpClient from '@/lib/http-client';
+import httpClient, { queryRequest } from '@/lib/http-client';
 import { PermissionGuard } from '@/lib/permission';
 import { useBatchDelete } from '@/hooks/useBatchDelete';
 import useThemeStore from '@/stores/useThemeStore';

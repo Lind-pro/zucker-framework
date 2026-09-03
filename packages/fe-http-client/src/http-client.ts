@@ -1,4 +1,9 @@
-import axios, { AxiosInstance, AxiosError, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
+import axios, {
+  AxiosError,
+  type AxiosInstance,
+  type AxiosResponse,
+  type InternalAxiosRequestConfig,
+} from 'axios';
 import {
   ApiResponse,
   ErrorHandler,
@@ -98,10 +103,11 @@ export class HttpClient {
   private setupResponseInterceptor(): void {
     this.api.interceptors.response.use(
       (response: AxiosResponse) => {
-        const newToken =
-          response.headers['x-auth-token'] ||
-          response.headers['authorization'] ||
-          response.headers['x-token'];
+        const newToken = [
+          response.headers['x-auth-token'],
+          response.headers['authorization'],
+          response.headers['x-token'],
+        ].find((value): value is string => typeof value === 'string' && value.length > 0);
 
         if (newToken) {
           const token =
@@ -118,7 +124,8 @@ export class HttpClient {
         const data = response.data;
 
         if (typeof data === 'object' && data !== null) {
-          const contentType = response.headers['content-type'];
+          const rawContentType = response.headers['content-type'];
+          const contentType = typeof rawContentType === 'string' ? rawContentType : undefined;
           if (
             contentType?.includes('application/octet-stream') ||
             contentType?.includes('application/vnd.ms-excel') ||

@@ -1,6 +1,6 @@
 {
   "name": "@zucker/task",
-  "version": "0.1.0-rc.12",
+  "version": "0.1.0-rc.13",
   "description": "Durable task lifecycle contracts and state machine for Zucker applications",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -27,9 +27,9 @@
     "lint": "eslint src/"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "0.5.5",
-    "@types/node": "^25.5.0",
-    "@types/pg": "8.21.0",
+    "@electric-sql/pglite": "0.5.8",
+    "@types/node": "^20.19.43",
+    "@types/pg": "8.23.1",
     "pg": "8.23.0"
   },
   "engines": {

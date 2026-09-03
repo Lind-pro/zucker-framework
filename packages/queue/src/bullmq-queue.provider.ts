@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Queue, type ConnectionOptions, type Job as BullMqJob, type QueueOptions } from 'bullmq';
 import type { Job, JobOptions, QueueProvider, QueueStats } from './queue.interface';
 
@@ -71,10 +72,19 @@ export class BullMqQueueProvider implements QueueProvider {
     options?: JobOptions,
   ): Promise<Job<T>> {
     this.assertValidJobId(options?.jobId);
-    const job = await this.getQueue(queueName).add(options?.name ?? this.defaultJobName, data, {
-      ...this.toBullMqOptions(options),
-      repeat: { pattern },
-    });
+    const name = options?.name ?? this.defaultJobName;
+    const schedulerId =
+      options?.jobId ??
+      `scheduler-${createHash('sha256').update(name).update('\0').update(pattern).digest('hex')}`;
+    const job = await this.getQueue(queueName).upsertJobScheduler(
+      schedulerId,
+      { pattern },
+      {
+        name,
+        data,
+        opts: this.toBullMqSchedulerOptions(options),
+      },
+    );
     return this.toJob(job);
   }
 
@@ -97,6 +107,7 @@ export class BullMqQueueProvider implements QueueProvider {
   }
 
   async getStats(queueName: string): Promise<QueueStats> {
+    const pausedStateForStats = 'paused' as 'wait';
     const counts = await this.getQueue(queueName).getJobCounts(
       'wait',
       'active',
@@ -104,7 +115,7 @@ export class BullMqQueueProvider implements QueueProvider {
       'failed',
       'delayed',
       'prioritized',
-      'paused',
+      pausedStateForStats,
     );
     return {
       waiting: (counts.wait ?? 0) + (counts.prioritized ?? 0) + (counts.paused ?? 0),
@@ -145,6 +156,17 @@ export class BullMqQueueProvider implements QueueProvider {
     return {
       jobId: options.jobId,
       deduplication: options.deduplicationId ? { id: options.deduplicationId } : undefined,
+      priority: options.priority,
+      attempts: options.attempts,
+      backoff: options.backoff,
+      removeOnComplete: options.removeOnComplete,
+      removeOnFail: options.removeOnFail,
+    };
+  }
+
+  private toBullMqSchedulerOptions(options?: JobOptions) {
+    if (!options) return undefined;
+    return {
       priority: options.priority,
       attempts: options.attempts,
       backoff: options.backoff,

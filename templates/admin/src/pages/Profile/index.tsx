@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { PageContainer } from '@ant-design/pro-components';
-import { ProForm, ProFormText } from '@ant-design/pro-components';
+import { PageContainer, ProForm, ProFormText } from '@ant-design/pro-components';
 import { Card, Tabs, Avatar, Typography, Tag, Space, message, Descriptions } from 'antd';
 import { UserOutlined, LockOutlined, MailOutlined } from '@ant-design/icons';
 import httpClient from '@/lib/http-client';

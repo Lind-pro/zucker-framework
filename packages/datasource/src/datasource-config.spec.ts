@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { InMemoryDataSourceConfigRepository } from './datasource-config';
-import type { DynamicDataSourceConfig } from './datasource-config';
+import {
+  InMemoryDataSourceConfigRepository,
+  type DynamicDataSourceConfig,
+} from './datasource-config';
 
 function makeConfig(id: string): DynamicDataSourceConfig {
   return { id, name: `DS-${id}` };

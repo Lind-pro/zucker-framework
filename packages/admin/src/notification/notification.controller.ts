@@ -22,11 +22,14 @@ import {
 } from '@nestjs/common';
 import { NotFoundException } from '@zucker/core';
 import { JwtAuthGuard, PermissionsGuard, Permissions } from '@zucker/auth';
-import { TemplateService, NotifyHistoryService } from '@zucker/notification';
-import type { TemplateProperties } from '@zucker/notification';
-import type { NotifyTemplate } from '@zucker/notification';
-import type { NotifyChannel } from '@zucker/notification';
-import type { NotifyHistoryRecord } from '@zucker/notification';
+import {
+  TemplateService,
+  NotifyHistoryService,
+  type TemplateProperties,
+  type NotifyTemplate,
+  type NotifyChannel,
+  type NotifyHistoryRecord,
+} from '@zucker/notification';
 
 interface QueryRequest {
   pageIndex?: number;

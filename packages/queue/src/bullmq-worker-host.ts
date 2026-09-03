@@ -126,7 +126,7 @@ export class BullMqWorkerHost {
       await Promise.race([
         Promise.all(
           [...this.workers.values()].map(async (worker) => {
-            const client = await worker.client;
+            const client = await worker.getBackend().client;
             await client.get(worker.toKey('health-probe'));
           }),
         ),

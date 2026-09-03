@@ -7,14 +7,14 @@
  */
 import { Injectable } from '@nestjs/common';
 import type { ThingManager, ThingsDataService } from '@zucker/things';
-import { AbstractDeviceGateway } from './device-gateway';
-import { GatewayState } from './device-gateway';
-import type { DeviceGatewayConfig } from './device-gateway';
+import {
+  AbstractDeviceGateway,
+  GatewayState,
+  type DeviceGatewayConfig,
+} from './device-gateway';
 import type { ProtocolSupport } from './codec';
-import { SessionState } from './device-session';
-import type { DeviceSession } from './device-session';
-import type { Transport } from '@zucker/network';
-import { Transports } from '@zucker/network';
+import { SessionState, type DeviceSession } from './device-session';
+import { Transports, type Transport } from '@zucker/network';
 
 /**
  * HTTP 会话（无状态，每次请求创建一个临时会话）
