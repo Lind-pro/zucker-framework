@@ -8,6 +8,7 @@
     },
     "build": {
       "dependsOn": ["^build"],
+      "passThroughEnv": ["DATABASE_URL"],
       "inputs": [
         "src/**",
         "tsconfig.json",
