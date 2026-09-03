@@ -19,7 +19,7 @@ import {
   FileTextOutlined,
   MenuOutlined,
 } from '@ant-design/icons';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import httpClient from '@/lib/http-client';
 import useThemeStore from '@/stores/useThemeStore';
 

@@ -17,12 +17,12 @@
 
 | 项       | 值                                                    |
 | -------- | ----------------------------------------------------- |
-| 后端     | NestJS 11                                             |
-| ORM      | Prisma 6（业务侧 schema 命名 PascalCase）             |
+| 后端     | NestJS 12                                             |
+| ORM      | Prisma 7（业务侧 schema 命名 PascalCase）             |
 | 前端     | React 19 + Ant Design 5（admin） / Next.js（landing） |
 | 验证     | Zod v4                                                |
 | 测试     | Vitest（单元） + Playwright（E2E）                    |
-| 包管理   | pnpm 9.x workspace                                    |
+| 包管理   | pnpm 11.x workspace                                   |
 | 模块导出 | tsup → CJS + ESM + .d.ts                              |
 
 ## 三、决策树 — "我想做 X" 索引

@@ -1,5 +1,5 @@
 import React, { Suspense, lazy } from 'react';
-import { createBrowserRouter, Navigate } from 'react-router-dom';
+import { createBrowserRouter, Navigate } from 'react-router';
 import PageSkeleton from './components/PageSkeleton';
 
 const BasicLayout        = lazy(() => import('./layouts/BasicLayout'));
