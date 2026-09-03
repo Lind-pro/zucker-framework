@@ -27,6 +27,7 @@
     }
   },
   "devDependencies": {
+    "@zucker/event": "workspace:*",
     "@types/node": "^20.19.43"
   }
 }

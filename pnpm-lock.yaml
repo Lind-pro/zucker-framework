@@ -130,13 +130,13 @@ importers:
       '@zucker/ai-access':
         specifier: workspace:*
         version: link:../ai-access
-      '@zucker/core':
-        specifier: workspace:*
-        version: link:../core
     devDependencies:
       '@types/node':
         specifier: 20.19.43
         version: 20.19.43
+      '@zucker/core':
+        specifier: workspace:*
+        version: link:../core
       openai:
         specifier: 7.9.0
         version: 7.9.0(@aws-sdk/credential-provider-node@3.972.82)(@smithy/signature-v4@5.7.3)(undici@8.10.1)(zod@4.5.4)
@@ -170,9 +170,6 @@ importers:
       '@nestjs/passport':
         specifier: ^12.0.0
         version: 12.0.0(@nestjs/common@12.0.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(passport@0.7.0)
-      '@zucker/cache':
-        specifier: workspace:*
-        version: link:../cache
       '@zucker/core':
         specifier: workspace:*
         version: link:../core
@@ -189,6 +186,9 @@ importers:
       '@types/passport-jwt':
         specifier: ^4.0.1
         version: 4.0.1
+      '@zucker/cache':
+        specifier: workspace:*
+        version: link:../cache
 
   packages/buffer:
     dependencies:
@@ -254,13 +254,13 @@ importers:
       '@zucker/core':
         specifier: workspace:*
         version: link:../core
-      '@zucker/event':
-        specifier: workspace:*
-        version: link:../event
     devDependencies:
       '@types/node':
         specifier: 20.19.43
         version: 20.19.43
+      '@zucker/event':
+        specifier: workspace:*
+        version: link:../event
 
   packages/common:
     dependencies:
@@ -349,15 +349,9 @@ importers:
       '@nestjs/core':
         specifier: ^12.0.0
         version: 12.0.1(@nestjs/common@12.0.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(@nestjs/platform-express@12.0.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@zucker/cache':
-        specifier: workspace:*
-        version: link:../cache
       '@zucker/core':
         specifier: workspace:*
         version: link:../core
-      '@zucker/event':
-        specifier: workspace:*
-        version: link:../event
     devDependencies:
       '@nestjs/swagger':
         specifier: ^12.0.1
@@ -365,6 +359,12 @@ importers:
       '@types/node':
         specifier: 20.19.43
         version: 20.19.43
+      '@zucker/cache':
+        specifier: workspace:*
+        version: link:../cache
+      '@zucker/event':
+        specifier: workspace:*
+        version: link:../event
 
   packages/dashboard:
     dependencies:
@@ -795,9 +795,6 @@ importers:
       '@zucker/core':
         specifier: workspace:*
         version: link:../core
-      '@zucker/event':
-        specifier: workspace:*
-        version: link:../event
       '@zucker/script':
         specifier: workspace:*
         version: link:../script
@@ -805,6 +802,9 @@ importers:
       '@types/node':
         specifier: 20.19.43
         version: 20.19.43
+      '@zucker/event':
+        specifier: workspace:*
+        version: link:../event
 
   packages/script:
     dependencies:
