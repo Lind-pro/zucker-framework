@@ -27,6 +27,8 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build all packages
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/zucker_build
         run: pnpm build
 
       - name: Verify package artifacts outside the workspace

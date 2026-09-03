@@ -46,6 +46,8 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build, test, and lint
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/zucker_build
         run: |
           pnpm build
           pnpm test
