@@ -23,11 +23,11 @@ const explicitOutput = outputIndex >= 0 ? args[outputIndex + 1] : undefined;
 const allowDirty = args.includes('--allow-dirty');
 const sourceCommit = capture('git', ['rev-parse', 'HEAD']).trim();
 const sourceTree = capture('git', ['rev-parse', 'HEAD^{tree}']).trim();
-const sourceDirty =
-  capture('git', ['status', '--porcelain', '--untracked-files=all']).trim().length > 0;
+const sourceStatus = capture('git', ['status', '--porcelain', '--untracked-files=all']).trim();
+const sourceDirty = sourceStatus.length > 0;
 if (outputIndex >= 0 && !explicitOutput) throw new Error('--output requires a directory');
 if (explicitOutput && sourceDirty && !allowDirty) {
-  throw new Error('Refusing to create a release bundle from a dirty worktree');
+  throw new Error(`Refusing to create a release bundle from a dirty worktree:\n${sourceStatus}`);
 }
 
 const temporaryRoot = mkdtempSync(join(tmpdir(), 'zucker-package-artifacts-'));
