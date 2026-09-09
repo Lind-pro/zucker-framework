@@ -1,26 +1,21 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { assertTarballContent } from './verify-package-content.mjs';
 
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const rootManifest = JSON.parse(readFileSync(join(rootDir, 'package.json'), 'utf8'));
-const packageNames = [
-  'core',
-  'task',
-  'queue',
-  'ai-access',
-  'ai',
-  'cli',
-  'monitoring',
-  'storage',
-  'logging',
-  'credit',
-  'feature-flags',
-  'notification',
-];
+const installedVersion = (directory, name) => JSON.parse(readFileSync(join(rootDir, directory, 'node_modules', name, 'package.json'), 'utf8')).version;
+const scaffoldCatalog = JSON.parse(readFileSync(join(rootDir, 'packages/cli/dist/release-catalog.json'), 'utf8'));
+const consumerHosts = Object.fromEntries(Object.entries(scaffoldCatalog.server.dependencies).filter(([name]) => !name.startsWith('@zucker-framework/')));
+const packageNames = readdirSync(join(rootDir, 'packages'), { withFileTypes: true })
+  .filter((entry) => entry.isDirectory())
+  .map((entry) => entry.name)
+  .filter((name) => !JSON.parse(readFileSync(join(rootDir, 'packages', name, 'package.json'), 'utf8')).private)
+  .sort();
 const workspaceReference = /^(?:workspace:|link:|file:)|^(?:\/|[A-Za-z]:\\)/;
 const args = process.argv.slice(2);
 const outputIndex = args.indexOf('--output');
@@ -41,6 +36,9 @@ const packDirectory = explicitOutput
   : join(temporaryRoot, 'packs');
 const consumerDirectory = join(temporaryRoot, 'consumer');
 const pnpmConsumerDirectory = join(temporaryRoot, 'pnpm-consumer');
+const consumerNpmrc = join(temporaryRoot, '.npmrc');
+writeFileSync(consumerNpmrc, 'registry=https://registry.npmjs.org/\n', { mode: 0o600 });
+const consumerEnvironment = { ...process.env, NPM_CONFIG_USERCONFIG: consumerNpmrc };
 let succeeded = false;
 
 function run(command, commandArgs, options = {}) {
@@ -89,7 +87,9 @@ function sha256(file) {
 }
 
 try {
-  if (explicitOutput) rmSync(packDirectory, { recursive: true, force: true });
+  if (explicitOutput && existsSync(packDirectory) && readdirSync(packDirectory).length) {
+    throw new Error('Refusing to overwrite an existing release bundle; choose a new output directory');
+  }
   mkdirSync(packDirectory, { recursive: true });
   mkdirSync(consumerDirectory, { recursive: true });
   mkdirSync(pnpmConsumerDirectory, { recursive: true });
@@ -97,11 +97,7 @@ try {
   const artifacts = packageNames.map((packageName) => {
     const packageDirectory = join(rootDir, 'packages', packageName);
     const sourceManifest = JSON.parse(readFileSync(join(packageDirectory, 'package.json'), 'utf8'));
-    if (!sourceManifest.version.includes('-rc.')) {
-      throw new Error(`${sourceManifest.name} must use an immutable RC version`);
-    }
-    run('pnpm', ['--filter', sourceManifest.name, 'run', 'clean']);
-    run('pnpm', ['--filter', sourceManifest.name, 'run', 'build']);
+    // Build once before this command. Packing must not silently rebuild different bytes.
     run('pnpm', ['pack', '--pack-destination', packDirectory], {
       cwd: packageDirectory,
     });
@@ -111,6 +107,7 @@ try {
       throw new Error(`Package tarball was not created: ${tarball}`);
     }
     const manifest = readPackedManifest(tarball);
+    assertTarballContent(tarball);
     assertPortableDependencies(manifest);
     assertPublishedFiles(manifest, tarball);
     return { filename, tarball, manifest, sha256: sha256(tarball) };
@@ -162,21 +159,21 @@ try {
       'reflect-metadata@0.2.2',
       'rxjs@7.8.2',
     ],
-    { cwd: consumerDirectory },
+    { cwd: consumerDirectory, env: consumerEnvironment },
   );
 
   writeFileSync(
     join(consumerDirectory, 'smoke.mjs'),
-    `import { DurableWorkerRuntime, PostgresTaskRedriver, PostgresTaskSummaryReader, PostgresTaskTimelineReader, TASK_STATUSES } from '@zucker/task';
-import { BullMqQueueProvider } from '@zucker/queue';
-import { AICallWrapper } from '@zucker/ai';
-import { AIAccessProviderRegistry, PostgresCredentialProfileStore } from '@zucker/ai-access';
-import { getProcessUptime, MetricsRegistry, renderPrometheusMetrics } from '@zucker/monitoring';
-import { WebDavStorage } from '@zucker/storage';
-import { PiiFilter } from '@zucker/logging';
-import { PostgresCreditOperationCoordinator } from '@zucker/credit';
-import { FeatureFlagEvaluator } from '@zucker/feature-flags';
-import { DurableNotificationWorker } from '@zucker/notification';
+    `import { DurableWorkerRuntime, PostgresTaskRedriver, PostgresTaskSummaryReader, PostgresTaskTimelineReader, TASK_STATUSES } from '@zucker-framework/task';
+import { BullMqQueueProvider } from '@zucker-framework/queue';
+import { AICallWrapper } from '@zucker-framework/ai';
+import { AIAccessProviderRegistry, PostgresCredentialProfileStore } from '@zucker-framework/ai-access';
+import { getProcessUptime, MetricsRegistry, renderPrometheusMetrics } from '@zucker-framework/monitoring';
+import { WebDavStorage } from '@zucker-framework/storage';
+import { PiiFilter } from '@zucker-framework/logging';
+import { PostgresCreditOperationCoordinator } from '@zucker-framework/credit';
+import { FeatureFlagEvaluator } from '@zucker-framework/feature-flags';
+import { DurableNotificationWorker } from '@zucker-framework/notification';
 
 if (!TASK_STATUSES.includes('QUEUED')) throw new Error('task ESM export missing');
 if (typeof DurableWorkerRuntime !== 'function') throw new Error('durable worker runtime ESM export missing');
@@ -200,16 +197,16 @@ if (typeof DurableNotificationWorker !== 'function') throw new Error('notificati
   );
   writeFileSync(
     join(consumerDirectory, 'smoke.cjs'),
-    `const task = require('@zucker/task');
-const queue = require('@zucker/queue');
-const ai = require('@zucker/ai');
-const aiAccess = require('@zucker/ai-access');
-const monitoring = require('@zucker/monitoring');
-const storage = require('@zucker/storage');
-const logging = require('@zucker/logging');
-const credit = require('@zucker/credit');
-const featureFlags = require('@zucker/feature-flags');
-const notification = require('@zucker/notification');
+    `const task = require('@zucker-framework/task');
+const queue = require('@zucker-framework/queue');
+const ai = require('@zucker-framework/ai');
+const aiAccess = require('@zucker-framework/ai-access');
+const monitoring = require('@zucker-framework/monitoring');
+const storage = require('@zucker-framework/storage');
+const logging = require('@zucker-framework/logging');
+const credit = require('@zucker-framework/credit');
+const featureFlags = require('@zucker-framework/feature-flags');
+const notification = require('@zucker-framework/notification');
 
 if (!task.TASK_STATUSES.includes('QUEUED')) throw new Error('task CJS export missing');
 if (typeof task.DurableWorkerRuntime !== 'function') throw new Error('durable worker runtime CJS export missing');
@@ -245,6 +242,16 @@ if (typeof notification.DurableNotificationWorker !== 'function') throw new Erro
         artifacts.map(({ manifest, tarball }) => [manifest.name, `file:${tarball}`]),
       ),
       devDependencies: {
+        ...consumerHosts,
+        typescript: installedVersion('.', 'typescript'),
+        '@types/node': installedVersion('packages/core', '@types/node'),
+        '@types/express': installedVersion('packages/common', '@types/express'),
+        '@types/react': installedVersion('templates/admin', '@types/react'),
+        '@types/react-dom': installedVersion('templates/admin', '@types/react-dom'),
+        react: installedVersion('templates/admin', 'react'),
+        'react-dom': installedVersion('templates/admin', 'react-dom'),
+        antd: installedVersion('templates/admin', 'antd'),
+        '@ant-design/icons': installedVersion('templates/admin', '@ant-design/icons'),
         '@nestjs/common': '12.0.1',
         '@nestjs/core': '12.0.1',
         '@nestjs/event-emitter': '12.0.0',
@@ -267,20 +274,21 @@ if (typeof notification.DurableNotificationWorker !== 'function') throw new Erro
   );
   run('pnpm', ['install', '--ignore-scripts', '--no-frozen-lockfile'], {
     cwd: pnpmConsumerDirectory,
+    env: consumerEnvironment,
   });
   run('pnpm', ['peers', 'check'], { cwd: pnpmConsumerDirectory });
   writeFileSync(
     join(pnpmConsumerDirectory, 'smoke.mjs'),
-    `import { DurableWorkerRuntime, PostgresTaskRedriver, PostgresTaskTimelineReader, TASK_STATUSES } from '@zucker/task';
-import { BullMqQueueProvider } from '@zucker/queue';
-import { AICallWrapper } from '@zucker/ai';
-import { AIAccessProviderRegistry, PostgresCredentialProfileStore } from '@zucker/ai-access';
-import { getProcessUptime, MetricsRegistry, renderPrometheusMetrics } from '@zucker/monitoring';
-import { WebDavStorage } from '@zucker/storage';
-import { PiiFilter } from '@zucker/logging';
-import { PostgresCreditOperationCoordinator } from '@zucker/credit';
-import { FeatureFlagEvaluator } from '@zucker/feature-flags';
-import { DurableNotificationWorker } from '@zucker/notification';
+    `import { DurableWorkerRuntime, PostgresTaskRedriver, PostgresTaskTimelineReader, TASK_STATUSES } from '@zucker-framework/task';
+import { BullMqQueueProvider } from '@zucker-framework/queue';
+import { AICallWrapper } from '@zucker-framework/ai';
+import { AIAccessProviderRegistry, PostgresCredentialProfileStore } from '@zucker-framework/ai-access';
+import { getProcessUptime, MetricsRegistry, renderPrometheusMetrics } from '@zucker-framework/monitoring';
+import { WebDavStorage } from '@zucker-framework/storage';
+import { PiiFilter } from '@zucker-framework/logging';
+import { PostgresCreditOperationCoordinator } from '@zucker-framework/credit';
+import { FeatureFlagEvaluator } from '@zucker-framework/feature-flags';
+import { DurableNotificationWorker } from '@zucker-framework/notification';
 
 if (!TASK_STATUSES.includes('QUEUED')) throw new Error('task pnpm export missing');
 if (typeof DurableWorkerRuntime !== 'function') throw new Error('durable worker runtime pnpm export missing');
@@ -302,11 +310,11 @@ if (typeof DurableNotificationWorker !== 'function') throw new Error('notificati
 `,
   );
   run('node', ['smoke.mjs'], { cwd: pnpmConsumerDirectory });
+  run('node', [join(rootDir, 'scripts/verify-consumer-contracts.mjs'), pnpmConsumerDirectory,
+    join(packDirectory, 'consumer-verification.json')]);
   succeeded = true;
   process.stdout.write(`Package artifact verification passed: ${packDirectory}\n`);
 } finally {
   rmSync(temporaryRoot, { recursive: true, force: true });
-  if (explicitOutput && !succeeded) {
-    rmSync(packDirectory, { recursive: true, force: true });
-  }
+  if (explicitOutput && !succeeded) process.stderr.write(`Release verification did not complete; files retained at ${packDirectory}\n`);
 }

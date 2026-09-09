@@ -6,8 +6,8 @@ const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 const nextConfig: NextConfig = {
   ...(process.env.VERCEL ? {} : { output: "standalone" }),
   transpilePackages: [
-    "@zucker/fe-auth",
-    "@zucker/fe-http-client",
+    "@zucker-framework/fe-auth",
+    "@zucker-framework/fe-http-client",
   ],
   typescript: {
     ignoreBuildErrors: false,

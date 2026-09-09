@@ -11,8 +11,8 @@ import { Button, Drawer, Form, Input, Modal, Table, message, Popconfirm, Space }
 import { PlusOutlined, EyeOutlined, EditOutlined } from '@ant-design/icons';
 import httpClient, { queryRequest } from '@/lib/http-client';
 import { PermissionGuard } from '@/lib/permission';
-import { DynamicForm } from '@zucker/fe-form';
-import type { FormDefinition, FieldDefinition } from '@zucker/fe-form';
+import { DynamicForm } from '@zucker-framework/fe-form';
+import type { FormDefinition, FieldDefinition } from '@zucker-framework/fe-form';
 import FieldEditor from './FieldEditor';
 
 interface FormDefRecord {

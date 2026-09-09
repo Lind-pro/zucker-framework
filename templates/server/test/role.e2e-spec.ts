@@ -2,7 +2,7 @@
  * Role API e2e tests.
  *
  * NOTE: Like user.e2e-spec.ts, roles are a service-layer primitive in
- * @zucker/auth — there is no pre-built RoleController shipped with the
+ * @zucker-framework/auth — there is no pre-built RoleController shipped with the
  * framework.  This spec registers an inline RoleController that application
  * code would produce, wired into the same InMemoryDatabaseAdapter.
  *
@@ -32,7 +32,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { ZuckerCrudModule } from '@zucker/crud';
+import { ZuckerCrudModule } from '@zucker-framework/crud';
 import {
   ZuckerAuthModule,
   AuthorizationController,
@@ -40,9 +40,9 @@ import {
   JwtAuthGuard,
   PermissionsGuard,
   Permissions,
-} from '@zucker/auth';
-import type { AuthenticationManagerLike } from '@zucker/auth';
-import { HttpExceptionFilter } from '@zucker/common';
+} from '@zucker-framework/auth';
+import type { AuthenticationManagerLike } from '@zucker-framework/auth';
+import { HttpExceptionFilter } from '@zucker-framework/common';
 import { InMemoryDatabaseAdapter } from './helpers/in-memory-db';
 
 // ---------------------------------------------------------------------------

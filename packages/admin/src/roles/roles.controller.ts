@@ -23,10 +23,10 @@ import {
   UseGuards,
   Logger,
 } from '@nestjs/common';
-import { NotFoundException } from '@zucker/core';
-import { JwtAuthGuard, PermissionsGuard, Permissions, RoleHierarchyService, type RoleEntity } from '@zucker/auth';
-import { DATABASE_ADAPTER } from '@zucker/crud';
-import type { DatabaseAdapter } from '@zucker/core';
+import { NotFoundException } from '@zucker-framework/core';
+import { JwtAuthGuard, PermissionsGuard, Permissions, RoleHierarchyService, type RoleEntity } from '@zucker-framework/auth';
+import { DATABASE_ADAPTER } from '@zucker-framework/crud';
+import type { DatabaseAdapter } from '@zucker-framework/core';
 
 interface RoleWithPermissions extends RoleEntity {
   permissionIds: string[];

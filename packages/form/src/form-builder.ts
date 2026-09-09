@@ -2,7 +2,6 @@ import type { FormDefinition, FieldDefinition, FieldValidator, FieldOption, Form
 
 /**
  * FormBuilder — 流式 API 构建表单定义。
- * 对标 hsweb/jetlinks 表单构造器模式。
  *
  * @example
  * const form = FormBuilder.create('user-form', '用户表单')

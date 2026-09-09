@@ -143,8 +143,6 @@ export function formatRelativeTime(
  *
  * Provides convenient methods for resolving messages using the current locale
  * context and a configured MessageSource.
- *
- * Reference: hsweb-framework LocaleUtils
  */
 export class LocaleUtils {
   private static messageSource: MessageSource | null = null;
@@ -215,8 +213,6 @@ export class LocaleUtils {
 
   /**
    * Execute a function within a specific locale context.
-   *
-   * Reference: hsweb LocaleUtils.doWith()
    */
   static doWith<T>(locale: string, fn: () => T): T {
     return LocaleContext.run(locale, fn);

@@ -5,7 +5,7 @@
  * - POST /logging/access/_query  — paginated in-memory access log list
  *
  * Implementation note:
- * @zucker/logging's AccessLoggerInterceptor publishes events via ACCESS_LOG_BUS
+ * @zucker-framework/logging's AccessLoggerInterceptor publishes events via ACCESS_LOG_BUS
  * (EventEmitter2); it does NOT persist logs to a database. This controller
  * maintains an in-memory ring buffer (max MAX_LOGS entries) populated via
  * @OnEvent(ACCESS_LOG_EVENT) and exposes it through the _query endpoint.
@@ -22,9 +22,9 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
-import { JwtAuthGuard, PermissionsGuard, Permissions } from '@zucker/auth';
-import { ACCESS_LOG_EVENT } from '@zucker/logging';
-import type { AccessLogPayload } from '@zucker/logging';
+import { JwtAuthGuard, PermissionsGuard, Permissions } from '@zucker-framework/auth';
+import { ACCESS_LOG_EVENT } from '@zucker-framework/logging';
+import type { AccessLogPayload } from '@zucker-framework/logging';
 
 /** Maximum number of log entries retained in memory */
 const MAX_LOGS = 10_000;

@@ -20,7 +20,7 @@ export class ZuckerEventModule implements OnModuleInit, OnModuleDestroy {
 
   /**
    * 模块初始化时执行所有 EntityEventListenerCustomizer
-   * 参考 hsweb 中通过 EntityEventListenerCustomizer 进行运行时配置
+   * 通过 EntityEventListenerCustomizer 进行运行时配置
    */
   onModuleInit(): void {
     if (this.customizers) {

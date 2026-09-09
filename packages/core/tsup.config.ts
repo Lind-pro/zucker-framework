@@ -7,7 +7,7 @@ export default defineConfig({
   entry: { index: 'src/index.ts' },
   format: ['cjs', 'esm'],
   dts: true,
-  sourcemap: true,
+  sourcemap: false,
   clean: true,
   noExternal: ['@paralleldrive/cuid2'],
 });

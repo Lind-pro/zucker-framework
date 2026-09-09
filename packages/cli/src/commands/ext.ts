@@ -20,7 +20,7 @@ function syncVendored(extDir: string): string[] {
   const updated: string[] = [];
   for (const file of VENDORED) {
     if (!existsSync(file.from)) {
-      throw new Error(`Kit artifact missing: ${file.from} — run \`pnpm --filter @zucker/ext-kit build\` first.`);
+      throw new Error(`Kit artifact missing: ${file.from} — run \`pnpm --filter @zucker-framework/ext-kit build\` first.`);
     }
     const dest = join(extDir, file.to);
     mkdirSync(join(dest, '..'), { recursive: true });
@@ -39,10 +39,10 @@ function isExtensionDir(dir: string): boolean {
 }
 
 const createCommand = new Command('create')
-  .description('Scaffold a new browser extension on top of @zucker/ext-kit')
-  .argument('<slug>', 'Product slug, lowercase (e.g. "siteshots") — storage keys & server product id')
-  .option('--name <name>', 'Store display name (e.g. "SiteShots - Batch Full Page Screenshot")')
-  .option('--brand <brand>', 'Brand word (e.g. "SiteShots") — folder prefix, wordmark')
+  .description('Scaffold a new browser extension on top of @zucker-framework/ext-kit')
+  .argument('<slug>', 'Product slug, lowercase (e.g. "sampleext") — storage keys & server product id')
+  .option('--name <name>', 'Store display name (e.g. "Sample Extension")')
+  .option('--brand <brand>', 'Brand word (e.g. "Sample") — folder prefix, wordmark')
   .option('--desc <desc>', 'Store description')
   .option('--accent <color>', 'Accent color', '#7c8cff')
   .option('--accent-deep <color>', 'Deep accent color', '#5a6cf0')
@@ -50,7 +50,7 @@ const createCommand = new Command('create')
   .option('--dir <dir>', 'Target directory (default: <slug>-extension)')
   .action((slug: string, options: Record<string, string>) => {
     if (!/^[a-z][a-z0-9]*$/.test(slug)) {
-      console.log('  \x1b[31mError:\x1b[0m slug must be lowercase alphanumeric, e.g. "siteshots".');
+      console.log('  \x1b[31mError:\x1b[0m slug must be lowercase alphanumeric, e.g. "sampleext".');
       process.exit(1);
     }
     const brand = options.brand || slug.charAt(0).toUpperCase() + slug.slice(1);
@@ -133,7 +133,7 @@ const syncCommand = new Command('sync')
     }
   });
 
-// 服务端核心（@zucker/ext-server）以 TS 源码 vendored 进消费方 NestJS 项目：
+// 服务端核心（@zucker-framework/ext-server）以 TS 源码 vendored 进消费方 NestJS 项目：
 // 消费方 CI/Docker 构建拿不到本仓库，npm 也未发布，源码随项目一起编译。
 const SERVER_FILES = ['core.ts', 'stripe.ts', 'types.ts'];
 const SERVER_BANNER =
@@ -141,7 +141,7 @@ const SERVER_BANNER =
   '// 修改请改框架源码后运行 `zucker ext sync-server <dir>` 重新分发。\n';
 
 const syncServerCommand = new Command('sync-server')
-  .description('Vendor @zucker/ext-server sources (core/stripe/types) into a NestJS app directory')
+  .description('Vendor @zucker-framework/ext-server sources (core/stripe/types) into a NestJS app directory')
   .argument('<dir>', 'Target directory (e.g. apps/server/src/extension/core)')
   .action((dir: string) => {
     const target = resolve(process.cwd(), dir);

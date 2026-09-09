@@ -15,13 +15,13 @@ import {
 import { AlertManagerService } from './alert-manager.service';
 import type { AlertRule } from './alert.interfaces';
 
-/** 标记需要认证但不需要特定权限（等效于 @zucker/auth 的 @Permissions()） */
+/** 标记需要认证但不需要特定权限（等效于 @zucker-framework/auth 的 @Permissions()） */
 const Permissions = () => SetMetadata('zucker:auth:permissions', []);
 
 /**
  * AlertController — 告警管理接口
  *
- * 注意：本 Controller 不自带认证 Guard（monitoring 包不依赖 @zucker/auth）。
+ * 注意：本 Controller 不自带认证 Guard（monitoring 包不依赖 @zucker-framework/auth）。
  * 应用层应通过以下方式之一保护这些端点：
  * 1. 全局 APP_GUARD（推荐 — 在 main.ts 或 AppModule 中注册 JwtAuthGuard）
  * 2. 在注册 ZuckerMonitoringModule 时，通过路由中间件添加认证

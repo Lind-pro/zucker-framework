@@ -2,7 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 
 /**
  * 动态限流规则管理。
- * 对标 hsweb RateLimitManager 的动态调整能力。
  *
  * 支持运行时修改限流规则，无需重启服务。
  */

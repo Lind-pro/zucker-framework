@@ -3,7 +3,7 @@ import {
   Injectable,
   Optional,
 } from '@nestjs/common';
-import { UnauthorizedException } from '@zucker/core';
+import { UnauthorizedException } from '@zucker-framework/core';
 import { AuthGuard } from '@nestjs/passport';
 import { Reflector } from '@nestjs/core';
 import { Observable } from 'rxjs';

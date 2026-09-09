@@ -169,7 +169,7 @@ export class CircuitBreaker {
     if (from === to) return;
 
     this.state = to;
-    // Log state transition (no NestJS dependency in @zucker/core)
+    // Log state transition (no NestJS dependency in @zucker-framework/core)
 
     if (to === 'CLOSED') {
       this.failureCount = 0;

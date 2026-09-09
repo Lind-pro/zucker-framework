@@ -18,7 +18,7 @@ export interface ErrorReporterUser {
 }
 
 /** Stable Nest injection token, including when duplicate package copies exist. */
-export const ERROR_REPORTER = Symbol.for('@zucker/monitoring/error-reporter');
+export const ERROR_REPORTER = Symbol.for('@zucker-framework/monitoring/error-reporter');
 
 /**
  * Provider-neutral error reporting port.

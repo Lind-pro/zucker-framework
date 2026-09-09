@@ -2,7 +2,7 @@ import { Controller, Get, Res, SetMetadata } from '@nestjs/common';
 import { HealthCheckService, HealthStatus } from './health-check.service';
 import { getProcessUptime } from './process-uptime';
 
-/** 标记为公开端点，无需认证（与 @zucker/auth 的 @Public() 相同 key） */
+/** 标记为公开端点，无需认证（与 @zucker-framework/auth 的 @Public() 相同 key） */
 const Public = () => SetMetadata('zucker:auth:isPublic', true);
 
 export const HEALTH_OPTIONS = Symbol('HEALTH_OPTIONS');

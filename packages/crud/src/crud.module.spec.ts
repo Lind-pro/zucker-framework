@@ -1,4 +1,4 @@
-import { DATABASE_ADAPTER as CORE_DATABASE_ADAPTER } from '@zucker/core';
+import { DATABASE_ADAPTER as CORE_DATABASE_ADAPTER } from '@zucker-framework/core';
 import { DATABASE_ADAPTER as CRUD_DATABASE_ADAPTER } from './crud.module';
 
 describe('DATABASE_ADAPTER compatibility export', () => {

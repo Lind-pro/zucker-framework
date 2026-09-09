@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { InMemoryAdapter } from '@zucker/crud';
+import { InMemoryAdapter } from '@zucker-framework/crud';
 import { PermissionService } from './permission.service';
 
 // Suppress NestJS Logger output

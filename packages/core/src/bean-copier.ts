@@ -1,21 +1,18 @@
 /**
  * FastBeanCopier — 高性能对象拷贝工具
- * 参考: hsweb-framework FastBeanCopier.java
  */
 
 /**
- * 驼峰转下划线 — 对齐 hsweb 5.x QueryHelperUtils.toSnake()
+ * 驼峰转下划线
  *
- * hsweb 5.x commit 5080e8324 修复了首字母大写时多出前缀下划线的问题：
- * - 修复前: "TestName" → "_test_name"（错误）
- * - 修复后: "TestName" → "test_name"（正确）
+ * 首字母大写时不添加前缀下划线，例如 "TestName" → "test_name"。
  */
 export function toSnakeCase(str: string): string {
   let result = '';
   for (let i = 0; i < str.length; i++) {
     const c = str[i];
     if (c >= 'A' && c <= 'Z') {
-      // 对齐 hsweb 5.x 修复: i !== 0 时才加下划线
+      // i !== 0 时才加下划线
       if (i !== 0) {
         result += '_';
       }
@@ -28,7 +25,7 @@ export function toSnakeCase(str: string): string {
 }
 
 /**
- * 下划线转驼峰 — 对齐 hsweb 5.x QueryHelperUtils.toHump()
+ * 下划线转驼峰
  *
  * 如果字符串同时包含大小写字母，说明已经是驼峰格式，直接返回。
  */
@@ -60,8 +57,7 @@ export function toCamelCase(str: string): string {
 /**
  * Shallow-copy properties from source to target, with optional field exclusion.
  *
- * 拷贝顺序修复（对齐 hsweb 5.x commit 314abfc04）：
- * hsweb 5.x 修复了 Extendable 对象的拷贝顺序问题。
+ * 拷贝顺序修复：
  * 当源对象包含 extensions（扩展属性）时，应先处理 extensions 再覆盖标准属性，
  * 确保标准属性的值优先级更高。此处 extensions 字段被排除在标准拷贝之外，
  * 需要调用方自行处理 extensions 合并。
@@ -78,7 +74,7 @@ export function copyProperties<T extends object>(
 ): T {
   if (source == null) return target;
   const ignoreSet = new Set(ignoreFields);
-  // 对齐 hsweb 5.x: 默认排除 extensions 字段以避免覆盖标准属性
+  // 默认排除 extensions 字段以避免覆盖标准属性
   // 调用方可显式处理 extensions 合并
   const srcRec = source as Record<string, unknown>;
 
@@ -94,7 +90,7 @@ export function copyProperties<T extends object>(
     }
   }
 
-  // 再覆盖标准属性（高优先级，对齐 hsweb 5.x 修复后的顺序）
+  // 再覆盖标准属性（高优先级）
   for (const key of Object.keys(srcRec)) {
     if (key === 'extensions') continue; // 已在上面处理
     if (!ignoreSet.has(key)) {
@@ -151,7 +147,7 @@ export function merge<T extends object>(
 
     const tgtVal = target[key];
 
-    // 数组合并策略（参考 hsweb 集合转换逻辑）
+    // 数组合并策略
     if (Array.isArray(srcVal) && Array.isArray(tgtVal)) {
       switch (arrayMerge) {
         case 'concat':
@@ -336,19 +332,16 @@ export function omit<T extends object>(source: T, ...fields: (keyof T)[]): Parti
 
 /**
  * 获取对象的指定属性值，支持嵌套路径
- * 参考 hsweb FastBeanCopier.getProperty(source, key)
  *
- * Java 版在 source 为 Map 时直接 map.get(key)，
- * 否则通过 SingleValueMap + copy(source, map, include(key)) 提取单属性。
- * TS 版统一通过直接属性访问实现，支持 "a.b.c" 嵌套路径。
+ * 通过直接属性访问读取简单键，支持 "a.b.c" 嵌套路径。
  */
 export function getProperty(source: object, key: string): unknown {
   if (source == null) return undefined;
-  // 简单属性直接访问（对齐 Java Map.get(key) 快速路径）
+  // 简单属性直接访问
   if (!key.includes('.')) {
     return (source as Record<string, unknown>)[key];
   }
-  // 嵌套路径遍历（对齐 BeanUtilsBean.getProperty 的嵌套属性支持）
+  // 嵌套路径遍历
   const parts = key.split('.');
   let current: unknown = source;
   for (const part of parts) {
@@ -361,9 +354,8 @@ export function getProperty(source: object, key: string): unknown {
 
 /**
  * 从交替的键值对数组创建 Map
- * 参考 hsweb CollectionUtils.pairingArrayMap(A... array)
  *
- * 奇数长度时最后一个元素被忽略（与 Java 行为一致，Math.floor 截断）。
+ * 奇数长度时最后一个元素被忽略（Math.floor 截断）。
  *
  * 例: pairingArrayMap("a", 1, "b", 2) => Map { "a" => 1, "b" => 2 }
  */
@@ -378,10 +370,9 @@ export function pairingArrayMap<A>(...array: A[]): Map<A, A> {
 
 /**
  * 从交替的键值对数组创建自定义容器
- * 参考 hsweb CollectionUtils.pairingArray(A[] array, Supplier<T>, Consumer3<T, A, A>)
  *
  * 这是 pairingArrayMap 的通用版本，允许自定义容器和映射逻辑。
- * 奇数长度时最后一个元素被忽略（与 Java 行为一致）。
+ * 奇数长度时最后一个元素被忽略。
  *
  * @param array - 交替的键值对数组
  * @param supplier - 容器工厂函数

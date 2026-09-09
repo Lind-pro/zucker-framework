@@ -7,8 +7,8 @@
  *   - 接收下行消息，编码后通过 DeviceSession 发送给设备
  */
 import { Injectable, Logger } from '@nestjs/common';
-import type { ThingManager, ThingsDataService, UpstreamMessage } from '@zucker/things';
-import { ThingState } from '@zucker/things';
+import type { ThingManager, ThingsDataService, UpstreamMessage } from '@zucker-framework/things';
+import { ThingState } from '@zucker-framework/things';
 import type { DeviceSession } from './device-session';
 import { SessionState } from './device-session';
 import type { ProtocolSupport, DecodeContext } from './codec';

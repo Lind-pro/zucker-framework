@@ -8,7 +8,7 @@ import {
 } from '@ant-design/pro-components';
 import { Button, Form, Input, Space } from 'antd';
 import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
-import type { FieldDefinition } from '@zucker/fe-form';
+import type { FieldDefinition } from '@zucker-framework/fe-form';
 
 const FIELD_TYPE_OPTIONS = [
   { label: '文本 (STRING)', value: 'string' },

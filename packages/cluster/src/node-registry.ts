@@ -3,7 +3,6 @@ import type { RedisLike } from './cluster-manager';
 
 /**
  * 集群节点注册表 — 节点发现 + 心跳检测。
- * 对标 hsweb ClusterManager 的节点管理能力。
  *
  * 每个节点启动时注册自己，定期发送心跳。
  * 其他节点可以通过 getAliveNodes() 发现集群成员。

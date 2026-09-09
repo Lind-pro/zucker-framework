@@ -23,7 +23,7 @@ import type { DataAccessHandler, AuthorizingContext } from '../data-access/data-
 import { DATA_ACCESS_HANDLERS } from '../data-access/data-access-handler';
 import { mergeResults, allowResult } from '../data-access/data-access-result';
 import type { DataAccessResult } from '../data-access/data-access-result';
-import { DATABASE_ADAPTER } from '@zucker/crud';
+import { DATABASE_ADAPTER } from '@zucker-framework/crud';
 export { DATABASE_ADAPTER };
 
 /** Key to store data access result on the request for downstream use */

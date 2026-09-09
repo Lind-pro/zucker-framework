@@ -1,4 +1,4 @@
-import { type Term } from '@zucker/core';
+import { type Term } from '@zucker-framework/core';
 
 /**
  * 将 WHERE 表达式解析为 Term[]

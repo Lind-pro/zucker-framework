@@ -24,10 +24,10 @@ import {
   UseGuards,
   Logger,
 } from '@nestjs/common';
-import { NotFoundException } from '@zucker/core';
-import { JwtAuthGuard, PermissionsGuard, Permissions, PermissionService, PermissionSyncService } from '@zucker/auth';
-import { DATABASE_ADAPTER } from '@zucker/crud';
-import type { DatabaseAdapter } from '@zucker/core';
+import { NotFoundException } from '@zucker-framework/core';
+import { JwtAuthGuard, PermissionsGuard, Permissions, PermissionService, PermissionSyncService } from '@zucker-framework/auth';
+import { DATABASE_ADAPTER } from '@zucker-framework/crud';
+import type { DatabaseAdapter } from '@zucker-framework/core';
 
 /** Flat DB record for a permission (not the interface with runtime methods). */
 interface PermissionRecord {
@@ -211,7 +211,6 @@ export class PermissionsController {
 
   /**
    * POST /permissions/_sync — 扫描代码中的 @Permissions/@Resource 装饰器，同步到数据库
-   * 对标 hsweb PermissionSyncController
    */
   @Post('_sync')
   @HttpCode(HttpStatus.OK)

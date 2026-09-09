@@ -6,8 +6,6 @@ import type { EnumDictItem } from './enum-dict';
  *
  * Encodes multi-select values as bitmask integers for efficient storage and querying.
  * Each dictionary item corresponds to a bit; the bit index is determined by item order (ordinal).
- *
- * Reference: hsweb EnumDict bitmask operations (toMask, getByMask, getMask, in, maskIn, maskInAny)
  */
 export class BitMaskDictionary {
   /**
@@ -70,8 +68,6 @@ export class BitMaskDictionary {
   /**
    * Compute a bitmask from EnumDictItems using their ordinal values.
    *
-   * Reference: hsweb EnumDict.toMask()
-   *
    * @param items - Items to include in the mask
    * @returns Bitmask integer
    */
@@ -89,8 +85,6 @@ export class BitMaskDictionary {
   /**
    * Convert a bitmask to a number (identity — for API symmetry).
    *
-   * Reference: hsweb EnumDict.toMaskNumber — returns the long mask value
-   *
    * @param items - Items to include
    * @returns Bitmask number
    */
@@ -100,8 +94,6 @@ export class BitMaskDictionary {
 
   /**
    * Get all EnumDictItems that match a bitmask.
-   *
-   * Reference: hsweb EnumDict.getByMask()
    *
    * @param allItems - All available items
    * @param mask - Bitmask to test against
@@ -116,8 +108,6 @@ export class BitMaskDictionary {
 
   /**
    * Check if ALL of the target items are present in the mask.
-   *
-   * Reference: hsweb EnumDict.maskIn()
    */
   static maskIn(mask: number, targets: EnumDictItem[]): boolean {
     const targetMask = BitMaskDictionary.toMask(targets);
@@ -126,8 +116,6 @@ export class BitMaskDictionary {
 
   /**
    * Check if ANY of the target items are present in the mask.
-   *
-   * Reference: hsweb EnumDict.maskInAny()
    */
   static maskInAny(mask: number, targets: EnumDictItem[]): boolean {
     const targetMask = BitMaskDictionary.toMask(targets);
@@ -136,8 +124,6 @@ export class BitMaskDictionary {
 
   /**
    * Check if a specific EnumDictItem is in the mask.
-   *
-   * Reference: hsweb EnumDict.in(long mask)
    */
   static itemIn(mask: number, item: EnumDictItem): boolean {
     return (mask & (1 << item.ordinal)) !== 0;

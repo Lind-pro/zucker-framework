@@ -10,8 +10,8 @@ import {
 import { DiscoveryModule, Reflector } from '@nestjs/core';
 import { PassportModule } from '@nestjs/passport';
 import { JwtModule, JwtService } from '@nestjs/jwt';
-import type { DatabaseAdapter } from '@zucker/core';
-import type { ICache } from '@zucker/cache';
+import type { DatabaseAdapter } from '@zucker-framework/core';
+import type { ICache } from '@zucker-framework/cache';
 import {
   DIMENSION_PROVIDERS,
   type DimensionProvider,

@@ -6,13 +6,13 @@
 
 ## 1. 请求上下文 — `RequestContext`
 
-**包**: `@zucker/common`
+**包**: `@zucker-framework/common`
 
 在整个请求链路中共享上下文（用户、租户、correlationId），无需逐层传参。
 
 ```ts
 // app.module.ts — 注册中间件
-import { RequestContextMiddleware } from '@zucker/common';
+import { RequestContextMiddleware } from '@zucker-framework/common';
 
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
@@ -21,7 +21,7 @@ export class AppModule implements NestModule {
 }
 
 // 任意 Service 中使用
-import { RequestContext } from '@zucker/common';
+import { RequestContext } from '@zucker-framework/common';
 
 @Injectable()
 export class OrderService {
@@ -38,12 +38,12 @@ export class OrderService {
 
 ## 2. 统一事件总线 — `UnifiedEventBus`
 
-**包**: `@zucker/event`
+**包**: `@zucker-framework/event`
 
 替代分散的 EventEmitter2 + TopicEventBus，一个接口搞定本地 + 集群事件。
 
 ```ts
-import { UnifiedEventBus } from '@zucker/event';
+import { UnifiedEventBus } from '@zucker-framework/event';
 
 @Injectable()
 export class OrderService {
@@ -74,12 +74,12 @@ export class NotifyService implements OnModuleInit {
 
 ## 3. 操作 Hook — `OperationHookRegistry`
 
-**包**: `@zucker/event`
+**包**: `@zucker-framework/event`
 
 在任意业务操作前后注入逻辑（审批、校验、日志），不限于 CRUD。
 
 ```ts
-import { OperationHookRegistry } from '@zucker/event';
+import { OperationHookRegistry } from '@zucker-framework/event';
 
 const hooks = new OperationHookRegistry();
 
@@ -113,12 +113,12 @@ async function uploadFile(file) {
 
 ## 4. 错误分类器 — `classifyError` / `withRetry`
 
-**包**: `@zucker/core`
+**包**: `@zucker-framework/core`
 
 自动识别 Prisma 错误码、超时、连接问题，决定是否可重试。
 
 ```ts
-import { classifyError, withRetry } from '@zucker/core';
+import { classifyError, withRetry } from '@zucker-framework/core';
 
 // 方式一：手动分类
 try {
@@ -142,12 +142,12 @@ const user = await withRetry(
 
 ## 5. 断路器 — `CircuitBreaker`
 
-**包**: `@zucker/core`
+**包**: `@zucker-framework/core`
 
 保护外部服务调用，连续失败后自动熔断。
 
 ```ts
-import { CircuitBreaker, CircuitOpenError } from '@zucker/core';
+import { CircuitBreaker, CircuitOpenError } from '@zucker-framework/core';
 
 const emailBreaker = new CircuitBreaker({
   name: 'email-service',
@@ -174,13 +174,13 @@ async function sendEmail(msg) {
 
 ## 6. 类型安全配置 — `defineConfig` / `mergeConfigs`
 
-**包**: `@zucker/core`
+**包**: `@zucker-framework/core`
 
 用 Zod 定义配置 schema，同时获得运行时验证和 TypeScript 类型推断。
 
 ```ts
 import { z } from 'zod/v4';
-import { defineConfig, mergeConfigs, loadFromEnv, safeParseConfig } from '@zucker/core';
+import { defineConfig, mergeConfigs, loadFromEnv, safeParseConfig } from '@zucker-framework/core';
 
 const AppConfig = defineConfig({
   port: z.number().default(3000),
@@ -212,12 +212,12 @@ const config = result.data; // 完全类型安全
 
 ## 7. Feature Flag — `FeatureFlagService`
 
-**包**: `@zucker/config`
+**包**: `@zucker-framework/config`
 
 渐进发布功能，支持环境变量覆写、百分比灰度、白名单/黑名单。
 
 ```ts
-import { FeatureFlagService } from '@zucker/config';
+import { FeatureFlagService } from '@zucker-framework/config';
 
 const flags = new FeatureFlagService();
 
@@ -253,12 +253,12 @@ flags.setUserOverride('new_dashboard', 'tester-1', true);
 
 ## 8. 缓存标签失效 — `TaggedCache`
 
-**包**: `@zucker/cache`
+**包**: `@zucker-framework/cache`
 
 按业务维度批量清除缓存，不再需要知道具体的缓存 key。
 
 ```ts
-import { TaggedCache, MemoryCache } from '@zucker/cache';
+import { TaggedCache, MemoryCache } from '@zucker-framework/cache';
 
 const cache = new TaggedCache(new MemoryCache());
 
@@ -279,12 +279,12 @@ await cache.invalidateByTag('profile');
 
 ## 9. 审计日志 — `AuditLogger`
 
-**包**: `@zucker/logging`
+**包**: `@zucker-framework/logging`
 
 记录敏感操作的不可变审计追踪。
 
 ```ts
-import { AuditLogger } from '@zucker/logging';
+import { AuditLogger } from '@zucker-framework/logging';
 
 const audit = new AuditLogger();
 
@@ -310,12 +310,12 @@ const logs = await audit.query({
 
 ## 10. PII 过滤器 — `PiiFilter`
 
-**包**: `@zucker/logging`
+**包**: `@zucker-framework/logging`
 
 自动识别和脱敏日志中的个人信息。
 
 ```ts
-import { PiiFilter } from '@zucker/logging';
+import { PiiFilter } from '@zucker-framework/logging';
 
 const filter = new PiiFilter();
 
@@ -336,12 +336,12 @@ filter.sanitizeObject({
 
 ## 11. 优雅停机 — `GracefulShutdownManager`
 
-**包**: `@zucker/common`
+**包**: `@zucker-framework/common`
 
 按阶段顺序关闭资源，避免数据丢失。
 
 ```ts
-import { GracefulShutdownManager } from '@zucker/common';
+import { GracefulShutdownManager } from '@zucker-framework/common';
 
 @Injectable()
 export class QueueService {
@@ -363,10 +363,10 @@ export class DbService {
 
 ## 12. Webhook 可靠投递 — `WebhookRegistry`
 
-**包**: `@zucker/notification`
+**包**: `@zucker-framework/notification`
 
 ```ts
-import { WebhookRegistry } from '@zucker/notification';
+import { WebhookRegistry } from '@zucker-framework/notification';
 
 const registry = new WebhookRegistry();
 
@@ -390,10 +390,10 @@ const isValid = WebhookRegistry.verify(body, signature, secret);
 
 ## 13. 后台任务 — `TaskLifecycleManager`
 
-**包**: `@zucker/queue`
+**包**: `@zucker-framework/queue`
 
 ```ts
-import { TaskLifecycleManager } from '@zucker/queue';
+import { TaskLifecycleManager } from '@zucker-framework/queue';
 
 const tasks = new TaskLifecycleManager();
 
@@ -426,12 +426,12 @@ const dlq = tasks.getDeadLetterQueue();
 
 ## 14. 流式管道 — `mapStream` / `batchStream` / ...
 
-**包**: `@zucker/core`
+**包**: `@zucker-framework/core`
 
 可组合的 AsyncGenerator 工具，用于大数据处理。
 
 ```ts
-import { mapStream, filterStream, batchStream, collectStream } from '@zucker/core';
+import { mapStream, filterStream, batchStream, collectStream } from '@zucker-framework/core';
 
 // 数据源（假设是分页查询）
 async function* fetchUsers() {
@@ -462,12 +462,12 @@ for await (const batch of pipeline) {
 
 ## 15. VCR 测试固件 — `withVcrFixture`
 
-**包**: `@zucker/core`
+**包**: `@zucker-framework/core`
 
 录制外部 API 响应，后续测试直接回放，无需网络。
 
 ```ts
-import { withVcrFixture } from '@zucker/core';
+import { withVcrFixture } from '@zucker-framework/core';
 
 it('should fetch user profile', async () => {
   const profile = await withVcrFixture(
@@ -486,12 +486,12 @@ it('should fetch user profile', async () => {
 
 ## 16. Mailbox 消息路由 — `Mailbox`
 
-**包**: `@zucker/core`
+**包**: `@zucker-framework/core`
 
 Actor 模式的消息邮箱，用于异步协调。
 
 ```ts
-import { Mailbox } from '@zucker/core';
+import { Mailbox } from '@zucker-framework/core';
 
 const approvals = new Mailbox<{ orderId: string; approved: boolean }>();
 
@@ -517,12 +517,12 @@ function onApprovalResponse(orderId: string, approved: boolean) {
 
 ## 17. 数据迁移 — `MigrationRunner`
 
-**包**: `@zucker/core`
+**包**: `@zucker-framework/core`
 
 幂等的业务数据迁移框架。
 
 ```ts
-import { MigrationRunner, type MigrationDefinition } from '@zucker/core';
+import { MigrationRunner, type MigrationDefinition } from '@zucker-framework/core';
 
 const migrations: MigrationDefinition[] = [
   {
@@ -553,10 +553,10 @@ const results = await runner.run(migrations);
 
 ## 18. 配置热重载 — `ConfigFileWatcher`
 
-**包**: `@zucker/config`
+**包**: `@zucker-framework/config`
 
 ```ts
-import { ConfigFileWatcher } from '@zucker/config';
+import { ConfigFileWatcher } from '@zucker-framework/config';
 
 const watcher = new ConfigFileWatcher({ stabilityMs: 1000 });
 
@@ -573,13 +573,13 @@ watcher.close();
 
 ## 19. CRUD 自动生成 — `CrudControllerFactory`
 
-**包**: `@zucker/crud`
+**包**: `@zucker-framework/crud`
 
 消除重复的 Controller 代码。
 
 ```ts
 import { Controller, Inject } from '@nestjs/common';
-import { CrudControllerFactory } from '@zucker/crud';
+import { CrudControllerFactory } from '@zucker-framework/crud';
 import { UserService } from './user.service';
 
 @Controller('admin/users')

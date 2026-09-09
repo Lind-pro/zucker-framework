@@ -1,11 +1,11 @@
 # Codex 订阅 Provider
 
-`@zucker/ai-access` 提供两条 Codex 订阅驱动：
+`@zucker-framework/ai-access` 提供两条 Codex 订阅驱动：
 
 - `OpenAICodexCliSubscriptionProvider`：默认推荐。通过 OpenAI 官方 `codex exec` 非交互模式使用独立 `CODEX_HOME` 中的 ChatGPT 登录，支持临时会话、JSONL、JSON Schema、取消和超时。
 - `OpenAICodexSubscriptionProvider`：兼容实验实现。它参考 OpenClaw/Hermes 直连未公开的 ChatGPT Codex Responses 端点，不属于稳定官方 API，不作为生产默认通道。
 
-两者只适用于可信、私有的服务端任务。它们不是 Platform API Key 的通用替代品，也不得暴露给不可信或公开用户。`@zucker/ai` 继续提供兼容重导出。
+两者只适用于可信、私有的服务端任务。它们不是 Platform API Key 的通用替代品，也不得暴露给不可信或公开用户。`@zucker-framework/ai` 继续提供兼容重导出。
 
 ## 研究依据
 
@@ -30,7 +30,7 @@ CODEX_HOME=/secure/codex-service codex login status
 认证目录包含访问令牌，必须像密码一样由专用系统用户和私密卷保护。运行时只传入明确白名单环境变量：
 
 ```typescript
-import { OpenAICodexCliSubscriptionProvider } from '@zucker/ai-access/openai-codex';
+import { OpenAICodexCliSubscriptionProvider } from '@zucker-framework/ai-access/openai-codex';
 
 const provider = new OpenAICodexCliSubscriptionProvider({
   executable: '/opt/codex/bin/codex',
@@ -63,11 +63,11 @@ const result = await client.complete({
 ## 兼容实验驱动
 
 ```typescript
-import { PostgresCredentialProfileStore } from '@zucker/ai-access';
+import { PostgresCredentialProfileStore } from '@zucker-framework/ai-access';
 import {
   CodexSubscriptionAuthClient,
   OpenAICodexSubscriptionProvider,
-} from '@zucker/ai-access/openai-codex';
+} from '@zucker-framework/ai-access/openai-codex';
 import { Pool } from 'pg';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });

@@ -1,12 +1,11 @@
 /**
  * Context — 类型安全上下文容器
- * 参考: hsweb-framework Context.java, ContextKey.java, MapContext.java, ContextUtils.java
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 
 /**
  * 类型安全的上下文键
- * 对比 hsweb ContextKey: 增加便捷工厂方法 string/integer/bool
+ * 提供便捷工厂方法 string/number/bool
  */
 export class ContextKey<T> {
   constructor(
@@ -18,17 +17,17 @@ export class ContextKey<T> {
     return new ContextKey<T>(name, defaultValue);
   }
 
-  /** 便捷方法 — 字符串键（参考 hsweb ContextKey.string） */
+  /** 便捷方法 — 字符串键 */
   static string(name: string, defaultValue?: string): ContextKey<string> {
     return new ContextKey<string>(name, defaultValue);
   }
 
-  /** 便捷方法 — 数字键（参考 hsweb ContextKey.integer） */
+  /** 便捷方法 — 数字键 */
   static number(name: string, defaultValue?: number): ContextKey<number> {
     return new ContextKey<number>(name, defaultValue);
   }
 
-  /** 便捷方法 — 布尔键（参考 hsweb ContextKey.bool） */
+  /** 便捷方法 — 布尔键 */
   static bool(name: string, defaultValue?: boolean): ContextKey<boolean> {
     return new ContextKey<boolean>(name, defaultValue);
   }
@@ -38,7 +37,6 @@ export interface Context {
   get<T>(key: ContextKey<T>): T | undefined;
   /**
    * 获取值，不存在则使用 defaultValue 创建并存储
-   * 参考 hsweb: T getOrDefault(ContextKey<T> key, Supplier<? extends T> defaultValue)
    */
   getOrDefault<T>(key: ContextKey<T>, defaultValue: () => T): T;
   set<T>(key: ContextKey<T>, value: T): void;
@@ -50,7 +48,7 @@ export interface Context {
 
 /**
  * 基于 Map 的 Context 实现
- * 对比 hsweb MapContext: 增加 getOrDefault 支持（computeIfAbsent 语义）
+ * getOrDefault 在键缺失时创建并存储默认值
  */
 export class MapContext implements Context {
   private readonly store = new Map<string, unknown>();
@@ -98,10 +96,6 @@ export class MapContext implements Context {
 /**
  * 基于 AsyncLocalStorage 的全局上下文持有器
  * 用于在异步调用链中共享上下文
- *
- * 对比 hsweb ContextUtils:
- * - hsweb 使用 ThreadLocal<Context> 和 Reactor Context
- * - zucker 使用 AsyncLocalStorage（Node.js 对应方案）
  */
 export class ContextHolder {
   private static readonly storage = new AsyncLocalStorage<Context>();
@@ -130,7 +124,6 @@ export class ContextHolder {
 
   /**
    * 从当前上下文获取值的快捷方法
-   * 参考 hsweb ContextUtils.currentContext().get(key)
    */
   static get<T>(key: ContextKey<T>): T | undefined {
     return this.current()?.get(key);

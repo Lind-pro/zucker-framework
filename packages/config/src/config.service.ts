@@ -1,5 +1,5 @@
 import { Injectable, Inject, Logger, Optional } from '@nestjs/common';
-import { type DatabaseAdapter, ValidationException } from '@zucker/core';
+import { type DatabaseAdapter, ValidationException } from '@zucker-framework/core';
 import { EventEmitter2 } from 'eventemitter2';
 import { ConfigScopeManager } from './config-scope-manager';
 
@@ -10,7 +10,7 @@ interface ConfigRecord {
   value: unknown;
 }
 
-import { DATABASE_ADAPTER } from '@zucker/crud';
+import { DATABASE_ADAPTER } from '@zucker-framework/crud';
 export { DATABASE_ADAPTER };
 export const CONFIG_CHANGED_EVENT = 'zucker.config-changed';
 
@@ -42,7 +42,7 @@ export interface ConfigEncryptor {
   decrypt(value: string): string | Promise<string>;
 }
 
-/** Minimal TopicEventBus interface to avoid hard dependency on @zucker/event */
+/** Minimal TopicEventBus interface to avoid hard dependency on @zucker-framework/event */
 interface TopicEventBusLike {
   publish(topic: string, payload: unknown): Promise<void>;
 }
@@ -354,7 +354,6 @@ export class ConfigService {
 
   /**
    * 监听指定 scope.key 的配置变更，每次变更时执行回调。
-   * 对标 hsweb ConfigManager.watch(scope, key, callback)
    *
    * @param scope 配置域
    * @param key 配置键（可选，不传则监听整个 scope）
@@ -398,7 +397,7 @@ export class ConfigService {
 
   /**
    * 记录配置变更历史（自动版本号递增）
-   * 对标 hsweb ConfigManager 版本控制
+   * 配置版本控制
    */
   private async recordHistory(
     scope: string,

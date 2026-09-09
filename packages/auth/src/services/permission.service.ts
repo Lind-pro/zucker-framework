@@ -1,5 +1,5 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
-import type { DatabaseAdapter } from '@zucker/core';
+import type { DatabaseAdapter } from '@zucker-framework/core';
 import type { RoleHierarchyService } from './role-hierarchy.service';
 
 /** TTL-bounded cache for user permissions to avoid redundant DB queries within a short window */
@@ -225,7 +225,7 @@ export class PermissionService {
   /**
    * 检查用户是否拥有指定维度（角色/部门等）
    *
-   * 参考 hsweb @Dimension / @RequiresRoles 注解的语义。
+   * 支持维度条件和角色条件校验。
    *
    * @param userId 用户 ID
    * @param dimensionType 维度类型，如 'role' 或 'department'
@@ -305,7 +305,6 @@ export class PermissionService {
 
   /**
    * 检查用户是否拥有某资源的全部指定动作。
-   * 对齐 hsweb Authentication.hasPermission(resourceId, actions...)
    */
   async hasResourceActions(
     userId: string,

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Form, Input } from 'antd';
-import type { Rule } from 'antd/es/form';
+import type { FormRule as Rule } from 'antd';
 import type { FieldDefinition } from '../types';
 import { toAntdRules } from '../validators';
 

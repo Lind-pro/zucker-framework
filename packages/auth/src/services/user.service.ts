@@ -1,5 +1,5 @@
 import { Injectable, Inject, Logger, Optional } from '@nestjs/common';
-import { type DatabaseAdapter, ValidationException, BusinessException, NotFoundException } from '@zucker/core';
+import { type DatabaseAdapter, ValidationException, BusinessException, NotFoundException } from '@zucker-framework/core';
 import type { PasswordEncoder } from '../password/password-encoder.interface';
 import { PasswordValidator } from '../password/password-validator';
 import { UsernameValidator } from '../password/username-validator';
@@ -14,7 +14,7 @@ import {
 } from '../events/auth-events';
 import type { UserState, FieldChange } from '../events/auth-events';
 
-/** Minimal TopicEventBus interface to avoid hard dependency on @zucker/event */
+/** Minimal TopicEventBus interface to avoid hard dependency on @zucker-framework/event */
 interface TopicEventBusLike {
   publish(topic: string, payload: unknown): Promise<void>;
 }
@@ -35,14 +35,14 @@ export interface UserEntity {
   [key: string]: unknown;
 }
 
-import { DATABASE_ADAPTER } from '@zucker/crud';
+import { DATABASE_ADAPTER } from '@zucker-framework/crud';
 const PASSWORD_ENCODER = Symbol('PASSWORD_ENCODER');
 const TOPIC_EVENT_BUS = 'TOPIC_EVENT_BUS';
 
 export { PASSWORD_ENCODER };
 
 /**
- * UserService -- corresponds to hsweb DefaultReactiveUserService.
+ * UserService
  *
  * Provides complete user lifecycle management:
  * - CRUD operations with duplicate-username protection
@@ -51,8 +51,6 @@ export { PASSWORD_ENCODER };
  * - Status management (enable/disable)
  * - Event publishing for all user mutations
  * - Authorization cache invalidation on user changes
- *
- * Reference: hsweb-system-authorization DefaultReactiveUserService
  */
 @Injectable()
 export class UserService {
@@ -88,8 +86,6 @@ export class UserService {
 
   /**
    * Find a user by ID.
-   *
-   * Reference: hsweb DefaultReactiveUserService.findById()
    */
   async findById(id: string): Promise<UserEntity | null> {
     return this.db.model('users').findUnique({ where: { id } }) as Promise<UserEntity | null>;
@@ -97,8 +93,6 @@ export class UserService {
 
   /**
    * Find a user by username.
-   *
-   * Reference: hsweb DefaultReactiveUserService.findByUsername()
    */
   async findByUsername(username: string): Promise<UserEntity | null> {
     if (!username) return null;
@@ -111,8 +105,6 @@ export class UserService {
   /**
    * Find a user by username and verify the plain-text password matches.
    * Returns null if user not found or password does not match.
-   *
-   * Reference: hsweb DefaultReactiveUserService.findByUsernameAndPassword()
    */
   async findByUsernameAndPassword(
     username: string,
@@ -129,8 +121,6 @@ export class UserService {
 
   /**
    * Save a user (insert if no ID or not found, update if exists).
-   *
-   * Reference: hsweb DefaultReactiveUserService.saveUser()
    */
   async saveUser(userEntity: Partial<UserEntity> & { username: string }): Promise<UserEntity> {
     if (!userEntity.id) {
@@ -147,7 +137,6 @@ export class UserService {
   /**
    * Add a new user.
    *
-   * Reference: hsweb DefaultReactiveUserService.doAdd()
    * - Validates username and password
    * - Checks for duplicate username
    * - Generates salt and encodes password
@@ -204,7 +193,6 @@ export class UserService {
   /**
    * Update an existing user.
    *
-   * Reference: hsweb DefaultReactiveUserService.doUpdate()
    * - Re-encodes password if changed
    * - Publishes UserModifiedEvent with passwordChanged flag
    * - Clears authorization cache for the user
@@ -271,7 +259,6 @@ export class UserService {
   /**
    * Change user status (enable/disable).
    *
-   * Reference: hsweb DefaultReactiveUserService.changeState()
    * - Batch update status for multiple user IDs
    * - Publishes UserStateChangedEvent
    */
@@ -313,7 +300,6 @@ export class UserService {
   /**
    * Change user password.
    *
-   * Reference: hsweb DefaultReactiveUserService.changePassword()
    * - Verifies old password before allowing change
    * - Validates new password
    * - Publishes UserModifiedEvent with passwordChanged flag
@@ -375,7 +361,6 @@ export class UserService {
   /**
    * Delete a user.
    *
-   * Reference: hsweb DefaultReactiveUserService.deleteUser()
    * - Publishes UserDeletedEvent
    */
   async deleteUser(userId: string): Promise<boolean> {
@@ -400,7 +385,6 @@ export class UserService {
 
   /**
    * Lock a user account.
-   * Reference: hsweb DefaultReactiveUserService.lockUser()
    */
   async lockUser(userId: string): Promise<void> {
     const user = await this.findById(userId);
@@ -410,7 +394,6 @@ export class UserService {
 
   /**
    * Unlock a user account.
-   * Reference: hsweb DefaultReactiveUserService.unlockUser()
    */
   async unlockUser(userId: string): Promise<void> {
     const user = await this.findById(userId);
@@ -420,8 +403,6 @@ export class UserService {
 
   /**
    * Query users with dynamic filters.
-   *
-   * Reference: hsweb DefaultReactiveUserService.findUser()
    */
   async findUsers(
     where?: Record<string, unknown>,
@@ -433,8 +414,6 @@ export class UserService {
 
   /**
    * Count users matching a filter.
-   *
-   * Reference: hsweb DefaultReactiveUserService.countUser()
    */
   async countUsers(where?: Record<string, unknown>): Promise<number> {
     return this.db.model('users').count({ where: where ?? {} });

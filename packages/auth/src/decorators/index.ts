@@ -64,7 +64,6 @@ export const QueryAction = (name = '查询', description = '查询数据') =>
 
 /**
  * Create action.
- * Align with hsweb Permission.ACTION_ADD.
  */
 export const CreateAction = (name = '新增', description = '新增数据') =>
   Action({ action: 'add', name, description });
@@ -115,7 +114,7 @@ export const SkipDataPermission = () =>
 
 // ============================================================
 // @TwoFactor(options) - 双因素认证装饰器
-// 参考 hsweb @TwoFactor 注解，支持类和方法级别
+// @TwoFactor 装饰器支持类和方法级别
 // ============================================================
 
 export interface TwoFactorOptions {
@@ -165,7 +164,7 @@ export const TwoFactor = (
 
 // ============================================================
 // @Authorize(options) - 组合权限装饰器
-// 参考 hsweb @Authorize 注解，支持 resources + dimension + ignore
+// @Authorize 支持 resources + dimension + ignore
 // ============================================================
 
 export interface AuthorizeOptions {
@@ -173,9 +172,9 @@ export interface AuthorizeOptions {
   resource?: ResourceOptions;
   /** 动作定义 — 用于资源-动作模型 */
   action?: ActionOptions;
-  /** hsweb 风格的多资源定义 */
+  /** 多资源定义 */
   resources?: AuthorizeResourceOptions[];
-  /** hsweb 风格的维度定义 */
+  /** 维度定义 */
   dimension?: DimensionOptions[];
   /** 字符串权限列表 — 简单模式 */
   permissions?: string[];
@@ -196,7 +195,7 @@ export interface AuthorizeOptions {
 }
 
 /**
- * @Authorize 组合装饰器 — 参考 hsweb @Authorize
+ * @Authorize 组合装饰器
  *
  * 将 @Resource, @Action, @Permissions, @DataPermission, @Public
  * 组合为单个装饰器，简化常用权限声明。
@@ -246,7 +245,7 @@ export function Authorize(options: AuthorizeOptions): ClassDecorator & MethodDec
 
 // ============================================================
 // @RequiresRoles(...roles) - 角色维度检查
-// 参考 hsweb @RequiresRoles / @Dimension(type="role")
+// @RequiresRoles 使用 role 维度校验角色
 // ============================================================
 
 export interface DimensionOptions {
@@ -256,7 +255,7 @@ export interface DimensionOptions {
 }
 
 /**
- * @DimensionCheck 装饰器 — 参考 hsweb @Dimension
+ * @DimensionCheck 装饰器
  *
  * 通用维度权限检查，支持角色、部门等维度类型。
  */
@@ -264,7 +263,7 @@ export const DimensionCheck = (options: DimensionOptions): ClassDecorator & Meth
   SetMetadata(DIMENSION_KEY, options);
 
 /**
- * @RequiresRoles 装饰器 — 参考 hsweb @RequiresRoles
+ * @RequiresRoles 装饰器
  *
  * 要求用户拥有指定角色之一（OR 逻辑）。
  */

@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type { DatabaseAdapter } from '@zucker/core';
+import type { DatabaseAdapter } from '@zucker-framework/core';
 import type { DimensionProvider, DimensionType, Dimension } from '../interfaces';
 
 /** Internal record shape for dimensions table */

@@ -4,7 +4,7 @@
 
 ---
 
-## @zucker/core
+## @zucker-framework/core
 
 基础类型、实体基类、ID 生成、异常层级、工具函数。
 
@@ -99,7 +99,7 @@ const UpdateGroup = 'update';
 
 ---
 
-## @zucker/common
+## @zucker-framework/common
 
 NestJS 通用中间件、拦截器、过滤器、管道。
 
@@ -114,7 +114,7 @@ class ZuckerCommonModule      // 模块（自动注册以上组件）
 
 ---
 
-## @zucker/event
+## @zucker-framework/event
 
 实体生命周期事件 + TopicEventBus。
 
@@ -176,7 +176,7 @@ const TOPIC_EVENT_BUS: string;  // DI token
 
 ---
 
-## @zucker/crud
+## @zucker-framework/crud
 
 CRUD 基类、动态查询、操作符引擎。
 
@@ -298,7 +298,7 @@ const DATABASE_ADAPTER: string; // DI token
 
 ---
 
-## @zucker/auth
+## @zucker-framework/auth
 
 认证授权：JWT、权限检查、数据权限、维度权限。
 
@@ -427,7 +427,7 @@ interface ZuckerAuthModuleOptions {
 
 ---
 
-## @zucker/logging
+## @zucker-framework/logging
 
 访问日志、结构化日志、PII 脱敏与业务语义审计事件。
 
@@ -496,7 +496,7 @@ class ZuckerLoggingModule { static forRoot(): DynamicModule; }
 
 ---
 
-## @zucker/config
+## @zucker-framework/config
 
 动态配置管理（DB + 缓存 + 变更事件）。
 
@@ -539,7 +539,7 @@ class ZuckerConfigModule {
 
 ---
 
-## @zucker/cache
+## @zucker-framework/cache
 
 多级缓存（内存 / Redis / 混合）。
 
@@ -562,7 +562,7 @@ class ZuckerCacheModule { static forRoot(options: CacheModuleOptions): DynamicMo
 
 ---
 
-## @zucker/notification
+## @zucker-framework/notification
 
 多通道通知。
 
@@ -588,7 +588,7 @@ class ZuckerNotificationModule { static forRoot(options?: NotificationModuleOpti
 
 ---
 
-## @zucker/ai
+## @zucker-framework/ai
 
 AI 多供应商管理 + 调用包装。
 
@@ -682,7 +682,7 @@ const provider = new OpenAICodexCliSubscriptionProvider({
 
 ---
 
-## @zucker/provider
+## @zucker-framework/provider
 
 通用 Provider 注册中心 + 策略管理。
 
@@ -719,7 +719,7 @@ class ZuckerProviderModule;
 
 ## 其他包速览
 
-### @zucker/dictionary
+### @zucker-framework/dictionary
 
 ```typescript
 class DictionaryService;          // 字典 CRUD
@@ -727,7 +727,7 @@ class DictionaryItemService;      // 字典项 CRUD（树形）
 const DictField: (options: DictFieldOptions) => PropertyDecorator;  // 字段装饰器
 ```
 
-### @zucker/rate-limiter
+### @zucker-framework/rate-limiter
 
 ```typescript
 interface LimiterConfig { points: number; duration: number; blockDuration?: number; }
@@ -747,7 +747,7 @@ class ZuckerRateLimiterModule {
 `globalGuard: false` 可用于同步或异步注册，以便产品在应用组合根显式控制 Guard 顺序。
 `keyHashSecret` 会在限流 key 写入内存或 Redis 前进行 HMAC-SHA256 派生。
 
-### @zucker/storage
+### @zucker-framework/storage
 
 ```typescript
 interface FileManager {
@@ -763,7 +763,7 @@ class LocalFileStorage implements FileManager;
 class S3Storage implements FileManager;
 ```
 
-### @zucker/credit
+### @zucker-framework/credit
 
 ```typescript
 enum CreditTransactionType {
@@ -781,7 +781,7 @@ class CreditService {
 }
 ```
 
-### @zucker/reference
+### @zucker-framework/reference
 
 ```typescript
 class DataReferenceManager;
@@ -789,7 +789,7 @@ const PreventDeleteIfReferenced: () => MethodDecorator;
 class ReferenceGuard;
 ```
 
-### @zucker/script
+### @zucker-framework/script
 
 ```typescript
 class JavaScriptScriptFactory;         // 编译 + 执行 JS 脚本
@@ -797,7 +797,7 @@ function createSandbox(options?: SandboxOptions): Sandbox;  // 安全沙箱
 class ExposedScriptRegistry;           // 注册暴露给脚本的方法
 ```
 
-### @zucker/rule-engine
+### @zucker-framework/rule-engine
 
 ```typescript
 enum RuleConditionType { TERMS, EXPRESSION, SCRIPT }
@@ -814,7 +814,7 @@ class EventTrigger;         // 事件触发器
 class TimerTrigger;         // 定时触发器
 ```
 
-### @zucker/monitoring
+### @zucker-framework/monitoring
 
 ```typescript
 class ErrorTracker;               // 错误追踪（分类 + 聚合）
@@ -825,7 +825,7 @@ function getProcessUptime(startedAtMs: number, nowMs?: number): ProcessUptimeSna
 enum HealthStatus { UP, DOWN, DEGRADED }
 ```
 
-### @zucker/cluster
+### @zucker-framework/cluster
 
 ```typescript
 class RedisClusterManager;     // Redis 节点注册 + 心跳

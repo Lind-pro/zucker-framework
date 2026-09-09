@@ -3,7 +3,7 @@ import {
   TransactionAwareDatabaseAdapter,
   type DatabaseAdapter,
   type ModelOperations,
-} from '@zucker/core';
+} from '@zucker-framework/core';
 
 /**
  * InMemoryAdapter — development / testing database adapter.

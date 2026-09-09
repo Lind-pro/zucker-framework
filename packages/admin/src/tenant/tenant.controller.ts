@@ -1,7 +1,7 @@
 /**
  * TenantManagementController — admin 后台租户管理接口
  *
- * 注意：@zucker/tenant 是多租户隔离基础设施（context、guard），
+ * 注意：@zucker-framework/tenant 是多租户隔离基础设施（context、guard），
  * 不提供租户记录的 CRUD service。此模块通过 TENANT_STORE token 注入存储层。
  *
  * 端点列表：
@@ -23,8 +23,8 @@ import {
   UseGuards,
   Logger,
 } from '@nestjs/common';
-import { NotFoundException } from '@zucker/core';
-import { JwtAuthGuard, PermissionsGuard, Permissions } from '@zucker/auth';
+import { NotFoundException } from '@zucker-framework/core';
+import { JwtAuthGuard, PermissionsGuard, Permissions } from '@zucker-framework/auth';
 import {
   TENANT_STORE,
   type TenantStoreInterface,

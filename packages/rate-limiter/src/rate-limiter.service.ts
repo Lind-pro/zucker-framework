@@ -12,7 +12,7 @@ import {
   RateLimiterRes,
   IRateLimiterOptions,
 } from 'rate-limiter-flexible';
-import { BusinessException, NotFoundException } from '@zucker/core';
+import { BusinessException, NotFoundException } from '@zucker-framework/core';
 import { createHmac } from 'node:crypto';
 
 type RateLimiterUnion = RateLimiterMemory | RateLimiterRedis;

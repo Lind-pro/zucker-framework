@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'crypto';
 
 /**
- * 认证用户信息（最小化接口，不依赖 @zucker/auth 具体实现）
+ * 认证用户信息（最小化接口，不依赖 @zucker-framework/auth 具体实现）
  */
 export interface ContextUser {
   id: string;

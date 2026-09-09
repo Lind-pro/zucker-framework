@@ -28,14 +28,14 @@ const LOG_LEVEL_PRIORITY: Record<LogLevel, number> = {
 };
 
 /**
- * traceId 解析器 — 允许 @zucker/tracing 注入 getTraceId/getSpanId，
+ * traceId 解析器 — 允许 @zucker-framework/tracing 注入 getTraceId/getSpanId，
  * 避免 logging 包直接依赖 tracing 包
  */
 let traceIdResolver: (() => string | undefined) | undefined;
 let spanIdResolver: (() => string | undefined) | undefined;
 
 /**
- * 注册 traceId 解析器（由 @zucker/tracing 调用）
+ * 注册 traceId 解析器（由 @zucker-framework/tracing 调用）
  */
 export function registerTraceIdResolver(
   getTraceId: () => string | undefined,

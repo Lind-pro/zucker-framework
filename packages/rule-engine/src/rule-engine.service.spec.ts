@@ -7,7 +7,7 @@ import {
 } from './rule-engine.service';
 import type { RuleDefinition } from './rule-engine.service';
 import { RuleInstanceState } from './core/rule-instance-state';
-import type { TopicEventBus, TopicPayload } from '@zucker/event';
+import type { TopicEventBus, TopicPayload } from '@zucker-framework/event';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 

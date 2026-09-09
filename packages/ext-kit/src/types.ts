@@ -33,11 +33,11 @@ export interface ExtTexts {
 }
 
 export interface ExtKitConfig {
-  /** 存储 key 命名空间（保持与既有安装兼容）："siteshots" → siteshots_free_usage 等 */
+  /** 消费项目提供的存储 key 命名空间；已发布产品应保持原值，以兼容既有安装 */
   product: string;
   /** 品牌名：下载文件夹前缀、设备名 */
   brand: string;
-  /** 消息类型前缀："SITESHOTS" → SITESHOTS_START 等 */
+  /** 消费项目提供的消息类型前缀，用于构造 START 等消息类型 */
   messagePrefix: string;
   freeDailyLimit?: number;
   badgeColor: string;
@@ -59,11 +59,11 @@ export interface PopupTexts {
 
 export interface PopupConfig {
   messagePrefix: string;
-  /** URL 队列存储 key（保持与既有安装兼容）："siteshots_url_queue" */
+  /** 消费项目提供的 URL 队列存储 key；已发布产品应保持原值 */
   queueKey: string;
   /** 快速处理当前页的消息类型后缀：CAPTURE_CURRENT / CONVERT_CURRENT */
   quickType: string;
-  /** 快速按钮的元素 id，默认 "captureCurrent"（SitePDF 用 "convertCurrent"） */
+  /** 快速按钮的元素 id，默认 "captureCurrent"，可由消费项目覆盖 */
   quickButtonId?: string;
   texts: PopupTexts;
   collectSettings(): Settings;

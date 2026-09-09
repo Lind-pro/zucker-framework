@@ -201,7 +201,7 @@ export class DefaultTopicEventBus implements TopicEventBus {
         await handler(topicPayload);
       } catch (error) {
         // 订阅者异常不应影响主流程和其他订阅者
-        // 参考 hsweb/jetlinks EventPublisher 的错误隔离策略
+        // 隔离单个事件处理器的错误
         const errorMsg = error instanceof Error ? error.message : String(error);
         this.logger.error(
           `Subscriber error on topic "${topic}": ${errorMsg}`,

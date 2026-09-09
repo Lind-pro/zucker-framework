@@ -4,7 +4,7 @@ import { generateId } from './id-generator';
  * 实体工厂接口
  *
  * 职责：ID 生成、默认值填充、类型转换。
- * 参考 hsweb EntityFactory 模式，允许全局或按实体类型定制创建逻辑。
+ * 允许全局或按实体类型定制实体创建逻辑。
  */
 export interface EntityFactory<T = Record<string, unknown>> {
   /**

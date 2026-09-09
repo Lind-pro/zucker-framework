@@ -12,7 +12,7 @@ import type {
   TimeSeriesQuery,
   AggregationQuery,
   AggregationResult,
-} from '@zucker/timeseries';
+} from '@zucker-framework/timeseries';
 
 /**
  * 属性日志记录

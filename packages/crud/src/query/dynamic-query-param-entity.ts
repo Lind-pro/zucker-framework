@@ -1,10 +1,9 @@
-import { type Term } from '@zucker/core';
+import { type Term } from '@zucker-framework/core';
 import { TermExpressionParser } from '../expression/term-expression-parser';
 import { type DynamicQueryParam } from '../dynamic-query.service';
 
 /**
  * DynamicQueryParam 的增强封装类
- * 对齐 hsweb QueryParamEntity：
  * - 静态工厂方法: of(), newQuery()
  * - 链式操作: noPaging(), doNotSort(), clone(), rePaging(total)
  * - 嵌套查询转换: toNestQuery()
@@ -121,21 +120,18 @@ export class QueryParamEntity implements DynamicQueryParam {
       : undefined;
   }
 
-  // ===================== 静态工厂方法（对齐 hsweb） =====================
+  // ===================== 静态工厂方法 =====================
 
   /**
    * 创建一个空的查询参数实体
-   * 对齐 hsweb QueryParamEntity.of()
    */
   static of(): QueryParamEntity;
   /**
    * 基于已有参数创建查询参数实体
-   * 对齐 hsweb QueryParamEntity.of(Param)
    */
   static of(param: DynamicQueryParam): QueryParamEntity;
   /**
    * 创建带单个 eq 条件的查询参数
-   * 对齐 hsweb QueryParamEntity.of(field, value)
    */
   static of(field: string, value: unknown): QueryParamEntity;
   static of(fieldOrParam?: string | DynamicQueryParam, value?: unknown): QueryParamEntity {
@@ -153,13 +149,12 @@ export class QueryParamEntity implements DynamicQueryParam {
 
   /**
    * 创建新的链式查询构建器
-   * 对齐 hsweb QueryParamEntity.newQuery()
    */
   static newQuery(): QueryParamEntity {
     return new QueryParamEntity();
   }
 
-  // ===================== 链式 DSL 构建（对齐 hsweb Query DSL） =====================
+  // ===================== 链式 DSL 构建 =====================
 
   /**
    * 添加 AND 条件
@@ -186,7 +181,6 @@ export class QueryParamEntity implements DynamicQueryParam {
 
   /**
    * 将已有条件包装到嵌套条件里，并返回自身用于继续添加外层条件。
-   * 对齐 hsweb QueryParamEntity.toNestQuery()
    */
   toNestQuery(): this {
     const currentTerms = this.getTerms().map((term) => this.cloneTerm(term));
@@ -246,7 +240,7 @@ export class QueryParamEntity implements DynamicQueryParam {
 
   /**
    * 根据总数重新计算分页
-   * 对齐 hsweb rePaging(count) 完整语义：
+   * 根据总数重新分页：
    * - 缓存 total 到实例，后续分页查询跳过 count
    * - 如果当前页超过总页数，自动跳转到最后一页
    */
@@ -311,8 +305,7 @@ export class QueryParamEntity implements DynamicQueryParam {
   }
 
   /**
-   * 获取 0 基索引的页码（用于 PagerResult 对齐 hsweb 格式）
-   * 对齐 hsweb QueryParam.getThinkPageIndex()
+   * 获取 0 基索引的页码（用于 PagerResult）
    */
   getThinkPageIndex(): number {
     return Math.max((this.page ?? 1) - 1, 0);

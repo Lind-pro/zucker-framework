@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { type TreeSortSupportEntity, type TreePathStrategy, list2tree, validateTreeEntity, ValidationException } from '@zucker/core';
+import { type TreeSortSupportEntity, type TreePathStrategy, list2tree, validateTreeEntity, ValidationException } from '@zucker-framework/core';
 import { BaseService } from './base.service';
 import { type DynamicQueryParam } from './dynamic-query.service';
 import { type PaginatedResult, type SaveResult } from './pagination';
@@ -14,7 +14,6 @@ export interface TreeServiceOptions {
 /**
  * Abstract service for tree-structured entities with automatic path/level management.
  * Extends BaseService with tree-specific operations: findAsTree, moveNode, rebuildPath, etc.
- * Mirrors hsweb TreeSortEntityService.
  *
  * @template T - The entity type, must extend TreeSortSupportEntity
  */
@@ -25,7 +24,6 @@ export abstract class TreeService<T extends TreeSortSupportEntity> extends BaseS
 
   /**
    * 获取批量操作的缓冲大小
-   * 对齐 hsweb ReactiveTreeSortEntityService.getBufferSize()
    */
   getBufferSize(): number {
     return 200;
@@ -33,7 +31,6 @@ export abstract class TreeService<T extends TreeSortSupportEntity> extends BaseS
 
   /**
    * 设置子节点
-   * 对齐 hsweb ReactiveTreeSortEntityService.setChildren(entity, children)
    */
   setChildren(entity: T, children: T[]): void {
     (entity as TreeSortSupportEntity).children = children;
@@ -41,7 +38,6 @@ export abstract class TreeService<T extends TreeSortSupportEntity> extends BaseS
 
   /**
    * 获取子节点
-   * 对齐 hsweb ReactiveTreeSortEntityService.getChildren(entity)
    */
   getChildren(entity: T): T[] {
     return ((entity as TreeSortSupportEntity).children ?? []) as T[];
@@ -141,7 +137,6 @@ export abstract class TreeService<T extends TreeSortSupportEntity> extends BaseS
 
   /**
    * 查询指定 ID 的实体及其所有后代节点
-   * 对齐 hsweb ReactiveTreeSortEntityService.queryIncludeChildren(Collection<K>)
    * 使用 path 前缀匹配，并自动去重
    */
   async queryIncludeChildren(ids: string[]): Promise<T[]> {
@@ -191,7 +186,6 @@ export abstract class TreeService<T extends TreeSortSupportEntity> extends BaseS
 
   /**
    * 根据查询参数查询数据，并包含所有匹配节点的子节点
-   * 对齐 hsweb ReactiveTreeSortEntityService.queryIncludeChildren(QueryParamEntity)
    * 保留 includes/excludes 字段选择
    */
   async queryIncludeChildrenByQuery(queryParam: DynamicQueryParam): Promise<T[]> {
@@ -304,7 +298,6 @@ export abstract class TreeService<T extends TreeSortSupportEntity> extends BaseS
 
   /**
    * 查询指定 ID 节点的所有父/祖先节点（通过 path 反向匹配）
-   * 对齐 hsweb ReactiveTreeSortEntityService.queryIncludeParent()
    */
   async queryIncludeParent(ids: string[]): Promise<T[]> {
     if (ids.length === 0) return [];
@@ -353,7 +346,7 @@ export abstract class TreeService<T extends TreeSortSupportEntity> extends BaseS
 
   /**
    * 删除节点及其所有后代（通过 path 前缀匹配级联删除）
-   * 对齐 hsweb ReactiveTreeSortEntityService.deleteById() 使用 like$(path) 级联删除
+   * 通过路径前缀匹配级联删除子节点
    */
   override async delete(id: string): Promise<T> {
     const entity = await this.findOne(id);
@@ -377,7 +370,6 @@ export abstract class TreeService<T extends TreeSortSupportEntity> extends BaseS
 
   /**
    * 批量删除节点及其后代
-   * 对齐 hsweb ReactiveTreeSortEntityService.deleteById(Publisher)
    */
   override async deleteBatch(ids: string[], options?: { skipEvents?: boolean }): Promise<number> {
     if (ids.length === 0) return 0;
@@ -409,14 +401,13 @@ export abstract class TreeService<T extends TreeSortSupportEntity> extends BaseS
 
   /**
    * 保存/更新时自动处理树属性
-   * 对齐 hsweb ReactiveTreeSortEntityService.save()
    * - 校验循环依赖
    * - 展开子节点
    * - 自动分配 path, level, sortIndex
    */
   override async save(entities: Partial<T>[]): Promise<SaveResult> {
     // 展开树形数据：如果传入的 entity 带有 children，先展平为列表
-    // 对齐 hsweb TreeSortServiceHelper.prepare() -> expandTree2List()
+    // 将树形输入展开为列表并填充路径
     const flattened = this.expandTreeToList(entities);
 
     let created = 0;
@@ -461,7 +452,6 @@ export abstract class TreeService<T extends TreeSortSupportEntity> extends BaseS
 
   /**
    * 查询并返回树形结构（使用查询参数）
-   * 对齐 hsweb TreeSortEntityService.queryResultToTree()
    */
   async queryResultToTree(queryParam?: DynamicQueryParam): Promise<T[]> {
     let all: T[];
@@ -488,7 +478,6 @@ export abstract class TreeService<T extends TreeSortSupportEntity> extends BaseS
 
   /**
    * 查询符合条件的数据及其所有子节点，组装为树
-   * 对齐 hsweb TreeSortEntityService.queryIncludeChildrenTree()
    */
   async queryIncludeChildrenTree(queryParam: DynamicQueryParam): Promise<T[]> {
     const matched = await this.findAll({ ...queryParam, page: undefined, pageSize: undefined }) as PaginatedResult<T>;
@@ -518,7 +507,6 @@ export abstract class TreeService<T extends TreeSortSupportEntity> extends BaseS
 
   /**
    * 校验循环依赖
-   * 对齐 hsweb TreeSortEntityService.checkCyclicDependency()
    * 防止将节点的父节点设置为自己的子节点
    */
   async checkCyclicDependency(nodeId: string, newParentId: string | null): Promise<void> {
@@ -546,7 +534,6 @@ export abstract class TreeService<T extends TreeSortSupportEntity> extends BaseS
 
   /**
    * 判断节点是否为根节点
-   * 对齐 hsweb TreeSortEntityService.isRootNode()
    */
   isRootNode(entity: T): boolean {
     return !entity.parentId || entity.parentId === '-1';
@@ -635,7 +622,6 @@ export abstract class TreeService<T extends TreeSortSupportEntity> extends BaseS
 
   /**
    * 展开树形输入数据为扁平列表
-   * 对齐 hsweb TreeSupportEntity.expandTree2List()
    * 递归遍历 children 字段，将嵌套树结构展平
    */
   private expandTreeToList(entities: Partial<T>[]): Partial<T>[] {

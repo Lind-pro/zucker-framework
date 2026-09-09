@@ -1,6 +1,5 @@
 /**
  * CreatorEventListener — 创建者自动填充
- * 参考: hsweb-framework CreatorEventListener.java
  *
  * 监听 PREPARE 阶段事件，自动填充审计字段：
  * - CREATE → creatorId, creatorName, createdAt
@@ -14,7 +13,7 @@ import {
   EntityEventType,
   type TopicEventBus,
   TOPIC_EVENT_BUS,
-} from '@zucker/event';
+} from '@zucker-framework/event';
 
 export interface CurrentUserProvider {
   getCurrentUserId(): string | undefined;

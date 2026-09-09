@@ -1,30 +1,46 @@
 {
-  "name": "@zucker/credit",
-  "version": "0.1.0-rc.5",
+  "name": "@zucker-framework/credit",
+  "version": "1.0.0",
   "description": "Credit lifecycle services and PostgreSQL idempotent operation coordination for Zucker applications",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
   "files": [
     "dist",
-    "assets"
+    "assets/credit-runtime.prisma",
+    "assets/credit-operations.postgresql.sql",
+    "LICENSE",
+    "NOTICE",
+    "THIRD_PARTY_NOTICES"
   ],
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts",
     "clean": "rm -rf dist",
-    "lint": "eslint src/"
+    "lint": "eslint src/",
+    "prepack": "node ../../scripts/prepare-package-legal.mjs"
   },
   "peerDependencies": {
     "@nestjs/common": "^12.0.0",
     "@nestjs/core": "^12.0.0",
-    "@zucker/core": "workspace:*"
+    "@zucker-framework/core": "workspace:*"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.8",
-    "@zucker/core": "workspace:*",
-    "@zucker/crud": "workspace:*"
+    "@zucker-framework/core": "workspace:*",
+    "@zucker-framework/crud": "workspace:*"
   },
   "engines": {
     "node": ">=20"
+  },
+  "license": "Apache-2.0",
+  "author": "Lind",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Lind-pro/zucker-framework.git",
+    "directory": "packages/credit"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }

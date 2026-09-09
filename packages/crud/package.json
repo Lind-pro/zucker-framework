@@ -1,6 +1,6 @@
 {
-  "name": "@zucker/crud",
-  "version": "0.0.1",
+  "name": "@zucker-framework/crud",
+  "version": "1.0.0",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -17,35 +17,50 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "LICENSE",
+    "NOTICE",
+    "THIRD_PARTY_NOTICES"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format cjs,esm --dts --external @nestjs/common --external @nestjs/core --external @nestjs/swagger --external @zucker/core --external @zucker/event --external @zucker/cache --external eventemitter2",
+    "build": "tsup src/index.ts --format cjs,esm --dts --external @nestjs/common --external @nestjs/core --external @nestjs/swagger --external @zucker-framework/core --external @zucker-framework/event --external @zucker-framework/cache --external eventemitter2",
     "clean": "rm -rf dist",
-    "lint": "eslint src/"
+    "lint": "eslint src/",
+    "prepack": "node ../../scripts/prepare-package-legal.mjs"
   },
   "dependencies": {
-    "@zucker/core": "workspace:*"
+    "@zucker-framework/core": "workspace:*"
   },
   "peerDependencies": {
     "@nestjs/common": "^12.0.0",
     "@nestjs/core": "^12.0.0",
     "@nestjs/swagger": "^12.0.0",
-    "@zucker/cache": "workspace:*",
-    "@zucker/event": "workspace:*"
+    "@zucker-framework/cache": "workspace:*",
+    "@zucker-framework/event": "workspace:*"
   },
   "peerDependenciesMeta": {
-    "@zucker/cache": {
+    "@zucker-framework/cache": {
       "optional": true
     },
-    "@zucker/event": {
+    "@zucker-framework/event": {
       "optional": true
     }
   },
   "devDependencies": {
     "@nestjs/swagger": "^12.0.1",
-    "@zucker/cache": "workspace:*",
-    "@zucker/event": "workspace:*",
+    "@zucker-framework/cache": "workspace:*",
+    "@zucker-framework/event": "workspace:*",
     "@types/node": "^20.19.43"
+  },
+  "license": "Apache-2.0",
+  "author": "Lind",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Lind-pro/zucker-framework.git",
+    "directory": "packages/crud"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }

@@ -11,7 +11,7 @@ import {
   NotFoundException,
   UnauthorizedException,
   ForbiddenException,
-} from '@zucker/core';
+} from '@zucker-framework/core';
 import { HttpExceptionFilter } from './http-exception.filter';
 
 // ─── Helpers ─────────────────────────────────────────────────────────

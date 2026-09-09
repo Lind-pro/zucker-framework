@@ -1,8 +1,7 @@
 /**
  * Warning — 警告收集器
- * 参考: hsweb-framework Warning.java
  *
- * hsweb 使用 Reactor Context 收集警告信息，zucker 使用 ContextHolder 收集。
+ * 使用 ContextHolder 收集当前上下文中的警告信息。
  * 在处理链中可以添加警告，最终统一返回给调用方（如放入响应体的 warnings 字段）。
  */
 
@@ -19,7 +18,6 @@ export class Warning {
 
   /**
    * 向当前上下文添加警告
-   * 参考 hsweb Warning.addWarnToContext
    */
   static add(warning: Warning): void {
     const warnings = ContextHolder.get(Warning.CONTEXT_KEY);
@@ -44,7 +42,7 @@ export class Warning {
 
   /**
    * 初始化上下文中的警告列表
-   * 参考 hsweb Warning.createWarning — 确保 context 中存在警告列表
+   * 确保 context 中存在警告列表
    */
   static initWarnings(): void {
     const ctx = ContextHolder.current();
@@ -55,7 +53,6 @@ export class Warning {
 
   /**
    * 捕获错误并转为警告（不阻断流程）
-   * 参考 hsweb Warning.resumeMonoError / resumeFluxError
    *
    * @param error 错误对象
    * @param builder 错误转警告的构建函数，返回 null 则忽略该错误

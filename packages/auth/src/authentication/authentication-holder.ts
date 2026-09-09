@@ -13,8 +13,6 @@ import { DefaultAuthentication } from './default-authentication';
  *
  * Uses AsyncLocalStorage for request-scoped caching so that
  * the same request only resolves suppliers once.
- *
- * Mirrors hsweb AuthenticationHolder.
  */
 @Injectable()
 export class AuthenticationHolder {

@@ -204,7 +204,7 @@ export class CodexSubscriptionCredentialManager {
           Accept: 'application/json',
           'Content-Type': 'application/x-www-form-urlencoded',
           originator: 'zucker-ai',
-          'User-Agent': '@zucker/ai-access openai-codex',
+          'User-Agent': '@zucker-framework/ai-access openai-codex',
         },
         body: new URLSearchParams({
           grant_type: 'refresh_token',
@@ -365,7 +365,7 @@ export class CodexSubscriptionAuthClient {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
         originator: 'zucker-ai',
-        'User-Agent': '@zucker/ai-access openai-codex',
+        'User-Agent': '@zucker-framework/ai-access openai-codex',
       },
       body: new URLSearchParams({
         grant_type: 'authorization_code',
@@ -436,7 +436,7 @@ export class OpenAICodexSubscriptionProvider {
     });
     this.fetcher = options.fetcher ?? fetch;
     this.originator = options.originator?.trim() || 'zucker-ai';
-    this.userAgent = options.userAgent?.trim() || '@zucker/ai-access openai-codex';
+    this.userAgent = options.userAgent?.trim() || '@zucker-framework/ai-access openai-codex';
   }
 
   async createModel(config: {

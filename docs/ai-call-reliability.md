@@ -2,8 +2,8 @@
 
 ## Boundaries
 
-- Durable business deadlines, attempts, and recovery belong to `@zucker/task`.
-- `@zucker/ai` owns one Provider attempt: cancellation, optional per-attempt deadlines, error classification, and safe observation.
+- Durable business deadlines, attempts, and recovery belong to `@zucker-framework/task`.
+- `@zucker-framework/ai` owns one Provider attempt: cancellation, optional per-attempt deadlines, error classification, and safe observation.
 - Provider adapters must pass the attempt `AbortSignal` to the underlying SDK or HTTP request.
 - A client disconnect must not be reused as a business task deadline unless the caller explicitly cancels the durable task.
 

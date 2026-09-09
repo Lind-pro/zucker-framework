@@ -8,7 +8,7 @@ import {
 
 describe('ErrorReporter', () => {
   it('uses a stable global injection token', () => {
-    expect(ERROR_REPORTER).toBe(Symbol.for('@zucker/monitoring/error-reporter'));
+    expect(ERROR_REPORTER).toBe(Symbol.for('@zucker-framework/monitoring/error-reporter'));
   });
 
   it('provides a side-effect-free disabled implementation', () => {

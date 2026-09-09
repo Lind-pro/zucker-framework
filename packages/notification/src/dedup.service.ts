@@ -2,7 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 
 /**
  * 通知去重服务。
- * 对标 hsweb NotifierService 的消息去重能力。
  *
  * 基于 (channel + recipient + contentHash) 在指定时间窗口内去重。
  */
@@ -69,7 +68,6 @@ export class InMemoryNotificationDedup implements NotificationDedup {
 
 /**
  * 通知优先级枚举。
- * 对标 hsweb NotifyMessage 的优先级字段。
  */
 export enum NotificationPriority {
   LOW = 0,

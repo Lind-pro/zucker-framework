@@ -7,7 +7,7 @@ function toKey(entityType: string, eventType?: EntityEventType, phase?: EntityEv
 }
 
 /**
- * 运行时实体事件开关配置 — 参考 hsweb DefaultEntityEventListenerConfigure
+ * 运行时实体事件开关配置
  *
  * 支持三个粒度级别的控制（从粗到细）：
  * 1. 实体级别：enable('user') / disable('user')
@@ -20,13 +20,11 @@ function toKey(entityType: string, eventType?: EntityEventType, phase?: EntityEv
  * 3. @EnableEntityEvent 装饰器
  * 4. 默认全部启用
  *
- * 与 hsweb 一致：enable 和 disable 互斥，enable 某个阶段会自动从 disabled 集合中移除，反之亦然。
+ * enable 和 disable 互斥，enable 某个阶段会自动从 disabled 集合中移除，反之亦然。
  *
- * 并发安全改进（对齐 hsweb 5.x commit 50dbeb893）：
+ * 并发安全改进：
  * 在初次 CRUD 操作并发执行时，多个请求可能同时尝试初始化同一实体类型的事件配置。
- * hsweb 5.x 将 containsKey + put 模式改为 compute() 原子操作，
- * 确保初始化过程在并发场景下是安全的。
- * TypeScript 单线程环境下不存在真正的并发问题，但这里保留防御性编程模式：
+ * 初始化过程同步执行，不跨异步边界。
  * 使用已初始化标志确保初始化逻辑只执行一次。
  */
 @Injectable()

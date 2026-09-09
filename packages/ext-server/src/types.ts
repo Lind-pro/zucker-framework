@@ -39,11 +39,11 @@ export interface ExtServerOptions {
   licenseSecret: string;
   /** Stripe webhook 签名密钥；未配则 webhook 返回 503 */
   stripeWebhookSecret?: string;
-  /** 发件域名（已在邮件服务商验证），如 team.ccopyright.ai */
+  /** 消费项目在邮件服务商验证过的发件域名 */
   mailDomain: string;
   /** webhook 无产品标识时的兜底产品 slug */
   defaultProduct: string;
-  /** 激活码前缀，如 CCPDFPRO */
+  /** 消费项目提供的激活码前缀 */
   codePrefix: string;
   /** 授权默认附带的功能位 */
   proFeatures: string[];

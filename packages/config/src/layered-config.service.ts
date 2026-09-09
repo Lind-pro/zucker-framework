@@ -1,5 +1,5 @@
 import { Injectable, Inject, Logger, Optional } from '@nestjs/common';
-import { type DatabaseAdapter, ValidationException } from '@zucker/core';
+import { type DatabaseAdapter, ValidationException } from '@zucker-framework/core';
 import { EventEmitter2 } from 'eventemitter2';
 import { ConfigScopeManager } from './config-scope-manager';
 
@@ -19,7 +19,7 @@ export const LAYERED_CONFIG_CHANGED_EVENT = 'zucker.layered-config-changed';
  */
 export const LAYERED_CONFIG_CHANGED_TOPIC = 'system/config/layered-changed';
 
-/** Minimal TopicEventBus interface to avoid hard dependency on @zucker/event */
+/** Minimal TopicEventBus interface to avoid hard dependency on @zucker-framework/event */
 interface TopicEventBusLike {
   publish(topic: string, payload: unknown): Promise<void>;
 }
@@ -37,7 +37,7 @@ export interface LayeredConfigContext {
   userId?: string;
 }
 
-import { DATABASE_ADAPTER } from '@zucker/crud';
+import { DATABASE_ADAPTER } from '@zucker-framework/crud';
 
 /**
  * LayeredConfigService — config with layered inheritance: system -> tenant -> user.

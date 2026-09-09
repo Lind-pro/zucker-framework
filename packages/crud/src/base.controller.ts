@@ -12,7 +12,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { ApiResponse, ApiOperation } from '@nestjs/swagger';
-import { type GenericEntity } from '@zucker/core';
+import { type GenericEntity } from '@zucker-framework/core';
 import { BaseService } from './base.service';
 import { type DynamicQueryParam } from './dynamic-query.service';
 
@@ -43,11 +43,10 @@ export function BaseController<T extends GenericEntity>(EntityClass: Type<T>): T
   class BaseControllerHostImpl {
     constructor(protected readonly service: BaseService<T>) {}
 
-    // ===================== Query Routes (对齐 hsweb ReactiveServiceQueryController) =====================
+    // ===================== Query Routes  =====================
 
     /**
      * GET 方式查询(不返回分页总数)
-     * 对齐 hsweb /_query/no-paging
      */
     @Get('_query/no-paging')
     @ApiOperation({ summary: '使用GET方式分页动态查询(不返回总数)' })
@@ -59,7 +58,6 @@ export function BaseController<T extends GenericEntity>(EntityClass: Type<T>): T
 
     /**
      * POST 方式查询(不返回分页总数)
-     * 对齐 hsweb POST /_query/no-paging
      */
     @Post('_query/no-paging')
     @ApiOperation({ summary: '使用POST方式分页动态查询(不返回总数)' })
@@ -71,7 +69,6 @@ export function BaseController<T extends GenericEntity>(EntityClass: Type<T>): T
 
     /**
      * GET 方式分页查询
-     * 对齐 hsweb GET /_query
      */
     @Get('_query')
     @ApiOperation({ summary: '使用GET方式分页动态查询' })
@@ -82,7 +79,6 @@ export function BaseController<T extends GenericEntity>(EntityClass: Type<T>): T
 
     /**
      * POST 方式分页查询
-     * 对齐 hsweb POST /_query
      */
     @Post('_query')
     @ApiOperation({ summary: '使用POST方式分页动态查询' })
@@ -93,7 +89,6 @@ export function BaseController<T extends GenericEntity>(EntityClass: Type<T>): T
 
     /**
      * GET 方式查询总数
-     * 对齐 hsweb GET /_count
      */
     @Get('_count')
     @ApiOperation({ summary: '使用GET方式查询总数' })
@@ -105,7 +100,6 @@ export function BaseController<T extends GenericEntity>(EntityClass: Type<T>): T
 
     /**
      * POST 方式查询总数
-     * 对齐 hsweb POST /_count
      */
     @Post('_count')
     @ApiOperation({ summary: '使用POST方式查询总数' })
@@ -117,7 +111,6 @@ export function BaseController<T extends GenericEntity>(EntityClass: Type<T>): T
 
     /**
      * GET 方式判断数据是否存在
-     * 对齐 hsweb GET /_exists
      */
     @Get('_exists')
     @ApiOperation({ summary: '使用GET方式判断数据是否存在' })
@@ -129,7 +122,6 @@ export function BaseController<T extends GenericEntity>(EntityClass: Type<T>): T
 
     /**
      * POST 方式判断数据是否存在
-     * 对齐 hsweb POST /_exists
      */
     @Post('_exists')
     @ApiOperation({ summary: '使用POST方式判断数据是否存在' })
@@ -141,7 +133,6 @@ export function BaseController<T extends GenericEntity>(EntityClass: Type<T>): T
 
     /**
      * 根据ID查询
-     * 对齐 hsweb GET /{id}
      */
     @Get(':id')
     @ApiOperation({ summary: '根据ID查询' })
@@ -160,11 +151,10 @@ export function BaseController<T extends GenericEntity>(EntityClass: Type<T>): T
       return this.service.findAll(query);
     }
 
-    // ===================== Save Routes (对齐 hsweb ReactiveServiceSaveController) =====================
+    // ===================== Save Routes  =====================
 
     /**
      * 新增单个数据,并返回新增后的数据
-     * 对齐 hsweb POST /
      */
     @Post()
     @ApiOperation({ summary: '新增单个数据,并返回新增后的数据' })
@@ -175,7 +165,6 @@ export function BaseController<T extends GenericEntity>(EntityClass: Type<T>): T
 
     /**
      * 批量新增
-     * 对齐 hsweb POST /_batch
      */
     @Post('_batch')
     @ApiOperation({ summary: '批量新增数据' })
@@ -186,7 +175,6 @@ export function BaseController<T extends GenericEntity>(EntityClass: Type<T>): T
 
     /**
      * 保存数据（upsert：有ID则update，无ID则create）
-     * 对齐 hsweb PATCH /
      */
     @Patch()
     @ApiOperation({ summary: '保存数据', description: '如果传入了id,并且对应数据存在,则尝试覆盖,不存在则新增.' })
@@ -197,7 +185,6 @@ export function BaseController<T extends GenericEntity>(EntityClass: Type<T>): T
 
     /**
      * 根据ID修改数据
-     * 对齐 hsweb PUT /{id}
      */
     @Put(':id')
     @ApiOperation({ summary: '根据ID修改数据' })
@@ -209,11 +196,10 @@ export function BaseController<T extends GenericEntity>(EntityClass: Type<T>): T
       return this.service.update(id, data);
     }
 
-    // ===================== Delete Routes (对齐 hsweb ReactiveServiceDeleteController) =====================
+    // ===================== Delete Routes  =====================
 
     /**
      * 根据ID删除
-     * 对齐 hsweb DELETE /{id}
      */
     @Delete(':id')
     @ApiOperation({ summary: '根据ID删除' })

@@ -1,10 +1,8 @@
 /**
  * 验证工具
- * 参考: hsweb-framework ValidatorUtils.java, CreateGroup, UpdateGroup
  *
- * 对比 hsweb:
  * - 保留分组常量
- * - 增加 tryValidate 工具函数（对齐 hsweb ValidatorUtils.tryValidate）
+ * - 增加 tryValidate 工具函数
  * - 增加 validateProperty 单属性验证
  */
 
@@ -26,7 +24,6 @@ export type ValidationSchema = Record<string, ValidationRule[]>;
 
 /**
  * 验证对象
- * 参考 hsweb ValidatorUtils.tryValidate(bean, group)
  *
  * @param obj 待验证的对象
  * @param schema 验证规则
@@ -60,7 +57,6 @@ export function tryValidate<T extends Record<string, unknown>>(
 
 /**
  * 验证单个属性
- * 参考 hsweb ValidatorUtils.tryValidate(bean, property, group)
  */
 export function validateProperty<T extends Record<string, unknown>>(
   obj: T,
@@ -88,7 +84,6 @@ export function validateProperty<T extends Record<string, unknown>>(
 
 /**
  * 验证单个值（不需要完整对象）
- * 参考 hsweb ValidatorUtils.tryValidate(Class<T>, property, value, group)
  */
 export function validateValue(
   property: string,

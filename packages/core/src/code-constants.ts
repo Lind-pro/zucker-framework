@@ -1,6 +1,5 @@
 /**
  * 错误码常量
- * 参考: hsweb-framework CodeConstants.java
  */
 export const ErrorCodes = {
   ILLEGAL_ARGUMENT: 'illegal_argument',

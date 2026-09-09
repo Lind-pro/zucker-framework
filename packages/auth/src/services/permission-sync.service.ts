@@ -1,26 +1,21 @@
 import { Injectable, Inject, Logger, Optional, type OnModuleInit } from '@nestjs/common';
-import type { DatabaseAdapter } from '@zucker/core';
+import type { DatabaseAdapter } from '@zucker-framework/core';
 import { PermissionScannerService, type ScannedPermission } from './permission-scanner.service';
 
-import { DATABASE_ADAPTER } from '@zucker/crud';
+import { DATABASE_ADAPTER } from '@zucker-framework/crud';
 
 /**
- * PermissionSyncService -- corresponds to hsweb PermissionSynchronization.
+ * PermissionSyncService
  *
  * Scans controller decorators (@Resource/@Action) at startup and synchronizes
  * discovered permission definitions to the database. Existing permissions are
  * updated (actions merged), new permissions are created.
  *
- * This is the TypeScript equivalent of hsweb's CommandLineRunner that runs
- * PermissionSynchronization.run() on application startup.
- *
- * Key behaviors from hsweb:
- * - Scan all @Authorize/@Resource definitions via AuthorizeDefinitionInitializedEvent
+ * Key behaviors:
+ * - Scan @Resource/@Action definitions with PermissionScannerService
  * - Merge with existing DB records (preserve custom actions, merge new ones)
  * - Convert ResourceDefinition to PermissionEntity with actions and optionalFields
  * - Upsert (save) all merged permissions to the database
- *
- * Reference: hsweb-system-authorization PermissionSynchronization
  */
 @Injectable()
 export class PermissionSyncService implements OnModuleInit {
@@ -39,8 +34,6 @@ export class PermissionSyncService implements OnModuleInit {
 
   /**
    * NestJS lifecycle hook -- runs permission synchronization on startup.
-   *
-   * Reference: hsweb PermissionSynchronization implements CommandLineRunner.run()
    */
   async onModuleInit(): Promise<void> {
     if (!this.enabled || !this.scannerService) {
@@ -57,7 +50,6 @@ export class PermissionSyncService implements OnModuleInit {
   /**
    * Perform permission synchronization.
    *
-   * Reference: hsweb PermissionSynchronization.run()
    * 1. Scan all controller @Resource/@Action decorators
    * 2. Load existing permissions from database
    * 3. Merge scanned definitions with existing records
@@ -119,7 +111,6 @@ export class PermissionSyncService implements OnModuleInit {
   /**
    * Merge a scanned permission definition with an existing database record.
    *
-   * Reference: hsweb PermissionSynchronization.convert()
    * - Preserves existing name/description if already set
    * - Merges actions (new actions added, existing preserved)
    * - Preserves existing optionalFields

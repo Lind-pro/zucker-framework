@@ -1,8 +1,6 @@
 /**
  * Diff — 对象差异对比
- * 参考: hsweb-framework Diff.java, CompareUtils.java
  *
- * 对比 hsweb CompareUtils:
  * - 原实现使用 JSON.stringify 比较，key 顺序不同时会误判
  * - 改进: 递归深度比较，支持 Date、数字精度、集合对比
  */
@@ -75,21 +73,21 @@ export function deepEquals(a: unknown, b: unknown): boolean {
     return a === b;
   }
 
-  // Date 比较（参考 hsweb CompareUtils.compare(Date, Object)）
+  // Date 比较
   // 必须在 typeof 分支之前处理，因为 typeof Date === 'object'
   // 而 Date vs number/string 会被 typeof 短路返回 false
   if (a instanceof Date || b instanceof Date) {
     if (a instanceof Date && b instanceof Date) {
       return a.getTime() === b.getTime();
     }
-    // Date vs number — 时间戳比较（参考 hsweb: date.getTime() == number.longValue()）
+    // Date vs number — 时间戳比较
     if (a instanceof Date && typeof b === 'number') {
       return a.getTime() === b;
     }
     if (typeof a === 'number' && b instanceof Date) {
       return a === b.getTime();
     }
-    // Date vs string — ISO 格式比较（参考 hsweb: DateFormatter 格式化后比较）
+    // Date vs string — ISO 格式比较
     if (a instanceof Date && typeof b === 'string') {
       const parsed = new Date(b);
       return !isNaN(parsed.getTime()) && a.getTime() === parsed.getTime();
@@ -103,7 +101,7 @@ export function deepEquals(a: unknown, b: unknown): boolean {
 
   // 类型不同
   if (typeof a !== typeof b) {
-    // 数字与字符串的跨类型比较（参考 hsweb CompareUtils.compare(Number, Object)）
+    // 数字与字符串的跨类型比较
     if (typeof a === 'number' && typeof b === 'string') {
       const n = Number(b);
       return !isNaN(n) && a === n;
@@ -112,7 +110,7 @@ export function deepEquals(a: unknown, b: unknown): boolean {
       const n = Number(a);
       return !isNaN(n) && n === b;
     }
-    // 布尔与字符串的跨类型比较（参考 hsweb CompareUtils.compare(Boolean, Object)）
+    // 布尔与字符串的跨类型比较
     if (typeof a === 'boolean' && typeof b === 'string') {
       return String(a) === b;
     }
@@ -137,7 +135,7 @@ export function deepEquals(a: unknown, b: unknown): boolean {
     }
     return true;
   }
-  // 数组 vs 字符串（参考 hsweb CompareUtils: source instanceof String => split("[, ;]")）
+  // 数组 vs 字符串
   if (Array.isArray(a) && typeof b === 'string') {
     return collectionEquals(a, b.split(/[,; ]/));
   }
@@ -186,15 +184,14 @@ export function deepEquals(a: unknown, b: unknown): boolean {
 
 /**
  * 集合无序比较
- * 参考 hsweb CompareUtils.compare(Collection, Object)
  *
- * hsweb 的 Collection 比较逻辑:
+ * 集合比较逻辑：
  * 1. 将两边都转为 Set
  * 2. 较大集合的每个元素在较小集合中 anyMatch(deepEquals)
  */
 export function collectionEquals(a: unknown[], b: unknown[]): boolean {
   if (a.length !== b.length) return false;
-  // 对齐 hsweb: 转 Set 后逐项 anyMatch
+  // 转为 Set 后逐项检查是否存在匹配项
   for (const item of a) {
     if (!b.some((bItem) => deepEquals(item, bItem))) {
       return false;

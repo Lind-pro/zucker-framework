@@ -1,14 +1,14 @@
 export enum EntityEventType {
   CREATE = 'create',
-  /** modify — 对应 hsweb 的 EntityModifyEvent（带 before/after 数据） */
+  /** modify */
   MODIFY = 'modify',
   DELETE = 'delete',
-  /** save — 对应 hsweb 的 EntitySaveEvent（insert or update 语义） */
+  /** save */
   SAVE = 'save',
   QUERY = 'query',
 
   /**
-   * @deprecated 请使用 MODIFY，与 hsweb 保持一致
+   * @deprecated 请使用 MODIFY
    */
   UPDATE = 'modify',
 }
@@ -42,9 +42,9 @@ export enum EntityEventPhase {
 }
 
 /**
- * 所有事件阶段 — 参考 hsweb EntityEventPhase.all
+ * 所有事件阶段
  *
- * 便捷常量，等价于 hsweb 的 `EntityEventPhase.all = EntityEventPhase.values()`
+ * 便捷常量，包含 PREPARE、BEFORE 和 AFTER 三个阶段。
  */
 export const ALL_EVENT_PHASES: readonly EntityEventPhase[] = [
   EntityEventPhase.PREPARE,
@@ -60,12 +60,10 @@ export interface EntityEvent<T = unknown> {
   timestamp: number;
 
   /**
-   * 修改前的实体数据 — 参考 hsweb EntityBeforeModifyEvent.before / EntityModifyEvent.before
+   * 修改前的实体数据
    *
    * 仅在 MODIFY 类型事件中有值。
-   * hsweb 的 EntityModifyEvent / EntityBeforeModifyEvent / EntityPrepareModifyEvent
-   * 都包含 before（旧数据）和 after（新数据，即 entity）两个列表。
-   * 在 zucker 中：before = 旧数据，entity = 新数据（after）。
+   * before 保存旧数据，entity 保存新数据；二者均支持单条实体或实体列表。
    */
   readonly before?: T | T[];
 
@@ -89,7 +87,7 @@ export interface EntityEvent<T = unknown> {
  * @param phase - The event phase (PREPARE, BEFORE, AFTER)
  * @param entityType - The entity/model name
  * @param entity - The entity data (single or batch). For MODIFY events this is the "after" data.
- * @param before - Optional "before" data for MODIFY events — 参考 hsweb EntityModifyEvent(before, after, entityType)
+ * @param before - Optional "before" data for MODIFY events
  * @returns A new EntityEvent with cancel() capability
  */
 export function createEntityEvent<T>(

@@ -4,10 +4,10 @@ import type { DeviceGatewayConfig } from './device-gateway';
 import { SessionState } from './device-session';
 import type { DeviceSession } from './device-session';
 import type { ProtocolSupport, MessageCodec, DecodeContext } from './codec';
-import type { ThingManager, ThingsDataService } from '@zucker/things';
-import { ThingState, createReportPropertyMessage } from '@zucker/things';
-import type { Transport } from '@zucker/network';
-import { Transports } from '@zucker/network';
+import type { ThingManager, ThingsDataService } from '@zucker-framework/things';
+import { ThingState, createReportPropertyMessage } from '@zucker-framework/things';
+import type { Transport } from '@zucker-framework/network';
+import { Transports } from '@zucker-framework/network';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 

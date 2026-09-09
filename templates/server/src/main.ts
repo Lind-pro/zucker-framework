@@ -1,9 +1,9 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
-import { HttpExceptionFilter } from '@zucker/common';
-import { UserService } from '@zucker/auth';
-import type { DatabaseAdapter } from '@zucker/core';
-import { DATABASE_ADAPTER } from '@zucker/crud';
+import { HttpExceptionFilter } from '@zucker-framework/common';
+import { UserService } from '@zucker-framework/auth';
+import type { DatabaseAdapter } from '@zucker-framework/core';
+import { DATABASE_ADAPTER } from '@zucker-framework/crud';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -55,7 +55,7 @@ async function bootstrap() {
     // 2. 确保 admin 用户存在
     const admin = await userService.findByUsername('admin');
     if (!admin) {
-      const authPkg = await import('@zucker/auth');
+      const authPkg = await import('@zucker-framework/auth');
       userService.setUsernameValidator(new authPkg.UsernameValidator({ reservedNames: [] }));
       userService.setPasswordValidator(new authPkg.PasswordValidator({
         minLength: 6, requireUppercase: false, requireSpecialChar: false,

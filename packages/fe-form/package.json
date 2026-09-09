@@ -1,6 +1,6 @@
 {
-  "name": "@zucker/fe-form",
-  "version": "0.0.1",
+  "name": "@zucker-framework/fe-form",
+  "version": "1.0.0",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -18,11 +18,15 @@
   },
   "sideEffects": false,
   "files": [
-    "dist"
+    "dist",
+    "LICENSE",
+    "NOTICE",
+    "THIRD_PARTY_NOTICES"
   ],
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts --external react",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "prepack": "node ../../scripts/prepare-package-legal.mjs"
   },
   "devDependencies": {
     "@ant-design/icons": "^6.3.4",
@@ -34,5 +38,16 @@
     "@ant-design/icons": ">=5.6.1 <7",
     "antd": ">=5.29.3 <7",
     "react": "^19.0.0"
+  },
+  "license": "Apache-2.0",
+  "author": "Lind",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Lind-pro/zucker-framework.git",
+    "directory": "packages/fe-form"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }

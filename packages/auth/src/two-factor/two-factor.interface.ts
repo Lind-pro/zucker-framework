@@ -1,7 +1,5 @@
 /**
  * Two-factor authentication interfaces.
- *
- * Reference: hsweb-framework twofactor package
  */
 
 export interface TwoFactorValidator {

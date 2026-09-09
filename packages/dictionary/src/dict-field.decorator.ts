@@ -2,11 +2,11 @@ export const DICT_FIELD_KEY = 'zucker:dict:field';
 export const DICT_FIELDS_KEY = 'zucker:dict:fields';
 
 export interface DictFieldOptions {
-  /** Dictionary ID — maps to hsweb @Dict.value() */
+  /** Dictionary ID */
   dictId: string;
-  /** Dictionary alias — maps to hsweb @Dict.alias() */
+  /** Dictionary alias */
   alias?: string;
-  /** Description / comments — maps to hsweb @Dict.comments() */
+  /** Description / comments */
   comments?: string;
   /** Field name (stores the value) */
   valueField?: string;
@@ -30,8 +30,6 @@ export interface DictFieldEntry extends DictFieldOptions {
  *
  * Also collects all decorated fields into a class-level DICT_FIELDS_KEY array
  * so consumers can enumerate all dict fields on an entity.
- *
- * Reference: hsweb @Dict annotation
  *
  * Usage:
  * ```typescript

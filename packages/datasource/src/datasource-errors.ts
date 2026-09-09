@@ -1,11 +1,8 @@
 /**
- * 数据源异常类 — 对应 Java 端 DataSourceNotFoundException / DataSourceClosedException
- *
- * 对比 hsweb: DataSourceNotFoundException extends NotFoundException,
- *            DataSourceClosedException extends NotFoundException
- * zucker: 同样继承 BusinessException 子类，携带 dataSourceId 上下文
+ * 数据源异常类，携带 dataSourceId 上下文。
+ * 数据源不存在时返回 404，已关闭时返回 500。
  */
-import { NotFoundException, BusinessException } from '@zucker/core';
+import { NotFoundException, BusinessException } from '@zucker-framework/core';
 
 /**
  * 数据源不存在异常 (HTTP 404)

@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { NotFoundException, ValidationException } from '@zucker/core';
+import { NotFoundException, ValidationException } from '@zucker-framework/core';
 import { MediaType, type MediaProvider } from './media.interface';
 
 /**

@@ -14,7 +14,7 @@
     "tabs"
   ],
   "host_permissions": [
-    "https://api.ccopyright.ai/*"
+    "https://api.example.invalid/*"
   ],
   "background": {
     "service_worker": "background.js"

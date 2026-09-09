@@ -1,20 +1,24 @@
 {
-  "name": "@zucker/dictionary",
-  "version": "0.0.1",
+  "name": "@zucker-framework/dictionary",
+  "version": "1.0.0",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "LICENSE",
+    "NOTICE",
+    "THIRD_PARTY_NOTICES"
   ],
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts",
     "clean": "rm -rf dist",
-    "lint": "eslint src/"
+    "lint": "eslint src/",
+    "prepack": "node ../../scripts/prepare-package-legal.mjs"
   },
   "dependencies": {
-    "@zucker/core": "workspace:*",
-    "@zucker/crud": "workspace:*",
+    "@zucker-framework/core": "workspace:*",
+    "@zucker-framework/crud": "workspace:*",
     "eventemitter2": "^6.4.9"
   },
   "peerDependencies": {
@@ -27,5 +31,16 @@
     "reflect-metadata": {
       "optional": true
     }
+  },
+  "license": "Apache-2.0",
+  "author": "Lind",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Lind-pro/zucker-framework.git",
+    "directory": "packages/dictionary"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }

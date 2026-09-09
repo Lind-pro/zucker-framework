@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { DefaultThingsDataService } from './property-log';
 import { createReportPropertyMessage, createEventMessage } from './message';
-import type { TimeSeriesService, TimeSeriesData, TimeSeriesQuery, AggregationQuery, AggregationResult } from '@zucker/timeseries';
+import type { TimeSeriesService, TimeSeriesData, TimeSeriesQuery, AggregationQuery, AggregationResult } from '@zucker-framework/timeseries';
 
 /**
  * 最小内存 TimeSeriesService mock

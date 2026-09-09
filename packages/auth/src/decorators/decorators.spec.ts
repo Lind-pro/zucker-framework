@@ -169,7 +169,7 @@ describe('Auth Decorators — metadata reading', () => {
     ]);
   });
 
-  it('@Authorize stores hsweb-style resources, dimensions, message and merge metadata', () => {
+  it('@Authorize stores curd resources, dimensions, message and merge metadata', () => {
     class C {
       @(Authorize({
         resources: [{

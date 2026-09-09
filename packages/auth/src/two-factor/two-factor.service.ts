@@ -43,7 +43,7 @@ export class TwoFactorService {
    * @param userId - the user ID
    * @param provider - the provider name (e.g. 'totp', 'sms')
    * @param code - the verification code
-   * @param operation - the operation requiring 2FA (mirrors hsweb TwoFactorValidatorManager.getValidator operation param)
+   * @param operation - the operation requiring 2FA
    */
   async validate(
     userId: string,
@@ -60,7 +60,7 @@ export class TwoFactorService {
   }
 
   /**
-   * Get a validator for a user/operation (mirrors hsweb TwoFactorValidatorManager.getValidator).
+   * Get a validator for a user/operation.
    */
   getValidator(
     userId: string,

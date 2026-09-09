@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { InMemoryAdapter } from '@zucker/crud';
-import { BusinessException, ValidationException } from '@zucker/core';
+import { InMemoryAdapter } from '@zucker-framework/crud';
+import { BusinessException, ValidationException } from '@zucker-framework/core';
 import { CreditService, CreditTransactionType } from './credit.service';
 
 describe('CreditService', () => {

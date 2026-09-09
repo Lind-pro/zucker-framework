@@ -4,7 +4,7 @@
  * 负责原始协议消息 ↔ ThingMessage 的互转。
  * 不同协议（MQTT/HTTP/TCP）提供不同的 Codec 实现。
  */
-import type { ThingMessage, UpstreamMessage, DownstreamMessage } from '@zucker/things';
+import type { ThingMessage, UpstreamMessage, DownstreamMessage } from '@zucker-framework/things';
 import type { DeviceSession } from './device-session';
 
 /**

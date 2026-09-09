@@ -1,5 +1,5 @@
 import { Injectable, Inject, Logger, Optional } from '@nestjs/common';
-import { type DatabaseAdapter, type Term } from '@zucker/core';
+import { type DatabaseAdapter, type Term } from '@zucker-framework/core';
 import { FilterOperatorFactory } from './operators';
 import { type PaginatedResult } from './pagination';
 import { DATABASE_ADAPTER } from './crud.module';
@@ -10,7 +10,7 @@ export type QueryTerm = Term;
 
 /**
  * Dynamic query parameter — describes filter, sort, pagination, and field selection
- * for dynamic queries. Mirrors hsweb QueryParamEntity.
+ * for dynamic queries.
  *
  * @example
  * ```ts
@@ -45,7 +45,7 @@ export interface DynamicQueryParam {
   excludes?: string[];
   /** Whether to run COUNT and SELECT queries in parallel */
   parallelPager?: boolean;
-  /** Structured Term conditions (对齐 hsweb QueryParam.terms) */
+  /** Structured Term conditions  */
   terms?: Term[];
 }
 
@@ -200,7 +200,7 @@ export class DynamicQueryParamService {
   /**
    * 将 DataAccess Term[] 转换为 Prisma WHERE 条件
    *
-   * Term 是 hsweb/zucker 统一的过滤条件格式（column + termType + value），
+   * Term 是 Zucker 统一的过滤条件格式（column + termType + value），
    * 由 DataAccessHandler 生成，需注入到查询中以实现行级数据权限。
    *
    * @param terms DataAccess 产生的过滤条件
@@ -302,7 +302,7 @@ export class DynamicQueryService {
       }
     }
 
-    // Merge DataAccess filterConditions into WHERE — 对齐 hsweb 数据权限注入
+    // Merge DataAccess filterConditions into WHERE
     const accessWhere = dataAccessTerms
       ? this.dynamicQueryParam.termsToWhere(dataAccessTerms)
       : {};
@@ -312,7 +312,7 @@ export class DynamicQueryService {
 
     const sort = this.dynamicQueryParam.parseOrderBy(orderBy, defaultOrderField);
 
-    // Merge denyFields into excludes — 对齐 hsweb 字段级数据权限
+    // Merge denyFields into excludes
     const mergedExcludes = denyFields
       ? [...(excludes ?? []), ...denyFields.filter((f) => !(excludes ?? []).includes(f))]
       : excludes;

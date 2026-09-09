@@ -4,19 +4,19 @@
     {
       "name": "server",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--filter", "@zucker/server-template", "dev"],
+      "runtimeArgs": ["--filter", "@zucker-framework/template-server", "dev"],
       "port": 3000
     },
     {
       "name": "admin",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--filter", "@zucker/admin-template", "dev"],
+      "runtimeArgs": ["--filter", "@zucker-framework/template-admin", "dev"],
       "port": 5173
     },
     {
       "name": "web",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--filter", "@zucker/web-template", "dev"],
+      "runtimeArgs": ["--filter", "@zucker-framework/template-web", "dev"],
       "port": 4101
     }
   ]

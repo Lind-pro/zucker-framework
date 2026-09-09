@@ -4,7 +4,7 @@ import {
   type DatabaseAdapter,
   NotFoundException,
   ValidationException,
-} from '@zucker/core';
+} from '@zucker-framework/core';
 import type { AIModelConfig, AIScenario } from './ai-provider.interface';
 import { AI_CONFIG_SOURCES, type AIConfigSource } from './config-source';
 import { DatabaseAIConfigSource } from './config-sources/database-config.source';

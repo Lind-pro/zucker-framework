@@ -1,10 +1,10 @@
 import { Injectable, Inject, Logger, Optional } from '@nestjs/common';
-import { type DatabaseAdapter, NotFoundException, BusinessException } from '@zucker/core';
-import { DATABASE_ADAPTER } from '@zucker/crud';
+import { type DatabaseAdapter, NotFoundException, BusinessException } from '@zucker-framework/core';
+import { DATABASE_ADAPTER } from '@zucker-framework/crud';
 import { PermissionService } from './permission.service';
 import type { RoleHierarchyService } from './role-hierarchy.service';
 
-/** Minimal TopicEventBus interface to avoid hard dependency on @zucker/event */
+/** Minimal TopicEventBus interface to avoid hard dependency on @zucker-framework/event */
 interface TopicEventBusLike {
   publish(topic: string, payload: unknown): Promise<void>;
 }
@@ -24,7 +24,7 @@ export interface RoleEntity {
   [key: string]: unknown;
 }
 
-/** Role event topics — mirrors hsweb authorization role event topics */
+/** Role event topics */
 export const ROLE_EVENT_TOPICS = {
   ROLE_CREATED: '/role/created',
   ROLE_MODIFIED: '/role/modified',
@@ -44,15 +44,13 @@ export function createRoleDeletedEvent(roleId: string) {
 }
 
 /**
- * RoleService -- corresponds to hsweb DefaultRoleService.
+ * RoleService
  *
  * Provides complete role lifecycle management:
  * - CRUD operations with name-based lookup
  * - Permission assignment with transactional guarantee
  * - Cascade deletion of related rolePermissions/userRoles/roleMenus
  * - Event publishing for all role mutations
- *
- * Reference: hsweb-system-authorization DefaultRoleService
  */
 @Injectable()
 export class RoleService {
@@ -73,8 +71,6 @@ export class RoleService {
 
   /**
    * Find a role by ID.
-   *
-   * Reference: hsweb DefaultRoleService.findById()
    */
   async findById(id: string): Promise<RoleEntity | null> {
     return this.db.model('roles').findUnique({ where: { id } }) as Promise<RoleEntity | null>;
@@ -82,8 +78,6 @@ export class RoleService {
 
   /**
    * Find a role by name.
-   *
-   * Reference: hsweb DefaultRoleService.findByName()
    */
   async findByName(name: string): Promise<RoleEntity | null> {
     if (!name) return null;
@@ -95,8 +89,6 @@ export class RoleService {
 
   /**
    * Query roles with dynamic filters.
-   *
-   * Reference: hsweb DefaultRoleService.findRoles()
    */
   async findRoles(where?: Record<string, unknown>): Promise<RoleEntity[]> {
     return this.db.model('roles').findMany({
@@ -106,8 +98,6 @@ export class RoleService {
 
   /**
    * Count roles matching a filter.
-   *
-   * Reference: hsweb DefaultRoleService.countRoles()
    */
   async countRoles(where?: Record<string, unknown>): Promise<number> {
     const roles = (await this.db.model('roles').findMany({
@@ -120,7 +110,6 @@ export class RoleService {
   /**
    * Add a new role.
    *
-   * Reference: hsweb DefaultRoleService.doAdd()
    * - Sets default status and createTime
    * - Publishes RoleCreatedEvent
    */
@@ -154,7 +143,6 @@ export class RoleService {
   /**
    * Update an existing role.
    *
-   * Reference: hsweb DefaultRoleService.doUpdate()
    * - Tracks field changes
    * - Publishes RoleModifiedEvent
    */
@@ -211,7 +199,6 @@ export class RoleService {
   /**
    * Delete a role with cascade cleanup.
    *
-   * Reference: hsweb DefaultRoleService.deleteRole()
    * - Cascade deletes rolePermissions, userRoles, roleMenus
    * - Publishes RoleDeletedEvent
    */
@@ -242,8 +229,6 @@ export class RoleService {
 
   /**
    * Get permission IDs assigned to a role.
-   *
-   * Reference: hsweb DefaultRoleService.getRolePermissions()
    */
   async getRolePermissions(roleId: string): Promise<string[]> {
     const links = (await this.db.model('rolePermissions').findMany({
@@ -257,8 +242,6 @@ export class RoleService {
   /**
    * Set permissions for a role (replace all).
    * Uses transaction to ensure atomicity.
-   *
-   * Reference: hsweb DefaultRoleService.setRolePermissions()
    */
   async setRolePermissions(roleId: string, permissionIds: string[]): Promise<void> {
     const role = await this.findById(roleId);

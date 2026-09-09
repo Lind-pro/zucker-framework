@@ -25,7 +25,7 @@ const DEFAULT_CONFIG: EntityEventConfig = {
 };
 
 /**
- * @EnableEntityEvent() 装饰器 — 参考 hsweb @EnableEntityEvent
+ * @EnableEntityEvent() 装饰器
  *
  * 用于 Service 类，控制哪些实体事件需要发出。
  * 默认启用 create/modify/delete/save，禁用 query。

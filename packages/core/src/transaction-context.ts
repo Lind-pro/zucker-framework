@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 
 /**
  * 事务同步回调类型
- * 参考 hsweb TransactionSynchronization 模式
+ * 管理事务提交和回滚回调。
  */
 type TransactionCallback = () => void | Promise<void>;
 
@@ -35,7 +35,7 @@ export class TransactionContext {
   /**
    * 执行所有 afterCommit 回调
    *
-   * 对齐 hsweb 5.x 事务同步器改进（commit b834bd07c / f87356ccb）：
+   * 事务同步器回调规则：
    * - 单个回调失败不阻塞后续回调执行
    * - 所有回调执行完毕后，如有错误则抛出第一个错误
    */
@@ -72,7 +72,7 @@ export class TransactionContext {
 /**
  * 事务上下文持有者 — 基于 AsyncLocalStorage 的事务上下文管理
  *
- * 设计参考 hsweb 的 TransactionSynchronizationManager:
+ * 事务同步管理规则：
  * - 在事务作用域内，afterCommit/afterRollback 注册到当前事务
  * - 无事务时，afterCommit 立即执行（afterCommitWithOutTransaction 语义）
  */
@@ -97,26 +97,26 @@ export const TransactionHolder = {
   /**
    * 注册 afterCommit 回调
    * - 有事务上下文且同步器活跃：延迟到 commit 后执行
-   * - 有事务上下文但已完成：立即执行并警告（对齐 hsweb 5.x b834bd07c 活跃检查）
-   * - 无事务上下文：立即执行（对齐 hsweb afterCommitWithOutTransaction）
-   * - 注册/执行失败时降级为立即执行（对齐 hsweb 5.x 290f8cbf2 NoTransactionException 容错）
+   * - 有事务上下文但已完成：立即执行并警告
+   * - 无事务上下文：立即执行
+   * - 注册/执行失败时降级为立即执行
    */
   async afterCommit(fn: TransactionCallback): Promise<void> {
     const ctx = transactionStorage.getStore();
     if (ctx) {
-      // 对齐 hsweb 5.x (b834bd07c): 检查事务是否仍然活跃
+      // 检查事务是否仍然活跃
       if (!ctx.completed) {
         try {
           ctx.afterCommit(fn);
           return;
         } catch {
-          // 对齐 hsweb 5.x (290f8cbf2): 注册失败时降级为立即执行
+          // 注册失败时降级为立即执行
           // log.warn("register TransactionSynchronization error", ...)
         }
       }
       // 事务已完成或注册失败，立即执行
     }
-    // 无事务时立即执行（对齐 hsweb whenNoTransaction.apply(synchronization)）
+    // 无事务时立即执行
     await fn();
   },
 

@@ -8,7 +8,7 @@ import {
   type Type,
 } from '@nestjs/common';
 import { CreditService } from './credit.service';
-import type { DatabaseAdapter } from '@zucker/core';
+import type { DatabaseAdapter } from '@zucker-framework/core';
 
 export interface CreditModuleAsyncOptions {
   imports?: Array<Type | DynamicModule>;

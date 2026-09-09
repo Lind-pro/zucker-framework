@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { InMemoryCredentialProfileStore } from '@zucker/ai-access';
+import { InMemoryCredentialProfileStore } from '@zucker-framework/ai-access';
 import {
   CodexSubscriptionAuthClient,
   CodexSubscriptionCredentialManager,
 } from './codex-subscription-auth';
 import { OpenAICodexSubscriptionProvider } from './providers/openai-codex.provider';
 
-describe('@zucker/ai AI Access compatibility exports', () => {
+describe('@zucker-framework/ai AI Access compatibility exports', () => {
   it('继续导出 Codex 认证和 Provider', () => {
     const store = new InMemoryCredentialProfileStore();
 

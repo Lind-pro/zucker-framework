@@ -1,7 +1,5 @@
 /**
- * Username validation — mirrors hsweb UsernameValidator.
- *
- * Reference: hsweb-framework UsernameValidator interface
+ * Username validation
  *
  * Provides configurable username policy enforcement including:
  * - Length constraints
@@ -45,8 +43,6 @@ export interface UsernameValidationResult {
 
 /**
  * UsernameValidator — configurable username policy enforcement.
- *
- * Reference: hsweb UsernameValidator
  */
 export class UsernameValidator {
   private readonly policy: UsernamePolicy;

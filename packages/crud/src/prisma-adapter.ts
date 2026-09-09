@@ -1,4 +1,4 @@
-import { type DatabaseAdapter, type ModelOperations, TransactionAwareDatabaseAdapter } from '@zucker/core';
+import { type DatabaseAdapter, type ModelOperations, TransactionAwareDatabaseAdapter } from '@zucker-framework/core';
 
 /** Minimal interface for a Prisma-like client */
 interface PrismaLikeClient extends Record<string, unknown> {

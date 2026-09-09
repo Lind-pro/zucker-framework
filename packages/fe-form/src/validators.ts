@@ -1,4 +1,4 @@
-import type { Rule } from 'antd/es/form';
+import type { FormRule as Rule } from 'antd';
 import type { FieldValidator } from './types';
 
 export function toAntdRules(validators: FieldValidator[] = [], required?: boolean): Rule[] {

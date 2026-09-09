@@ -1,9 +1,7 @@
 /**
  * 类型转换系统
- * 参考: hsweb-framework Converter.java, FastBeanCopier.DefaultConverter
  *
- * 对比 hsweb DefaultConverter:
- * - 增加 null 处理（hsweb convert(null) 返回 null）
+ * - 增加 null 处理
  * - 增加 boolean->number 和 date->number 转换
  * - 增加数组/集合类型转换（string->array 以逗号分隔）
  * - ConverterRegistry 增加 unregister 和 has 方法
@@ -49,7 +47,6 @@ class ConverterRegistryImpl {
   }
 
   convert<T>(value: unknown, targetType: string): T {
-    // 参考 hsweb: if (source == null) return null;
     if (value === null || value === undefined) {
       return value as unknown as T;
     }
@@ -107,14 +104,14 @@ ConverterRegistry.register<string, Date>('string', 'date', {
   },
 });
 
-// Date -> string (参考 hsweb: DateFormatter.toString with "yyyy-MM-dd HH:mm:ss")
+// Date -> string
 ConverterRegistry.register<Date, string>('date', 'string', {
   convert(source: Date): string {
     return source.toISOString();
   },
 });
 
-// Date -> number (参考 hsweb: source instanceof Date => ((Date) source).getTime())
+// Date -> number
 ConverterRegistry.register<Date, number>('date', 'number', {
   convert(source: Date): number {
     return source.getTime();
@@ -138,7 +135,7 @@ ConverterRegistry.register<boolean, string>('boolean', 'string', {
   },
 });
 
-// boolean -> number (参考 hsweb 数值转换完整性)
+// boolean -> number
 ConverterRegistry.register<boolean, number>('boolean', 'number', {
   convert(source: boolean): number {
     return source ? 1 : 0;
@@ -162,7 +159,7 @@ ConverterRegistry.register<number, boolean>('number', 'boolean', {
 // number -> date
 ConverterRegistry.register<number, Date>('number', 'date', {
   convert(source: number): Date {
-    // 参考 hsweb: 自动判断秒级/毫秒级时间戳
+    // 自动判断秒级/毫秒级时间戳
     if (source < 1e12) {
       return new Date(source * 1000);
     }
@@ -170,7 +167,7 @@ ConverterRegistry.register<number, Date>('number', 'date', {
   },
 });
 
-// string -> array（参考 hsweb: source instanceof String => stringValue.split(",")）
+// string -> array
 ConverterRegistry.register<string, unknown[]>('string', 'array', {
   convert(source: string): unknown[] {
     if (source.trim() === '') return [];

@@ -1,11 +1,18 @@
 node_modules
 dist
 .turbo
+.cache
 *.tsbuildinfo
 .env*.local
 templates/**/.env
 coverage
+/test-results/
+/playwright-report/
 artifacts
+# Generated from root LICENSE/NOTICE and verified bundle inputs during prepack.
+/packages/*/LICENSE
+/packages/*/NOTICE
+/packages/*/THIRD_PARTY_NOTICES
 .DS_Store
 .claude/worktrees/
 .next/

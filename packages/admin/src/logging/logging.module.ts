@@ -5,7 +5,7 @@ import { LoggingController } from './logging.controller';
  * ZuckerLoggingAdminModule
  *
  * LoggingController uses @OnEvent(ACCESS_LOG_EVENT) to receive log events
- * from @zucker/logging's AccessLoggerInterceptor. EventEmitter is assumed
+ * from @zucker-framework/logging's AccessLoggerInterceptor. EventEmitter is assumed
  * to be globally configured by EventEmitterModule.forRoot().
  */
 @Module({

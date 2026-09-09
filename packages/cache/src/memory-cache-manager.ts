@@ -2,10 +2,9 @@ import type { ICache, ICacheManager } from './cache.interface';
 import { MemoryCache } from './memory-cache';
 
 /**
- * 内存缓存管理器 — 对应 hsweb AbstractReactiveCacheManager / CaffeineReactiveCacheManager
+ * 内存缓存管理器
  *
  * 按名称管理多个缓存实例，每个名称对应一个独立的 MemoryCache。
- * hsweb 中 ReactiveCacheManager.getCache(name) 返回命名缓存，
  * 本实现采用懒创建策略（首次调用时创建）。
  */
 export class MemoryCacheManager implements ICacheManager {

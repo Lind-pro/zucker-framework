@@ -3,7 +3,7 @@ import { TransactionHolder } from './transaction-context';
 /**
  * 事务工具类 — 提供静态方法访问事务上下文
  *
- * 参考 hsweb TransactionSynchronizationManager 的工具化封装。
+ * 提供事务提交回调和无事务场景的统一处理。
  * 适用于不便注入 TransactionHolder 的场景（如事件监听器、工具函数）。
  */
 export class TransactionUtils {

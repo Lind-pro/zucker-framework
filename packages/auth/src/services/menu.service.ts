@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type { DatabaseAdapter } from '@zucker/core';
+import type { DatabaseAdapter } from '@zucker-framework/core';
 
 export interface MenuNode {
   id: string;
@@ -133,7 +133,6 @@ export class MenuService {
 
   /**
    * 批量更新菜单（排序、状态等）
-   * 对标 hsweb MenuService.batchUpdate()
    */
   async batchUpdate(
     menus: Array<{ id: string; sortOrder?: number; status?: boolean; name?: string; path?: string; icon?: string }>,

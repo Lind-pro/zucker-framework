@@ -5,7 +5,7 @@
  * - GET /health  — returns { status, timestamp, uptime } (no auth required)
  */
 import { Controller, Get } from '@nestjs/common';
-import { Public } from '@zucker/auth';
+import { Public } from '@zucker-framework/auth';
 
 interface HealthResponse {
   status: 'ok';

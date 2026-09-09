@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { InMemoryAdapter } from './in-memory-adapter';
-import type { ModelOperations } from '@zucker/core';
+import type { ModelOperations } from '@zucker-framework/core';
 
 describe('InMemoryAdapter', () => {
   let adapter: InMemoryAdapter;

@@ -107,7 +107,6 @@ export function expandTree2List<T extends Record<string, any>>(
 
 /**
  * 遍历树节点（广度优先），包含所有后代节点
- * 对齐 hsweb TreeSupportEntity.forEach()
  *
  * @param nodes 根节点集合
  * @param consumer 节点消费函数
@@ -139,7 +138,6 @@ export function forEachTree<T extends Record<string, any>>(
 
 /**
  * 平铺树结构（广度优先），带消费回调
- * 对齐 hsweb TreeUtils.flatTree()
  *
  * @param nodeList 树结构节点列表
  * @param childrenGetter 子节点获取函数
@@ -169,7 +167,6 @@ export function flatTree<T>(
 
 /**
  * 根据 path 获取父节点的 path
- * 对齐 hsweb TreeSupportEntity.getParentPath()
  *
  * @param path 当前节点的 path（使用 separator 分隔）
  * @param separator 路径分隔符，默认 '/'
@@ -202,7 +199,7 @@ export class UuidPathStrategy implements TreePathStrategy {
 }
 
 /**
- * 短码路径策略 — 使用 4 字符随机段（参考 hsweb 的短路径模式）
+ * 短码路径策略 — 使用 4 字符随机段
  */
 export class ShortCodePathStrategy implements TreePathStrategy {
   private static readonly CHARS = 'abcdefghijklmnopqrstuvwxyz0123456789';

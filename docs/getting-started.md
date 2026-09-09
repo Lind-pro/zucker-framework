@@ -24,19 +24,19 @@ cd my-project
 
 ### 2. 安装依赖
 
-在 `package.json` 中添加 @zucker 依赖：
+在 `package.json` 中添加 @zucker-framework 依赖：
 
 ```json
 {
   "dependencies": {
-    "@zucker/core": "latest",
-    "@zucker/common": "latest",
-    "@zucker/event": "latest",
-    "@zucker/crud": "latest",
-    "@zucker/auth": "latest",
-    "@zucker/logging": "latest",
-    "@zucker/config": "latest",
-    "@zucker/cache": "latest",
+    "@zucker-framework/core": "latest",
+    "@zucker-framework/common": "latest",
+    "@zucker-framework/event": "latest",
+    "@zucker-framework/crud": "latest",
+    "@zucker-framework/auth": "latest",
+    "@zucker-framework/logging": "latest",
+    "@zucker-framework/config": "latest",
+    "@zucker-framework/cache": "latest",
     "@nestjs/common": "^10.0.0",
     "@nestjs/core": "^10.0.0",
     "@nestjs/event-emitter": "^2.0.0",
@@ -99,13 +99,13 @@ npx prisma generate
 ```typescript
 import { Module } from '@nestjs/common';
 import { EventEmitterModule } from '@nestjs/event-emitter';
-import { ZuckerEventModule } from '@zucker/event';
-import { ZuckerCommonModule } from '@zucker/common';
-import { ZuckerCrudModule, PrismaAdapter } from '@zucker/crud';
-import { ZuckerAuthModule } from '@zucker/auth';
-import { ZuckerLoggingModule } from '@zucker/logging';
-import { ZuckerConfigModule } from '@zucker/config';
-import { ZuckerCacheModule } from '@zucker/cache';
+import { ZuckerEventModule } from '@zucker-framework/event';
+import { ZuckerCommonModule } from '@zucker-framework/common';
+import { ZuckerCrudModule, PrismaAdapter } from '@zucker-framework/crud';
+import { ZuckerAuthModule } from '@zucker-framework/auth';
+import { ZuckerLoggingModule } from '@zucker-framework/logging';
+import { ZuckerConfigModule } from '@zucker-framework/config';
+import { ZuckerCacheModule } from '@zucker-framework/cache';
 
 @Module({
   imports: [
@@ -137,7 +137,7 @@ export class AppModule {}
 ```typescript
 // src/article/article.service.ts
 import { Injectable } from '@nestjs/common';
-import { BaseService } from '@zucker/crud';
+import { BaseService } from '@zucker-framework/crud';
 
 interface Article {
   id: string;
@@ -183,9 +183,9 @@ BaseService 自动提供以下方法：
 ```typescript
 // src/article/article.controller.ts
 import { Controller, Post, Param } from '@nestjs/common';
-import { BaseController } from '@zucker/crud';
-import { Permissions } from '@zucker/auth';
-import { AccessLogger } from '@zucker/logging';
+import { BaseController } from '@zucker-framework/crud';
+import { Permissions } from '@zucker-framework/auth';
+import { AccessLogger } from '@zucker-framework/logging';
 import { ArticleService } from './article.service';
 
 // 实体类（用于 Swagger 文档）
@@ -295,10 +295,10 @@ curl -X DELETE http://localhost:3000/articles/{id}
 ```json
 {
   "dependencies": {
-    "@zucker/fe-http-client": "latest",
-    "@zucker/fe-storage": "latest",
-    "@zucker/fe-auth": "latest",
-    "@zucker/fe-permission": "latest",
+    "@zucker-framework/fe-http-client": "latest",
+    "@zucker-framework/fe-storage": "latest",
+    "@zucker-framework/fe-auth": "latest",
+    "@zucker-framework/fe-permission": "latest",
     "antd": "^5.0.0",
     "react": "^19.0.0"
   }
@@ -308,7 +308,7 @@ curl -X DELETE http://localhost:3000/articles/{id}
 使用 HTTP 客户端调用 API：
 
 ```typescript
-import { httpClient, get, post } from '@zucker/fe-http-client';
+import { httpClient, get, post } from '@zucker-framework/fe-http-client';
 
 // 响应自动解包，直接返回业务数据
 const articles = await get<PaginatedResult<Article>>('/articles');
@@ -318,7 +318,7 @@ const article = await post<Article>('/articles', { title: 'New Article' });
 使用认证状态管理：
 
 ```typescript
-import { useAuthStore } from '@zucker/fe-auth';
+import { useAuthStore } from '@zucker-framework/fe-auth';
 
 const { user, login, logout } = useAuthStore();
 ```
@@ -326,7 +326,7 @@ const { user, login, logout } = useAuthStore();
 使用权限控制：
 
 ```typescript
-import { usePermission } from '@zucker/fe-permission';
+import { usePermission } from '@zucker-framework/fe-permission';
 
 const { hasPermission } = usePermission();
 
@@ -343,9 +343,9 @@ if (hasPermission('article:add')) {
 ```json
 {
   "dependencies": {
-    "@zucker/fe-http-client": "latest",
-    "@zucker/fe-storage": "latest",
-    "@zucker/fe-analytics": "latest",
+    "@zucker-framework/fe-http-client": "latest",
+    "@zucker-framework/fe-storage": "latest",
+    "@zucker-framework/fe-analytics": "latest",
     "next": "^15.0.0",
     "next-intl": "^3.0.0"
   }
@@ -356,4 +356,3 @@ if (hasPermission('article:add')) {
 
 - 阅读 [模块扩展指南](./extending-modules.md) 了解如何添加更多业务功能
 - 阅读 [API 参考](./api-reference.md) 查看每个包的完整接口
-- 如果从 hsweb/Java 迁移，查看 [hsweb 映射表](./hsweb-mapping.md)

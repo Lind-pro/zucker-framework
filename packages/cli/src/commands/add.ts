@@ -10,69 +10,69 @@ const MODULE_REGISTRY: Record<string, {
   moduleSetup: string;
 }> = {
   auth: {
-    pkg: '@zucker/auth',
+    pkg: '@zucker-framework/auth',
     peerDeps: ['@nestjs/passport', '@nestjs/jwt'],
-    moduleImport: "import { ZuckerAuthModule } from '@zucker/auth';",
+    moduleImport: "import { ZuckerAuthModule } from '@zucker-framework/auth';",
     moduleSetup: "ZuckerAuthModule.forRoot({ jwtSecret: process.env.JWT_SECRET })",
   },
   logging: {
-    pkg: '@zucker/logging',
-    moduleImport: "import { ZuckerLoggingModule } from '@zucker/logging';",
+    pkg: '@zucker-framework/logging',
+    moduleImport: "import { ZuckerLoggingModule } from '@zucker-framework/logging';",
     moduleSetup: 'ZuckerLoggingModule.forRoot()',
   },
   config: {
-    pkg: '@zucker/config',
-    moduleImport: "import { ZuckerConfigModule } from '@zucker/config';",
+    pkg: '@zucker-framework/config',
+    moduleImport: "import { ZuckerConfigModule } from '@zucker-framework/config';",
     moduleSetup: 'ZuckerConfigModule.forRoot()',
   },
   dictionary: {
-    pkg: '@zucker/dictionary',
-    moduleImport: "import { ZuckerDictionaryModule } from '@zucker/dictionary';",
+    pkg: '@zucker-framework/dictionary',
+    moduleImport: "import { ZuckerDictionaryModule } from '@zucker-framework/dictionary';",
     moduleSetup: 'ZuckerDictionaryModule.forRoot()',
   },
   cache: {
-    pkg: '@zucker/cache',
-    moduleImport: "import { ZuckerCacheModule } from '@zucker/cache';",
+    pkg: '@zucker-framework/cache',
+    moduleImport: "import { ZuckerCacheModule } from '@zucker-framework/cache';",
     moduleSetup: "ZuckerCacheModule.forRoot({ provider: 'memory' })",
   },
   storage: {
-    pkg: '@zucker/storage',
-    moduleImport: "import { ZuckerStorageModule } from '@zucker/storage';",
+    pkg: '@zucker-framework/storage',
+    moduleImport: "import { ZuckerStorageModule } from '@zucker-framework/storage';",
     moduleSetup: "ZuckerStorageModule.forRoot({ provider: 'local', basePath: './uploads' })",
   },
   notification: {
-    pkg: '@zucker/notification',
-    moduleImport: "import { ZuckerNotificationModule } from '@zucker/notification';",
+    pkg: '@zucker-framework/notification',
+    moduleImport: "import { ZuckerNotificationModule } from '@zucker-framework/notification';",
     moduleSetup: 'ZuckerNotificationModule.forRoot({ providers: [] })',
   },
   credit: {
-    pkg: '@zucker/credit',
-    moduleImport: "import { ZuckerCreditModule } from '@zucker/credit';",
+    pkg: '@zucker-framework/credit',
+    moduleImport: "import { ZuckerCreditModule } from '@zucker-framework/credit';",
     moduleSetup: 'ZuckerCreditModule.forRoot()',
   },
   ai: {
-    pkg: '@zucker/ai',
-    moduleImport: "import { ZuckerAIModule } from '@zucker/ai';",
+    pkg: '@zucker-framework/ai',
+    moduleImport: "import { ZuckerAIModule } from '@zucker-framework/ai';",
     moduleSetup: 'ZuckerAIModule.forRoot()',
   },
   tenant: {
-    pkg: '@zucker/tenant',
-    moduleImport: "import { ZuckerTenantModule } from '@zucker/tenant';",
+    pkg: '@zucker-framework/tenant',
+    moduleImport: "import { ZuckerTenantModule } from '@zucker-framework/tenant';",
     moduleSetup: 'ZuckerTenantModule.forRoot()',
   },
   form: {
-    pkg: '@zucker/form',
-    moduleImport: "import { ZuckerFormModule } from '@zucker/form';",
+    pkg: '@zucker-framework/form',
+    moduleImport: "import { ZuckerFormModule } from '@zucker-framework/form';",
     moduleSetup: 'ZuckerFormModule.forRoot()',
   },
   monitoring: {
-    pkg: '@zucker/monitoring',
-    moduleImport: "import { ZuckerMonitoringModule } from '@zucker/monitoring';",
+    pkg: '@zucker-framework/monitoring',
+    moduleImport: "import { ZuckerMonitoringModule } from '@zucker-framework/monitoring';",
     moduleSetup: 'ZuckerMonitoringModule',
   },
   'rate-limiter': {
-    pkg: '@zucker/rate-limiter',
-    moduleImport: "import { ZuckerRateLimiterModule } from '@zucker/rate-limiter';",
+    pkg: '@zucker-framework/rate-limiter',
+    moduleImport: "import { ZuckerRateLimiterModule } from '@zucker-framework/rate-limiter';",
     moduleSetup: `ZuckerRateLimiterModule.forRoot({
       limiters: {
         login: { points: 5, duration: 900 },
@@ -103,7 +103,7 @@ export const addCommand = new Command('add')
       process.exit(1);
     }
 
-    console.log(`\n  Adding @zucker/${moduleName} to your project...\n`);
+    console.log(`\n  Adding @zucker-framework/${moduleName} to your project...\n`);
 
     // 1. Install the package
     const pm = detectPackageManager();

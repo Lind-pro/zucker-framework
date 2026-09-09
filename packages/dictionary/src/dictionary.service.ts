@@ -1,5 +1,5 @@
 import { Injectable, Inject, Logger, Optional } from '@nestjs/common';
-import { type DatabaseAdapter } from '@zucker/core';
+import { type DatabaseAdapter } from '@zucker-framework/core';
 import { EventEmitter2 } from 'eventemitter2';
 import type { DictionaryItem } from './index';
 import type { DictDefine } from './dict-define';
@@ -16,14 +16,14 @@ interface DictionaryRow {
 }
 
 /**
- * Dictionary with populated items — corresponds to hsweb DictionaryEntity
+ * Dictionary with populated items
  * with items field populated.
  */
 export interface DictionaryDetail extends DictionaryRow {
   items: DictionaryItem[];
 }
 
-import { DATABASE_ADAPTER } from '@zucker/crud';
+import { DATABASE_ADAPTER } from '@zucker-framework/crud';
 
 export const DICT_CHANGED_EVENT = 'zucker.dictionary-changed';
 
@@ -39,7 +39,7 @@ export interface DictChangePayload {
   dictId: string;
 }
 
-/** Minimal TopicEventBus interface to avoid hard dependency on @zucker/event */
+/** Minimal TopicEventBus interface to avoid hard dependency on @zucker-framework/event */
 interface TopicEventBusLike {
   publish(topic: string, payload: unknown): Promise<void>;
 }
@@ -130,8 +130,6 @@ export class DictionaryService {
   /**
    * Find a dictionary by ID with its items populated, sorted by ordinal.
    *
-   * Reference: hsweb DefaultDictionaryService.findDetailById()
-   *
    * @param id Dictionary ID
    * @returns Dictionary with items, or null if not found
    */
@@ -150,8 +148,6 @@ export class DictionaryService {
   /**
    * Find all dictionaries with their items populated.
    * Optionally filter out dictionaries with no items.
-   *
-   * Reference: hsweb DefaultDictionaryService.findAllDetail() / fillDetail()
    *
    * @param options.allowEmptyItems If false (default), exclude dicts with no items
    * @param options.classified Optional classified filter
@@ -200,7 +196,6 @@ export class DictionaryService {
   /**
    * Convert a DictionaryDetail to a DictDefine.
    *
-   * Reference: hsweb DictionaryEntity.toDictDefine()
    * — builds DefaultDictDefine from entity id, name (as alias), describe (as comments), items
    *
    * @param detail - Dictionary with populated items
@@ -240,8 +235,6 @@ export class DictionaryService {
 
   /**
    * Create a ClearDictionaryCacheEvent for the given dictionary ID.
-   *
-   * Reference: hsweb services publish ClearDictionaryCacheEvent.of() on all mutations
    */
   createClearCacheEvent(dictId?: string): ClearDictionaryCacheEvent {
     return ClearDictionaryCacheEvent.of(dictId);
@@ -249,7 +242,6 @@ export class DictionaryService {
 
   /**
    * 导出字典数据（包含字典和字典项）
-   * 对标 hsweb DictionaryService.export
    */
   async exportDictionaries(dictIds?: string[]): Promise<Array<{ dictionary: unknown; items: unknown[] }>> {
     const where = dictIds?.length ? { id: { in: dictIds } } : {};
@@ -268,7 +260,6 @@ export class DictionaryService {
 
   /**
    * 导入字典数据（含冲突处理：已存在则更新，不存在则创建）
-   * 对标 hsweb DictionaryService.import
    */
   async importDictionaries(
     data: Array<{ dictionary: Record<string, unknown>; items: Array<Record<string, unknown>> }>,
@@ -314,7 +305,6 @@ export class DictionaryService {
 
   /**
    * 搜索字典项（按名称或值模糊匹配）
-   * 对标 hsweb DictionaryItemService.search
    */
   async searchItems(
     keyword: string,

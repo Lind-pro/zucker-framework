@@ -1,5 +1,5 @@
 import { Injectable, Inject, Logger, Optional } from '@nestjs/common';
-import type { DatabaseAdapter } from '@zucker/core';
+import type { DatabaseAdapter } from '@zucker-framework/core';
 import type { DataAccessHandler, AuthorizingContext } from './data-access-handler';
 import type { DataAccessConfig, DimensionDataAccessConfig } from './data-access-config';
 import { DefaultDataAccessType } from './data-access-config';
@@ -41,7 +41,7 @@ export class DimensionDataAccessHandler implements DataAccessHandler {
     // For query actions, inject a filter condition
     if (config.action === 'query' || config.action === 'get') {
       // When children=true (default), expand dimension tree; otherwise use direct values only
-      // Mirrors hsweb DimensionDataAccessConfig.children flag
+      // Include child dimensions when configured
       const useChildren = dimConfig.children !== false;
 
       let dimensionValues: string[];
@@ -58,7 +58,7 @@ export class DimensionDataAccessHandler implements DataAccessHandler {
       }
 
       if (dimensionValues.length === 0) {
-        // 对齐 hsweb DimensionDataAccessHandler.checkSupported():
+        // 维度处理器的适用条件：
         // 当用户没有任何匹配维度时，应拒绝访问而非放行全部数据
         this.logger.warn(
           `用户 ${userId} 没有任何 ${dimConfig.dimensionType || '所有'} 类型的维度，拒绝访问`,

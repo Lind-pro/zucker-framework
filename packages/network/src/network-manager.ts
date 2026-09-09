@@ -51,7 +51,7 @@ export interface INetworkManager {
  *
  * 与 jetlinks 的差异：
  * - 去掉了 Spring BeanPostProcessor 自动发现，改为手动 registerProvider
- * - 去掉了 EventBus 集群同步（zucker 已有 @zucker/cluster）
+ * - 去掉了 EventBus 集群同步（zucker 已有 @zucker-framework/cluster）
  * - 健康检查用 setInterval 而非 Flux.interval
  */
 @Injectable()

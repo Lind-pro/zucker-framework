@@ -1,5 +1,5 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
-import { BusinessException } from '@zucker/core';
+import { BusinessException } from '@zucker-framework/core';
 import type { RedisLike } from './cluster-manager';
 
 /** Options for lock retry behavior in tryAcquire */

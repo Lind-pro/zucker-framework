@@ -4,14 +4,14 @@ export interface EntityEventListener<T = unknown> {
   onEvent(event: EntityEvent<T>): void | Promise<void>;
 
   /**
-   * 监听器优先级，数值越小优先级越高（与 hsweb Ordered 一致）
+   * 监听器优先级，数值越小优先级越高
    * 默认 0
    */
   readonly order?: number;
 }
 
 /**
- * 当前用户信息 — 参考 hsweb Authentication
+ * 当前用户信息
  */
 export interface CurrentUser {
   id: string;
@@ -21,11 +21,10 @@ export interface CurrentUser {
 /**
  * 创建者监听器 - Prepare 阶段自动填充创建人/修改人信息
  *
- * 参考 hsweb CreatorEventListener:
  * - CREATE/SAVE: 填充 creatorId, creatorName, createdAt, modifierId, modifierName, updatedAt
  * - MODIFY/UPDATE: 仅填充 modifierId, modifierName, updatedAt
  *
- * 与 hsweb 一致点：
+ * 填充规则：
  * - 使用 ??= 确保不覆盖已有的 creatorId（用户可提前设置）
  * - modifierId/modifierName 始终覆盖
  * - order 为最高优先级（HIGHEST_PRECEDENCE）
@@ -64,7 +63,7 @@ export class CreatorEventListener implements EntityEventListener {
       }
 
       if (isModify || isCreate) {
-        // 修改人信息 — 仅在未设置时填充（与 hsweb ObjectUtils.isEmpty 检查一致）
+        // 修改人信息 — 仅在未设置时填充
         if (rec.modifierId == null || rec.modifierId === '' || rec.modifierId === undefined) {
           rec.modifierId = user.id;
         }
@@ -80,7 +79,7 @@ export class CreatorEventListener implements EntityEventListener {
 }
 
 /**
- * 组合事件监听器 — 参考 hsweb CompositeEventListener
+ * 组合事件监听器
  *
  * 聚合多个 EntityEventListener 并按 order 排序执行。
  * 数值越小优先级越高。

@@ -3,10 +3,10 @@
  *
  * 通过 HTTP POST 接收设备上报消息。
  * 这是一个示例实现，展示如何继承 AbstractDeviceGateway。
- * 实际项目中应对接 @zucker/network 提供的 HTTP Server。
+ * 实际项目中应对接 @zucker-framework/network 提供的 HTTP Server。
  */
 import { Injectable } from '@nestjs/common';
-import type { ThingManager, ThingsDataService } from '@zucker/things';
+import type { ThingManager, ThingsDataService } from '@zucker-framework/things';
 import {
   AbstractDeviceGateway,
   GatewayState,
@@ -14,7 +14,7 @@ import {
 } from './device-gateway';
 import type { ProtocolSupport } from './codec';
 import { SessionState, type DeviceSession } from './device-session';
-import { Transports, type Transport } from '@zucker/network';
+import { Transports, type Transport } from '@zucker-framework/network';
 
 /**
  * HTTP 会话（无状态，每次请求创建一个临时会话）

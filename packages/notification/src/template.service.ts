@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { parseTemplate, NotFoundException, type ParseTemplateOptions } from '@zucker/core';
+import { parseTemplate, NotFoundException, type ParseTemplateOptions } from '@zucker-framework/core';
 import {
   convertVariableValue,
   renderVariableMap,

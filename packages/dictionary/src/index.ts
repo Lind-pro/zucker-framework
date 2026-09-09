@@ -16,12 +16,10 @@ export interface DictionaryItem {
   properties?: Record<string, unknown>;
   /**
    * Quick search code for fuzzy lookup (e.g. pinyin abbreviation).
-   * Reference: hsweb DictionaryItemEntity.searchCode
    */
   searchCode?: string;
   /**
    * Value type hint (e.g. 'string', 'number', 'boolean').
-   * Reference: hsweb DictionaryItemEntity.valueType
    */
   valueType?: string;
 }
@@ -37,12 +35,10 @@ export interface Dictionary {
   status?: boolean;
   /**
    * Record creation timestamp (epoch ms).
-   * Reference: hsweb DictionaryEntity.createTime
    */
   createTime?: number;
   /**
    * Creator user ID.
-   * Reference: hsweb DictionaryEntity.creatorId
    */
   creatorId?: string;
   items: DictionaryItem[];
@@ -50,8 +46,6 @@ export interface Dictionary {
 
 /**
  * Get the bitmask for a DictionaryItem based on its ordinal.
- *
- * Reference: hsweb DictionaryItemEntity implements EnumDict -> getMask()
  *
  * @param item - Dictionary item with ordinal
  * @returns Bitmask value (1 << ordinal)
@@ -63,11 +57,10 @@ export function getDictionaryItemMask(item: DictionaryItem): number {
 /**
  * Generate a deterministic ID for a dictionary item from dictId + ordinal.
  *
- * Reference: hsweb DictionaryItemEntity.generateId(dictId, ordinal)
  * — uses DigestUtils.md5Hex(dictId + "|" + ordinal)
  *
  * Uses a simple hash algorithm for portability. For production use with
- * Node.js crypto, use `md5` from `@zucker/core` instead:
+ * Node.js crypto, use `md5` from `@zucker-framework/core` instead:
  *   `md5(\`${dictId}|${ordinal}\`)`
  *
  * @param dictId - The dictionary ID
@@ -89,7 +82,6 @@ export function generateDictionaryItemId(dictId: string, ordinal: number): strin
 /**
  * Serialize a DictionaryItem to the JSON object format used for API responses.
  *
- * Reference: hsweb DictionaryItemEntity.getWriteJSONObject()
  * — writes id, name, dictId, value, text, ordinal, sortIndex, parentId, path, mask, searchCode, status, describe
  */
 export function dictionaryItemToJSON(item: DictionaryItem): Record<string, unknown> {

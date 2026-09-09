@@ -18,12 +18,12 @@ export interface AccessLoggerOptions {
   /** 需要排除的敏感字段列表 */
   excludeFields?: string[];
   /**
-   * 是否忽略日志记录 — 对齐 hsweb AccessLogger.ignore()
+   * 是否忽略日志记录
    * 设置为 true 则跳过该类或方法的日志记录
    */
   ignore?: boolean;
   /**
-   * 忽略的参数名列表 — 对齐 hsweb AccessLogger.ignoreParameter()
+   * 忽略的参数名列表
    * 使用 '*' 表示忽略全部参数，或指定具体参数名
    */
   ignoreParameter?: string[];
@@ -32,7 +32,7 @@ export interface AccessLoggerOptions {
 /**
  * 业务日志装饰器
  *
- * 支持类级别和方法级别组合（参考 hsweb @AccessLogger 支持 TYPE + METHOD）。
+ * 支持类级别和方法级别组合。
  * - 类级别设置默认的 module / describe
  * - 方法级别可覆盖或补充
  *

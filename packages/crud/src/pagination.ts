@@ -5,7 +5,6 @@ import { type DynamicQueryParam } from './dynamic-query.service';
 
 /**
  * Paginated query result containing data and pagination metadata.
- * Mirrors hsweb PagerResult<E>.
  * @template T - The type of each data item
  */
 export interface PaginatedResult<T> {
@@ -20,14 +19,13 @@ export interface PaginatedResult<T> {
   /** Total number of pages */
   totalPages: number;
   /**
-   * 0-based page index for hsweb PagerResult compatibility.
-   * Equivalent to Java PagerResult.pageIndex = QueryParam.getThinkPageIndex()
+   * 0-based page index, equal to page - 1.
    */
   pageIndex: number;
 }
 
 /**
- * SaveResult — mirrors hsweb SaveResult.
+ * SaveResult
  * Represents the outcome of a batch save (upsert) operation.
  */
 export interface SaveResult {
@@ -41,7 +39,6 @@ export interface SaveResult {
 
 /**
  * Create an empty PaginatedResult.
- * Mirrors hsweb PagerResult.empty().
  */
 export function emptyPagerResult<T>(): PaginatedResult<T> {
   return {
@@ -56,7 +53,6 @@ export function emptyPagerResult<T>(): PaginatedResult<T> {
 
 /**
  * Merge two SaveResults.
- * Mirrors hsweb SaveResult.merge().
  */
 export function mergeSaveResult(a: SaveResult, b: SaveResult): SaveResult {
   return {

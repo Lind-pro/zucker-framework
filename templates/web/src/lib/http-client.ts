@@ -1,4 +1,4 @@
-import { createHttpClient } from "@zucker/fe-http-client";
+import { createHttpClient } from "@zucker-framework/fe-http-client";
 import { useAuthStore } from "./stores/auth-store";
 
 export const httpClient = createHttpClient({

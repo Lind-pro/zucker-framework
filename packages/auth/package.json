@@ -1,6 +1,6 @@
 {
-  "name": "@zucker/auth",
-  "version": "0.0.1",
+  "name": "@zucker-framework/auth",
+  "version": "1.0.0",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -17,21 +17,25 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "LICENSE",
+    "NOTICE",
+    "THIRD_PARTY_NOTICES"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format cjs,esm --dts --external @nestjs/common --external @nestjs/core --external @nestjs/passport --external @nestjs/jwt --external rxjs --external @zucker/core --external @zucker/crud --external @zucker/cache",
+    "build": "tsup src/index.ts --format cjs,esm --dts --external @nestjs/common --external @nestjs/core --external @nestjs/passport --external @nestjs/jwt --external rxjs --external @zucker-framework/core --external @zucker-framework/crud --external @zucker-framework/cache",
     "clean": "rm -rf dist",
-    "lint": "eslint src/"
+    "lint": "eslint src/",
+    "prepack": "node ../../scripts/prepare-package-legal.mjs"
   },
   "dependencies": {
-    "@zucker/core": "workspace:*",
-    "@zucker/crud": "workspace:*",
-    "passport-jwt": "^4.0.1"
+    "@zucker-framework/core": "workspace:*",
+    "@zucker-framework/crud": "workspace:*",
+    "passport-jwt": "^4.0.1",
+    "@types/passport-jwt": "^4.0.1"
   },
   "devDependencies": {
-    "@zucker/cache": "workspace:*",
-    "@types/passport-jwt": "^4.0.1"
+    "@zucker-framework/cache": "workspace:*"
   },
   "peerDependencies": {
     "@nestjs/common": "^12.0.0",
@@ -39,11 +43,22 @@
     "@nestjs/passport": "^12.0.0",
     "@nestjs/jwt": "^12.0.1",
     "rxjs": "^7.0.0",
-    "@zucker/cache": "workspace:*"
+    "@zucker-framework/cache": "workspace:*"
   },
   "peerDependenciesMeta": {
-    "@zucker/cache": {
+    "@zucker-framework/cache": {
       "optional": true
     }
+  },
+  "license": "Apache-2.0",
+  "author": "Lind",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Lind-pro/zucker-framework.git",
+    "directory": "packages/auth"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }

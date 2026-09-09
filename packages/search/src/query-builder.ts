@@ -1,6 +1,5 @@
 /**
  * Elasticsearch 查询构建器 — 流式 API。
- * 对标 hsweb QueryParam / DynamicQueryService 的查询构建能力。
  */
 export class SearchQueryBuilder {
   private _index = '';

@@ -1,9 +1,9 @@
 import { Injectable, Inject, Logger } from '@nestjs/common';
-import type { DatabaseAdapter } from '@zucker/core';
+import type { DatabaseAdapter } from '@zucker-framework/core';
 import type { FormDefinition, FieldDefinition } from './form-definition';
 import { FieldTypeRegistry } from './field-type';
 
-import { DATABASE_ADAPTER } from '@zucker/crud';
+import { DATABASE_ADAPTER } from '@zucker-framework/crud';
 
 export interface FormValidationResult {
   valid: boolean;
@@ -182,7 +182,6 @@ export class FormService {
 
   /**
    * 保存表单定义（自动版本递增）
-   * 对标 hsweb FormManager.save() 的版本控制
    */
   async saveWithVersion(form: FormDefinition): Promise<FormDefinition> {
     const existing = await this.findById(form.id);
@@ -203,7 +202,7 @@ export class FormService {
   ): Promise<FormDefinition> {
     const source = await this.findById(sourceId);
     if (!source) {
-      const { NotFoundException } = await import('@zucker/core');
+      const { NotFoundException } = await import('@zucker-framework/core');
       throw new NotFoundException(`Form ${sourceId} not found`);
     }
     return this.create({

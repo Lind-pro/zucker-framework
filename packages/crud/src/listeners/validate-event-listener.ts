@@ -1,6 +1,5 @@
 /**
  * ValidateEventListener — 实体验证监听器
- * 对齐: hsweb-framework ValidateEventListener.java
  *
  * 监听 PREPARE 阶段事件，对实体进行验证：
  * - CREATE / SAVE → 使用 CreateGroup 规则验证
@@ -14,13 +13,13 @@ import {
   EntityEventType,
   type TopicEventBus,
   TOPIC_EVENT_BUS,
-} from '@zucker/event';
+} from '@zucker-framework/event';
 import {
   type ValidationSchema,
   tryValidate,
   CreateGroup,
   UpdateGroup,
-} from '@zucker/core';
+} from '@zucker-framework/core';
 
 /**
  * 实体验证规则注册表

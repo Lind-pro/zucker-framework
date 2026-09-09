@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
-import type { TopicEventBus, TopicPayload, EventHandler, Subscription, SubscriptionInfo } from '@zucker/event';
-import { createTopicPayload, matchesTopic } from '@zucker/event';
+import type { TopicEventBus, TopicPayload, EventHandler, Subscription, SubscriptionInfo } from '@zucker-framework/event';
+import { createTopicPayload, matchesTopic } from '@zucker-framework/event';
 import type { RedisLike } from './cluster-manager';
 
 /**

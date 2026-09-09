@@ -1,5 +1,5 @@
 /**
- * Authorization controller — mirrors hsweb AuthorizationController.
+ * Authorization controller
  *
  * Endpoints:
  * - GET  /authorize/me    — current user's authentication info
@@ -30,7 +30,7 @@ import {
   createLoginSuccessEvent,
   createLoginFailedEvent,
 } from '../events';
-import { UnauthorizedException, ValidationException } from '@zucker/core';
+import { UnauthorizedException, ValidationException } from '@zucker-framework/core';
 
 interface TopicEventBusLike {
   publish(topic: string, payload: unknown): Promise<void>;
@@ -76,7 +76,6 @@ export class AuthorizationController {
 
   /**
    * GET /authorize/me — current user's authentication info.
-   * Mirrors hsweb AuthorizationController.me().
    */
   @Get('me')
   @Permissions()
@@ -91,7 +90,6 @@ export class AuthorizationController {
 
   /**
    * POST /authorize/login — username/password login.
-   * Mirrors hsweb AuthorizationController.doLogin() event flow:
    * 1. DecodeEvent (可修改密码/用户名)
    * 2. BeforeEvent (可阻止登录/注入已认证用户)
    * 3. authenticate

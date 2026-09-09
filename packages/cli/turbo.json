@@ -1,0 +1,14 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "../../tsconfig.base.json",
+        "../../scripts/prepare-cli-catalog.mjs",
+        "../../packages/*/package.json",
+        "../../templates/server/package.json"
+      ]
+    }
+  }
+}

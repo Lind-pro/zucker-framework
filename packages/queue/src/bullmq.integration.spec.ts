@@ -1,23 +1,29 @@
-import type { ConnectionOptions } from 'bullmq';
+import { Queue, type ConnectionOptions } from 'bullmq';
 import Redis from 'ioredis';
 import { BullMqQueueEvents, type QueueCompletedEvent } from './bullmq-queue-events';
 import { BullMqQueueProvider } from './bullmq-queue.provider';
 import { BullMqWorkerHost } from './bullmq-worker-host';
+import { bullMqConnectionFromUrl } from './bullmq-connection';
 
 const redisUrl = process.env.TEST_REDIS_URL;
+const queuePrefix = process.env.TEST_REDIS_PREFIX ?? 'zucker-test';
 const describeWithRedis = redisUrl ? describe : describe.skip;
 
 function connectionFromUrl(value: string): ConnectionOptions {
-  const url = new URL(value);
-  const database = url.pathname.length > 1 ? Number(url.pathname.slice(1)) : 0;
-  return {
-    host: url.hostname,
-    port: Number(url.port || 6379),
-    username: url.username || undefined,
-    password: url.password || undefined,
-    db: Number.isFinite(database) ? database : 0,
-    tls: url.protocol === 'rediss:' ? {} : undefined,
-  };
+  return bullMqConnectionFromUrl(value, { role: 'worker' });
+}
+
+async function removeTestQueue(queueName: string): Promise<void> {
+  const queue = new Queue(queueName, {
+    connection: bullMqConnectionFromUrl(redisUrl as string),
+    prefix: queuePrefix,
+  });
+  try {
+    // The random queue name belongs only to this test. Never flush a shared Redis DB.
+    await queue.obliterate({ force: true });
+  } finally {
+    await queue.close();
+  }
 }
 
 function waitFor<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
@@ -43,9 +49,9 @@ describeWithRedis('BullMQ runtime integration', () => {
   it('deduplicates a fixed job id and delivers completion through QueueEvents', async () => {
     const connection = connectionFromUrl(redisUrl as string);
     const queueName = `zucker-integration-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const provider = new BullMqQueueProvider({ connection, prefix: 'zucker-test' });
-    const workerHost = new BullMqWorkerHost({ connection, prefix: 'zucker-test' });
-    const queueEvents = new BullMqQueueEvents({ connection, prefix: 'zucker-test' });
+    const provider = new BullMqQueueProvider({ connection, prefix: queuePrefix });
+    const workerHost = new BullMqWorkerHost({ connection, prefix: queuePrefix });
+    const queueEvents = new BullMqQueueEvents({ connection, prefix: queuePrefix });
     let handled = 0;
     let complete: (event: QueueCompletedEvent) => void = () => undefined;
     const completed = new Promise<QueueCompletedEvent>((resolve) => {
@@ -77,16 +83,17 @@ describeWithRedis('BullMQ runtime integration', () => {
       await workerHost.close();
       await queueEvents.close();
       await provider.close();
+      await removeTestQueue(queueName);
     }
   }, 20_000);
 
-  it('continues delivery after Redis temporarily pauses commands', async () => {
+  it('continues delivery after its producer client reconnects', async () => {
     const connection = connectionFromUrl(redisUrl as string);
-    const queueName = `zucker-redis-pause-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const provider = new BullMqQueueProvider({ connection, prefix: 'zucker-test' });
-    const workerHost = new BullMqWorkerHost({ connection, prefix: 'zucker-test' });
-    const queueEvents = new BullMqQueueEvents({ connection, prefix: 'zucker-test' });
-    const control = new Redis(redisUrl as string, { maxRetriesPerRequest: 1 });
+    const queueName = `zucker-client-reconnect-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const control = new Redis(redisUrl as string, { maxRetriesPerRequest: null });
+    const provider = new BullMqQueueProvider({ connection: control, prefix: queuePrefix });
+    const workerHost = new BullMqWorkerHost({ connection, prefix: queuePrefix });
+    const queueEvents = new BullMqQueueEvents({ connection, prefix: queuePrefix });
     let handled = 0;
     let complete: (event: QueueCompletedEvent) => void = () => undefined;
     const completed = new Promise<QueueCompletedEvent>((resolve) => {
@@ -108,7 +115,12 @@ describeWithRedis('BullMQ runtime integration', () => {
         queueEvents.waitUntilReady(),
         control.ping(),
       ]);
-      await control.call('CLIENT', 'PAUSE', '300', 'ALL');
+      await provider.getJob(queueName, 'not-present');
+      // Reconnect only this test's client; CLIENT PAUSE would affect every NAS user.
+      const disconnected = new Promise<void>((resolveEnd) => control.once('end', resolveEnd));
+      control.disconnect();
+      await waitFor(disconnected, 5000);
+      const reconnected = control.connect();
       const job = await provider.add(
         queueName,
         { taskId: 'task-after-pause' },
@@ -116,6 +128,7 @@ describeWithRedis('BullMQ runtime integration', () => {
           jobId: 'task-after-pause',
         },
       );
+      await reconnected;
       const event = await waitFor(completed, 15_000);
 
       expect(job.id).toBe('task-after-pause');
@@ -127,6 +140,7 @@ describeWithRedis('BullMQ runtime integration', () => {
       await queueEvents.close();
       await provider.close();
       await control.quit();
+      await removeTestQueue(queueName);
     }
   }, 20_000);
 });

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EventTrigger } from './event-trigger';
 import type { EventTriggerConfig } from './event-trigger';
-import type { TopicEventBus, TopicPayload } from '@zucker/event';
+import type { TopicEventBus, TopicPayload } from '@zucker-framework/event';
 
 /**
  * 최소 TopicEventBus mock — subscribe 콜백을 저장했다가 수동으로 발화할 수 있다.

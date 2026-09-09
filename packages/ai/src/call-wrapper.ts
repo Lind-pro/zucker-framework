@@ -207,7 +207,7 @@ export class AICallWrapper {
    *
    * @example
    * ```ts
-   * import { openAIStreamExtractor } from '@zucker/ai';
+   * import { openAIStreamExtractor } from '@zucker-framework/ai';
    * const result = await wrapper.callWithStream(
    *   () => openai.chat.completions.create({ stream: true, ... }),
    *   openAIStreamExtractor,

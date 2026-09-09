@@ -1,6 +1,6 @@
 {
-  "name": "@zucker/task",
-  "version": "0.1.0-rc.13",
+  "name": "@zucker-framework/task",
+  "version": "1.0.0",
   "description": "Durable task lifecycle contracts and state machine for Zucker applications",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -19,12 +19,17 @@
   },
   "files": [
     "dist",
-    "assets"
+    "assets/task-runtime.prisma",
+    "assets/task-events.postgresql.sql",
+    "LICENSE",
+    "NOTICE",
+    "THIRD_PARTY_NOTICES"
   ],
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts",
     "clean": "rm -rf dist",
-    "lint": "eslint src/"
+    "lint": "eslint src/",
+    "prepack": "node ../../scripts/prepare-package-legal.mjs"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.8",
@@ -34,5 +39,16 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "license": "Apache-2.0",
+  "author": "Lind",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Lind-pro/zucker-framework.git",
+    "directory": "packages/task"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }

@@ -19,10 +19,10 @@ import {
   UseGuards,
   Logger,
 } from '@nestjs/common';
-import { NotFoundException } from '@zucker/core';
-import { JwtAuthGuard, PermissionsGuard, Permissions } from '@zucker/auth';
-import { FormService } from '@zucker/form';
-import type { FormDefinition } from '@zucker/form';
+import { NotFoundException } from '@zucker-framework/core';
+import { JwtAuthGuard, PermissionsGuard, Permissions } from '@zucker-framework/auth';
+import { FormService } from '@zucker-framework/form';
+import type { FormDefinition } from '@zucker-framework/form';
 
 interface QueryRequest {
   pageIndex?: number;

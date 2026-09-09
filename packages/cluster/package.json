@@ -1,27 +1,42 @@
 {
-  "name": "@zucker/cluster",
-  "version": "0.0.1",
+  "name": "@zucker-framework/cluster",
+  "version": "1.0.0",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "LICENSE",
+    "NOTICE",
+    "THIRD_PARTY_NOTICES"
   ],
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts",
     "clean": "rm -rf dist",
-    "lint": "eslint src/"
+    "lint": "eslint src/",
+    "prepack": "node ../../scripts/prepare-package-legal.mjs"
   },
   "dependencies": {
-    "@zucker/core": "workspace:*"
+    "@zucker-framework/core": "workspace:*"
   },
   "peerDependencies": {
     "@nestjs/common": "^12.0.0",
     "@nestjs/core": "^12.0.0",
-    "@zucker/event": "workspace:*"
+    "@zucker-framework/event": "workspace:*"
   },
   "devDependencies": {
-    "@zucker/event": "workspace:*",
+    "@zucker-framework/event": "workspace:*",
     "@types/node": "^20.19.43"
+  },
+  "license": "Apache-2.0",
+  "author": "Lind",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Lind-pro/zucker-framework.git",
+    "directory": "packages/cluster"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }

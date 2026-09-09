@@ -36,7 +36,7 @@ export interface FileInfo {
 export type StorageProviderType = 'local' | 's3' | 'webdav';
 
 /**
- * 文件上传校验配置 — 对应 hsweb FileUploadProperties 的校验逻辑
+ * 文件上传校验配置
  * 支持后缀名白名单/黑名单和 MIME 类型白名单/黑名单
  */
 export interface FileUploadValidation {
@@ -54,7 +54,6 @@ export interface FileUploadValidation {
 
 /**
  * Default dangerous file extensions that should be blocked unless explicitly allowed.
- * Mirrors hsweb security defaults — prevents script/executable uploads.
  */
 export const DANGEROUS_EXTENSIONS: readonly string[] = [
   'exe', 'bat', 'cmd', 'com', 'msi', 'scr', 'pif',
@@ -70,9 +69,9 @@ export const DANGEROUS_EXTENSIONS: readonly string[] = [
 ];
 
 /**
- * 文件名安全清洗 — 对齐 hsweb 5.x commit 8009845b5
+ * 文件名安全清洗
  *
- * hsweb 5.x 增强了文件上传安全性：
+ * 文件上传安全规则：
  * 1. Unicode NFKC 规范化 — 将不同编码形式的字符统一
  *    （如全角字符 `＼` → `\`），防止绕过路径检查
  * 2. 将反斜杠统一为正斜杠后仅提取文件名部分
@@ -105,7 +104,6 @@ export function sanitizeFileName(fileName: string): string {
 
 /**
  * 检查文件名是否为安全的原始文件名（仅字母数字 ._-）
- * 对齐 hsweb 5.x: `name.matches("^[a-zA-Z0-9._-]+$")`
  */
 export function isSafeOriginalFileName(name: string): boolean {
   return /^[a-zA-Z0-9._-]+$/.test(name);
@@ -113,12 +111,12 @@ export function isSafeOriginalFileName(name: string): boolean {
 
 /**
  * 判断文件是否被拒绝上传（基于后缀名与 MIME 类型校验）
- * 逻辑参考自 hsweb FileUploadProperties.denied()
+ * 根据文件名、扩展名和大小检查上传限制。
  *
  * @param fileName 文件名
  * @param mimeType MIME 类型（可选）
  * @param validation 校验配置
- * @param fileSize 文件大小（字节，可选）— 对应 hsweb maxFileSize 校验
+ * @param fileSize 文件大小（字节，可选），用于最大文件大小校验
  */
 export function isFileDenied(
   fileName: string,
@@ -126,12 +124,12 @@ export function isFileDenied(
   validation: FileUploadValidation,
   fileSize?: number,
 ): boolean {
-  // 对齐 hsweb 5.x: 先清洗文件名再校验
+  // 先清洗文件名再校验
   const sanitized = sanitizeFileName(fileName);
   const dotIndex = sanitized.lastIndexOf('.');
   const ext = dotIndex >= 0 ? sanitized.substring(dotIndex + 1).toLowerCase() : '';
 
-  // 文件大小校验 — 对齐 hsweb FileUploadProperties
+  // 文件大小校验
   if (validation.maxFileSize && validation.maxFileSize > 0 && fileSize !== undefined) {
     if (fileSize > validation.maxFileSize) return true;
   }
@@ -166,14 +164,14 @@ export function isFileDenied(
 }
 
 /**
- * 生成基于日期的存储路径 — 对应 hsweb FileUploadProperties.createStaticSavePath()
+ * 生成基于日期的存储路径
  * 按 YYYYMMDD 归档，避免单目录文件过多
  */
 export function generateDateBasedKey(
   originalName: string,
   options?: { useOriginalFileName?: boolean; prefix?: string },
 ): string {
-  // 对齐 hsweb 5.x: 先清洗文件名
+  // 先清洗文件名
   const safeName = sanitizeFileName(originalName);
 
   const now = new Date();
@@ -188,7 +186,7 @@ export function generateDateBasedKey(
 
   const prefix = options?.prefix ? `${options.prefix}/` : '';
 
-  // 对齐 hsweb 5.x: 仅当文件名匹配安全字符集时才保留原始文件名
+  // 仅当文件名匹配安全字符集时才保留原始文件名
   if (options?.useOriginalFileName && isSafeOriginalFileName(safeName)) {
     const uniqueDir = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
     return `${prefix}${datePart}/${uniqueDir}/${safeName}`;
@@ -200,25 +198,22 @@ export function generateDateBasedKey(
 
 /**
  * Chunk upload progress — tracks multipart/chunked upload state.
- *
- * Reference: hsweb file upload capabilities (chunked upload pattern)
  */
 /**
- * POSIX 文件权限配置 — 对应 hsweb FileUploadProperties.permissions
+ * POSIX 文件权限配置
  *
- * hsweb 通过 PosixFileAttributeView 设置文件权限，
- * 这里使用 Node.js 的 fs.chmod 模式数字实现相同功能。
+ * 使用 Node.js 的 fs.chmod 模式数字设置文件权限。
  *
  * @example
  * ```ts
- * // 等同于 hsweb 设置 OWNER_READ + OWNER_WRITE + GROUP_READ
+ * // 所有者可读写，同组用户可读
  * const permissions: PosixFilePermissions = { mode: 0o640 };
  * ```
  */
 export interface PosixFilePermissions {
   /**
    * POSIX 权限模式（八进制），如 0o644, 0o755
-   * 对应 hsweb PosixFilePermission 集合
+   * 使用标准 POSIX 权限位
    */
   mode: number;
 }
@@ -251,7 +246,7 @@ export interface FileManager {
   list(prefix: string): Promise<FileInfo[]>;
 
   /**
-   * 获取单个文件的元信息 — 对应 hsweb 中的文件 stat 能力
+   * 获取单个文件的元信息
    * 返回 undefined 表示文件不存在
    */
   getFileInfo?(key: string): Promise<FileInfo | undefined>;
@@ -311,7 +306,7 @@ export interface FileManager {
   abortChunkedUpload?(uploadId: string): Promise<void>;
 
   /**
-   * 便捷文件保存 — 对应 hsweb FileStorageService.saveFile(InputStream, fileType)
+   * 便捷文件保存
    *
    * 自动根据文件类型生成日期归档路径并保存，简化调用方使用。
    * 内部调用 generateDateBasedKey + upload。
@@ -324,10 +319,9 @@ export interface FileManager {
   saveFile?(buffer: Buffer, fileType: string, options?: UploadOptions): Promise<UploadResult>;
 
   /**
-   * 应用 POSIX 文件权限 — 对应 hsweb FileUploadProperties.applyFilePermission()
+   * 应用 POSIX 文件权限
    *
    * 在文件写入后设置 POSIX 权限（仅对本地存储有效，S3/WebDAV 忽略）。
-   * hsweb 使用 PosixFileAttributeView.setPermissions()，
    * 这里使用 Node.js fs.chmodSync() 实现。
    *
    * @param key 存储键

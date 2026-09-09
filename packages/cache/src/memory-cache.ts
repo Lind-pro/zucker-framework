@@ -73,7 +73,7 @@ export class MemoryCache<T = unknown> implements ICache<T> {
 
   async getAll(...keys: string[]): Promise<T[]> {
     if (!keys || keys.length === 0) {
-      // 无参数时返回所有值 — 对齐 hsweb CaffeineReactiveCache.getAll()
+      // 无参数时返回所有值
       const result: T[] = [];
       for (const [, entry] of this.store) {
         if (entry.expiresAt === null || Date.now() <= entry.expiresAt) {

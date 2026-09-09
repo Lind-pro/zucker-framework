@@ -1,7 +1,7 @@
 /**
  * Permission API e2e tests.
  *
- * NOTE: @zucker/auth ships a PermissionService but no HTTP PermissionController.
+ * NOTE: @zucker-framework/auth ships a PermissionService but no HTTP PermissionController.
  * This spec registers an inline controller (mirroring what application code
  * would produce) and exercises the full HTTP surface using InMemoryDatabaseAdapter.
  *
@@ -32,7 +32,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { ZuckerCrudModule } from '@zucker/crud';
+import { ZuckerCrudModule } from '@zucker-framework/crud';
 import {
   ZuckerAuthModule,
   AuthorizationController,
@@ -41,9 +41,9 @@ import {
   PermissionsGuard,
   Permissions,
   Public,
-} from '@zucker/auth';
-import type { AuthenticationManagerLike } from '@zucker/auth';
-import { HttpExceptionFilter } from '@zucker/common';
+} from '@zucker-framework/auth';
+import type { AuthenticationManagerLike } from '@zucker-framework/auth';
+import { HttpExceptionFilter } from '@zucker-framework/common';
 import { InMemoryDatabaseAdapter } from './helpers/in-memory-db';
 
 // ---------------------------------------------------------------------------

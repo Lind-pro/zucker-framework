@@ -1,6 +1,6 @@
 import { Injectable, Logger, Inject, Optional, OnModuleDestroy } from '@nestjs/common';
-import type { TopicEventBus } from '@zucker/event';
-import { TOPIC_EVENT_BUS } from '@zucker/event';
+import type { TopicEventBus } from '@zucker-framework/event';
+import { TOPIC_EVENT_BUS } from '@zucker-framework/event';
 import { TermsEvaluator, type TermCondition } from './condition/terms-evaluator';
 import { ExpressionEvaluator, type ExpressionCondition } from './condition/expression-evaluator';
 import { BranchEvaluator, type Branch, type BranchActionGroup } from './condition/branch-evaluator';

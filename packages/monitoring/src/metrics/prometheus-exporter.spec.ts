@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { NestFactory } from '@nestjs/core';
 import { PrometheusExporter, renderPrometheusMetrics } from './prometheus-exporter';
 import { MetricsRegistry } from './metrics-registry';
 
@@ -9,6 +10,26 @@ describe('PrometheusExporter', () => {
   beforeEach(() => {
     registry = new MetricsRegistry();
     exporter = new PrometheusExporter(registry);
+  });
+
+  it('resolves the shared registry through Nest dependency injection', async () => {
+    class MetricsTestModule {}
+
+    const app = await NestFactory.createApplicationContext(
+      {
+        module: MetricsTestModule,
+        controllers: [PrometheusExporter],
+        providers: [MetricsRegistry],
+      },
+      { logger: false, abortOnError: false },
+    );
+
+    try {
+      app.get(MetricsRegistry).counter('startup_checks_total').increment({}, 2);
+      expect(app.get(PrometheusExporter).getMetrics()).toContain('startup_checks_total 2');
+    } finally {
+      await app.close();
+    }
   });
 
   describe('counter output', () => {

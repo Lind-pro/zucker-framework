@@ -10,7 +10,6 @@ import { map } from 'rxjs/operators';
 
 /**
  * 统一响应格式
- * 参考 hsweb ResponseMessage: status + code + message + result + timestamp
  */
 export interface ApiResponse<T = unknown> {
   status: number;

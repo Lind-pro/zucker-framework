@@ -4,8 +4,6 @@ import type { Authentication } from '../interfaces';
  * Authentication supplier interface.
  * Multiple suppliers can be registered to build a complete Authentication
  * from different sources (JWT, database, LDAP, etc.).
- *
- * Mirrors hsweb AuthenticationSupplier.
  */
 export interface AuthenticationSupplier {
   /** Supplier priority — lower values are applied first */

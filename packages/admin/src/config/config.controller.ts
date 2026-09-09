@@ -14,8 +14,8 @@ import {
   HttpStatus,
   UseGuards,
 } from '@nestjs/common';
-import { ConfigService } from '@zucker/config';
-import { JwtAuthGuard, PermissionsGuard, Permissions } from '@zucker/auth';
+import { ConfigService } from '@zucker-framework/config';
+import { JwtAuthGuard, PermissionsGuard, Permissions } from '@zucker-framework/auth';
 
 const SYSTEM_SCOPE = 'system';
 

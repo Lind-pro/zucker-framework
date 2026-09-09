@@ -26,7 +26,7 @@ import {
   EmptyOperator,
   NotEmptyOperator,
 } from './operators';
-import type { GenericEntity } from '@zucker/core';
+import type { GenericEntity } from '@zucker-framework/core';
 
 // ---------------------------------------------------------------------------
 // Test entity type

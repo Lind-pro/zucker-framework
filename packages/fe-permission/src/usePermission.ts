@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import type { AuthStore } from '@zucker/fe-auth';
+import type { AuthStore } from '@zucker-framework/fe-auth';
 
 /** Configuration for the permission hook factory, requiring an auth store selector. */
 export interface UsePermissionConfig {

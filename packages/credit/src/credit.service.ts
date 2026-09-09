@@ -1,9 +1,9 @@
 import { Injectable, Inject, Logger, Optional } from '@nestjs/common';
-import { type DatabaseAdapter, BusinessException, ValidationException } from '@zucker/core';
+import { type DatabaseAdapter, BusinessException, ValidationException } from '@zucker-framework/core';
 
 const DATABASE_ADAPTER = 'DATABASE_ADAPTER';
 
-/** Minimal TopicEventBus interface to avoid hard dependency on @zucker/event */
+/** Minimal TopicEventBus interface to avoid hard dependency on @zucker-framework/event */
 interface TopicEventBusLike {
   publish(topic: string, payload: unknown): Promise<void>;
 }
@@ -367,7 +367,6 @@ export class CreditService {
 
   /**
    * 转账 — 从一个用户转移积分到另一个用户
-   * 对标 hsweb CreditService.transfer
    */
   async transfer(
     fromUserId: string,
@@ -447,7 +446,6 @@ export class CreditService {
 
   /**
    * 冻结积分 — 从可用余额转入冻结余额
-   * 对标 hsweb CreditService.freeze
    */
   async freeze(
     userId: string,
@@ -505,7 +503,6 @@ export class CreditService {
 
   /**
    * 解冻积分 — 从冻结余额转回可用余额
-   * 对标 hsweb CreditService.unfreeze
    */
   async unfreeze(
     userId: string,
@@ -648,7 +645,6 @@ export class CreditService {
 
   /**
    * 积分兑换 — 消费积分兑换奖品/服务
-   * 对标 hsweb CreditService.exchange
    */
   async exchange(
     userId: string,
@@ -662,7 +658,6 @@ export class CreditService {
 
   /**
    * 批量查询多个用户的余额
-   * 对标 hsweb CreditService.getBalances
    */
   async getBalances(
     userIds: string[],

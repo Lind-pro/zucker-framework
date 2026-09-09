@@ -2,7 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 
 /**
  * 租户配额管理。
- * 对标 hsweb TenantManager 的资源配额管理能力。
  */
 export interface TenantQuota {
   tenantId: string;

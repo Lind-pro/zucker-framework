@@ -1,6 +1,5 @@
 /**
  * DigestUtils — 摘要哈希工具
- * 参考: hsweb-framework DigestUtils.java
  */
 import { createHash, createHmac } from 'node:crypto';
 
@@ -49,7 +48,7 @@ export function hmacSha256(data: string, secret: string, encoding: DigestEncodin
 }
 
 /**
- * 流式摘要 — 参考 hsweb DigestUtils 的 Consumer<MessageDigest> 模式
+ * 流式摘要
  * 支持多次 update 后再 digest
  */
 export function digest(
@@ -63,7 +62,7 @@ export function digest(
 }
 
 /**
- * md5 后再 base62 编码 — 对应 hsweb DigestUtils.md5Base62()
+ * md5 后再 base62 编码
  */
 export function md5Base62(input: string): string {
   const hash = createHash('md5').update(input).digest();

@@ -24,23 +24,22 @@ export interface ICache<T = unknown> {
   keys?(): Promise<string[]>;
 
   /**
-   * 批量获取多个键的值 — 对应 hsweb ReactiveCache.getAll()
+   * 批量获取多个键的值
    * 返回所有存在的值（跳过不存在的键）
    */
   getAll?(...keys: string[]): Promise<T[]>;
 
   /**
-   * 批量删除多个键 — 对应 hsweb ReactiveCache.evictAll()
+   * 批量删除多个键
    */
   evictAll?(keys: Iterable<string>): Promise<void>;
 }
 
 /**
- * 缓存管理器接口 — 对应 hsweb ReactiveCacheManager
+ * 缓存管理器接口
  *
  * 按名称获取/创建缓存实例，适用于多模块隔离场景。
- * hsweb 通过 ReactiveCacheManager.getCache(name) 实现命名空间级缓存隔离，
- * 如 "user-auth"、"spring-cache:xxx" 等。
+ * 每个缓存名称对应独立命名空间，例如 "user-auth"。
  */
 export interface ICacheManager {
   /**

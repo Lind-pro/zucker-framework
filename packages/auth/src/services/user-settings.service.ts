@@ -1,5 +1,5 @@
 import { Injectable, Inject, Logger } from '@nestjs/common';
-import type { DatabaseAdapter } from '@zucker/core';
+import type { DatabaseAdapter } from '@zucker-framework/core';
 import { DATABASE_ADAPTER } from '../guards/data-permission.guard';
 import type { SettingValueHolder } from '../interfaces';
 import {
@@ -12,7 +12,6 @@ import {
  * User personalization settings service.
  *
  * Stores per-user settings keyed by userId + scope + key.
- * Mirrors hsweb UserSettingManager with SettingValueHolder pattern.
  */
 @Injectable()
 export class UserSettingsService {
@@ -34,7 +33,7 @@ export class UserSettingsService {
   }
 
   /**
-   * Get a setting as a SettingValueHolder (mirrors hsweb UserSettingManager.getSetting).
+   * Get a setting as a SettingValueHolder.
    * Returns NullSettingValueHolder if not found.
    */
   async getSetting(
@@ -71,7 +70,7 @@ export class UserSettingsService {
   }
 
   /**
-   * Save a setting with permission (mirrors hsweb UserSettingManager.saveSetting).
+   * Save a setting with permission.
    */
   async saveSetting(
     userId: string,

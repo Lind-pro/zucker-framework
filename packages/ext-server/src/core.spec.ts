@@ -50,12 +50,12 @@ const OPTIONS: ExtServerOptions = {
   licenseSecret: 'test-secret',
   stripeWebhookSecret: 'whsec_test',
   mailDomain: 'mail.test',
-  defaultProduct: 'siteshots',
+  defaultProduct: 'samplecapture',
   codePrefix: 'TESTPRO',
   proFeatures: ['unlimited'],
   fallbackProducts: {
-    sitepdf: { displayName: 'SitePDF Pro', senderBrand: 'SitePDF' },
-    siteshots: { displayName: 'SiteShots Pro', senderBrand: 'SiteShots' },
+    sampleexport: { displayName: 'ExampleExport Pro', senderBrand: 'ExampleExport' },
+    samplecapture: { displayName: 'ExampleCapture Pro', senderBrand: 'ExampleCapture' },
   },
   fallbackBrand: { displayName: 'Pro', senderBrand: 'Brand' },
 };
@@ -72,7 +72,7 @@ function stripeEvent(sessionId: string, overrides: Record<string, unknown> = {})
           amount_total: 1900,
           currency: 'usd',
           customer_details: { email: 'buyer@test.dev' },
-          client_reference_id: 'sitepdf',
+          client_reference_id: 'sampleexport',
           ...overrides,
         },
       },
@@ -136,9 +136,9 @@ describe('ExtensionCore', () => {
     const first = await core.handleStripeWebhook(body, header);
     expect(first).toEqual({ received: true });
     expect(store.extensionOrder.rows).toHaveLength(1);
-    expect(store.extensionOrder.rows[0].product).toBe('sitepdf');
-    expect(sentMails[0].from).toBe('SitePDF <noreply@mail.test>');
-    expect(sentMails[0].subject).toContain('SitePDF Pro');
+    expect(store.extensionOrder.rows[0].product).toBe('sampleexport');
+    expect(sentMails[0].from).toBe('ExampleExport <noreply@mail.test>');
+    expect(sentMails[0].subject).toContain('ExampleExport Pro');
 
     const again = await core.handleStripeWebhook(body, header);
     expect(again).toEqual({ received: true, duplicated: true });
@@ -147,12 +147,12 @@ describe('ExtensionCore', () => {
 
   it('webhook 产品信息优先取 ExtensionProduct 表', async () => {
     await store.extensionProduct.create({
-      data: { slug: 'sitepdf', displayName: 'SitePDF Ultra', senderBrand: 'UltraPDF' },
+      data: { slug: 'sampleexport', displayName: 'ExampleExport Ultra', senderBrand: 'UltraPDF' },
     });
     const { body, header } = stripeEvent('cs_2');
     await core.handleStripeWebhook(body, header);
     expect(sentMails[0].from).toBe('UltraPDF <noreply@mail.test>');
-    expect(sentMails[0].subject).toContain('SitePDF Ultra');
+    expect(sentMails[0].subject).toContain('ExampleExport Ultra');
   });
 
   it('100% 折扣码订单（no_payment_required）也要发码', async () => {
@@ -193,20 +193,20 @@ describe('ExtensionCore', () => {
   it('adminStats 聚合各产品订单/收入/转化率与设备活跃', async () => {
     const { body, header } = stripeEvent('cs_s1');
     await core.handleStripeWebhook(body, header);
-    const second = stripeEvent('cs_s2', { client_reference_id: 'siteshots', amount_total: 900 });
+    const second = stripeEvent('cs_s2', { client_reference_id: 'samplecapture', amount_total: 900 });
     await core.handleStripeWebhook(second.body, second.header);
 
-    // 激活第一单的码 → sitepdf 转化率 100%，siteshots 0%
+    // 激活第一单的码 → sampleexport 转化率 100%，samplecapture 0%
     const licenseId = store.extensionOrder.rows[0].licenseId;
     await store.extensionActivation.create({
       data: { licenseId, deviceId: 'd1', tokenHash: 'x', expiresAt: new Date(), lastSeenAt: new Date() },
     });
 
     const stats = await core.adminStats(30);
-    const sitepdf = stats.products.find((p) => p.product === 'sitepdf');
-    const siteshots = stats.products.find((p) => p.product === 'siteshots');
-    expect(sitepdf).toMatchObject({ orders: 1, revenue: 1900, conversionRate: 100 });
-    expect(siteshots).toMatchObject({ orders: 1, revenue: 900, conversionRate: 0 });
+    const sampleexport = stats.products.find((p) => p.product === 'sampleexport');
+    const samplecapture = stats.products.find((p) => p.product === 'samplecapture');
+    expect(sampleexport).toMatchObject({ orders: 1, revenue: 1900, conversionRate: 100 });
+    expect(samplecapture).toMatchObject({ orders: 1, revenue: 900, conversionRate: 0 });
     expect(stats.devices).toMatchObject({ total: 1, active7d: 1 });
     expect(stats.licenses.total).toBe(2);
     expect(stats.daily.reduce((sum, d) => sum + d.orders, 0)).toBe(2);

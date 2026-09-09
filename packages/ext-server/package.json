@@ -1,6 +1,6 @@
 {
-  "name": "@zucker/ext-server",
-  "version": "0.0.1",
+  "name": "@zucker-framework/ext-server",
+  "version": "1.0.0",
   "description": "Browser extension licensing/payments server core — activation, Stripe webhook, license email, admin stats. Vendored into consuming NestJS apps via `zucker ext sync-server`.",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -19,12 +19,16 @@
   },
   "files": [
     "dist",
-    "assets"
+    "assets/extension-product.prisma",
+    "LICENSE",
+    "NOTICE",
+    "THIRD_PARTY_NOTICES"
   ],
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts",
     "clean": "rm -rf dist",
-    "lint": "eslint src/"
+    "lint": "eslint src/",
+    "prepack": "node ../../scripts/prepare-package-legal.mjs"
   },
   "peerDependencies": {
     "@nestjs/common": "^12.0.0"
@@ -36,5 +40,16 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "license": "Apache-2.0",
+  "author": "Lind",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Lind-pro/zucker-framework.git",
+    "directory": "packages/ext-server"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }

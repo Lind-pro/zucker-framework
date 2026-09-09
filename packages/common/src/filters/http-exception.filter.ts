@@ -7,7 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Response } from 'express';
-import { BusinessException, ValidationException } from '@zucker/core';
+import { BusinessException, ValidationException } from '@zucker-framework/core';
 
 interface ValidationErrorLike {
   property: string;
@@ -18,10 +18,9 @@ interface ValidationErrorLike {
 /**
  * 统一异常过滤器
  *
- * 参考 hsweb CommonErrorControllerAdvice — 将所有异常转换为统一响应格式:
+ * 将所有异常转换为统一响应格式:
  * { status, code, message, result, timestamp }
  *
- * 对比 hsweb:
  * - BusinessException -> 使用异常自身的 status/code
  * - ValidationException -> 400 + 验证详情
  * - HttpException (NestJS) -> 对应 HTTP status
@@ -147,7 +146,6 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
   /**
    * Map HTTP status code to a standard error code string.
-   * 参考 hsweb CodeConstants.Error
    */
   private statusToCode(status: number): string {
     switch (status) {

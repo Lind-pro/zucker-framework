@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { type DatabaseAdapter, BusinessException, NotFoundException } from '@zucker/core';
+import { type DatabaseAdapter, BusinessException, NotFoundException } from '@zucker-framework/core';
 
 export interface ThirdPartyProfile {
   providerAccountId: string;

@@ -1,5 +1,5 @@
 import { createUsePermission } from './usePermission';
-import type { AuthStore } from '@zucker/fe-auth';
+import type { AuthStore } from '@zucker-framework/fe-auth';
 
 // Minimal mock for React hooks in a non-component context
 vi.mock('react', () => ({

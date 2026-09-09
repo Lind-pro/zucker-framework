@@ -1,6 +1,6 @@
 # Zucker Framework 架构设计
 
-> 全栈 NestJS + Next.js TypeScript 框架，hsweb-framework 的 TypeScript 移植与增强版本。
+> 全栈 NestJS + Next.js TypeScript 框架，提供模块化后端能力与前端应用模板。
 
 ## 目录
 
@@ -64,7 +64,7 @@ Layer 1: 基础
 所有请求共享一个 `AsyncLocalStorage` 驱动的上下文，无需在每一层传递：
 
 ```ts
-import { RequestContext } from '@zucker/common';
+import { RequestContext } from '@zucker-framework/common';
 
 // 中间件自动创建
 // 任意 Service 中直接获取
@@ -80,7 +80,7 @@ ctx.elapsed;        // 已用时间
 合并本地事件和集群广播到一个接口：
 
 ```ts
-import { UnifiedEventBus } from '@zucker/event';
+import { UnifiedEventBus } from '@zucker-framework/event';
 
 // 发布到本地 + 集群
 await eventBus.publish('entity/user/create/after', { user });
@@ -97,7 +97,7 @@ eventBus.subscribe('entity/user/**', handler);
 任意操作的前后注入点，不限于 CRUD：
 
 ```ts
-import { OperationHookRegistry } from '@zucker/event';
+import { OperationHookRegistry } from '@zucker-framework/event';
 
 hooks.register('storage.upload', 'before', async (ctx) => {
   if (ctx.data.size > MAX_SIZE) ctx.cancel('文件过大');
@@ -107,7 +107,7 @@ hooks.register('storage.upload', 'before', async (ctx) => {
 ### 4. 错误分类与自动重试
 
 ```ts
-import { classifyError, withRetry, CircuitBreaker } from '@zucker/core';
+import { classifyError, withRetry, CircuitBreaker } from '@zucker-framework/core';
 
 // 自动分类 Prisma 错误
 const cls = classifyError(error);  // → { retryable, code, status }
@@ -123,8 +123,8 @@ await breaker.execute(() => externalService.call());
 ### 5. 类型安全配置 + Feature Flag
 
 ```ts
-import { defineConfig, mergeConfigs, loadFromEnv } from '@zucker/core';
-import { FeatureFlagService } from '@zucker/config';
+import { defineConfig, mergeConfigs, loadFromEnv } from '@zucker-framework/core';
+import { FeatureFlagService } from '@zucker-framework/config';
 
 // Zod Schema 验证
 const config = defineConfig({ port: z.number().default(3000) });
@@ -143,8 +143,8 @@ flags.register({
 ### 6. 前后端共享 Schema
 
 ```ts
-// @zucker/fe-types — 一处定义，前后端共用
-import { UserSchema, LoginRequestSchema } from '@zucker/fe-types';
+// @zucker-framework/fe-types — 一处定义，前后端共用
+import { UserSchema, LoginRequestSchema } from '@zucker-framework/fe-types';
 
 // 后端 DTO 验证
 const user = UserSchema.parse(req.body);
@@ -158,20 +158,20 @@ const result = LoginRequestSchema.safeParse(formValues);
 ## 模块依赖图
 
 ```
-@zucker/core ← 零外部依赖（纯 TypeScript + Node.js API）
+@zucker-framework/core ← 零外部依赖（纯 TypeScript + Node.js API）
     ↑
-@zucker/common ← NestJS 基础
-@zucker/event  ← NestJS + eventemitter2
+@zucker-framework/common ← NestJS 基础
+@zucker-framework/event  ← NestJS + eventemitter2
     ↑
-@zucker/crud   ← core + event (可选)
-@zucker/auth   ← core + crud + passport
+@zucker-framework/crud   ← core + event (可选)
+@zucker-framework/auth   ← core + crud + passport
     ↑
 其余模块按需依赖上述核心
 ```
 
 关键约束：
-- `@zucker/core` 不依赖 NestJS（可在非 NestJS 环境使用）
-- `@zucker/fe-types` 不依赖任何后端包（前端可独立使用）
+- `@zucker-framework/core` 不依赖 NestJS（可在非 NestJS 环境使用）
+- `@zucker-framework/fe-types` 不依赖任何后端包（前端可独立使用）
 - 所有包通过 `exports` 字段限制公开 API
 
 ---
@@ -260,7 +260,7 @@ Phase 9: 最终清理
 
 ## 开发者工具链
 
-### CLI (`@zucker/cli`)
+### CLI (`@zucker-framework/cli`)
 
 ```bash
 zucker init my-app        # 项目脚手架
@@ -279,7 +279,7 @@ zucker info auth          # 查看模块详情
 ### 配置热重载
 
 ```ts
-import { ConfigFileWatcher } from '@zucker/config';
+import { ConfigFileWatcher } from '@zucker-framework/config';
 
 const watcher = new ConfigFileWatcher();
 watcher.watch('/path/to/config.json', () => {
@@ -290,7 +290,7 @@ watcher.watch('/path/to/config.json', () => {
 ### 流式处理管道
 
 ```ts
-import { mapStream, batchStream, collectStream } from '@zucker/core';
+import { mapStream, batchStream, collectStream } from '@zucker-framework/core';
 
 const pipeline = batchStream(
   mapStream(dataSource, item => transform(item)),
@@ -307,18 +307,18 @@ for await (const batch of pipeline) {
 
 | 包 | 描述 | 层级 |
 |----|------|------|
-| `@zucker/core` | 异常、类型、断路器、流式管道、VCR、Mailbox、迁移 | L1 |
-| `@zucker/common` | 请求上下文、全局过滤器/管道、优雅停机 | L1 |
-| `@zucker/fe-types` | 前后端共享 Zod Schema | L1 |
-| `@zucker/event` | 实体事件、统一事件总线、操作 Hook | L2 |
-| `@zucker/crud` | BaseService、动态查询、CRUD 装饰器 | L2 |
-| `@zucker/auth` | JWT、RBAC、数据权限、2FA | L2 |
-| `@zucker/logging` | 访问日志、结构化日志、审计日志、PII 过滤 | L2 |
-| `@zucker/config` | 分层配置、热重载、Feature Flag | L3 |
-| `@zucker/cache` | 内存/Redis/混合缓存、标签化失效 | L3 |
-| `@zucker/notification` | 多渠道通知、Webhook 注册与投递 | L3 |
-| `@zucker/queue` | 消息队列、TaskLifecycleManager | L3 |
-| `@zucker/monitoring` | 指标、告警、UsageTracker | L4 |
-| `@zucker/provider` | Provider 注册表、健康检查 | L4 |
-| `@zucker/admin` | 自动 REST API 生成 | L4 |
-| `@zucker/cli` | 脚手架、诊断、模块管理 | 工具 |
+| `@zucker-framework/core` | 异常、类型、断路器、流式管道、VCR、Mailbox、迁移 | L1 |
+| `@zucker-framework/common` | 请求上下文、全局过滤器/管道、优雅停机 | L1 |
+| `@zucker-framework/fe-types` | 前后端共享 Zod Schema | L1 |
+| `@zucker-framework/event` | 实体事件、统一事件总线、操作 Hook | L2 |
+| `@zucker-framework/crud` | BaseService、动态查询、CRUD 装饰器 | L2 |
+| `@zucker-framework/auth` | JWT、RBAC、数据权限、2FA | L2 |
+| `@zucker-framework/logging` | 访问日志、结构化日志、审计日志、PII 过滤 | L2 |
+| `@zucker-framework/config` | 分层配置、热重载、Feature Flag | L3 |
+| `@zucker-framework/cache` | 内存/Redis/混合缓存、标签化失效 | L3 |
+| `@zucker-framework/notification` | 多渠道通知、Webhook 注册与投递 | L3 |
+| `@zucker-framework/queue` | 消息队列、TaskLifecycleManager | L3 |
+| `@zucker-framework/monitoring` | 指标、告警、UsageTracker | L4 |
+| `@zucker-framework/provider` | Provider 注册表、健康检查 | L4 |
+| `@zucker-framework/admin` | 自动 REST API 生成 | L4 |
+| `@zucker-framework/cli` | 脚手架、诊断、模块管理 | 工具 |

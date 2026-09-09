@@ -1,4 +1,4 @@
-import { BusinessException } from '@zucker/core';
+import { BusinessException } from '@zucker-framework/core';
 
 /**
  * I18nException — an exception whose message is resolved via i18n at response time.

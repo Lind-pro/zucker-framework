@@ -9,8 +9,6 @@ import { EnumDictRegistry, type EnumDictItem, getWriteJSONObject } from './enum-
 
 /**
  * Dict serializer — enriches enum fields with {value, text} format in responses.
- *
- * Reference: hsweb EnumDict.getWriteJSONObject() serialization behavior
  */
 
 export interface DictSerializedField {
@@ -22,8 +20,6 @@ export interface DictSerializedField {
  * Serialize an enum value to {value, text} format.
  *
  * Supports an optional i18n text resolver for internationalization.
- *
- * Reference: hsweb EnumDict.getWriteJSONObject()
  */
 export function serializeDictValue(
   dictId: string,
@@ -44,33 +40,28 @@ export function serializeDictValue(
  * Deserialize a {value, text} object back to a raw enum value.
  *
  * Handles multiple input formats:
- * - {value, text} object — value can be string or number (对齐 hsweb 5.x fix 75f416a67)
+ * - {value, text} object — value can be string or number
  * - raw string/number
  * - Map-like object with value key
  * - null/undefined returns undefined
  *
- * Reference: hsweb EnumDict.EnumDictJSONDeserializer
- *
- * hsweb 5.x fix (75f416a67): 修复反序列化时枚举实现了 EnumDict，但泛型不是 String 类型
- * 会抛异常的问题。当 value 节点是数字类型时，使用 numberValue() 而非 textValue()。
- * hsweb 5.x fix (4c3ce4914): 优化反序列化的空值判断，value 为 null 时安全处理。
+ * 保留 value 的字符串或数字类型；value 为 null/undefined 时返回 undefined。
  */
 export function deserializeDictValue(
   input: DictSerializedField | string | number | null | undefined,
   dictId?: string,
 ): string | number | undefined {
-  // 对齐 hsweb 5.x: null/undefined 安全处理
+  // null/undefined 安全处理
   if (input === null || input === undefined) return undefined;
 
   if (typeof input === 'object' && input !== null && 'value' in input) {
-    // 对齐 hsweb 5.x fix (75f416a67): value 可能是 string 或 number
-    // Java: if (valueNode.isTextual()) textValue(); else if (valueNode.isNumber()) numberValue();
+    // value 可能是 string 或 number
     const val = input.value;
     if (val === null || val === undefined) return undefined;
     return val;
   }
 
-  // If dictId provided, try to find by text as well (like hsweb deserializer)
+  // If dictId provided, try to find by text as well
   if (dictId && typeof input === 'string') {
     const item = EnumDictRegistry.findByValue(dictId, input)
       ?? EnumDictRegistry.findByText(dictId, input);
@@ -85,8 +76,7 @@ export function deserializeDictValue(
  *
  * Configure which fields map to which dictId via constructor options.
  *
- * Reference: hsweb EnumDict serialization behavior — when isWriteJSONObjectEnabled()
- * returns true, enum values are serialized as {value, text} objects.
+ * Configured enum fields are serialized as {value, text} objects.
  */
 @Injectable()
 export class DictSerializerInterceptor implements NestInterceptor {

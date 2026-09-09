@@ -13,7 +13,6 @@ export interface GenericEntity {
 
 /**
  * 记录创建信息的实体接口
- * 对齐 hsweb RecordCreationEntity
  */
 export interface RecordCreationEntity extends GenericEntity {
   creatorId?: string;
@@ -22,7 +21,7 @@ export interface RecordCreationEntity extends GenericEntity {
 
 /**
  * 记录修改信息的实体接口
- * 对齐 hsweb RecordModifierEntity — 与 RecordCreationEntity 分离
+ * 与 RecordCreationEntity 分离
  */
 export interface RecordModifierEntity extends GenericEntity {
   modifierId?: string;
@@ -31,13 +30,11 @@ export interface RecordModifierEntity extends GenericEntity {
 
 /**
  * 同时记录创建者和修改者信息的实体接口
- * 对齐 hsweb 中同时实现 RecordCreationEntity + RecordModifierEntity 的模式
  */
 export interface RecordCreationModifierEntity extends RecordCreationEntity, RecordModifierEntity {}
 
 /**
  * 支持排序的实体接口
- * 对齐 hsweb SortSupportEntity
  */
 export interface SortSupportEntity extends GenericEntity {
   sortIndex?: number;
@@ -45,7 +42,6 @@ export interface SortSupportEntity extends GenericEntity {
 
 /**
  * 支持树结构的实体接口
- * 对齐 hsweb TreeSupportEntity
  */
 export interface TreeSupportEntity extends GenericEntity {
   parentId?: string | null;
@@ -56,7 +52,6 @@ export interface TreeSupportEntity extends GenericEntity {
 
 /**
  * 同时支持树结构和排序的实体接口
- * 对齐 hsweb TreeSortSupportEntity = TreeSupportEntity + SortSupportEntity
  */
 export interface TreeSortSupportEntity extends RecordCreationModifierEntity, SortSupportEntity, TreeSupportEntity {
   children?: TreeSortSupportEntity[];
@@ -66,7 +61,6 @@ export interface TreeSortSupportEntity extends RecordCreationModifierEntity, Sor
 
 /**
  * 设置创建时间为当前时间
- * 对齐 hsweb RecordCreationEntity.setCreateTimeNow()
  */
 export function setCreateTimeNow<T extends RecordCreationEntity>(entity: T): T {
   entity.createdAt = new Date();
@@ -75,7 +69,6 @@ export function setCreateTimeNow<T extends RecordCreationEntity>(entity: T): T {
 
 /**
  * 设置修改时间为当前时间
- * 对齐 hsweb RecordModifierEntity.setModifyTimeNow()
  */
 export function setModifyTimeNow<T extends RecordModifierEntity>(entity: T): T {
   entity.updatedAt = new Date();
@@ -84,7 +77,7 @@ export function setModifyTimeNow<T extends RecordModifierEntity>(entity: T): T {
 
 /**
  * 校验树节点的 parentId 不能等于自身 id
- * 对齐 hsweb TreeSupportEntity.tryValidate() 中的 parentId != id 检查
+ * 检查 parentId != id，避免节点将自身作为父节点
  *
  * @throws Error 当 parentId 等于 id 时
  */
@@ -96,7 +89,6 @@ export function validateTreeEntity(entity: TreeSupportEntity): void {
 
 /**
  * 比较排序值，用于排序支持实体
- * 对齐 hsweb SortSupportEntity.compareTo()
  */
 export function compareSortIndex(a: SortSupportEntity, b: SortSupportEntity): number {
   return (a.sortIndex ?? 0) - (b.sortIndex ?? 0);

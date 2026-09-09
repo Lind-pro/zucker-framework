@@ -14,15 +14,15 @@ import { Test } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { EventEmitterModule } from '@nestjs/event-emitter';
-import { ZuckerCrudModule } from '@zucker/crud';
+import { ZuckerCrudModule } from '@zucker-framework/crud';
 import {
   ZuckerAuthModule,
   AuthorizationController,
   AUTHENTICATION_MANAGER,
   JwtAuthGuard,
-} from '@zucker/auth';
-import type { AuthenticationManagerLike, AuthUser } from '@zucker/auth';
-import { HttpExceptionFilter } from '@zucker/common';
+} from '@zucker-framework/auth';
+import type { AuthenticationManagerLike, AuthUser } from '@zucker-framework/auth';
+import { HttpExceptionFilter } from '@zucker-framework/common';
 import { InMemoryDatabaseAdapter } from './in-memory-db';
 
 export interface TestUser {

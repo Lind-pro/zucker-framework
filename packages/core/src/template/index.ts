@@ -1,9 +1,7 @@
 /**
  * TemplateParser — 模板解析
- * 参考: hsweb-framework TemplateParser.java
  *
- * 对比 hsweb TemplateParser:
- * - 支持可配置的开始/结束符号（hsweb: prepareStartSymbol/prepareEndSymbol）
+ * - 支持可配置的开始/结束符号
  * - 支持 HTML 转义（XSS 防护）
  * - 支持嵌套属性访问（a.b.c）
  * - 支持自定义属性映射函数
@@ -13,11 +11,11 @@ export interface ParseTemplateOptions {
   /** When true, HTML-escape substituted values to prevent XSS. Default: false */
   escapeHtml?: boolean;
   /**
-   * 开始符号，默认 "${" — 参考 hsweb TemplateParser.prepareStartSymbol
+   * 开始符号，默认 "${"
    */
   startSymbol?: string;
   /**
-   * 结束符号，默认 "}" — 参考 hsweb TemplateParser.prepareEndSymbol
+   * 结束符号，默认 "}"
    */
   endSymbol?: string;
 }
@@ -37,7 +35,6 @@ export function parseTemplate(
 
 /**
  * 使用自定义映射函数解析模板
- * 参考 hsweb TemplateParser.parse(String template, Function<String, String> parameterGetter)
  *
  * @param template - 模板字符串
  * @param mapper - 属性名到替换值的映射函数
@@ -51,7 +48,7 @@ export function parseTemplateWithMapper(
   const startSymbol = options?.startSymbol ?? '${';
   const endSymbol = options?.endSymbol ?? '}';
 
-  // 使用 hsweb TemplateParser 的状态机方式解析
+  // 使用状态机解析模板占位符
   const result: string[] = [];
   let pos = 0;
 

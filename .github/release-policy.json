@@ -1,0 +1,10 @@
+{
+  "repository": "Lind-pro/zucker-framework",
+  "branch": "main",
+  "ciWorkflow": "ci.yml",
+  "requiredJobs": ["Build & Lint", "Durable Runtime Contracts"],
+  "prepareWorkflow": "release.yml",
+  "ciArtifactPrefix": "zucker-framework-ci",
+  "releaseArtifactPrefix": "zucker-framework-release",
+  "registry": "https://registry.npmjs.org/"
+}

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { QueryBuilder } from './query-builder';
-import type { DatabaseAdapter, ModelOperations } from '@zucker/core';
+import type { DatabaseAdapter, ModelOperations } from '@zucker-framework/core';
 
 function createMockAdapter(): DatabaseAdapter {
   const findMany = vi.fn().mockResolvedValue([]);

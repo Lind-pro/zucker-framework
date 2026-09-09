@@ -1,7 +1,7 @@
 # zucker-framework 功能完整性审查报告
 
 **审查日期**: 2026-03-22（原始）| **更新日期**: 2026-03-26（前端阶段完成后复核）
-**审查范围**: 对照 hsweb-framework 和 jetlinks-community 源代码
+**审查范围**: zucker-framework 核心能力、基础设施及前端模板
 **审查状态**: 已更新
 
 ---
@@ -9,7 +9,7 @@
 ## 执行摘要（2026-03-26 更新）
 
 后端收敛阶段已将原审计的 **16 项遗漏全部补齐**，测试覆盖 **1210 个测试用例，全部通过**。
-前端阶段（templates/admin 完全重写 + @zucker/fe-form 新包 + templates/web 认证联通）**已全部完成**，两个模板均生产构建通过。
+前端阶段（templates/admin 完全重写 + @zucker-framework/fe-form 新包 + templates/web 认证联通）**已全部完成**，两个模板均生产构建通过。
 
 当前覆盖率：**约 95%（Layer 1-5）+ 前端完整**，剩余为 Layer 6 IoT 专用能力。
 
@@ -38,11 +38,11 @@
 
 | 包名 | 对标源 | 说明 | 优先级 |
 |------|--------|------|--------|
-| @zucker/things | jetlinks things-component | 物模型 Type/Instance/属性事件日志存储 | ✅ P1 已完成 |
-| @zucker/gateway | jetlinks gateway+network | 协议网关（MQTT/TCP/CoAP/HTTP/WebSocket）| ✅ P1 已完成 |
-| @zucker/timeseries | jetlinks timeseries | 时序数据库后端实现（当前仅骨架） | P2 |
-| @zucker/form | jetlinks form | 动态表单引擎（后端骨架；前端消费层 @zucker/fe-form 已完成）| P2 |
-| @zucker/dashboard | jetlinks dashboard | 仪表盘组件（当前仅 SystemMonitor） | P3 |
+| @zucker-framework/things | jetlinks things-component | 物模型 Type/Instance/属性事件日志存储 | ✅ P1 已完成 |
+| @zucker-framework/gateway | jetlinks gateway+network | 协议网关（MQTT/TCP/CoAP/HTTP/WebSocket）| ✅ P1 已完成 |
+| @zucker-framework/timeseries | jetlinks timeseries | 时序数据库后端实现（当前仅骨架） | P2 |
+| @zucker-framework/form | jetlinks form | 动态表单引擎（后端骨架；前端消费层 @zucker-framework/fe-form 已完成）| P2 |
+| @zucker-framework/dashboard | jetlinks dashboard | 仪表盘组件（当前仅 SystemMonitor） | P3 |
 
 ---
 
@@ -54,10 +54,9 @@
 
 ## P0：关键遗漏（必须修复）
 
-### 1. **@zucker/crud: DSL 链式查询 API**
+### 1. **@zucker-framework/crud: DSL 链式查询 API**
 
 **优先级**: P0 | **影响**: BaseService 可用性
-**hsweb 原始位置**: `hsweb-commons-crud/service/ReactiveCrudService.java:53-90` (createQuery/createUpdate/createDelete DSL)
 
 **现状**:
 - ✅ zucker-framework: 有动态查询 DynamicQueryService（map/where/orderBy 表达式）
@@ -66,11 +65,11 @@
 **问题**:
 - zucker-framework 只支持 HTTP 参数解析（filter map、where 表达式字符串）
 - 无法在 TypeScript/NestJS 应用代码中写链式查询
-- cnipa 全部手写原生 Prisma 查询（无统一抽象）
+- 既有消费项目 全部手写原生 Prisma 查询（无统一抽象）
 
 **应该添加**:
 ```typescript
-// @zucker/crud 中新增 QueryBuilder 类
+// @zucker-framework/crud 中新增 QueryBuilder 类
 interface IQueryBuilder<T extends GenericEntity> {
   where(field: keyof T, operator?: string, value?: unknown): this;
   in(field: keyof T, ...values: unknown[]): this;
@@ -96,29 +95,28 @@ createQuery(): IQueryBuilder<T> { ... }
 
 ---
 
-### 2. **@zucker/crud: QueryParamEntity 完整功能**
+### 2. **@zucker-framework/crud: QueryParamEntity 完整功能**
 
 **优先级**: P0 | **影响**: 动态查询完整性
-**hsweb 原始位置**: `hsweb-commons-api/QueryParamEntity.java:1-271`
 
 **现状**:
 - ✅ zucker-framework: 有 DynamicQueryParam (filters, where, orderBy, page, pageSize)
 - ❌ **缺失**:
 
-| 功能 | hsweb | zucker-framework | 备注 |
-|-----|-------|-----------------|------|
-| where 表达式解析 | ✅ `setWhere("name = '张三' and age > 16")` | ❌ | 只能传字符串不能自动解析 |
-| filter map 解析 | ✅ `setFilter({"name$like":"张三"})` | ✅ | 已有 |
-| 并行分页 | ✅ `parallelPager=true` | ✅ | 已有 |
-| 自动重新分页 | ✅ `rePaging(total)` | ❌ | 前端查询总数后，页码越界时自动跳最后一页 |
-| total 复用（跳过 count） | ✅ `total=1000` | ✅ | 已有 |
-| includes/excludes 字段选择 | ✅ | ✅ | 已有 |
-| **缺失的关键特性** |  |  |  |
-| TermExpressionParser | ✅ "name = '张三' and age > 16" → List<Term> | ❌ | zucker 只有字符串传递 |
-| noPaging()/doNotSort() | ✅ | ❌ | 快捷方法 |
-| clone() 深拷贝 | ✅ | ❌ | 分页时需要克隆查询参数 |
-| DSL Query/toNestQuery() | ✅ `QueryParamEntity.newQuery().where().and().execute()` | ❌ | 结构化构造查询 |
-| forUpdate/PagingIndex | ✅ (悲观锁支持) | ❌ | 预留给乐观锁/悲观锁 |
+| 功能 | zucker-framework | 备注 |
+|-----|-----------------|------|
+| where 表达式解析 | ❌ | 只能传字符串不能自动解析 |
+| filter map 解析 | ✅ | 已有 |
+| 并行分页 | ✅ | 已有 |
+| 自动重新分页 | ❌ | 前端查询总数后，页码越界时自动跳最后一页 |
+| total 复用（跳过 count） | ✅ | 已有 |
+| includes/excludes 字段选择 | ✅ | 已有 |
+| **缺失的关键特性** |  |  |
+| TermExpressionParser | ❌ | zucker 只有字符串传递 |
+| noPaging()/doNotSort() | ❌ | 快捷方法 |
+| clone() 深拷贝 | ❌ | 分页时需要克隆查询参数 |
+| DSL Query/toNestQuery() | ❌ | 结构化构造查询 |
+| forUpdate/PagingIndex | ❌ | 预留给乐观锁/悲观锁 |
 
 **应该添加**:
 ```typescript
@@ -148,18 +146,17 @@ class DynamicQueryParam {
 
 ---
 
-### 3. **@zucker/crud: 缓存 CRUD Service**
+### 3. **@zucker-framework/crud: 缓存 CRUD Service**
 
 **优先级**: P0 | **影响**: 高并发场景
-**hsweb 原始位置**: `hsweb-commons-crud/service/GenericReactiveCacheSupportCrudService.java`
 
 **现状**:
-- ✅ zucker-framework: 有 @zucker/cache 包（MemoryCache, RedisCache, HybridCache）
+- ✅ zucker-framework: 有 @zucker-framework/cache 包（MemoryCache, RedisCache, HybridCache）
 - ❌ **缺失**: BaseService 缓存集成
 
 **问题**:
 - BaseService 无缓存层
-- cnipa 手动在 Service 中编写缓存逻辑
+- 既有消费项目 手动在 Service 中编写缓存逻辑
 - 没有自动的 findOne/findById 缓存失效机制
 
 **应该添加**:
@@ -213,10 +210,9 @@ export class UserService extends CacheEnabledService<User> {
 
 ## P1：重要遗漏（已验证的模式）
 
-### 4. **@zucker/crud: 批量操作的原子性保证**
+### 4. **@zucker-framework/crud: 批量操作的原子性保证**
 
 **优先级**: P1
-**hsweb 原始位置**: `hsweb-commons-crud/utils/TransactionUtils.java`
 
 **现状**:
 - ✅ 有 BaseService.transaction() 方法
@@ -228,7 +224,7 @@ export class UserService extends CacheEnabledService<User> {
 await service.updateMany({ status: 'draft' }, { status: 'published' });
 // 问题：并发更新时，可能覆盖其他线程的修改
 
-// hsweb 方式：乐观锁（updatedAt 版本号）
+// 乐观锁：使用 updatedAt 作为版本号
 // update where status='draft' and updatedAt=?
 ```
 
@@ -261,13 +257,12 @@ async updateManyWithOptimisticLock(
 
 ---
 
-### 5. **@zucker/auth: Token 状态机 + 撤销机制**
+### 5. **@zucker-framework/auth: Token 状态机 + 撤销机制**
 
 **优先级**: P1
-**hsweb 原始位置**: `hsweb-system-authorization/*/TokenEntity.java` (token 状态：normal/expired/locked/revoked)
 
 **现状**:
-- ✅ cnipa 有 JWT/Local/OAuth2 策略
+- ✅ 既有消费项目 有 JWT/Local/OAuth2 策略
 - ❌ **缺失**: Token 生命周期管理
 
 **问题**:
@@ -324,7 +319,7 @@ export class JwtGuard implements CanActivate {
 ```
 
 **迁移路径**:
-1. 在 @zucker/auth 中新增 TokenService
+1. 在 @zucker-framework/auth 中新增 TokenService
 2. 使用 Redis 做黑名单存储（支持 TTL）
 3. 在 JwtGuard 中集成黑名单检查
 4. 在 logout 端点调用 tokenService.revokeToken()
@@ -334,13 +329,12 @@ export class JwtGuard implements CanActivate {
 
 ---
 
-### 6. **@zucker/auth: 维度权限的"用户-维度"绑定**
+### 6. **@zucker-framework/auth: 维度权限的"用户-维度"绑定**
 
 **优先级**: P1
-**hsweb 原始位置**: `hsweb-system-authorization-api/DimensionUserEntity.java` + `DimensionUserFeature` (多种绑定方式)
 
 **现状**:
-- ✅ cnipa 有 @DataPermission('Software') 装饰器
+- ✅ 既有消费项目 有 @DataPermission('Record') 装饰器
 - ❌ **缺失**: 维度权限的完整生命周期
 
 **问题**:
@@ -425,13 +419,12 @@ async list() { ... }
 
 ---
 
-### 7. **@zucker/auth: 菜单权限体系**
+### 7. **@zucker-framework/auth: 菜单权限体系**
 
 **优先级**: P1
-**hsweb 原始位置**: `hsweb-system-authorization-api/MenuEntity.java` + MenuPermissionService
 
 **现状**:
-- ✅ cnipa 有 @Permissions('software:add') 功能权限
+- ✅ 既有消费项目 有 @Permissions('record:add') 功能权限
 - ❌ **缺失**: 菜单树形权限
 
 **问题**:
@@ -495,13 +488,12 @@ async getMenuTree(@CurrentUser() user: User) {
 
 ---
 
-### 8. **@zucker/auth: 角色层级展开**
+### 8. **@zucker-framework/auth: 角色层级展开**
 
 **优先级**: P1
-**hsweb 原始位置**: `hsweb-system-authorization-api/ParentPermission.java` + RoleHierarchyService
 
 **现状**:
-- ✅ cnipa 有 roles 和 permissions
+- ✅ 既有消费项目 有 roles 和 permissions
 - ❌ **缺失**: 角色继承链（父角色的权限自动包含到子角色）
 
 **问题**:
@@ -564,13 +556,12 @@ async getUserPermissions(userId: string): Promise<Permission[]> {
 
 ---
 
-### 9. **@zucker/auth: 第三方账号绑定**
+### 9. **@zucker-framework/auth: 第三方账号绑定**
 
 **优先级**: P1
-**hsweb 原始位置**: `hsweb-system-authorization-api/ThirdPartyAccountEntity.java`
 
 **现状**:
-- ✅ cnipa 有 OAuth2 策略
+- ✅ 既有消费项目 有 OAuth2 策略
 - ❌ **缺失**: 账号绑定管理（一个用户绑定多个第三方账号）
 
 **问题**:
@@ -676,13 +667,13 @@ async bindAccount(
 
 ---
 
-### 10. **@zucker/config: ConfigScope 的 publicAccess 支持**
+### 10. **@zucker-framework/config: ConfigScope 的 publicAccess 支持**
 
 **优先级**: P1
 **jetlinks 原始位置**: `jetlinks-community/config/ConfigScope.java:20`
 
 **现状**:
-- ✅ zucker-framework 有 @zucker/config 包
+- ✅ zucker-framework 有 @zucker-framework/config 包
 - ❌ **缺失**: ConfigScope 的访问控制
 
 **问题**:
@@ -728,10 +719,10 @@ export class ConfigGuard implements CanActivate {
 
 ## P2：增强性遗漏（现有能力补充）
 
-### 11. **@zucker/storage: WebDAV 协议支持**
+### 11. **@zucker-framework/storage: WebDAV 协议支持**
 
 **优先级**: P2
-**来源**: cnipa 已有 LocalStorage 和 S3，jetlinks 有 WebDAV
+**来源**: 既有消费项目 已有 LocalStorage 和 S3，jetlinks 有 WebDAV
 
 **现状**:
 - ✅ zucker-framework: LocalStorage, S3Storage
@@ -743,7 +734,7 @@ export class ConfigGuard implements CanActivate {
 
 ---
 
-### 12. **@zucker/notification: SMS 阿里云集成**
+### 12. **@zucker-framework/notification: SMS 阿里云集成**
 
 **优先级**: P2
 **来源**: jetlinks notify-component
@@ -758,10 +749,9 @@ export class ConfigGuard implements CanActivate {
 
 ---
 
-### 13. **@zucker/dictionary: 位掩码多选编码**
+### 13. **@zucker-framework/dictionary: 位掩码多选编码**
 
 **优先级**: P2
-**hsweb 原始位置**: `hsweb-system-dictionary` 的位掩码字典
 
 **现状**:
 - ✅ zucker-framework: 字典 CRUD
@@ -787,10 +777,10 @@ class BitMaskDictionary {
 
 ---
 
-### 14. **@zucker/monitoring: 健康检查端点**
+### 14. **@zucker-framework/monitoring: 健康检查端点**
 
 **优先级**: P2
-**来源**: cnipa monitoring
+**来源**: 既有消费项目 monitoring
 
 **现状**:
 - ✅ zucker-framework: 错误追踪、仪表板
@@ -813,10 +803,9 @@ class BitMaskDictionary {
 
 ## P3：可选增强（Edge Case）
 
-### 15. **@zucker/crud: SQL JOIN 查询支持**
+### 15. **@zucker-framework/crud: SQL JOIN 查询支持**
 
 **优先级**: P3
-**hsweb 原始位置**: `hsweb-commons-crud/query/JoinConditionalSpec.java`
 
 **问题**: 复杂关联查询需要手写原生 SQL，无统一抽象
 
@@ -834,7 +823,7 @@ service.createQuery()
 
 ---
 
-### 16. **@zucker/crud: 软删除（Soft Delete）的完整支持**
+### 16. **@zucker-framework/crud: 软删除（Soft Delete）的完整支持**
 
 **优先级**: P3
 **现状**:
@@ -859,9 +848,9 @@ service.createQuery()
 
 | 项 | 估计 | 依赖 |
 |----|------|------|
-| @zucker/things（物模型） | 5d | core, crud, event |
-| @zucker/gateway（协议网关） | 7d | network, cluster |
-| @zucker/timeseries 完整后端 | 3d | datasource |
+| @zucker-framework/things（物模型） | 5d | core, crud, event |
+| @zucker-framework/gateway（协议网关） | 7d | network, cluster |
+| @zucker-framework/timeseries 完整后端 | 3d | datasource |
 | **小计** | **~15d** |  |
 
 ### 第三轮 - 前端模板完善
@@ -883,56 +872,56 @@ service.createQuery()
 ### ✅ 已完整实现（40 项）
 
 **Layer 1（核心基础）**:
-- @zucker/core: DatabaseAdapter, GenericEntity, ID 生成器, 异常层级, ApiResponse, Diff, TemplateParser ✅
-- @zucker/common: TransformInterceptor, HttpExceptionFilter, RequestLoggerMiddleware ✅
-- @zucker/event: 实体生命周期事件, TopicEventBus ✅
+- @zucker-framework/core: DatabaseAdapter, GenericEntity, ID 生成器, 异常层级, ApiResponse, Diff, TemplateParser ✅
+- @zucker-framework/common: TransformInterceptor, HttpExceptionFilter, RequestLoggerMiddleware ✅
+- @zucker-framework/event: 实体生命周期事件, TopicEventBus ✅
 
 **Layer 2（框架核心）**:
-- @zucker/crud: BaseService (create/update/delete/findOne), BaseController, TreeService ✅, 动态查询 (14+ operators) ✅, DynamicQueryParam ✅
-- @zucker/auth: JWT/Local/OAuth2 策略 ✅, Guards/Decorators ✅, PermissionService ✅
-- @zucker/logging: @AccessLogger 装饰器 ✅
+- @zucker-framework/crud: BaseService (create/update/delete/findOne), BaseController, TreeService ✅, 动态查询 (14+ operators) ✅, DynamicQueryParam ✅
+- @zucker-framework/auth: JWT/Local/OAuth2 策略 ✅, Guards/Decorators ✅, PermissionService ✅
+- @zucker-framework/logging: @AccessLogger 装饰器 ✅
 
 **Layer 3（基础设施）**:
-- @zucker/config: ConfigScope, ConfigService, @ConfigScope 装饰器, 热加载 ✅
-- @zucker/dictionary: DictionaryService, 树形字典项 ✅
-- @zucker/cache: ICache, MemoryCache, RedisCache, HybridCache ✅
-- @zucker/rate-limiter: 声明式限流器 ✅
-- @zucker/storage: FileManager, LocalStorage, S3Storage ✅
-- @zucker/notification: Email/WeChat/DingTalk/Webhook ✅
-- @zucker/credit: CreditService ✅
-- @zucker/ai: LangChain 模型工厂, 结构化输出, SSE 流式响应, 成本追踪 ✅
+- @zucker-framework/config: ConfigScope, ConfigService, @ConfigScope 装饰器, 热加载 ✅
+- @zucker-framework/dictionary: DictionaryService, 树形字典项 ✅
+- @zucker-framework/cache: ICache, MemoryCache, RedisCache, HybridCache ✅
+- @zucker-framework/rate-limiter: 声明式限流器 ✅
+- @zucker-framework/storage: FileManager, LocalStorage, S3Storage ✅
+- @zucker-framework/notification: Email/WeChat/DingTalk/Webhook ✅
+- @zucker-framework/credit: CreditService ✅
+- @zucker-framework/ai: LangChain 模型工厂, 结构化输出, SSE 流式响应, 成本追踪 ✅
 
 **Layer 4（高级能力）**:
-- @zucker/provider: Provider 注册中心 ✅, StrategyManager ✅
-- @zucker/reference: 引用检查 ✅, @PreventDeleteIfReferenced ✅
-- @zucker/script: ScriptFactory, isolated-vm ✅
-- @zucker/rule-engine: 规则 CRUD, 执行引擎 ✅
-- @zucker/monitoring: 错误追踪, Dashboard ✅
+- @zucker-framework/provider: Provider 注册中心 ✅, StrategyManager ✅
+- @zucker-framework/reference: 引用检查 ✅, @PreventDeleteIfReferenced ✅
+- @zucker-framework/script: ScriptFactory, isolated-vm ✅
+- @zucker-framework/rule-engine: 规则 CRUD, 执行引擎 ✅
+- @zucker-framework/monitoring: 错误追踪, Dashboard ✅
 
 **Layer 5 + 前端**:
-- @zucker/cluster: ClusterManager, DistributedLock ✅
+- @zucker-framework/cluster: ClusterManager, DistributedLock ✅
 - 前端 6 包 ✅
 
 ### ⚠️ 需补充（16 项）
 
 | # | 功能 | 优先级 | 所属包 |
 |----|-----|-------|------|
-| 1 | DSL 链式查询 API (where/in/like/orderBy/fetch) | P0 | @zucker/crud |
-| 2 | TermExpressionParser + QueryParamEntity 完整功能 | P0 | @zucker/crud |
-| 3 | CacheEnabledService | P0 | @zucker/crud |
-| 4 | 乐观锁批量更新 (updateManyWithOptimisticLock) | P1 | @zucker/crud |
-| 5 | Token 状态机 + 黑名单 + 撤销 | P1 | @zucker/auth |
-| 6 | 维度权限完整体系 (DimensionProvider/Service) | P1 | @zucker/auth |
-| 7 | 菜单权限管理 | P1 | @zucker/auth |
-| 8 | 角色层级展开 (RoleHierarchyService) | P1 | @zucker/auth |
-| 9 | 第三方账号绑定 (ThirdPartyAccountService) | P1 | @zucker/auth |
-| 10 | ConfigScope publicAccess | P1 | @zucker/config |
-| 11 | WebDAVStorage | P2 | @zucker/storage |
-| 12 | SMS Provider (阿里云) | P2 | @zucker/notification |
-| 13 | 位掩码字典编码 | P2 | @zucker/dictionary |
-| 14 | /health 端点 | P2 | @zucker/monitoring |
-| 15 | SQL JOIN 查询支持 | P3 | @zucker/crud |
-| 16 | 软删除完整支持 | P3 | @zucker/crud |
+| 1 | DSL 链式查询 API (where/in/like/orderBy/fetch) | P0 | @zucker-framework/crud |
+| 2 | TermExpressionParser + QueryParamEntity 完整功能 | P0 | @zucker-framework/crud |
+| 3 | CacheEnabledService | P0 | @zucker-framework/crud |
+| 4 | 乐观锁批量更新 (updateManyWithOptimisticLock) | P1 | @zucker-framework/crud |
+| 5 | Token 状态机 + 黑名单 + 撤销 | P1 | @zucker-framework/auth |
+| 6 | 维度权限完整体系 (DimensionProvider/Service) | P1 | @zucker-framework/auth |
+| 7 | 菜单权限管理 | P1 | @zucker-framework/auth |
+| 8 | 角色层级展开 (RoleHierarchyService) | P1 | @zucker-framework/auth |
+| 9 | 第三方账号绑定 (ThirdPartyAccountService) | P1 | @zucker-framework/auth |
+| 10 | ConfigScope publicAccess | P1 | @zucker-framework/config |
+| 11 | WebDAVStorage | P2 | @zucker-framework/storage |
+| 12 | SMS Provider (阿里云) | P2 | @zucker-framework/notification |
+| 13 | 位掩码字典编码 | P2 | @zucker-framework/dictionary |
+| 14 | /health 端点 | P2 | @zucker-framework/monitoring |
+| 15 | SQL JOIN 查询支持 | P3 | @zucker-framework/crud |
+| 16 | 软删除完整支持 | P3 | @zucker-framework/crud |
 
 ---
 
@@ -957,19 +946,19 @@ service.createQuery()
 
 ### 1. 关于 Reactive 支持
 
-**观察**: hsweb 有同步和异步两套 CRUD Service (CrudService/ReactiveCrudService)，zucker-framework 只有同步版本。
+**观察**: zucker-framework 的 CRUD 服务使用 Promise/async 接口。
 
-**建议**: 暂时保持同步版本（与 NestJS Promise 一致）。如果未来需要 Reactive，可以平行添加 ReactiveBaseService。
+**建议**: 保持 Promise/async 接口。如果未来需要 Reactive，可以平行添加 ReactiveBaseService。
 
 ### 2. 关于 Repository 抽象
 
-**观察**: hsweb 有完整的 Repository 层（SyncRepository/ReactiveRepository），zucker-framework 直接用 DatabaseAdapter。
+**观察**: zucker-framework 使用 DatabaseAdapter 提供数据访问抽象。
 
 **建议**: 保持现状。DatabaseAdapter 已经覆盖 Repository 的职责，无需额外抽象层。
 
 ### 3. 关于 DTO 与 Entity 分离
 
-**观察**: hsweb 通常用 Request/Response DTO，cnipa 直接传 Entity。
+**观察**: 既有消费项目 直接传 Entity，模板可以提供 Request/Response DTO 示例。
 
 **建议**: 在模板中提供 DTO 最佳实践文档，但不强制（由项目自决）。
 
@@ -977,11 +966,11 @@ service.createQuery()
 
 ## 审查完成清单
 
-- [x] 对照 hsweb-commons-crud 的所有 Service 接口
-- [x] 对照 hsweb-authorization 的权限体系
+- [x] 检查 CRUD Service 接口的能力覆盖
+- [x] 检查认证授权和维度权限体系
 - [x] 对照 jetlinks ConfigManager 和 Strategy 模式
 - [x] 检查 zucker-framework packages 的覆盖度
-- [x] 检查 zucker-cnipa 已有实现与 framework 的差异
+- [x] 检查 既有消费项目 已有实现与 framework 的差异
 - [x] 逐条核对 migration-plan.md 的 56 项
 
 ---
@@ -990,7 +979,6 @@ service.createQuery()
 
 - 报告由 Claude Code 生成于 2026-03-22
 - 基于 zucker-framework commit: (latest)
-- hsweb-framework 参考版本: 4.x
 - jetlinks-community 参考版本: 2.x
 
 如发现遗漏或不同意的地方，请在 GitHub Issue 中讨论。

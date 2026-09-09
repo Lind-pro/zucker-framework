@@ -1,7 +1,7 @@
 /**
  * DashboardController — admin 后台仪表盘汇总接口
  *
- * 对标 hsweb SystemInitializeController 仪表盘统计：
+ * 仪表盘统计：
  * - GET /dashboard/stats — 汇总统计（用户/角色/权限/额度 真实数据）
  */
 import {
@@ -13,9 +13,9 @@ import {
   UseGuards,
   Logger,
 } from '@nestjs/common';
-import { JwtAuthGuard, PermissionsGuard, Permissions } from '@zucker/auth';
-import { DATABASE_ADAPTER } from '@zucker/crud';
-import type { DatabaseAdapter } from '@zucker/core';
+import { JwtAuthGuard, PermissionsGuard, Permissions } from '@zucker-framework/auth';
+import { DATABASE_ADAPTER } from '@zucker-framework/crud';
+import type { DatabaseAdapter } from '@zucker-framework/core';
 
 export interface DashboardStats {
   userCount: number;

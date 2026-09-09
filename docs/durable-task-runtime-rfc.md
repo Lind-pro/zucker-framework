@@ -1,7 +1,7 @@
 # Durable Task Runtime RFC
 
 > Status: draft contract baseline
-> Scope: `@zucker/task`, `@zucker/queue`, and consuming application adapters
+> Scope: `@zucker-framework/task`, `@zucker-framework/queue`, and consuming application adapters
 
 ## Problem
 
@@ -9,7 +9,7 @@ Long-running AI, rendering, analysis, and export operations must survive web pro
 
 ## Package Boundary
 
-`@zucker/task` owns durable lifecycle semantics:
+`@zucker-framework/task` owns durable lifecycle semantics:
 
 - State transition rules.
 - Idempotency contracts.
@@ -19,7 +19,7 @@ Long-running AI, rendering, analysis, and export operations must survive web pro
 - Repository interfaces.
 - Outbox dispatch and expired-lease reconciliation contracts.
 
-`@zucker/queue` owns transport and worker execution:
+`@zucker-framework/queue` owns transport and worker execution:
 
 - BullMQ provider and queue registry.
 - Worker host and handler discovery.
@@ -50,7 +50,7 @@ Consuming applications own business semantics:
 
 ## Worker Attempt Runtime
 
-`@zucker/task` also provides `DurableWorkerRuntime`. It owns the reusable control
+`@zucker-framework/task` also provides `DurableWorkerRuntime`. It owns the reusable control
 flow for one durable attempt:
 
 - Terminal-task short circuit and retry-state normalization.
@@ -64,12 +64,12 @@ flow for one durable attempt:
 Applications register handlers that own execution and may override completion,
 retry, and failure commits when the task row and a business projection must be
 updated in one transaction. The runtime does not know application task kinds,
-payloads, prompts, billing rules, or projection tables. `@zucker/queue` remains
+payloads, prompts, billing rules, or projection tables. `@zucker-framework/queue` remains
 responsible for transport delivery and worker-process lifecycle.
 
 ## Initial Delivery
 
-The first `@zucker/task` increments contain the state machine, repository and
+The first `@zucker-framework/task` increments contain the state machine, repository and
 outbox contracts, structured retry policy, worker-attempt runtime, lease
 reconciler, Outbox Dispatcher, lease-fenced monotonic `reportProgress`, in-memory
 reference implementations, PostgreSQL task and outbox repositories, the

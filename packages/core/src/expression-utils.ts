@@ -1,6 +1,5 @@
 /**
  * ExpressionUtils — 表达式求值
- * 参考: hsweb-framework ExpressionUtils.java
  */
 
 import * as vm from 'node:vm';
@@ -43,8 +42,8 @@ const SANDBOX_GLOBALS = Object.freeze({
  * @param expression - JS 表达式字符串
  * @param context - 上下文变量
  *
- * 对比 hsweb ExpressionUtils:
- * - hsweb 支持多语言引擎 (spel, groovy, js)，zucker 仅支持 JS（TypeScript 生态足够）
+ * 求值规则：
+ * - 支持 JavaScript 表达式
  * - 增加表达式长度限制防止滥用
  * - 使用 vm.runInNewContext() 沙箱执行，防止 RCE
  */
@@ -85,9 +84,7 @@ export function evaluate(expression: string, context: Record<string, unknown> = 
  * @param template - 包含 `${expr}` 占位符的模板字符串
  * @param context - 上下文变量
  *
- * 对比 hsweb ExpressionUtils.analytical / TemplateParser:
- * - hsweb 先尝试从 vars 中直接查找变量名，找到就用；找不到才调引擎求值
- * - zucker 增加同样的快速路径优化
+ * 先尝试按变量路径从 context 取值，未找到时再进行表达式求值。
  */
 export function evaluateTemplate(template: string, context: Record<string, unknown> = {}): string {
   if (!template.includes('${')) return template;
@@ -96,7 +93,6 @@ export function evaluateTemplate(template: string, context: Record<string, unkno
     const trimmed = expr.trim();
     try {
       // 快速路径：如果表达式是简单变量名，直接从 context 取值
-      // 参考 hsweb: Object val = vars.get(var); if (val != null) return String.valueOf(val);
       if (/^[\w.]+$/.test(trimmed)) {
         const directValue = getNestedValue(context, trimmed);
         if (directValue !== undefined) {
@@ -113,7 +109,7 @@ export function evaluateTemplate(template: string, context: Record<string, unkno
 
 /**
  * 嵌套属性访问 — 支持 "a.b.c" 路径
- * 参考 hsweb TemplateParser 中的 BeanUtilsBean.getProperty(parameter, var)
+ * 支持通过点分隔的路径读取嵌套属性。
  */
 function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
   const parts = path.split('.');

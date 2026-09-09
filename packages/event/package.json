@@ -1,6 +1,6 @@
 {
-  "name": "@zucker/event",
-  "version": "0.0.1",
+  "name": "@zucker-framework/event",
+  "version": "1.0.0",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -17,15 +17,19 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "LICENSE",
+    "NOTICE",
+    "THIRD_PARTY_NOTICES"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format cjs,esm --dts --external @nestjs/common --external @nestjs/core --external @nestjs/event-emitter --external class-transformer --external class-validator --external @zucker/core",
+    "build": "tsup src/index.ts --format cjs,esm --dts --external @nestjs/common --external @nestjs/core --external @nestjs/event-emitter --external class-transformer --external class-validator --external @zucker-framework/core",
     "clean": "rm -rf dist",
-    "lint": "eslint src/"
+    "lint": "eslint src/",
+    "prepack": "node ../../scripts/prepare-package-legal.mjs"
   },
   "dependencies": {
-    "@zucker/core": "workspace:*",
+    "@zucker-framework/core": "workspace:*",
     "eventemitter2": "^6.4.9"
   },
   "peerDependencies": {
@@ -33,19 +37,22 @@
     "@nestjs/core": "^12.0.0",
     "@nestjs/event-emitter": "^12.0.0",
     "class-transformer": "^0.5.0",
-    "class-validator": "^0.14.0"
-  },
-  "peerDependenciesMeta": {
-    "class-validator": {
-      "optional": true
-    },
-    "class-transformer": {
-      "optional": true
-    }
+    "class-validator": "^0.14.0 || ^0.15.0"
   },
   "devDependencies": {
     "@types/node": "^20.19.43",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1"
+  },
+  "license": "Apache-2.0",
+  "author": "Lind",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Lind-pro/zucker-framework.git",
+    "directory": "packages/event"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }

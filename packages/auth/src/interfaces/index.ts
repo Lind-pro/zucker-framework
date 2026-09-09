@@ -10,7 +10,7 @@ import {
 // ============================================================
 
 /**
- * Standard permission action constants (mirrors hsweb Permission constants).
+ * Standard permission action constants.
  */
 export const PermissionActions = {
   QUERY: 'query',
@@ -32,7 +32,7 @@ export interface Permission {
   describe?: string;
   /** Data-level access control configurations */
   dataAccesses: DataAccessConfig[];
-  /** Extension options map (mirrors hsweb Permission.getOptions()) */
+  /** Extension options map  */
   options?: Record<string, unknown>;
 
   /** Find fields that should be denied for the given action */
@@ -59,7 +59,6 @@ export interface Permission {
 
 /**
  * Simple Permission implementation with data access helpers.
- * Mirrors hsweb SimplePermission.
  */
 export class SimplePermission implements Permission {
   id: string;
@@ -153,7 +152,7 @@ export interface RoleTreeNode extends Role {
 }
 
 // ============================================================
-// Dimension (对标 hsweb DimensionType / Dimension)
+// Dimension
 // ============================================================
 
 export interface DimensionType {
@@ -170,7 +169,7 @@ export interface Dimension {
 }
 
 // ============================================================
-// DimensionProvider (对标 hsweb DimensionProvider)
+// DimensionProvider
 // ============================================================
 
 export interface DimensionProvider {
@@ -205,18 +204,17 @@ export interface TokenInfo {
   token: string;
   userId: string;
   state: TokenState;
-  /** Token type (e.g. 'default', 'api', 'mobile'). Mirrors hsweb UserToken.getType() */
+  /** Token type (e.g. 'default', 'api', 'mobile'). */
   type: string;
   signInTime: Date;
   lastRequestTime: Date;
-  /** Number of requests made with this token. Mirrors hsweb UserToken.getRequestTimes() */
+  /** Number of requests made with this token. */
   requestTimes: number;
   maxInactiveInterval?: number;
 }
 
 /**
  * Allopatric (concurrent) login mode.
- * Mirrors hsweb AllopatricLoginMode.
  */
 export enum AllopatricLoginMode {
   /** Deny login if user already logged in elsewhere */
@@ -228,7 +226,7 @@ export enum AllopatricLoginMode {
 }
 
 // ============================================================
-// Authentication (对标 hsweb Authentication)
+// Authentication
 // ============================================================
 
 export interface AuthUser {
@@ -242,7 +240,7 @@ export interface Authentication {
   getPermissions(): Permission[];
   getDimensions(type?: string): Dimension[];
 
-  /** Get a specific permission by id (mirrors hsweb Authentication.getPermission) */
+  /** Get a specific permission by id  */
   getPermission(id: string): Permission | undefined;
 
   /** Get a specific dimension by type and id */
@@ -259,7 +257,7 @@ export interface Authentication {
   merge(other: Authentication): Authentication;
 
   /**
-   * Copy with filters (mirrors hsweb Authentication.copy).
+   * Copy with filters.
    * @param permissionFilter - (permission, action) => whether to keep the action
    * @param dimensionFilter - (dimension) => whether to keep the dimension
    */
@@ -291,12 +289,11 @@ export interface ZuckerAuthModuleOptions {
 }
 
 // ============================================================
-// DefaultDimensionType (对标 hsweb DefaultDimensionType enum)
+// DefaultDimensionType
 // ============================================================
 
 /**
  * A simple DimensionType implementation that can be used as a constructor.
- * Mirrors hsweb DimensionType interface with isSameType comparison.
  */
 export class SimpleDimensionType implements DimensionType {
   constructor(
@@ -312,7 +309,6 @@ export class SimpleDimensionType implements DimensionType {
 
 /**
  * Built-in dimension types.
- * Mirrors hsweb DefaultDimensionType enum (user, role).
  */
 export const DefaultDimensionType = {
   user: new SimpleDimensionType('user', '用户'),
@@ -320,12 +316,11 @@ export const DefaultDimensionType = {
 } as const;
 
 // ============================================================
-// SimpleDimension (对标 hsweb SimpleDimension)
+// SimpleDimension
 // ============================================================
 
 /**
  * Simple Dimension implementation.
- * Mirrors hsweb SimpleDimension (Lombok @AllArgsConstructor(staticName="of")).
  */
 export class SimpleDimension implements Dimension {
   id: string;
@@ -351,18 +346,16 @@ export class SimpleDimension implements Dimension {
 }
 
 // ============================================================
-// AuthenticationPredicate (对标 hsweb AuthenticationPredicate)
+// AuthenticationPredicate
 // ============================================================
 
 /**
  * Predicate function for testing Authentication.
- * Mirrors hsweb AuthenticationPredicate.
  */
 export type AuthenticationPredicate = (auth: Authentication) => boolean;
 
 /**
  * Factory methods for creating AuthenticationPredicates.
- * Mirrors hsweb AuthenticationPredicate static methods.
  */
 export const AuthenticationPredicates = {
   /** Check if authentication has the given permission string (e.g. "user:query") */
@@ -393,7 +386,6 @@ export const AuthenticationPredicates = {
 
 /**
  * Parse a permission string like "user:query" or "role:admin" into a predicate.
- * Mirrors hsweb AuthenticationUtils.createPredicate.
  */
 export function createAuthenticationPredicate(permissionString: string): AuthenticationPredicate {
   if (!permissionString) return () => false;
@@ -407,12 +399,11 @@ export function createAuthenticationPredicate(permissionString: string): Authent
 }
 
 // ============================================================
-// UserSettingPermission (对标 hsweb UserSettingPermission enum)
+// UserSettingPermission
 // ============================================================
 
 /**
  * User setting read/write permission levels.
- * Mirrors hsweb UserSettingPermission enum.
  */
 export enum UserSettingPermission {
   NONE = 'NONE',
@@ -422,12 +413,11 @@ export enum UserSettingPermission {
 }
 
 // ============================================================
-// SettingValueHolder (对标 hsweb SettingValueHolder)
+// SettingValueHolder
 // ============================================================
 
 /**
  * Holds a user setting value with typed accessors.
- * Mirrors hsweb SettingValueHolder interface.
  */
 export interface SettingValueHolder {
   asString(): string | undefined;
@@ -439,7 +429,7 @@ export interface SettingValueHolder {
 }
 
 /**
- * Null object for SettingValueHolder (mirrors hsweb SettingNullValueHolder).
+ * Null object for SettingValueHolder.
  * All accessors return undefined, permission is NONE.
  */
 export const NullSettingValueHolder: SettingValueHolder = {
@@ -453,7 +443,6 @@ export const NullSettingValueHolder: SettingValueHolder = {
 
 /**
  * Create a SettingValueHolder from a raw value and permission.
- * Mirrors hsweb StringSourceSettingHolder.of().
  */
 export function createSettingValueHolder(
   value: unknown,
@@ -496,11 +485,11 @@ export function createSettingValueHolder(
 export { DefaultDataAccessType as DataAccessConfigDefaultType } from '../data-access/data-access-config';
 
 // ============================================================
-// TokenInfoUtils (mirrors hsweb UserToken helper methods)
+// TokenInfoUtils
 // ============================================================
 
 /**
- * Utility helpers for TokenInfo, mirroring hsweb UserToken default methods
+ * Utility helpers for TokenInfo
  * (isNormal, isExpired, isOffline, isDeny, isLock, checkExpired, validate).
  */
 export const TokenInfoUtils = {
@@ -519,12 +508,12 @@ export const TokenInfoUtils = {
   isLock(token: TokenInfo): boolean {
     return token.state === TokenState.LOCK;
   },
-  /** Check if the token has exceeded its maxInactiveInterval. Mirrors hsweb UserToken.checkExpired() */
+  /** Check if the token has exceeded its maxInactiveInterval. */
   checkExpired(token: TokenInfo): boolean {
     if (!token.maxInactiveInterval || token.maxInactiveInterval <= 0) return false;
     return Date.now() - token.lastRequestTime.getTime() > token.maxInactiveInterval;
   },
-  /** Validate token is in normal state, throw if not. Mirrors hsweb UserToken.validate() */
+  /** Validate token is in normal state, throw if not. */
   validate(token: TokenInfo): boolean {
     if (token.state !== TokenState.NORMAL) {
       throw new Error(`Token is ${token.state}`);

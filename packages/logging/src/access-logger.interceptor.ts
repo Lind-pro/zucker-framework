@@ -77,7 +77,7 @@ export class AccessLoggerInterceptor implements NestInterceptor {
       return next.handle();
     }
 
-    // 对齐 hsweb AccessLogger.ignore — 显式忽略日志记录
+    // 显式忽略日志记录
     if (loggerOptions.ignore) {
       return next.handle();
     }
@@ -92,20 +92,20 @@ export class AccessLoggerInterceptor implements NestInterceptor {
     const ip = this.piiFilter.sanitize(this.getClientIp(request));
     const userAgent = this.sanitizeOptional(request.headers?.['user-agent']);
 
-    // 对齐 hsweb AccessLoggerInfo.httpHeaders — 完整请求头
+    // 完整请求头
     const httpHeaders = request.headers
       ? (this.piiFilter.sanitizeObject({
           ...request.headers,
         }) as Record<string, string | undefined>)
       : {};
 
-    // 对齐 hsweb DefaultAccessLoggerParser.parse — 类+方法 action 用 "-" 拼接
+    // 类+方法 action 用 "-" 拼接
     const classAction = classOptions?.action;
     const methodAction = methodOptions?.action || context.getHandler().name;
     const action =
       classAction && methodAction ? `${classAction}-${methodAction}` : classAction || methodAction;
 
-    // 对齐 hsweb DefaultAccessLoggerParser.parse — 类+方法 describe 用 "\n" 拼接
+    // 类+方法 describe 用 "\n" 拼接
     const classDescribe = classOptions?.describe;
     const methodDescribe = methodOptions?.describe;
     const describe =
@@ -116,15 +116,15 @@ export class AccessLoggerInterceptor implements NestInterceptor {
     const module =
       loggerOptions.module || context.getClass().name.replace('Controller', '').toLowerCase();
 
-    // 对齐 hsweb AccessLoggerInfo.id — 每条日志唯一标识
+    // 每条日志唯一标识
     const logId = randomUUID();
-    // 对齐 hsweb AccessLoggerInfo.target — 控制器类名
+    // 控制器类名
     const target = context.getClass().name;
 
     const correlationId = getCorrelationId();
     const sensitiveFields = loggerOptions.excludeFields ?? DEFAULT_SENSITIVE_FIELDS;
 
-    // 对齐 hsweb AccessLogger.ignoreParameter — 忽略指定参数
+    // 忽略指定参数
     const ignoreParams = loggerOptions.ignoreParameter ?? [];
     const ignoreAll = ignoreParams.includes('*');
 
@@ -136,13 +136,13 @@ export class AccessLoggerInterceptor implements NestInterceptor {
           )
         : undefined;
 
-    // 对齐 hsweb AccessLoggerInfo.context — 上下文键值对
+    // 上下文键值对
     const logContext: Record<string, string> = {};
     if (userId) logContext.userId = userId;
     if (username) logContext.username = username;
     if (correlationId) logContext.correlationId = correlationId;
 
-    // 对齐 hsweb AccessLoggerBeforeEvent — 在请求处理之前发射事件
+    // 在请求处理之前发射事件
     const beforePayload: AccessLogPayload = {
       id: logId,
       action,
@@ -221,7 +221,7 @@ export class AccessLoggerInterceptor implements NestInterceptor {
         const duration = Date.now() - startTime;
         const targetId = this.extractTargetId(request, null);
 
-        // 对齐 hsweb AccessLoggerInfo.toSimpleMap — exception 包含完整堆栈
+        // exception 包含完整堆栈
         const exceptionStr = this.piiFilter.sanitize(
           error instanceof Error ? (error.stack ?? error.message) : String(error),
         );
@@ -311,7 +311,7 @@ export class AccessLoggerInterceptor implements NestInterceptor {
   }
 
   /**
-   * 过滤被忽略的参数 — 对齐 hsweb AccessLogger.ignoreParameter / DefaultAccessLoggerParser.ignoreParameter
+   * 过滤被忽略的参数
    */
   private filterIgnoredParameters(
     params: Record<string, unknown> | undefined,

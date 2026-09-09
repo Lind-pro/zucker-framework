@@ -2,7 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 
 /**
  * 文件生命周期管理器。
- * 对标 hsweb FileManager 的生命周期管理能力。
  *
  * 支持文件过期自动清理、临时文件管理、存储配额检查。
  */

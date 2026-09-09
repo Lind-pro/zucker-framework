@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { NotFoundException } from '@zucker/core';
+import { NotFoundException } from '@zucker-framework/core';
 
 /**
  * A named provider instance with optional metadata.

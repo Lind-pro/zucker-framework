@@ -1,13 +1,12 @@
 /**
- * 系统版本信息 — 对应 hsweb SystemVersion / Version / FrameworkVersion
+ * 系统版本信息
  *
- * hsweb 通过 SystemVersion 跟踪：
+ * SystemVersion 跟踪：
  *   - 框架自身版本 (FrameworkVersion)
  *   - 应用版本 (majorVersion.minorVersion.revisionVersion[-SNAPSHOT])
  *   - 依赖列表 (Dependency[])
  *
- * 本实现将 hsweb 的版本模型迁移为 TS，
- * 保留 setVersion(string) 解析能力和 getDependency() 查询能力。
+ * 提供 setVersion(string) 解析能力和 getDependency() 查询能力。
  */
 
 export interface Dependency {

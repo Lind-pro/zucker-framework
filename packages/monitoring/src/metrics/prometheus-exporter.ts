@@ -1,5 +1,5 @@
-import { Controller, Get, Header } from '@nestjs/common';
-import type { MetricsRegistry } from './metrics-registry';
+import { Controller, Get, Header, Inject } from '@nestjs/common';
+import { MetricsRegistry } from './metrics-registry';
 
 function formatLabels(labels: Record<string, string>): string {
   const entries = Object.entries(labels);
@@ -84,7 +84,7 @@ export function renderPrometheusMetrics(registry: MetricsRegistry): string {
  */
 @Controller('metrics')
 export class PrometheusExporter {
-  constructor(private readonly registry: MetricsRegistry) {}
+  constructor(@Inject(MetricsRegistry) private readonly registry: MetricsRegistry) {}
 
   @Get()
   @Header('Content-Type', 'text/plain; version=0.0.4; charset=utf-8')

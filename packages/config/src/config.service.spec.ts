@@ -1,7 +1,7 @@
 import { EventEmitter2 } from 'eventemitter2';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { CONFIG_CHANGED_EVENT, ConfigService, type ConfigChangePayload } from './config.service';
-import { InMemoryAdapter } from '@zucker/crud';
+import { InMemoryAdapter } from '@zucker-framework/crud';
 
 /**
  * Lightweight mock DB for tests that only need a single findUnique result.

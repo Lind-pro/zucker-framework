@@ -1,7 +1,5 @@
 /**
  * Password encoder interface.
- *
- * Reference: hsweb-framework PasswordEncoder
  */
 export interface PasswordEncoder {
   /**

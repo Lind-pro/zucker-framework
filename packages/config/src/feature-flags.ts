@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { FeatureFlagEvaluator } from '@zucker/feature-flags';
+import { FeatureFlagEvaluator } from '@zucker-framework/feature-flags';
 
 @Injectable()
 export class FeatureFlagService extends FeatureFlagEvaluator {
@@ -10,7 +10,7 @@ export class FeatureFlagService extends FeatureFlagEvaluator {
   }
 }
 
-export { FeatureFlagEvaluator, defaultFeatureFlagEnvKey } from '@zucker/feature-flags';
+export { FeatureFlagEvaluator, defaultFeatureFlagEnvKey } from '@zucker-framework/feature-flags';
 export type {
   FeatureFlagDecisionReason,
   FeatureFlagEnvironmentReader,
@@ -19,4 +19,4 @@ export type {
   FlagDefinition,
   FlagRule,
   FlagRuleType,
-} from '@zucker/feature-flags';
+} from '@zucker-framework/feature-flags';

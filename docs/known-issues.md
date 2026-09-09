@@ -10,7 +10,7 @@
 
 
 
-### 2026-05-13 · @zucker/cli 拖崩 `pnpm -r --parallel dev`
+### 2026-05-13 · @zucker-framework/cli 拖崩 `pnpm -r --parallel dev`
 - **症状**：根目录跑 `pnpm -r --parallel dev` 立即 `ELIFECYCLE` exit。
 - **根因（两层）**：
   1. cli 的 `dev` 脚本是 `tsx src/index.ts`，直接跑 CLI 入口，无参数时 commander 打 help 然后 `process.exit(1)`，拖整个并行命令崩。

@@ -5,8 +5,6 @@ import { ClearDictionaryCacheEvent } from './clear-dictionary-cache-event';
 /**
  * DictDefine — dictionary definition interface.
  *
- * Reference: hsweb-framework DictDefine
- *
  * Represents the metadata and items for a dictionary.
  */
 export interface DictDefine {
@@ -23,8 +21,6 @@ export interface DictDefine {
 /**
  * ClassDictDefine — dictionary definition tied to a class field.
  *
- * Reference: hsweb-framework ClassDictDefine
- *
  * Extends DictDefine with a field binding.
  */
 export interface ClassDictDefine extends DictDefine {
@@ -34,8 +30,6 @@ export interface ClassDictDefine extends DictDefine {
 
 /**
  * ItemDefine — standalone dictionary item definition.
- *
- * Reference: hsweb-framework ItemDefine / DefaultItemDefine
  */
 export interface ItemDefine {
   value: string;
@@ -46,8 +40,6 @@ export interface ItemDefine {
 
 /**
  * Create a DictDefine from raw data.
- *
- * Reference: hsweb-framework DefaultDictDefine
  */
 export function createDictDefine(
   id: string,
@@ -60,8 +52,6 @@ export function createDictDefine(
 
 /**
  * Create a ClassDictDefine from raw data.
- *
- * Reference: hsweb-framework DefaultClassDictDefine
  */
 export function createClassDictDefine(
   id: string,
@@ -76,9 +66,7 @@ export function createClassDictDefine(
 /**
  * DictDefineRepository — stores and retrieves dictionary definitions.
  *
- * Reference: hsweb-framework DictDefineRepository / DefaultDictDefineRepository
- *
- * In hsweb this is reactive (Mono/Flux); here we use sync + async patterns
+ * Supports synchronous definitions and asynchronous repository access
  * suitable for NestJS.
  */
 export class DictDefineRepository {
@@ -135,8 +123,6 @@ export class DictDefineRepository {
   /**
    * Parse an enum class into a DictDefine and register it.
    *
-   * Reference: hsweb DefaultDictDefineRepository.parseEnumDict()
-   *
    * @param dictId - Dictionary ID
    * @param enumObj - TypeScript enum object
    * @param options - Optional alias and comments
@@ -161,8 +147,6 @@ export class DictDefineRepository {
 
 /**
  * Interface for fetching dictionary definitions from a database.
- *
- * Reference: hsweb CompositeDictDefineRepository — getFromDb()
  */
 export interface DictDefineDbSource {
   /**
@@ -181,8 +165,6 @@ export interface DictDefineDbSource {
  * CompositeDictDefineRepository — merges in-memory (enum-parsed) defines
  * with DB-sourced defines, with caching support.
  *
- * Reference: hsweb CompositeDictDefineRepository
- *
  * Lookup priority:
  * 1. In-memory defines (from parseAndRegister / addDefine)
  * 2. EnumDictRegistry entries
@@ -197,8 +179,6 @@ export class CompositeDictDefineRepository extends DictDefineRepository {
 
   /**
    * Set the database source for dictionary definitions.
-   *
-   * Reference: hsweb CompositeDictDefineRepository autowires DefaultDictionaryService
    */
   setDbSource(source: DictDefineDbSource): void {
     this.dbSource = source;
@@ -206,8 +186,6 @@ export class CompositeDictDefineRepository extends DictDefineRepository {
 
   /**
    * Handle cache clear event.
-   *
-   * Reference: hsweb CompositeDictDefineRepository.handleClearCacheEvent()
    *
    * @param event - The cache clear event
    */
@@ -222,7 +200,6 @@ export class CompositeDictDefineRepository extends DictDefineRepository {
   /**
    * Get a dictionary definition by ID, with DB fallback and caching.
    *
-   * Reference: hsweb CompositeDictDefineRepository.getDefine()
    * — checks parent (in-memory), then cache, then DB
    */
   override getDefine(id: string): DictDefine | undefined {
@@ -240,8 +217,6 @@ export class CompositeDictDefineRepository extends DictDefineRepository {
 
   /**
    * Async version of getDefine with DB fallback.
-   *
-   * Reference: hsweb CompositeDictDefineRepository.getDefine() — reactive
    */
   async getDefineAsync(id: string): Promise<DictDefine | undefined> {
     // 1. Check in-memory
@@ -267,7 +242,6 @@ export class CompositeDictDefineRepository extends DictDefineRepository {
   /**
    * Get all dictionary definitions, merging in-memory, enum registry, and DB sources.
    *
-   * Reference: hsweb CompositeDictDefineRepository.getAllDefine()
    * — Flux.concat(super.getAllDefine(), dbQuery)
    */
   override getAllDefine(): DictDefine[] {
@@ -277,8 +251,6 @@ export class CompositeDictDefineRepository extends DictDefineRepository {
 
   /**
    * Async version of getAllDefine that includes DB-sourced definitions.
-   *
-   * Reference: hsweb CompositeDictDefineRepository.getAllDefine()
    */
   async getAllDefineAsync(): Promise<DictDefine[]> {
     const result = new Map<string, DictDefine>();

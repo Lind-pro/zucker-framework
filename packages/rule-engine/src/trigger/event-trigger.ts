@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import type { TopicEventBus, TopicPayload } from '@zucker/event';
+import type { TopicEventBus, TopicPayload } from '@zucker-framework/event';
 
 export interface EventTriggerConfig {
   topic: string;

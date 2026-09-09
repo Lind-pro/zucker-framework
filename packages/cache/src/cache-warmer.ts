@@ -3,7 +3,6 @@ import type { ICache } from './cache.interface';
 
 /**
  * 缓存预热器 — 系统启动时预加载热点数据。
- * 对标 hsweb CacheManager 的预热能力。
  */
 export interface CacheWarmerTask {
   name: string;

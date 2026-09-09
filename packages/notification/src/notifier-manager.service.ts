@@ -5,7 +5,7 @@ import {
   Optional,
   type OnModuleDestroy,
 } from '@nestjs/common';
-import { NotFoundException, BusinessException } from '@zucker/core';
+import { NotFoundException, BusinessException } from '@zucker-framework/core';
 import type {
   Notifier,
   NotifierProvider,

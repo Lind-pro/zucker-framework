@@ -46,13 +46,13 @@ export default defineConfig({
 
   webServer: [
     {
-      command: 'pnpm --filter @zucker/template-admin dev',
+      command: 'pnpm --filter @zucker-framework/template-admin dev',
       url: 'http://localhost:3100',
       reuseExistingServer: !process.env['CI'],
       timeout: 60_000,
     },
     {
-      command: 'pnpm --filter @zucker/template-web dev',
+      command: 'pnpm --filter @zucker-framework/template-web dev',
       url: 'http://localhost:4101',
       reuseExistingServer: !process.env['CI'],
       timeout: 60_000,

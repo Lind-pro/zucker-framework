@@ -1,12 +1,12 @@
 import { Injectable, Inject, Optional, Logger } from '@nestjs/common';
-import { type GenericEntity, type DatabaseAdapter, TransactionHolder } from '@zucker/core';
-import { type ICache, CACHE_PROVIDER } from '@zucker/cache';
+import { type GenericEntity, type DatabaseAdapter, TransactionHolder } from '@zucker-framework/core';
+import { type ICache, CACHE_PROVIDER } from '@zucker-framework/cache';
 import {
   EntityEventType,
   EntityEventPhase,
   type TopicEventBus,
   TOPIC_EVENT_BUS,
-} from '@zucker/event';
+} from '@zucker-framework/event';
 import { BaseService } from '../base.service';
 import { DynamicQueryService, type DynamicQueryParam } from '../dynamic-query.service';
 import { DATABASE_ADAPTER } from '../crud.module';
@@ -18,7 +18,7 @@ const CACHE_PREFIX = 'crud:';
 const DEFAULT_TTL_MS = 5 * 60 * 1000;
 
 /**
- * 全量缓存键 — 对齐 hsweb EnableCacheReactiveCrudService.ALL_DATA_KEY
+ * 全量缓存键
  * 用于缓存整个表的数据（适用于数据量较小的配置表等）
  */
 const ALL_DATA_KEY = '@all';
@@ -55,7 +55,7 @@ export abstract class CacheEnabledService<T extends GenericEntity> extends BaseS
   }
 
   /**
-   * 获取缓存名称 — 对齐 hsweb GenericReactiveCacheSupportCrudService.getCacheName()
+   * 获取缓存名称
    */
   getCacheName(): string {
     return this.constructor.name;
@@ -73,7 +73,6 @@ export abstract class CacheEnabledService<T extends GenericEntity> extends BaseS
 
   /**
    * 获取全量数据（优先走缓存）
-   * 对齐 hsweb GenericReactiveCacheSupportCrudService.getCacheAll()
    * 适用于数据量较小的配置表、字典表等
    */
   async getCacheAll(): Promise<T[]> {
@@ -94,7 +93,6 @@ export abstract class CacheEnabledService<T extends GenericEntity> extends BaseS
 
   /**
    * 创建后失效全量缓存
-   * 对齐 hsweb EnableCacheReactiveCrudService.insert() — registerClearCache()
    */
   override async create(data: Partial<T>): Promise<T> {
     const result = await super.create(data);
@@ -104,11 +102,10 @@ export abstract class CacheEnabledService<T extends GenericEntity> extends BaseS
 
   /**
    * 批量保存后失效缓存
-   * 对齐 hsweb EnableCacheReactiveCrudService.save() — registerClearCache()
    */
   override async save(entities: Partial<T>[]): Promise<{ created: number; updated: number; total: number }> {
     const result = await super.save(entities);
-    // 失效全量缓存（对齐 hsweb: save 触发 cache.clear()）
+    // 失效全量缓存
     await this.cache.del(this.getAllCacheKey());
     return result;
   }
@@ -163,7 +160,6 @@ export abstract class CacheEnabledService<T extends GenericEntity> extends BaseS
 
   /**
    * 批量创建后失效全量缓存
-   * 对齐 hsweb EnableCacheReactiveCrudService.insertBatch() — registerClearCache()
    */
   override async createMany(data: Partial<T>[]): Promise<{ count: number }> {
     const result = await super.createMany(data);
@@ -175,7 +171,6 @@ export abstract class CacheEnabledService<T extends GenericEntity> extends BaseS
 
   /**
    * 批量更新后失效全量缓存
-   * 对齐 hsweb EnableCacheReactiveCrudService.createUpdate() — cache.clear()
    */
   override async updateMany(where: Record<string, unknown>, data: Partial<T>): Promise<{ count: number }> {
     const result = await super.updateMany(where, data);
@@ -187,7 +182,6 @@ export abstract class CacheEnabledService<T extends GenericEntity> extends BaseS
 
   /**
    * 批量删除后失效全量缓存
-   * 对齐 hsweb EnableCacheReactiveCrudService.createDelete() — cache.clear()
    */
   override async deleteMany(where: Record<string, unknown>): Promise<{ count: number }> {
     const result = await super.deleteMany(where);
@@ -200,7 +194,7 @@ export abstract class CacheEnabledService<T extends GenericEntity> extends BaseS
   /**
    * 失效指定 ID 的缓存，并发布缓存清除事件
    *
-   * 事务感知行为（对齐 hsweb afterCommitWithOutTransaction）：
+   * 事务感知行为：
    * - 有事务上下文时：注册 afterCommit 回调，commit 后才真正失效缓存
    *   这样如果事务回滚，缓存不会被错误清除
    * - 无事务上下文时：立即执行缓存失效
@@ -208,7 +202,7 @@ export abstract class CacheEnabledService<T extends GenericEntity> extends BaseS
   protected async invalidateCache(id: string): Promise<void> {
     const doInvalidate = async () => {
       const cacheKey = this.getCacheKey(id);
-      // 同时失效单条缓存和全量缓存（对齐 hsweb: set.add(ALL_DATA_KEY)）
+      // 同时失效单条缓存和全量缓存
       await Promise.all([
         this.cache.del(cacheKey),
         this.cache.del(this.getAllCacheKey()),
@@ -232,11 +226,10 @@ export abstract class CacheEnabledService<T extends GenericEntity> extends BaseS
 
   /**
    * 批量删除后失效缓存
-   * 对齐 hsweb EnableCacheReactiveCrudService.deleteById(Publisher)
    */
   override async deleteBatch(ids: string[], options?: { skipEvents?: boolean }): Promise<number> {
     const result = await super.deleteBatch(ids, options);
-    // 失效每个 ID 的缓存 + 全量缓存（对齐 hsweb: collectList -> registerClearCache）
+    // 失效每个 ID 的缓存 + 全量缓存
     await Promise.all([
       ...ids.map((id) => this.cache.del(this.getCacheKey(id))),
       this.cache.del(this.getAllCacheKey()),

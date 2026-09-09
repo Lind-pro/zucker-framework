@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import { createSandbox } from '@zucker/script';
+import { createSandbox } from '@zucker-framework/script';
 
 export interface ScriptActionConfig {
   script: string;

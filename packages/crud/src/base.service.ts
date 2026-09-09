@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException, Logger, Inject, Optional } from '@nestjs/common';
-import { type DatabaseAdapter, type GenericEntity, type Term, OperationCancelledException } from '@zucker/core';
+import { type DatabaseAdapter, type GenericEntity, type Term, OperationCancelledException } from '@zucker-framework/core';
 import {
   EntityEventType,
   EntityEventPhase,
@@ -10,7 +10,7 @@ import {
   type EntityEvent,
   type TopicEventBus,
   TOPIC_EVENT_BUS,
-} from '@zucker/event';
+} from '@zucker-framework/event';
 import { DynamicQueryService, DynamicQueryParamService, type DynamicQueryParam } from './dynamic-query.service';
 import { type PaginatedResult } from './pagination';
 import { DATABASE_ADAPTER } from './crud.module';
@@ -22,7 +22,6 @@ function hasErrorCode(error: unknown, code: string): boolean {
 
 /**
  * Abstract base service providing standard CRUD operations with entity event support.
- * Mirrors hsweb CrudService with PREPARE/BEFORE/AFTER event lifecycle.
  *
  * Subclasses should provide the model name and optionally customize the default order field.
  *
@@ -49,7 +48,6 @@ export abstract class BaseService<T extends GenericEntity> {
 
   /**
    * 创建记录
-   * 对齐 hsweb CrudService.insert(E)
    * @param data 实体数据
    * @returns 创建后的完整实体
    */
@@ -67,7 +65,6 @@ export abstract class BaseService<T extends GenericEntity> {
 
   /**
    * 根据 ID 更新记录
-   * 对齐 hsweb CrudService.updateById(K, E)
    * @param id 记录 ID
    * @param data 要更新的字段
    * @returns 更新后的完整实体
@@ -97,7 +94,7 @@ export abstract class BaseService<T extends GenericEntity> {
 
   /**
    * 保存或更新单条记录 — 有 ID 则 update，无 ID 则 create
-   * 对齐 hsweb EntitySavedEvent / EntityBeforeSaveEvent 事件
+   * 发送保存操作的实体生命周期事件
    * @param data 实体数据
    * @returns 保存后的完整实体
    */
@@ -133,14 +130,13 @@ export abstract class BaseService<T extends GenericEntity> {
 
   /**
    * 根据 ID 删除记录
-   * 对齐 hsweb CrudService.deleteById(K)
    * @param id 记录 ID
    * @returns 被删除的实体
    * @throws NotFoundException 记录不存在时
    */
   async delete(id: string): Promise<T> {
     const entity = await this.findOne(id);
-    // PREPARE 阶段：监听器可修改实体数据（如审计记录）— 对齐 hsweb 三阶段事件
+    // PREPARE 阶段：监听器可修改实体数据（如审计记录）
     await this.emitEvent(EntityEventType.DELETE, EntityEventPhase.PREPARE, entity);
     // BEFORE 阶段：监听器可 cancel() 取消删除操作
     await this.emitEventWithCancelCheck(EntityEventType.DELETE, entity);
@@ -162,7 +158,6 @@ export abstract class BaseService<T extends GenericEntity> {
 
   /**
    * 根据 ID 查询单条记录
-   * 对齐 hsweb CrudService.findById(K)
    * @param id 记录 ID
    * @returns 查询到的实体
    * @throws NotFoundException 记录不存在时
@@ -184,7 +179,6 @@ export abstract class BaseService<T extends GenericEntity> {
 
   /**
    * 动态条件查询（带分页）
-   * 对齐 hsweb CrudService.query(QueryParamEntity)
    * @param query 动态查询参数
    * @returns 分页查询结果
    */
@@ -194,7 +188,7 @@ export abstract class BaseService<T extends GenericEntity> {
 
   /**
    * 根据 ID 查询，返回 null 而不抛异常
-   * 对齐 hsweb CrudService.findById(K) 返回 Optional<E> 的语义
+   * 记录不存在时返回空值
    * @param id 记录 ID
    * @returns 实体或 null（不存在时返回 null）
    */
@@ -210,7 +204,6 @@ export abstract class BaseService<T extends GenericEntity> {
 
   /**
    * 根据 ID 列表批量查询
-   * 对齐 hsweb CrudService.findById(Collection<K>)
    */
   async findByIds(ids: string[]): Promise<T[]> {
     if (ids.length === 0) return [];
@@ -221,7 +214,6 @@ export abstract class BaseService<T extends GenericEntity> {
 
   /**
    * 查询总数
-   * 对齐 hsweb CrudService.count(QueryParam)
    */
   async count(where?: Record<string, unknown>): Promise<number> {
     return this.db.model(this.modelName).count({ where: where ?? {} });
@@ -229,7 +221,6 @@ export abstract class BaseService<T extends GenericEntity> {
 
   /**
    * 根据动态查询参数查询总数
-   * 对齐 hsweb CrudService.count(QueryParamEntity)
    */
   async countByQuery(query: DynamicQueryParam): Promise<number> {
     // 使用 DynamicQueryParamService.parseFilters 解析，确保与 findMany 的过滤逻辑一致
@@ -244,7 +235,6 @@ export abstract class BaseService<T extends GenericEntity> {
 
   /**
    * 判断数据是否存在
-   * 对齐 hsweb ReactiveServiceQueryController._exists
    */
   async exists(query: DynamicQueryParam): Promise<boolean> {
     const result = await this.dynamicQuery.findMany(this.modelName, {
@@ -256,7 +246,7 @@ export abstract class BaseService<T extends GenericEntity> {
   }
 
   /**
-   * 分页查询 — 对齐 hsweb CrudService.queryPager() 语义
+   * 分页查询
    * - 如果 param.total 已设置（前端传入），跳过 count 查询
    * - count 为 0 时直接返回空结果
    * - 自动调用 rePaging 修正越界页码
@@ -267,7 +257,7 @@ export abstract class BaseService<T extends GenericEntity> {
     const page = Math.max(1, resolvedPage);
     const pageSize = Math.max(1, param.pageSize ?? 10);
 
-    // total 复用：前端传了 total 就跳过 count 查询（对齐 hsweb queryPager）
+    // total 复用：前端传了 total 就跳过 count 查询
     let total: number;
     if (param.total !== undefined && param.total !== null) {
       total = param.total;
@@ -296,7 +286,7 @@ export abstract class BaseService<T extends GenericEntity> {
 
   /**
    * 批量保存（upsert 语义）
-   * 对齐 hsweb CrudService.save(Collection<E>) — 有 ID 则 update，无 ID 则 create
+   * 有 ID 则 update，无 ID 则 create
    * 发出 SAVE 类型事件（EntityBeforeSaveEvent / EntitySavedEvent）
    * @returns SaveResult { created: number, updated: number, total: number }
    */
@@ -560,7 +550,7 @@ export abstract class BaseService<T extends GenericEntity> {
   protected async emitEvent(type: EntityEventType, phase: EntityEventPhase, entity: unknown): Promise<EntityEvent> {
     const event = createEntityEvent(type, phase, this.modelName, entity);
     if (!this.eventBus) return event;
-    // 检查 EntityEventHelper 的 doFireEvent 上下文标志 — 对齐 hsweb EntityEventHelper.tryFireEvent
+    // 检查 EntityEventHelper 的 doFireEvent 上下文标志
     if (!isDoFireEvent(true)) return event;
     // 检查 @EnableEntityEvent 装饰器配置
     if (!isEntityEventEnabled(this.constructor, type)) return event;

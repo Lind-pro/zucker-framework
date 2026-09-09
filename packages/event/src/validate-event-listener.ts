@@ -4,7 +4,7 @@ import { EntityEvent, EntityEventPhase, EntityEventType } from './entity-events'
 import { EntityEventListener } from './entity-event-listener';
 
 /**
- * 验证分组 — 参考 hsweb CreateGroup / UpdateGroup
+ * 验证分组
  *
  * 使用 class-validator 的 groups 功能区分创建和更新时的不同校验规则。
  *
@@ -29,7 +29,7 @@ export const SAVE_GROUP = 'save';
  * 在 PREPARE 阶段使用 class-validator 校验实体数据。
  * 校验失败时，取消操作（event.cancel）。
  *
- * 与 hsweb ValidateEventListener 一致：
+ * 验证规则：
  * - CREATE/SAVE 操作使用 CreateGroup
  * - UPDATE/MODIFY 操作使用 UpdateGroup
  * - 用户可通过 options.groups 覆盖默认分组
@@ -55,7 +55,7 @@ export class ValidateEventListener<T extends object> implements EntityEventListe
     if (event.phase !== EntityEventPhase.PREPARE) return;
     if (this.options?.skipTypes?.includes(event.type)) return;
 
-    // 根据事件类型自动选择验证分组 — 参考 hsweb 的 CreateGroup/UpdateGroup
+    // 根据事件类型自动选择验证分组
     const groups = this.options?.groups ?? this.resolveGroups(event.type);
 
     // update/modify 时默认跳过缺失属性

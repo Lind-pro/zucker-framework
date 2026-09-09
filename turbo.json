@@ -12,7 +12,10 @@
       "inputs": [
         "src/**",
         "tsconfig.json",
-        "package.json"
+        "package.json",
+        "tsup.config.*",
+        "build-vendored.mjs",
+        "../../tsconfig.base.json"
       ],
       "outputs": ["dist/**"]
     },

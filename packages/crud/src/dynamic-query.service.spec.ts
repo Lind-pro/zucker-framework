@@ -88,7 +88,7 @@ describe('DynamicQueryParamService', () => {
 });
 
 describe('DynamicQueryService', () => {
-  it('parses where expressions with hsweb-style term precedence', async () => {
+  it('parses where expressions with crud term precedence', async () => {
     const modelOps = {
       count: vi.fn().mockResolvedValue(1),
       findMany: vi.fn().mockResolvedValue([{ id: '1' }]),

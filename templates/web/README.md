@@ -5,9 +5,9 @@
 ## 功能
 - 国际化 (next-intl)
 - SEO 优化
-- 认证集成 (@zucker/fe-auth)
-- 权限控制 (@zucker/fe-permission)
-- 埋点 (@zucker/fe-analytics)
+- 认证集成 (@zucker-framework/fe-auth)
+- 权限控制 (@zucker-framework/fe-permission)
+- 埋点 (@zucker-framework/fe-analytics)
 
 ## 使用
 待 Phase 4 实现。

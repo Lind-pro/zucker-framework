@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const manifest = JSON.parse(readFileSync(join(root, "manifest.json"), "utf8"));
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
-// zip 名优先取 package.json 的 extensionSlug（如 "siteshots"），否则从 name 推导
+// zip 名优先取消费项目 package.json 的 extensionSlug，否则从 name 推导
 const slug = pkg.extensionSlug || (pkg.name || "extension").replace(/^@[^/]+\//, "").replace(/-extension$/, "");
 const INCLUDE = ["manifest.json", "background.js", "offscreen.html", "offscreen.js", "popup", "lib", "icons"];
 const distDir = join(root, "dist");

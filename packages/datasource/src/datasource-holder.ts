@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from 'async_hooks';
-import { BusinessException } from '@zucker/core';
+import { BusinessException } from '@zucker-framework/core';
 import { DataSourceManager, DatabaseAdapter } from './datasource-manager';
 import { DataSourceNotFoundException } from './datasource-errors';
 

@@ -1,5 +1,5 @@
 /**
- * 异步事件接口 — 参考 hsweb AsyncEvent / DefaultAsyncEvent
+ * 异步事件接口
  *
  * 支持两级异步任务链：
  * - first: 优先异步任务（在 commit 前先执行）
@@ -22,7 +22,7 @@ export interface AsyncEvent<T = unknown> {
   async(fn: () => Promise<void>): void;
 
   /**
-   * 对 first 链进行变换 — 参考 hsweb DefaultAsyncEvent.transformFirst
+   * 对 first 链进行变换
    *
    * 回调接收当前的 first 链 Promise，返回新的 Promise。
    * 可用于包装事务边界、添加日志等横切逻辑。
@@ -30,7 +30,7 @@ export interface AsyncEvent<T = unknown> {
   transformFirst(mapper: (current: Promise<void>) => Promise<void>): void;
 
   /**
-   * 对 async 链进行变换 — 参考 hsweb DefaultAsyncEvent.transform
+   * 对 async 链进行变换
    *
    * 回调接收当前的 async 链 Promise，返回新的 Promise。
    */
@@ -76,8 +76,8 @@ export function createAsyncEvent<T>(payload: T): AsyncEvent<T> {
 
     first(fn: () => Promise<void>) {
       _hasListener = true;
-      // 使用 unshift 前置插入 — 参考 hsweb DefaultAsyncEvent.first()
-      // Java: this.first = publisher.then(first) — 新任务在已有链之前执行
+      // 使用 unshift 前置插入
+      // 新任务在已有链之前执行
       firstTasks.unshift(fn);
     },
 

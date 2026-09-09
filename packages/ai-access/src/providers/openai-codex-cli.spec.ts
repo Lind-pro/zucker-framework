@@ -121,10 +121,10 @@ describe('OpenAICodexCliSubscriptionProvider', () => {
 
     expect(plugin.id).toBe('openai-codex-cli');
     expect(plugin.authMethods).toEqual([]);
-    await expect(plugin.credentialSources[0].discover({ profileName: 'cnipa' })).resolves.toEqual([
+    await expect(plugin.credentialSources[0].discover({ profileName: 'sample-project' })).resolves.toEqual([
       expect.objectContaining({
         providerId: 'openai-codex-cli',
-        profileName: 'cnipa',
+        profileName: 'sample-project',
         ownership: 'external-readonly',
         credential: {
           kind: 'external-reference',

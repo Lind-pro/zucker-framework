@@ -7,23 +7,23 @@
 Phase 5 是 zucker-framework 的 IoT 扩展层，目标是将 jetlinks 的物联网核心能力移植到 Node.js/TypeScript 技术栈。这 4 个包构成完整的 IoT 平台基础设施：
 
 ```
-@zucker/things      物模型（设备建模 + 数据存储）
-@zucker/gateway     协议网关（设备接入 + 消息编解码）
-@zucker/network     网络管理（连接配置 + 证书管理）
-@zucker/timeseries  时序数据（多后端时序存储）
+@zucker-framework/things      物模型（设备建模 + 数据存储）
+@zucker-framework/gateway     协议网关（设备接入 + 消息编解码）
+@zucker-framework/network     网络管理（连接配置 + 证书管理）
+@zucker-framework/timeseries  时序数据（多后端时序存储）
 ```
 
 依赖关系：
 
 ```
-@zucker/network ← @zucker/gateway ← @zucker/things
+@zucker-framework/network ← @zucker-framework/gateway ← @zucker-framework/things
                                         ↑
-                               @zucker/timeseries
+                               @zucker-framework/timeseries
 ```
 
 ---
 
-## @zucker/things — 物模型
+## @zucker-framework/things — 物模型
 
 ### 对标 jetlinks 组件
 
@@ -90,7 +90,7 @@ interface PropertyStorage {
 
 ---
 
-## @zucker/gateway — 协议网关
+## @zucker-framework/gateway — 协议网关
 
 ### 对标 jetlinks 组件
 
@@ -176,7 +176,7 @@ jetlinks 用 Netty 的 ByteBuf + ChannelPipeline 处理。Node.js 方案：
 
 ---
 
-## @zucker/timeseries — 时序数据
+## @zucker-framework/timeseries — 时序数据
 
 ### 对标 jetlinks 组件
 
@@ -250,7 +250,7 @@ interface AggregateQuery extends TimeSeriesQuery {
 
 ---
 
-## @zucker/network — 网络管理
+## @zucker-framework/network — 网络管理
 
 ### 对标 jetlinks 组件
 
@@ -317,38 +317,38 @@ interface CertificateManager {
 ### 推荐实施顺序
 
 ```
-1. @zucker/things      (基础，其他包都依赖物模型)
-2. @zucker/timeseries  (属性/事件存储依赖时序数据)
-3. @zucker/network     (网关依赖网络管理)
-4. @zucker/gateway     (最复杂，最后实现)
+1. @zucker-framework/things      (基础，其他包都依赖物模型)
+2. @zucker-framework/timeseries  (属性/事件存储依赖时序数据)
+3. @zucker-framework/network     (网关依赖网络管理)
+4. @zucker-framework/gateway     (最复杂，最后实现)
 ```
 
 ### 理由
 
-1. **@zucker/things 优先**：物模型是 IoT 平台的核心数据模型，gateway 和 timeseries 都围绕物模型工作。即使没有网关，也可以通过 HTTP API 手动上报设备数据进行验证。
+1. **@zucker-framework/things 优先**：物模型是 IoT 平台的核心数据模型，gateway 和 timeseries 都围绕物模型工作。即使没有网关，也可以通过 HTTP API 手动上报设备数据进行验证。
 
-2. **@zucker/timeseries 第二**：things 的属性值和事件日志需要时序存储。TimescaleDB 方案可以复用现有 PostgreSQL 基础设施，风险最低。
+2. **@zucker-framework/timeseries 第二**：things 的属性值和事件日志需要时序存储。TimescaleDB 方案可以复用现有 PostgreSQL 基础设施，风险最低。
 
-3. **@zucker/network 第三**：网络配置和证书管理相对独立，工作量小，但是 gateway 的前置依赖。
+3. **@zucker-framework/network 第三**：网络配置和证书管理相对独立，工作量小，但是 gateway 的前置依赖。
 
-4. **@zucker/gateway 最后**：最复杂的包，涉及多协议实现和会话管理。建议先实现 MQTT 网关（IoT 最常用协议），其他协议后续迭代。
+4. **@zucker-framework/gateway 最后**：最复杂的包，涉及多协议实现和会话管理。建议先实现 MQTT 网关（IoT 最常用协议），其他协议后续迭代。
 
 ### 总预估工作量
 
 | 包 | 工期 |
 |---|---|
-| @zucker/things | 2-3 周 |
-| @zucker/timeseries | 2-3 周 |
-| @zucker/network | 1.5-2 周 |
-| @zucker/gateway | 4-5 周 |
+| @zucker-framework/things | 2-3 周 |
+| @zucker-framework/timeseries | 2-3 周 |
+| @zucker-framework/network | 1.5-2 周 |
+| @zucker-framework/gateway | 4-5 周 |
 | **总计** | **10-13 周** |
 
 ### MVP 策略
 
 如果需要快速验证，可以先实现最小可用集：
 
-1. **@zucker/things**：完整物模型 + PostgreSQL 属性存储（不依赖时序数据库）
-2. **@zucker/gateway**：仅 MQTT 网关（Aedes）+ HTTP 推送
-3. 跳过 @zucker/timeseries 和 @zucker/network，后续补充
+1. **@zucker-framework/things**：完整物模型 + PostgreSQL 属性存储（不依赖时序数据库）
+2. **@zucker-framework/gateway**：仅 MQTT 网关（Aedes）+ HTTP 推送
+3. 跳过 @zucker-framework/timeseries 和 @zucker-framework/network，后续补充
 
 MVP 工期：**4-5 周**，可以支撑基本的设备接入 → 数据上报 → 属性读写场景。

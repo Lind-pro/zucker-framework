@@ -1,19 +1,23 @@
 {
-  "name": "@zucker/rate-limiter",
-  "version": "0.0.1",
+  "name": "@zucker-framework/rate-limiter",
+  "version": "1.0.0",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "LICENSE",
+    "NOTICE",
+    "THIRD_PARTY_NOTICES"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format cjs,esm --dts --external @nestjs/common --external @nestjs/core --external @zucker/core --external rate-limiter-flexible",
+    "build": "tsup src/index.ts --format cjs,esm --dts --external @nestjs/common --external @nestjs/core --external @zucker-framework/core --external rate-limiter-flexible",
     "clean": "rm -rf dist",
-    "lint": "eslint src/"
+    "lint": "eslint src/",
+    "prepack": "node ../../scripts/prepare-package-legal.mjs"
   },
   "dependencies": {
-    "@zucker/core": "workspace:*",
+    "@zucker-framework/core": "workspace:*",
     "rate-limiter-flexible": "^11.2.0"
   },
   "peerDependencies": {
@@ -22,5 +26,16 @@
   },
   "devDependencies": {
     "@types/node": "^20.19.43"
+  },
+  "license": "Apache-2.0",
+  "author": "Lind",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Lind-pro/zucker-framework.git",
+    "directory": "packages/rate-limiter"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }

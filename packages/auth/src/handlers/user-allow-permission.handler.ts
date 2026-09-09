@@ -1,5 +1,5 @@
 /**
- * UserAllowPermissionHandler — mirrors hsweb UserAllowPermissionHandler.
+ * UserAllowPermissionHandler
  *
  * Allows bypassing permission checks for specific users/dimensions
  * based on configuration. Supports AntPath-style pattern matching.

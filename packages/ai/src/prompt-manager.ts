@@ -1,5 +1,5 @@
 import { Injectable, Logger, Inject, Optional } from '@nestjs/common';
-import { DATABASE_ADAPTER, type DatabaseAdapter } from '@zucker/core';
+import { DATABASE_ADAPTER, type DatabaseAdapter } from '@zucker-framework/core';
 
 /** 期望的响应格式（对齐 OpenAI Chat Completions API response_format 字段）*/
 export type ResponseFormat = 'json_object' | 'json_array' | 'text' | 'json_schema';

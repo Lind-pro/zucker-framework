@@ -4,8 +4,6 @@ import { Logger } from '@nestjs/common';
 
 /**
  * MessageSource — i18n message resolution interface.
- *
- * Reference: hsweb-framework i18n starter
  */
 export interface MessageSource {
   getMessage(
@@ -146,8 +144,6 @@ export class CompositeMessageSource implements MessageSource {
 
   /**
    * Add multiple sources at once.
-   *
-   * Reference: hsweb CompositeMessageSource.addMessageSources()
    */
   addSources(sources: MessageSource[]): void {
     this.sources.push(...sources);

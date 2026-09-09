@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { InMemoryAdapter } from '@zucker/crud';
+import { InMemoryAdapter } from '@zucker-framework/crud';
 import { RoleService } from './role.service';
 import { PermissionService } from './permission.service';
-import { BusinessException, NotFoundException } from '@zucker/core';
+import { BusinessException, NotFoundException } from '@zucker-framework/core';
 
 // Suppress NestJS Logger output
 vi.mock('@nestjs/common', async (importOriginal) => {

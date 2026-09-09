@@ -1,6 +1,6 @@
 {
-  "name": "@zucker/feature-flags",
-  "version": "0.1.0-rc.3",
+  "name": "@zucker-framework/feature-flags",
+  "version": "1.0.0",
   "description": "Deterministic, auditable feature flag evaluation for Zucker applications",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -13,17 +13,31 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "LICENSE",
+    "NOTICE",
+    "THIRD_PARTY_NOTICES"
   ],
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts",
     "clean": "rm -rf dist",
     "lint": "eslint src/",
     "test": "vitest run src",
-    "verify:package": "node scripts/verify-package.mjs"
+    "verify:package": "node scripts/verify-package.mjs",
+    "prepack": "node ../../scripts/prepare-package-legal.mjs"
   },
   "devDependencies": {
     "@types/node": "^20.19.43"
   },
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "author": "Lind",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Lind-pro/zucker-framework.git",
+    "directory": "packages/feature-flags"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
 }

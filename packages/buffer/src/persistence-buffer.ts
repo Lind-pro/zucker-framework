@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { BusinessException } from '@zucker/core';
+import { BusinessException } from '@zucker-framework/core';
 import { BufferSettings, DEFAULT_BUFFER_SETTINGS } from './buffer-settings';
 
 export type FlushHandler<T> = (items: T[]) => Promise<void>;

@@ -1,5 +1,5 @@
 import { Injectable, Inject, Logger, Optional } from '@nestjs/common';
-import type { DatabaseAdapter } from '@zucker/core';
+import type { DatabaseAdapter } from '@zucker-framework/core';
 import {
   AUTH_EVENT_TOPICS,
   createDimensionBindEvent,
@@ -9,7 +9,7 @@ import {
   type DimensionDeletedEvent,
 } from '../events/auth-events';
 
-/** Minimal TopicEventBus interface to avoid hard dependency on @zucker/event */
+/** Minimal TopicEventBus interface to avoid hard dependency on @zucker-framework/event */
 interface TopicEventBusLike {
   publish(topic: string, payload: unknown): Promise<void>;
   subscribe?(topic: string, handler: (payload: unknown) => void | Promise<void>): void;
@@ -17,8 +17,6 @@ interface TopicEventBusLike {
 
 /**
  * Dimension-user binding entity.
- *
- * Reference: hsweb DimensionUserEntity
  */
 export interface DimensionUserEntity {
   id: string;
@@ -28,23 +26,21 @@ export interface DimensionUserEntity {
   dimensionName?: string;
 }
 
-import { DATABASE_ADAPTER } from '@zucker/crud';
+import { DATABASE_ADAPTER } from '@zucker-framework/crud';
 const TOPIC_EVENT_BUS = 'TOPIC_EVENT_BUS';
 
 /**
- * DimensionUserService -- corresponds to hsweb DefaultDimensionUserService.
+ * DimensionUserService
  *
  * Manages the binding between users and dimensions (roles, departments, etc.).
  * Publishes bind/unbind events and handles cascade deletions.
  *
- * Key behaviors from hsweb:
+ * Key behaviors:
  * - User deleted -> delete all dimension bindings for that user
  * - Dimension entity deleted -> delete all bindings for that dimension
  * - Binding saved/created -> publish DimensionBindEvent + clear auth cache
  * - Binding deleted -> publish DimensionUnbindEvent + clear auth cache
  * - Binding modified -> clear auth cache
- *
- * Reference: hsweb-system-authorization DefaultDimensionUserService
  */
 @Injectable()
 export class DimensionUserService {
@@ -69,8 +65,6 @@ export class DimensionUserService {
 
   /**
    * Bind a user to a dimension.
-   *
-   * Reference: hsweb DefaultDimensionUserService entity save -> DimensionBindEvent
    */
   async bind(data: {
     userId: string;
@@ -100,8 +94,6 @@ export class DimensionUserService {
 
   /**
    * Batch bind users to dimensions.
-   *
-   * Reference: hsweb DefaultDimensionUserService entity save batch
    */
   async bindBatch(
     bindings: Array<{
@@ -140,8 +132,6 @@ export class DimensionUserService {
 
   /**
    * Unbind a user from a dimension.
-   *
-   * Reference: hsweb DefaultDimensionUserService entity delete -> DimensionUnbindEvent
    */
   async unbind(id: string): Promise<boolean> {
     // Load entity before delete for event publishing
@@ -200,8 +190,6 @@ export class DimensionUserService {
 
   /**
    * Get dimension bind info for multiple users.
-   *
-   * Reference: hsweb DefaultDimensionService.getDimensionBindInfo()
    */
   async getDimensionBindInfo(
     userIds: string[],
@@ -219,8 +207,6 @@ export class DimensionUserService {
 
   /**
    * Handle user deletion -- cascade delete all dimension bindings.
-   *
-   * Reference: hsweb DefaultDimensionUserService.handleUserDeleteEntity()
    */
   private async handleUserDeleted(event: UserDeletedEvent): Promise<void> {
     try {
@@ -245,8 +231,6 @@ export class DimensionUserService {
 
   /**
    * Handle dimension entity deletion -- cascade delete all user bindings.
-   *
-   * Reference: hsweb DefaultDimensionUserService.handleDimensionDeletedEntity()
    */
   private async handleDimensionDeleted(event: DimensionDeletedEvent): Promise<void> {
     try {
@@ -280,8 +264,6 @@ export class DimensionUserService {
 
   /**
    * Clear authorization cache for affected users.
-   *
-   * Reference: hsweb DefaultDimensionUserService.clearUserCache()
    */
   private async clearUserCache(userIds: string[]): Promise<void> {
     if (!this.topicEventBus || userIds.length === 0) return;

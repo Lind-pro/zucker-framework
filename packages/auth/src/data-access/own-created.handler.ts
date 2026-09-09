@@ -1,5 +1,5 @@
 import { Injectable, Inject, Logger } from '@nestjs/common';
-import type { DatabaseAdapter } from '@zucker/core';
+import type { DatabaseAdapter } from '@zucker-framework/core';
 import type { DataAccessHandler, AuthorizingContext } from './data-access-handler';
 import type { DataAccessConfig, OwnCreatedDataAccessConfig } from './data-access-config';
 import { DefaultDataAccessType } from './data-access-config';

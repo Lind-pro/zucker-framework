@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { DistributedEventBus } from './distributed-event-bus';
 import type { RedisLike } from './cluster-manager';
-import { DefaultTopicEventBus } from '@zucker/event';
+import { DefaultTopicEventBus } from '@zucker-framework/event';
 
 function createMockRedis(): RedisLike {
   const messageListeners: Array<(channel: unknown, message: unknown) => void> = [];

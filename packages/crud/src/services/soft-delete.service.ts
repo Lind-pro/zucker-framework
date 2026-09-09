@@ -1,11 +1,11 @@
 import { Injectable, NotFoundException, Inject, Optional } from '@nestjs/common';
-import { type DatabaseAdapter, type GenericEntity } from '@zucker/core';
+import { type DatabaseAdapter, type GenericEntity } from '@zucker-framework/core';
 import {
   EntityEventType,
   EntityEventPhase,
   type TopicEventBus,
   TOPIC_EVENT_BUS,
-} from '@zucker/event';
+} from '@zucker-framework/event';
 import { BaseService } from '../base.service';
 import { DynamicQueryService, type DynamicQueryParam } from '../dynamic-query.service';
 import { DATABASE_ADAPTER } from '../crud.module';
@@ -66,11 +66,11 @@ export abstract class SoftDeleteService<T extends SoftDeletableEntity> extends B
 
   /**
    * 执行软删除（设置 deletedAt）
-   * 对齐 hsweb: BEFORE 阶段使用 cancel check，支持监听器取消删除操作
+   * BEFORE 阶段检查取消标志，支持监听器取消删除操作
    */
   override async delete(id: string): Promise<T> {
     const entity = await this.findOne(id);
-    // BEFORE 阶段：监听器可 cancel() 取消删除操作（对齐 hsweb CrudService.deleteById）
+    // BEFORE 阶段：监听器可 cancel() 取消删除操作
     await this.emitEventWithCancelCheck(EntityEventType.DELETE, entity);
 
     const result = await this.db.model(this.modelName).update({

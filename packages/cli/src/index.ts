@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import 'dotenv/config';
 import { Command } from 'commander';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { doctorCommand } from './commands/doctor.js';
 import { initCommand } from './commands/init.js';
 import { addCommand } from './commands/add.js';
@@ -12,7 +14,7 @@ const program = new Command();
 program
   .name('zucker')
   .description('CLI tool for Zucker Framework')
-  .version('0.1.0-rc.0');
+  .version((JSON.parse(readFileSync(resolve(__dirname, '../package.json'), 'utf8')) as { version: string }).version);
 
 program.addCommand(initCommand);
 program.addCommand(doctorCommand);

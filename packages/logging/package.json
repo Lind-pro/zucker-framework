@@ -1,16 +1,20 @@
 {
-  "name": "@zucker/logging",
-  "version": "0.1.0-rc.3",
+  "name": "@zucker-framework/logging",
+  "version": "1.0.0",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "LICENSE",
+    "NOTICE",
+    "THIRD_PARTY_NOTICES"
   ],
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts --external @nestjs/common --external @nestjs/core --external rxjs",
     "clean": "rm -rf dist",
-    "lint": "eslint src/"
+    "lint": "eslint src/",
+    "prepack": "node ../../scripts/prepare-package-legal.mjs"
   },
   "dependencies": {
     "eventemitter2": "^6.4.9"
@@ -22,5 +26,16 @@
     "@nestjs/common": "^12.0.0",
     "@nestjs/core": "^12.0.0",
     "rxjs": "^7.0.0"
+  },
+  "license": "Apache-2.0",
+  "author": "Lind",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Lind-pro/zucker-framework.git",
+    "directory": "packages/logging"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }

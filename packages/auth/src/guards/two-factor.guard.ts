@@ -16,8 +16,6 @@ import { TwoFactorService } from '../two-factor/two-factor.service';
  * 消费 @TwoFactor 装饰器的元数据，在请求进入 handler 前
  * 验证双因素认证码。
  *
- * 参考 hsweb TwoFactorHandlerInterceptorAdapter 的拦截逻辑。
- *
  * 支持类级别和方法级别组合（方法级别优先）。
  */
 @Injectable()

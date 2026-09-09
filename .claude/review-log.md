@@ -65,7 +65,7 @@
 ## Review Round Breakdown
 
 ### Phase 1: Package-Level Depth (Rounds 1--14)
-Each round focused on one or more packages, adding missing types, interfaces, error handling, and aligning with hsweb/jetlinks Java reference architecture:
+Each round focused on one or more packages, adding missing types, interfaces, error handling, and reviewing package architecture:
 - R1: core | R2: crud | R3: auth | R4: event | R5: config, dictionary
 - R6: notification, io | R7: monitoring, logging, tracing | R8: rule-engine, script
 - R9: cache, cluster, buffer | R10: provider, reference, relation
@@ -85,12 +85,12 @@ Each round focused on one or more packages, adding missing types, interfaces, er
 - R24: API surface consistency
 - R25: Regression and quality gate
 
-### Phase 3: Reference Fidelity (Rounds 26--33)
-Exhaustive comparison with Java source repositories:
-- R26: hsweb-core | R27: hsweb-commons-crud | R28: hsweb-authorization
+### Phase 3: Capability Review (Rounds 26--33)
+Review of core, CRUD, authorization and infrastructure capabilities:
+- R26: core primitives | R27: CRUD services | R28: authorization
 - R29: jetlinks EventBus | R30: jetlinks notification
 - R31: jetlinks rule-engine | R32: jetlinks network/protocol
-- R33: hsweb-system
+- R33: system services
 
 ### Phase 4: Hardening (Rounds 34--39)
 - R34: Unit test additions (253 test cases)
@@ -98,7 +98,7 @@ Exhaustive comparison with Java source repositories:
 - R36: Defensive programming and boundary checks
 - R37: Performance optimizations
 - R38: Module decoupling improvements
-- R39: hsweb 5.x feature backport
+- R39: Reliability and security improvements
 
 ### Phase 5: Final Regression (Round 40)
 - Full build verification (40/40 pass)
@@ -139,7 +139,7 @@ Exhaustive comparison with Java source repositories:
 1. **Comprehensive domain model**: 37 packages covering enterprise application needs from auth to AI
 2. **Strong type safety**: Zero `@ts-ignore` in source; full TypeScript strict mode
 3. **Clean architecture**: Barrel file exports, consistent module patterns, NestJS integration
-4. **Reference fidelity**: Faithful TypeScript port of hsweb/jetlinks Java ecosystem
+4. **Reusable capabilities**: Shared TypeScript APIs for authentication, CRUD and infrastructure
 5. **Event-driven design**: Topic-based event bus with async support and lifecycle events
 6. **Extensible SPI**: Provider/plugin patterns throughout (auth suppliers, dimension providers, data access handlers)
 7. **Build reliability**: 40/40 packages build successfully with tsup

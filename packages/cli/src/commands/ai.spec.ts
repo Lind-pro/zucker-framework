@@ -7,7 +7,7 @@ import {
   credentialProfileId,
   type AIAccessProviderPlugin,
   type CredentialProfile,
-} from '@zucker/ai-access';
+} from '@zucker-framework/ai-access';
 import { createAICommand } from './ai';
 
 const now = 1_800_000_000_000;

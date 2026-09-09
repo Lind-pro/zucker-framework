@@ -1,5 +1,5 @@
 /**
- * Authorization definition types — mirrors hsweb-authorization-api define package.
+ * Authorization definition types
  *
  * ResourceDefinition / ResourceActionDefinition / AuthorizeDefinition
  * describe the permission model that gets scanned from decorators at startup
@@ -39,7 +39,6 @@ export function createDataAccessDefinition(): DataAccessDefinition {
 
 /**
  * Defines a single action within a resource (e.g. query, save, delete).
- * Mirrors hsweb ResourceActionDefinition.
  */
 export interface ResourceActionDefinition {
   id: string;
@@ -65,7 +64,6 @@ export function createResourceActionDefinition(
 
 /**
  * Defines a permission resource (e.g. "user", "device", "role").
- * Mirrors hsweb ResourceDefinition with actions, logical, phased.
  */
 export interface ResourceDefinition {
   id: string;
@@ -156,7 +154,6 @@ export interface DimensionDefinition {
 
 /**
  * Complete authorization definition for a controller method.
- * Mirrors hsweb AuthorizeDefinition.
  */
 export interface AuthorizeDefinition {
   resources: ResourceDefinition[];
@@ -185,7 +182,6 @@ export function getDefinitionDescription(def: AuthorizeDefinition): string {
 
 /**
  * Check if an authentication has permission matching the resource definitions.
- * Mirrors hsweb ResourcesDefinition.hasPermission().
  */
 export function hasPermissionForResources(
   resources: ResourceDefinition[],

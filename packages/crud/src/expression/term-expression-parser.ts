@@ -1,4 +1,4 @@
-import { type Term } from '@zucker/core';
+import { type Term } from '@zucker-framework/core';
 
 /**
  * 完整的 SQL-like 表达式解析器
@@ -13,7 +13,6 @@ export class TermExpressionParser {
 
   /**
    * 解析排序表达式
-   * 对齐 hsweb TermExpressionParser.parseOrder()
    * 例: "age asc,score desc"
    * @returns 排序数组 [{name: 'age', order: 'asc'}, {name: 'score', order: 'desc'}]
    */
@@ -32,7 +31,6 @@ export class TermExpressionParser {
 
   /**
    * 解析 Map 为 Term[]
-   * 对齐 hsweb TermExpressionParser.parse(Map)
    *
    * 格式:
    * - {"name$like": "张三"} -> column=name, termType=like, value=张三

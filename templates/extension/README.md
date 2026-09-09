@@ -15,6 +15,9 @@
 
 ## 待办
 
+- 将 `background.js` 的 `licensing.apiBase` 和 `purchaseUrl` 替换为自己的服务地址，
+  同步更新 `manifest.json` 的 `host_permissions` 与 `popup/popup.html` 的购买链接；
+  默认 `.invalid` 地址仅作占位，不连接实际服务。
 - `icons/` 放置 16/32/48/128 图标后在 `manifest.json` 补 `icons` 字段。
 - 服务端在 ExtensionOrder/License 注册产品 `__EXT_SLUG__` 并创建 Stripe Payment Link。
 

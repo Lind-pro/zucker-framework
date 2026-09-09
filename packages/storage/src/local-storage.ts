@@ -235,7 +235,7 @@ export class LocalFileStorage implements FileManager {
   }
 
   /**
-   * 便捷文件保存 — 对应 hsweb FileStorageService.saveFile(InputStream, fileType)
+   * 便捷文件保存
    * 自动根据文件类型生成日期归档路径并保存。
    */
   async saveFile(buffer: Buffer, fileType: string, options?: UploadOptions): Promise<UploadResult> {
@@ -245,7 +245,7 @@ export class LocalFileStorage implements FileManager {
   }
 
   /**
-   * 应用 POSIX 文件权限 — 对应 hsweb FileUploadProperties.applyFilePermission()
+   * 应用 POSIX 文件权限
    * 使用 fs.chmodSync 设置文件权限，非 POSIX 系统静默忽略错误。
    */
   async applyFilePermission(key: string, permissions: PosixFilePermissions): Promise<void> {
@@ -253,7 +253,7 @@ export class LocalFileStorage implements FileManager {
     try {
       fs.chmodSync(filePath, permissions.mode);
     } catch {
-      // 非 POSIX 系统（如 Windows）静默忽略，与 hsweb 行为一致
+      // 非 POSIX 系统（如 Windows）静默忽略
     }
   }
 

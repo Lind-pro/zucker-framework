@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ValidationException, NotFoundException } from '@zucker/core';
+import { ValidationException, NotFoundException } from '@zucker-framework/core';
 import { AIProvider } from './ai-provider.interface';
 
 @Injectable()

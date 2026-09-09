@@ -16,7 +16,7 @@ vi.mock('@nestjs/common', () => ({
   Logger: class { log() {} error() {} warn() {} debug() {} verbose() {} },
 }));
 
-vi.mock('@zucker/event', () => ({
+vi.mock('@zucker-framework/event', () => ({
   EntityEventType: { CREATE: 'create', UPDATE: 'update', DELETE: 'delete' },
   EntityEventPhase: { BEFORE: 'before', AFTER: 'after', PREPARE: 'prepare' },
   TOPIC_EVENT_BUS: 'TOPIC_EVENT_BUS',

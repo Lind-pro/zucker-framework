@@ -51,7 +51,7 @@ async function runDiagnostics(): Promise<CheckResult[]> {
     ...(pkg.devDependencies as Record<string, string> | undefined),
   };
 
-  const requiredPkgs = ['@zucker/core', '@zucker/crud', '@zucker/common'];
+  const requiredPkgs = ['@zucker-framework/core', '@zucker-framework/crud', '@zucker-framework/common'];
   for (const name of requiredPkgs) {
     if (deps[name]) {
       results.push({ name, status: 'ok', message: deps[name] });

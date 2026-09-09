@@ -167,7 +167,7 @@ export {
   type DimensionDeletedEvent,
   type DimensionUserBind,
   type ClearUserAuthorizationCacheEvent,
-  // Login lifecycle events (mirrors hsweb authorization events)
+  // Login lifecycle events
   type LoginBeforeEvent,
   type LoginDecodeEvent,
   type LoginSuccessEvent,
@@ -175,7 +175,7 @@ export {
   type LoginExitEvent,
   type AuthInitializeEvent,
   type AuthHandleBeforeEvent,
-  // Token events (mirrors hsweb token events)
+  // Token events
   type TokenCreatedEvent,
   type TokenChangedEvent,
   type TokenRemovedEvent,

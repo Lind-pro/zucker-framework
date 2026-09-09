@@ -1,7 +1,6 @@
 /**
  * UsersController — admin 后台用户管理接口
  *
- * 对标 hsweb UserController + UserSettingController：
  * - POST /users/_query  — 分页查询用户（支持 filter 过滤）
  * - POST /users/_count  — 查询用户总数（Dashboard 用）
  * - GET  /users/:id     — 查询单个用户
@@ -37,10 +36,10 @@ import {
   UserService,
   PermissionService,
   DimensionUserService,
-} from '@zucker/auth';
-import { DATABASE_ADAPTER } from '@zucker/crud';
-import { type DatabaseAdapter, ValidationException } from '@zucker/core';
-import type { UserEntity } from '@zucker/auth';
+} from '@zucker-framework/auth';
+import { DATABASE_ADAPTER } from '@zucker-framework/crud';
+import { type DatabaseAdapter, ValidationException } from '@zucker-framework/core';
+import type { UserEntity } from '@zucker-framework/auth';
 
 interface QueryRequest {
   pageIndex?: number;
@@ -173,7 +172,7 @@ export class UsersController {
     });
   }
 
-  // ─── 用户-角色关联（对标 hsweb UserController.saveUserRole） ────────────
+  // ─── 用户-角色关联 ────────────
 
   /**
    * GET /users/:id/roles — 查询用户角色列表
@@ -223,7 +222,7 @@ export class UsersController {
     return { roleIds: body.roleIds };
   }
 
-  // ─── 用户-权限关联（对标 hsweb AuthorizationSettingController） ─────────
+  // ─── 用户-权限关联 ─────────
 
   /**
    * GET /users/:id/permissions — 查询用户所有权限（含角色继承）
@@ -256,7 +255,7 @@ export class UsersController {
     return { permissionIds: body.permissionIds };
   }
 
-  // ─── 用户-维度关联（对标 hsweb DimensionUserController） ────────────────
+  // ─── 用户-维度关联 ────────────────
 
   /**
    * GET /users/:id/dimensions — 查询用户维度绑定

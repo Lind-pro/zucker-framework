@@ -1,4 +1,4 @@
-import { type DatabaseAdapter, type GenericEntity } from '@zucker/core';
+import { type DatabaseAdapter, type GenericEntity } from '@zucker-framework/core';
 import { coerceComparable } from './coerce-comparable';
 
 /** 查询条件节点 */

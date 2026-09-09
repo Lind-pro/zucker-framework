@@ -17,9 +17,9 @@ import {
   HttpStatus,
   UseGuards,
 } from '@nestjs/common';
-import { CreditService } from '@zucker/credit';
-import type { CreditTransactionRecord } from '@zucker/credit';
-import { JwtAuthGuard, PermissionsGuard, Permissions } from '@zucker/auth';
+import { CreditService } from '@zucker-framework/credit';
+import type { CreditTransactionRecord } from '@zucker-framework/credit';
+import { JwtAuthGuard, PermissionsGuard, Permissions } from '@zucker-framework/auth';
 
 interface PageResult<T> {
   data: T[];

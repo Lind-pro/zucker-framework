@@ -42,7 +42,7 @@ describe('createAsyncEvent', () => {
     event.async(async () => { order.push('async-a'); });
 
     await event.getAsync();
-    // 参考 hsweb DefaultAsyncEvent.first(): this.first = publisher.then(first)
+    // 后注册的 first 任务先执行
     // 后注册的 first 任务先执行（prepend 语义）
     expect(order).toEqual(['first-b', 'first-a', 'async-a']);
   });

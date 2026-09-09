@@ -1,6 +1,5 @@
 /**
  * HttpParameterConverter — 对象转 HTTP 查询参数
- * 参考: hsweb-framework HttpParameterConverter.java
  *
  * 将嵌套的对象/数组结构扁平化为 HTTP 查询参数的 key=value 格式。
  * 支持嵌套对象（用 "." 分隔）和数组（用 "[index]" 表示）。
@@ -14,7 +13,6 @@
 
 /**
  * 将对象转换为扁平的 HTTP 查询参数映射
- * 参考 hsweb HttpParameterConverter.convert()
  *
  * @param bean - 待转换的对象
  * @param prefix - 参数名前缀（默认为空）
@@ -52,19 +50,19 @@ function convertValue(
     return;
   }
 
-  // 基本类型直接转字符串（参考 hsweb basicClass 集合）
+  // 基本类型直接转字符串
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
     result[key] = String(value);
     return;
   }
 
-  // Date 格式化（参考 hsweb DateFormatter.toString）
+  // Date 格式化
   if (value instanceof Date) {
     result[key] = value.toISOString();
     return;
   }
 
-  // 数组展开（参考 hsweb Collection 处理）
+  // 数组展开
   if (Array.isArray(value)) {
     for (let i = 0; i < value.length; i++) {
       convertValue(`${key}[${i}]`, value[i], result);
@@ -72,7 +70,7 @@ function convertValue(
     return;
   }
 
-  // 嵌套对象递归（参考 hsweb new HttpParameterConverter(value) 递归处理）
+  // 嵌套对象递归
   if (typeof value === 'object') {
     doConvert(value as Record<string, unknown>, `${key}.`, result);
   }

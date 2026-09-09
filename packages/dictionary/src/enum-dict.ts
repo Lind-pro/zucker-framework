@@ -1,8 +1,6 @@
 /**
  * EnumDict — maps TypeScript enums to dictionary items.
  *
- * Reference: hsweb-framework EnumDict
- *
  * Provides:
  * - getValue / getText / ordinal — core item accessors
  * - eq — flexible equality check (value, text, map, EnumDictItem)
@@ -28,8 +26,6 @@ export interface EnumDictItem {
 /**
  * I18nEnumDictItem — enum dict item with automatic i18n code generation.
  *
- * Reference: hsweb I18nEnumDict
- *
  * The i18n code is generated from className + "." + name, allowing
  * automatic locale resolution via message bundles.
  *
@@ -45,8 +41,6 @@ export interface I18nEnumDictItem extends EnumDictItem {
 
 /**
  * Create an I18nEnumDictItem with auto-generated i18n code.
- *
- * Reference: hsweb I18nEnumDict.getI18nCode() -> this.getClass().getName() + "." + name()
  */
 export function createI18nEnumDictItem(
   className: string,
@@ -68,7 +62,7 @@ export function createI18nEnumDictItem(
 }
 
 /**
- * Flexible equality check — mirrors hsweb EnumDict.eq().
+ * Flexible equality check
  *
  * Compares against value, text, ordinal, map.value, map.text, or another EnumDictItem.
  */
@@ -110,8 +104,6 @@ export function getMask(index: number): number {
 
 /**
  * Compute bitmask from multiple enum dict items.
- *
- * Reference: hsweb EnumDict.toMask()
  */
 export function toMask(items: EnumDictItem[]): number {
   let value = 0;
@@ -123,8 +115,6 @@ export function toMask(items: EnumDictItem[]): number {
 
 /**
  * Get all items that match a bitmask.
- *
- * Reference: hsweb EnumDict.getByMask()
  */
 export function getByMask<T extends EnumDictItem>(allItems: T[], mask: number): T[] {
   if (allItems.length >= 64) {
@@ -135,8 +125,6 @@ export function getByMask<T extends EnumDictItem>(allItems: T[], mask: number): 
 
 /**
  * Check if ALL of the target items are present in the mask.
- *
- * Reference: hsweb EnumDict.maskIn()
  */
 export function maskIn(mask: number, ...targets: EnumDictItem[]): boolean {
   const targetMask = toMask(targets);
@@ -145,8 +133,6 @@ export function maskIn(mask: number, ...targets: EnumDictItem[]): boolean {
 
 /**
  * Check if ANY of the target items are present in the mask.
- *
- * Reference: hsweb EnumDict.maskInAny()
  */
 export function maskInAny(mask: number, ...targets: EnumDictItem[]): boolean {
   const targetMask = toMask(targets);
@@ -158,8 +144,6 @@ export function maskInAny(mask: number, ...targets: EnumDictItem[]): boolean {
  *
  * For sets with fewer than 64 items, uses bitmask comparison.
  * For larger sets (>=64 items), falls back to Set-based lookup.
- *
- * Reference: hsweb EnumDict.in(T target, T... candidates)
  */
 export function enumDictIn(target: EnumDictItem, ...candidates: EnumDictItem[]): boolean {
   if (candidates.length >= 64) {
@@ -170,9 +154,7 @@ export function enumDictIn(target: EnumDictItem, ...candidates: EnumDictItem[]):
 }
 
 /**
- * Serialize an enum dict item to the JSON object format used in hsweb.
- *
- * Reference: hsweb EnumDict.getWriteJSONObject()
+ * Serialize an enum dict item to its JSON object representation.
  */
 export function getWriteJSONObject(
   item: EnumDictItem,
@@ -224,8 +206,6 @@ export class EnumDictRegistry {
 
   /**
    * Find an item by predicate.
-   *
-   * Reference: hsweb EnumDict.find(Class, Predicate)
    */
   static find(
     dictId: string,
@@ -236,8 +216,6 @@ export class EnumDictRegistry {
 
   /**
    * Find all items matching a predicate.
-   *
-   * Reference: hsweb EnumDict.findList(Class, Predicate)
    */
   static findList(
     dictId: string,
@@ -249,10 +227,8 @@ export class EnumDictRegistry {
   /**
    * Find by value — supports both string and number values.
    *
-   * Reference: hsweb EnumDict.findByValue()
-   *
-   * 对齐 hsweb 5.x fix (4c3ce4914): 空值判断优化，null/undefined 直接返回。
-   * 对齐 hsweb 5.x fix (75f416a67): 支持数字类型的 value（EnumDict<Integer>）。
+   * 空值判断优化，null/undefined 直接返回。
+   * 支持数字类型的 value。
    * 查找优先级：直接相等 > 数值相等（string "1" matches number 1）> 大小写不敏感字符串比较。
    */
   static findByValue(
@@ -265,7 +241,7 @@ export class EnumDictRegistry {
     return items.find(
       (item) =>
         item.value === value ||
-        // 对齐 hsweb: 支持跨类型数值比较 (string "1" == number 1)
+        // 支持跨类型数值比较 (string "1" == number 1)
         // eslint-disable-next-line eqeqeq
         item.value == value ||
         String(item.value).toLowerCase() === String(value).toLowerCase(),
@@ -274,8 +250,6 @@ export class EnumDictRegistry {
 
   /**
    * Find by text — case-insensitive comparison.
-   *
-   * Reference: hsweb EnumDict.findByText()
    */
   static findByText(
     dictId: string,
@@ -290,8 +264,6 @@ export class EnumDictRegistry {
 
   /**
    * Flexible find — uses eq() semantics to match by value, text, ordinal, etc.
-   *
-   * Reference: hsweb EnumDict.find(Class, Object)
    */
   static findByEq(
     dictId: string,
@@ -366,8 +338,6 @@ export function fromDictItem<T>(
 
 /**
  * Create a dynamic EnumDictItem.
- *
- * Reference: hsweb EnumDict.create(String value) / EnumDict.create(String value, String text)
  *
  * @param value - The item value
  * @param text - The display text (defaults to value if not provided)

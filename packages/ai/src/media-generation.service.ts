@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { NotFoundException } from '@zucker/core';
+import { NotFoundException } from '@zucker-framework/core';
 import { AICallWrapper } from './call-wrapper';
 import { CostTracker } from './cost-tracker';
 import { MediaProviderManager } from './media-provider-manager';

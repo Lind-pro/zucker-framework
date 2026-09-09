@@ -1,4 +1,4 @@
-// 从后端 @zucker/form 提取的纯 TypeScript 类型（无 NestJS 装饰器）
+// 从后端 @zucker-framework/form 提取的纯 TypeScript 类型（无 NestJS 装饰器）
 
 export enum FieldType {
   STRING = 'string',

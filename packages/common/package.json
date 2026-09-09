@@ -1,6 +1,6 @@
 {
-  "name": "@zucker/common",
-  "version": "0.0.1",
+  "name": "@zucker-framework/common",
+  "version": "1.0.0",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -17,12 +17,16 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "LICENSE",
+    "NOTICE",
+    "THIRD_PARTY_NOTICES"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format cjs,esm --dts --external @nestjs/common --external @nestjs/core --external express --external rxjs --external @zucker/core",
+    "build": "tsup src/index.ts --format cjs,esm --dts --external @nestjs/common --external @nestjs/core --external express --external rxjs --external @zucker-framework/core",
     "clean": "rm -rf dist",
-    "lint": "eslint src/"
+    "lint": "eslint src/",
+    "prepack": "node ../../scripts/prepare-package-legal.mjs"
   },
   "peerDependencies": {
     "@nestjs/common": "^12.0.0",
@@ -32,7 +36,20 @@
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
-    "@zucker/core": "workspace:*",
     "rxjs": "^7.8.2"
+  },
+  "license": "Apache-2.0",
+  "author": "Lind",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Lind-pro/zucker-framework.git",
+    "directory": "packages/common"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "dependencies": {
+    "@zucker-framework/core": "workspace:*"
   }
 }

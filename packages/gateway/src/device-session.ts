@@ -3,7 +3,7 @@
  *
  * 代表一个已连接设备的网络会话，负责消息的收发与状态跟踪。
  */
-import type { Transport } from '@zucker/network';
+import type { Transport } from '@zucker-framework/network';
 
 /**
  * 设备会话状态

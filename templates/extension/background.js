@@ -17,8 +17,9 @@ ZuckerExt.init({
     delayMs: 1500
   },
   licensing: {
-    apiBase: "https://api.ccopyright.ai",
-    purchaseUrl: "https://ccopyright.ai/__EXT_SLUG__"
+    // 由消费项目替换为自己的授权服务和购买页面。
+    apiBase: "https://api.example.invalid",
+    purchaseUrl: "https://example.invalid/__EXT_SLUG__"
   },
   // 批量模式先固定视口宽度以保证一致排版（quick 模式不动用户的 tab，不会调用）
   async beforeScroll(ctx) {

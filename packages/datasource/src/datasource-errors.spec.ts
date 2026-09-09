@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { DataSourceNotFoundException, DataSourceClosedException } from './datasource-errors';
-import { NotFoundException, BusinessException } from '@zucker/core';
+import { NotFoundException, BusinessException } from '@zucker-framework/core';
 
 describe('DataSourceNotFoundException', () => {
   it('继承 NotFoundException', () => {

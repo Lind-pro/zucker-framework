@@ -87,31 +87,31 @@ importers:
       '@nestjs/event-emitter':
         specifier: ^12.0.0
         version: 12.0.0(@nestjs/common@12.0.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(@nestjs/core@12.0.1)
-      '@zucker/auth':
+      '@zucker-framework/auth':
         specifier: workspace:*
         version: link:../auth
-      '@zucker/config':
+      '@zucker-framework/config':
         specifier: workspace:*
         version: link:../config
-      '@zucker/core':
+      '@zucker-framework/core':
         specifier: workspace:*
         version: link:../core
-      '@zucker/credit':
+      '@zucker-framework/credit':
         specifier: workspace:*
         version: link:../credit
-      '@zucker/crud':
+      '@zucker-framework/crud':
         specifier: workspace:*
         version: link:../crud
-      '@zucker/dictionary':
+      '@zucker-framework/dictionary':
         specifier: workspace:*
         version: link:../dictionary
-      '@zucker/form':
+      '@zucker-framework/form':
         specifier: workspace:*
         version: link:../form
-      '@zucker/logging':
+      '@zucker-framework/logging':
         specifier: workspace:*
         version: link:../logging
-      '@zucker/notification':
+      '@zucker-framework/notification':
         specifier: workspace:*
         version: link:../notification
     devDependencies:
@@ -121,20 +121,29 @@ importers:
 
   packages/ai:
     dependencies:
+      '@anthropic-ai/sdk':
+        specifier: ^0.124.0
+        version: 0.124.0(zod@4.5.4)
+      '@google/generative-ai':
+        specifier: ^0.24.1
+        version: 0.24.1
       '@nestjs/common':
         specifier: ^12.0.0
         version: 12.0.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1)
       '@nestjs/core':
         specifier: ^12.0.0
         version: 12.0.1(@nestjs/common@12.0.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(@nestjs/platform-express@12.0.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@zucker/ai-access':
+      '@zucker-framework/ai-access':
         specifier: workspace:*
         version: link:../ai-access
+      replicate:
+        specifier: ^1.4.0
+        version: 1.4.0
     devDependencies:
       '@types/node':
         specifier: 20.19.43
         version: 20.19.43
-      '@zucker/core':
+      '@zucker-framework/core':
         specifier: workspace:*
         version: link:../core
       openai:
@@ -170,10 +179,13 @@ importers:
       '@nestjs/passport':
         specifier: ^12.0.0
         version: 12.0.0(@nestjs/common@12.0.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(passport@0.7.0)
-      '@zucker/core':
+      '@types/passport-jwt':
+        specifier: ^4.0.1
+        version: 4.0.1
+      '@zucker-framework/core':
         specifier: workspace:*
         version: link:../core
-      '@zucker/crud':
+      '@zucker-framework/crud':
         specifier: workspace:*
         version: link:../crud
       passport-jwt:
@@ -183,16 +195,13 @@ importers:
         specifier: ^7.0.0
         version: 7.8.2
     devDependencies:
-      '@types/passport-jwt':
-        specifier: ^4.0.1
-        version: 4.0.1
-      '@zucker/cache':
+      '@zucker-framework/cache':
         specifier: workspace:*
         version: link:../cache
 
   packages/buffer:
     dependencies:
-      '@zucker/core':
+      '@zucker-framework/core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
@@ -208,7 +217,7 @@ importers:
       '@nestjs/core':
         specifier: ^12.0.0
         version: 12.0.1(@nestjs/common@12.0.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(@nestjs/platform-express@12.0.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@zucker/core':
+      '@zucker-framework/core':
         specifier: workspace:*
         version: link:../core
       ioredis:
@@ -217,7 +226,7 @@ importers:
 
   packages/cli:
     dependencies:
-      '@zucker/ai-access':
+      '@zucker-framework/ai-access':
         specifier: workspace:*
         version: link:../ai-access
       chalk:
@@ -251,14 +260,14 @@ importers:
       '@nestjs/core':
         specifier: ^12.0.0
         version: 12.0.1(@nestjs/common@12.0.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(@nestjs/platform-express@12.0.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@zucker/core':
+      '@zucker-framework/core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
       '@types/node':
         specifier: 20.19.43
         version: 20.19.43
-      '@zucker/event':
+      '@zucker-framework/event':
         specifier: workspace:*
         version: link:../event
 
@@ -270,6 +279,9 @@ importers:
       '@nestjs/core':
         specifier: ^12.0.0
         version: 12.0.1(@nestjs/common@12.0.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(@nestjs/platform-express@12.0.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@zucker-framework/core':
+        specifier: workspace:*
+        version: link:../core
       express:
         specifier: ^4.0.0 || ^5.0.0
         version: 5.2.1(supports-color@8.1.1)
@@ -277,9 +289,6 @@ importers:
       '@types/express':
         specifier: ^5.0.6
         version: 5.0.6
-      '@zucker/core':
-        specifier: workspace:*
-        version: link:../core
       rxjs:
         specifier: ^7.8.2
         version: 7.8.2
@@ -292,13 +301,13 @@ importers:
       '@nestjs/core':
         specifier: ^12.0.0
         version: 12.0.1(@nestjs/common@12.0.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(@nestjs/platform-express@12.0.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@zucker/core':
+      '@zucker-framework/core':
         specifier: workspace:*
         version: link:../core
-      '@zucker/crud':
+      '@zucker-framework/crud':
         specifier: workspace:*
         version: link:../crud
-      '@zucker/feature-flags':
+      '@zucker-framework/feature-flags':
         specifier: workspace:*
         version: link:../feature-flags
       eventemitter2:
@@ -334,10 +343,10 @@ importers:
       '@electric-sql/pglite':
         specifier: 0.5.8
         version: 0.5.8
-      '@zucker/core':
+      '@zucker-framework/core':
         specifier: workspace:*
         version: link:../core
-      '@zucker/crud':
+      '@zucker-framework/crud':
         specifier: workspace:*
         version: link:../crud
 
@@ -349,7 +358,7 @@ importers:
       '@nestjs/core':
         specifier: ^12.0.0
         version: 12.0.1(@nestjs/common@12.0.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(@nestjs/platform-express@12.0.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@zucker/core':
+      '@zucker-framework/core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
@@ -359,10 +368,10 @@ importers:
       '@types/node':
         specifier: 20.19.43
         version: 20.19.43
-      '@zucker/cache':
+      '@zucker-framework/cache':
         specifier: workspace:*
         version: link:../cache
-      '@zucker/event':
+      '@zucker-framework/event':
         specifier: workspace:*
         version: link:../event
 
@@ -374,7 +383,7 @@ importers:
       '@nestjs/core':
         specifier: ^12.0.0
         version: 12.0.1(@nestjs/common@12.0.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(@nestjs/platform-express@12.0.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@zucker/core':
+      '@zucker-framework/core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
@@ -390,7 +399,7 @@ importers:
       '@nestjs/core':
         specifier: ^12.0.0
         version: 12.0.1(@nestjs/common@12.0.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(@nestjs/platform-express@12.0.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@zucker/core':
+      '@zucker-framework/core':
         specifier: workspace:*
         version: link:../core
       rxjs:
@@ -409,10 +418,10 @@ importers:
       '@nestjs/core':
         specifier: ^12.0.0
         version: 12.0.1(@nestjs/common@12.0.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(@nestjs/platform-express@12.0.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@zucker/core':
+      '@zucker-framework/core':
         specifier: workspace:*
         version: link:../core
-      '@zucker/crud':
+      '@zucker-framework/crud':
         specifier: workspace:*
         version: link:../crud
       eventemitter2:
@@ -436,7 +445,7 @@ importers:
       '@nestjs/event-emitter':
         specifier: ^12.0.0
         version: 12.0.0(@nestjs/common@12.0.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(@nestjs/core@12.0.1)
-      '@zucker/core':
+      '@zucker-framework/core':
         specifier: workspace:*
         version: link:../core
       eventemitter2:
@@ -478,7 +487,7 @@ importers:
 
   packages/fe-auth:
     dependencies:
-      '@zucker/fe-storage':
+      '@zucker-framework/fe-storage':
         specifier: workspace:*
         version: link:../fe-storage
       react:
@@ -515,7 +524,7 @@ importers:
 
   packages/fe-permission:
     dependencies:
-      '@zucker/fe-auth':
+      '@zucker-framework/fe-auth':
         specifier: workspace:*
         version: link:../fe-auth
       react:
@@ -545,10 +554,10 @@ importers:
       '@nestjs/common':
         specifier: ^12.0.0
         version: 12.0.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1)
-      '@zucker/core':
+      '@zucker-framework/core':
         specifier: workspace:*
         version: link:../core
-      '@zucker/crud':
+      '@zucker-framework/crud':
         specifier: workspace:*
         version: link:../crud
 
@@ -560,16 +569,16 @@ importers:
       '@nestjs/core':
         specifier: ^12.0.0
         version: 12.0.1(@nestjs/common@12.0.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(@nestjs/platform-express@12.0.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@zucker/core':
+      '@zucker-framework/core':
         specifier: workspace:*
         version: link:../core
-      '@zucker/event':
+      '@zucker-framework/event':
         specifier: workspace:*
         version: link:../event
-      '@zucker/network':
+      '@zucker-framework/network':
         specifier: workspace:*
         version: link:../network
-      '@zucker/things':
+      '@zucker-framework/things':
         specifier: workspace:*
         version: link:../things
       rxjs:
@@ -584,7 +593,7 @@ importers:
       '@nestjs/core':
         specifier: ^12.0.0
         version: 12.0.1(@nestjs/common@12.0.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(@nestjs/platform-express@12.0.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@zucker/core':
+      '@zucker-framework/core':
         specifier: workspace:*
         version: link:../core
       rxjs:
@@ -653,10 +662,10 @@ importers:
       '@nestjs/core':
         specifier: ^12.0.0
         version: 12.0.1(@nestjs/common@12.0.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(@nestjs/platform-express@12.0.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@zucker/core':
+      '@zucker-framework/core':
         specifier: workspace:*
         version: link:../core
-      '@zucker/provider':
+      '@zucker-framework/provider':
         specifier: workspace:*
         version: link:../provider
     devDependencies:
@@ -675,6 +684,9 @@ importers:
       nodemailer:
         specifier: ^9.1.1
         version: 9.1.1
+      resend:
+        specifier: ^6.26.0
+        version: 6.26.0
     devDependencies:
       '@types/node':
         specifier: 20.19.43
@@ -682,7 +694,7 @@ importers:
       '@types/nodemailer':
         specifier: ^8.0.1
         version: 8.0.1
-      '@zucker/core':
+      '@zucker-framework/core':
         specifier: workspace:*
         version: link:../core
 
@@ -694,7 +706,7 @@ importers:
       '@nestjs/core':
         specifier: ^12.0.0
         version: 12.0.1(@nestjs/common@12.0.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(@nestjs/platform-express@12.0.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@zucker/core':
+      '@zucker-framework/core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
@@ -710,7 +722,7 @@ importers:
       '@nestjs/core':
         specifier: ^12.0.0
         version: 12.0.1(@nestjs/common@12.0.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(@nestjs/platform-express@12.0.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@zucker/core':
+      '@zucker-framework/core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
@@ -745,7 +757,7 @@ importers:
       '@nestjs/core':
         specifier: ^12.0.0
         version: 12.0.1(@nestjs/common@12.0.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(@nestjs/platform-express@12.0.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@zucker/core':
+      '@zucker-framework/core':
         specifier: workspace:*
         version: link:../core
       rate-limiter-flexible:
@@ -764,7 +776,7 @@ importers:
       '@nestjs/core':
         specifier: ^12.0.0
         version: 12.0.1(@nestjs/common@12.0.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(@nestjs/platform-express@12.0.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@zucker/core':
+      '@zucker-framework/core':
         specifier: workspace:*
         version: link:../core
 
@@ -776,7 +788,7 @@ importers:
       '@nestjs/core':
         specifier: ^12.0.0
         version: 12.0.1(@nestjs/common@12.0.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(@nestjs/platform-express@12.0.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@zucker/core':
+      '@zucker-framework/core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
@@ -792,17 +804,17 @@ importers:
       '@nestjs/core':
         specifier: ^12.0.0
         version: 12.0.1(@nestjs/common@12.0.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(@nestjs/platform-express@12.0.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@zucker/core':
+      '@zucker-framework/core':
         specifier: workspace:*
         version: link:../core
-      '@zucker/script':
+      '@zucker-framework/script':
         specifier: workspace:*
         version: link:../script
     devDependencies:
       '@types/node':
         specifier: 20.19.43
         version: 20.19.43
-      '@zucker/event':
+      '@zucker-framework/event':
         specifier: workspace:*
         version: link:../event
 
@@ -814,7 +826,7 @@ importers:
       '@nestjs/core':
         specifier: ^12.0.0
         version: 12.0.1(@nestjs/common@12.0.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(@nestjs/platform-express@12.0.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@zucker/core':
+      '@zucker-framework/core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
@@ -830,7 +842,7 @@ importers:
       '@nestjs/core':
         specifier: ^12.0.0
         version: 12.0.1(@nestjs/common@12.0.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(@nestjs/platform-express@12.0.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@zucker/core':
+      '@zucker-framework/core':
         specifier: workspace:*
         version: link:../core
 
@@ -879,7 +891,7 @@ importers:
       '@nestjs/core':
         specifier: ^12.0.0
         version: 12.0.1(@nestjs/common@12.0.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(@nestjs/platform-express@12.0.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@zucker/core':
+      '@zucker-framework/core':
         specifier: workspace:*
         version: link:../core
       rxjs:
@@ -898,13 +910,13 @@ importers:
       '@nestjs/core':
         specifier: ^12.0.0
         version: 12.0.1(@nestjs/common@12.0.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(@nestjs/platform-express@12.0.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@zucker/core':
+      '@zucker-framework/core':
         specifier: workspace:*
         version: link:../core
-      '@zucker/event':
+      '@zucker-framework/event':
         specifier: workspace:*
         version: link:../event
-      '@zucker/timeseries':
+      '@zucker-framework/timeseries':
         specifier: workspace:*
         version: link:../timeseries
       rxjs:
@@ -919,7 +931,7 @@ importers:
       '@nestjs/core':
         specifier: ^12.0.0
         version: 12.0.1(@nestjs/common@12.0.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(@nestjs/platform-express@12.0.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@zucker/core':
+      '@zucker-framework/core':
         specifier: workspace:*
         version: link:../core
 
@@ -931,7 +943,7 @@ importers:
       '@nestjs/core':
         specifier: ^12.0.0
         version: 12.0.1(@nestjs/common@12.0.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(@nestjs/platform-express@12.0.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@zucker/core':
+      '@zucker-framework/core':
         specifier: workspace:*
         version: link:../core
       rxjs:
@@ -953,22 +965,22 @@ importers:
       '@ant-design/v5-patch-for-react-19':
         specifier: ^1.0.3
         version: 1.0.3(antd@5.29.3(luxon@3.7.2)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      '@zucker/fe-auth':
+      '@zucker-framework/fe-auth':
         specifier: workspace:*
         version: link:../../packages/fe-auth
-      '@zucker/fe-form':
+      '@zucker-framework/fe-form':
         specifier: workspace:*
         version: link:../../packages/fe-form
-      '@zucker/fe-http-client':
+      '@zucker-framework/fe-http-client':
         specifier: workspace:*
         version: link:../../packages/fe-http-client
-      '@zucker/fe-permission':
+      '@zucker-framework/fe-permission':
         specifier: workspace:*
         version: link:../../packages/fe-permission
-      '@zucker/fe-storage':
+      '@zucker-framework/fe-storage':
         specifier: workspace:*
         version: link:../../packages/fe-storage
-      '@zucker/fe-types':
+      '@zucker-framework/fe-types':
         specifier: workspace:*
         version: link:../../packages/fe-types
       antd:
@@ -1046,67 +1058,67 @@ importers:
       '@prisma/client':
         specifier: ^7.10.0
         version: 7.10.0(prisma@7.10.0(@types/node@20.19.43)(@types/react-dom@19.2.5(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(typescript@6.0.3))(typescript@6.0.3)
-      '@zucker/admin':
+      '@zucker-framework/admin':
         specifier: workspace:*
         version: link:../../packages/admin
-      '@zucker/ai':
+      '@zucker-framework/ai':
         specifier: workspace:*
         version: link:../../packages/ai
-      '@zucker/auth':
+      '@zucker-framework/auth':
         specifier: workspace:*
         version: link:../../packages/auth
-      '@zucker/cache':
+      '@zucker-framework/cache':
         specifier: workspace:*
         version: link:../../packages/cache
-      '@zucker/common':
+      '@zucker-framework/common':
         specifier: workspace:*
         version: link:../../packages/common
-      '@zucker/config':
+      '@zucker-framework/config':
         specifier: workspace:*
         version: link:../../packages/config
-      '@zucker/core':
+      '@zucker-framework/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@zucker/credit':
+      '@zucker-framework/credit':
         specifier: workspace:*
         version: link:../../packages/credit
-      '@zucker/crud':
+      '@zucker-framework/crud':
         specifier: workspace:*
         version: link:../../packages/crud
-      '@zucker/dictionary':
+      '@zucker-framework/dictionary':
         specifier: workspace:*
         version: link:../../packages/dictionary
-      '@zucker/event':
+      '@zucker-framework/event':
         specifier: workspace:*
         version: link:../../packages/event
-      '@zucker/form':
+      '@zucker-framework/form':
         specifier: workspace:*
         version: link:../../packages/form
-      '@zucker/logging':
+      '@zucker-framework/logging':
         specifier: workspace:*
         version: link:../../packages/logging
-      '@zucker/monitoring':
+      '@zucker-framework/monitoring':
         specifier: workspace:*
         version: link:../../packages/monitoring
-      '@zucker/notification':
+      '@zucker-framework/notification':
         specifier: workspace:*
         version: link:../../packages/notification
-      '@zucker/provider':
+      '@zucker-framework/provider':
         specifier: workspace:*
         version: link:../../packages/provider
-      '@zucker/rate-limiter':
+      '@zucker-framework/rate-limiter':
         specifier: workspace:*
         version: link:../../packages/rate-limiter
-      '@zucker/reference':
+      '@zucker-framework/reference':
         specifier: workspace:*
         version: link:../../packages/reference
-      '@zucker/rule-engine':
+      '@zucker-framework/rule-engine':
         specifier: workspace:*
         version: link:../../packages/rule-engine
-      '@zucker/script':
+      '@zucker-framework/script':
         specifier: workspace:*
         version: link:../../packages/script
-      '@zucker/storage':
+      '@zucker-framework/storage':
         specifier: workspace:*
         version: link:../../packages/storage
       pg:
@@ -1161,10 +1173,10 @@ importers:
 
   templates/web:
     dependencies:
-      '@zucker/fe-auth':
+      '@zucker-framework/fe-auth':
         specifier: workspace:*
         version: link:../../packages/fe-auth
-      '@zucker/fe-http-client':
+      '@zucker-framework/fe-http-client':
         specifier: workspace:*
         version: link:../../packages/fe-http-client
       clsx:
@@ -1396,6 +1408,15 @@ packages:
       antd: '>=5.22.6'
       react: 19.2.8
       react-dom: 19.2.8
+
+  '@anthropic-ai/sdk@0.124.0':
+    resolution: {integrity: sha512-cN5O8i9UVxHeOQAzj/XjshWXG8KiibJDw9OGpH2Z/eR3n/RBxdoLxDJOcfqAJWvjaMDFfHTBADU04hWRJVkDyA==}
+    hasBin: true
+    peerDependencies:
+      zod: ^3.25.0 || ^4.0.0
+    peerDependenciesMeta:
+      zod:
+        optional: true
 
   '@asamuzakjp/css-color@6.0.7':
     resolution: {integrity: sha512-vC/bk1Lz7Tn/EfU9/apOTBk80/8dyGyWMowPoV1tJ52muDGsDqt2HPT2klrFUiY60MQmQv9q8yIht15JnBgDGw==}
@@ -2166,6 +2187,10 @@ packages:
 
   '@formatjs/intl-localematcher@0.8.13':
     resolution: {integrity: sha512-kHEAFOkeJSPNi7c5PaKaRjxcBrJwzzt81ifUu+8uve1EDW/VJl83KsxmqgqNZLzcFEhSliZGvx3+pk/RH0IOmg==}
+
+  '@google/generative-ai@0.24.1':
+    resolution: {integrity: sha512-MqO+MLfM6kjxcKoy0p1wRzG3b4ZZXtPI+z2IE26UogS2Cm/XHO+7gGRBh6gcJsOiIVoH93UwKvW4HdgiOZCy9Q==}
+    engines: {node: '>=18.0.0'}
 
   '@humanfs/core@0.19.2':
     resolution: {integrity: sha512-UhXNm+CFMWcbChXywFwkmhqjs3PRCmcSa/hfBgLIb7oQ5HNb1wS0icWsGtSAUNgefHeI+eBrA8I1fxmbHsGdvA==}
@@ -3649,6 +3674,7 @@ packages:
   '@smithy/node-http-handler@4.12.0':
     resolution: {integrity: sha512-0mq1pHadfyXCYCqm2cNpbjNIT+fbaUpNxewZb/YNr2L0IrEVMOb8gM/Fl4K6XvHCW3uSNDFwPl/+iKm0bx9jYg==}
     engines: {node: '>=18.0.0'}
+    deprecated: Depreacted due to a memory leak issue https://github.com/smithy-lang/smithy-typescript/issues/2258
 
   '@smithy/signature-v4@5.7.3':
     resolution: {integrity: sha512-7ImGm+FkHRLcBaRttIAMZ6bzJZWb2cJGoYjq46F2UjycujWzrL9GEN9h4w7eQyXJYnltrUhxbbieBAIRrdqpow==}
@@ -3657,6 +3683,9 @@ packages:
   '@smithy/types@4.17.2':
     resolution: {integrity: sha512-FOKpVZob9MPTn2znRzGrnsMHv7BOsKVw3XiP/cOyYLDVZ9qKp4nifIiSCuUU/fIj5Vu0UOAxCFr+qRAtG0NUkA==}
     engines: {node: '>=18.0.0'}
+
+  '@stablelib/base64@1.0.1':
+    resolution: {integrity: sha512-1bnPQqSxSuc3Ii6MhBysoWCg58j97aUjuCSZrGSmDxNqtytIi0k8utUenAwTZN4V5mXXYGsVUI9zeBqy+jBOSQ==}
 
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
@@ -4388,6 +4417,10 @@ packages:
   '@xtuc/long@4.2.2':
     resolution: {integrity: sha512-NuHqBY1PB/D8xU6s/thBgOAiAP7HOYDQ32+BFZILJ8ivkUkAHQnWfn6WhL79Owj1qmUnoN/YPhktdIoucipkAQ==}
 
+  abort-controller@3.0.0:
+    resolution: {integrity: sha512-h8lQ8tacZYnR3vNQTgibj+tODHI5/+l06Au2Pcriv/Gmet0eaj4TwWH41sO9wnHDiQsEj19q0drzdWdeAHtweg==}
+    engines: {node: '>=6.5'}
+
   accepts@2.0.0:
     resolution: {integrity: sha512-5cvg6CtKwfgdmVqY1WIiXKc3Q1bkRqGLi+2W/6ao+6Y7gu/RCwRuAhGEzh5B4KlszSuTLgZYuqFqo5bImjNKng==}
     engines: {node: '>= 0.6'}
@@ -4654,6 +4687,9 @@ packages:
 
   buffer@5.7.1:
     resolution: {integrity: sha512-EHcyIPBQ4BSGlvjB16k5KgAJ27CIsHY/2JBmCRReo48y9rQ3MaUzWX3KVlBa4U7MyX02HdVj0K7C3WaB3ju7FQ==}
+
+  buffer@6.0.3:
+    resolution: {integrity: sha512-FTiCpNxtwiZZHEZbcbTIcZjERVICn9yq/pDFkTl95/AxzD1naBctN7YO68riM/gLSDY7sdrMby8hofADYuuqOA==}
 
   buffers@0.1.1:
     resolution: {integrity: sha512-9q/rDEGSb/Qsvv2qvzIzdluL5k7AaJOTrw23z9reQthrbF7is4CtlT0DXyO1oei2DCp4uojjzQ7igaSHp1kAEQ==}
@@ -5370,6 +5406,10 @@ packages:
     resolution: {integrity: sha512-aIL5Fx7mawVa300al2BnEE4iNvo1qETxLrPI/o05L7z6go7fCw1J6EQmbK4FmJ2AS7kgVF/KEZWufBfdClMcPg==}
     engines: {node: '>= 0.6'}
 
+  event-target-shim@5.0.1:
+    resolution: {integrity: sha512-i/2XbnSz/uxRCU6+NdVJgKWDTM427+MqYbkQzD321DuCQJUqOuJKIA0IM2+W2xtYHdKOmZ4dR6fExsd4SXL+WQ==}
+    engines: {node: '>=6'}
+
   eventemitter2@6.4.9:
     resolution: {integrity: sha512-JEPTiaOt9f04oa6NOkc4aH+nVp5I3wEjpHbIPqfgCdD5v5bUzy7xQqwcVO2aDQgOWhI28da57HksMrzK9HlRxg==}
 
@@ -5421,6 +5461,9 @@ packages:
 
   fast-safe-stringify@2.1.1:
     resolution: {integrity: sha512-W+KJc2dmILlPplD/H4K9l9LcAHAfPtP6BY84uVLXQ6Evcz9Lcg33Y2z1IVblT6xdY54PXYVHEv+0Wpq8Io6zkA==}
+
+  fast-sha256@1.3.0:
+    resolution: {integrity: sha512-n11RGP/lrWEFI/bWdygLxhI+pVeo1ZYIVwvvPkW7azl/rOy+F3HYRZ2K5zeE9mmkhQppyv9sQFx0JM9UabnpPQ==}
 
   fast-string-truncated-width@3.0.3:
     resolution: {integrity: sha512-0jjjIEL6+0jag3l2XWWizO64/aZVtpiGE3t0Zgqxv0DPuxiMjvB3M24fCyhZUO4KomJQPj3LTSUnDP3GpdwC0g==}
@@ -5947,6 +5990,10 @@ packages:
 
   json-buffer@3.0.1:
     resolution: {integrity: sha512-4bV5BfR2mqfQTJm+V5tPPdf+ZpuhiIvTuAB5g8kcrXOZpTT/QwwVRWBywX1ozr6lEuPdbHxwaJlm9G6mI2sfSQ==}
+
+  json-schema-to-ts@3.1.1:
+    resolution: {integrity: sha512-+DWg8jCJG2TEnpy7kOm/7/AxaYoaRbjVB4LFZLySZlWn8exGs3A4OLJR966cVvU26N7X9TWxl+Jsw7dzAqKT6g==}
+    engines: {node: '>=16'}
 
   json-schema-traverse@0.4.1:
     resolution: {integrity: sha512-xbbCH5dCYU5T8LcEhhuh7HJ88HXuW3qsI3Y0zOZFKfZEHcpWiHU/Jxzk629Brsab/mMiHQti9wMP+845RPe3Vg==}
@@ -6787,6 +6834,9 @@ packages:
     resolution: {integrity: sha512-/+5VFTchJDoVj3bhoqi6UeymcD00DAwb1nJwamzPvHEszJ4FpF6SNNbUbOS8yI56qHzdV8eK0qEfOSiodkTdxg==}
     engines: {node: '>= 0.4'}
 
+  postal-mime@2.7.5:
+    resolution: {integrity: sha512-GNEXKvWFQnbgO5NlrGzVa0FmWzBZ24PersAWErttSg1Hjpf0ATxTwS5DOMGaOpTG6bUh5cTr7xi0jAD942wCJA==}
+
   postcss-load-config@6.0.1:
     resolution: {integrity: sha512-oPtTM4oerL+UXmx+93ytZVN82RrlY/wPUV8IeDxFrzIjXOLF1pN+EmKPLbubvKHT2HC20xXsCAH2Z+CKV6Oz/g==}
     engines: {node: '>= 18'}
@@ -6865,6 +6915,10 @@ packages:
 
   process-nextick-args@2.0.1:
     resolution: {integrity: sha512-3ouUOpQhtgrbOa17J7+uxOTpITYWaGP7/AhoR3+A+/1e9skrzelGi/dXzEYyvbxubEF6Wn2ypscTKiKJFFn1ag==}
+
+  process@0.11.10:
+    resolution: {integrity: sha512-cdGef/drWFoydD1JsMzuFf8100nZl+GT+yacc2bEced5f9Rjk4z+WtFUTBu9PhOi9j/jfmBPu0mMEY4wIdAF8A==}
+    engines: {node: '>= 0.6.0'}
 
   prop-types@15.8.1:
     resolution: {integrity: sha512-oj87CgZICdulUohogVAR7AjlC0327U4el4L6eAvOqCeudMDVU0NThNaV+b9Df4dXgSP1gXMTnPdhfe/2qDH5cg==}
@@ -7194,6 +7248,10 @@ packages:
     resolution: {integrity: sha512-9u/sniCrY3D5WdsERHzHE4G2YCXqoG5FTHUiCC4SIbr6XcLZBY05ya9EKjYek9O5xOAwjGq+1JdGBAS7Q9ScoA==}
     engines: {node: '>= 6'}
 
+  readable-stream@4.7.0:
+    resolution: {integrity: sha512-oIGGmcpTLwPga8Bn6/Z75SVaH1z5dUut2ibSyAMVhmUggWpmDn2dapB0n7f8nwaSiRtepAsfJyfXIO5DCVAODg==}
+    engines: {node: ^12.22.0 || ^14.17.0 || >=16.0.0}
+
   readdir-glob@1.1.3:
     resolution: {integrity: sha512-v05I2k7xN8zXvPD9N+z/uhXPaj0sUFCe2rcWZIpBsqxfP7xXFQ0tipAd/wjj1YxWyWtUS5IDJpOG82JKt2EAVA==}
 
@@ -7227,12 +7285,25 @@ packages:
   remeda@2.33.4:
     resolution: {integrity: sha512-ygHswjlc/opg2VrtiYvUOPLjxjtdKvjGz1/plDhkG66hjNjFr1xmfrs2ClNFo/E6TyUFiwYNh53bKV26oBoMGQ==}
 
+  replicate@1.4.0:
+    resolution: {integrity: sha512-1ufKejfUVz/azy+5TnzQP7U1+MHVWZ6psnQ06az8byUUnRhT+DZ/MvewzB1NQYBVMgNKR7xPDtTwlcP5nv/5+w==}
+    engines: {git: '>=2.11.0', node: '>=18.0.0', npm: '>=7.19.0', yarn: '>=1.7.0'}
+
   require-from-string@2.0.2:
     resolution: {integrity: sha512-Xf0nWe6RseziFMu+Ap9biiUbmplq6S9/p+7w7YXP/JBHhrUDDUhwa+vANyubuqfZWTveU//DYVGsDG7RKL/vEw==}
     engines: {node: '>=0.10.0'}
 
   requires-port@1.0.0:
     resolution: {integrity: sha512-KigOCHcocU3XODJxsu8i/j8T9tzT4adHiecwORRQ0ZZFcp7ahwXuRU1m+yuO90C5ZUyGeGfocHDI14M3L3yDAQ==}
+
+  resend@6.26.0:
+    resolution: {integrity: sha512-vkrULozV5nGF8o7tyun/t0+qFgtPpn+cyRhVqeorhOsPUNDiSc/9p/pn8AprdHqJpYaTvftpnQgWurW++FkCdw==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      '@react-email/render': '*'
+    peerDependenciesMeta:
+      '@react-email/render':
+        optional: true
 
   resize-observer-polyfill@1.5.1:
     resolution: {integrity: sha512-LwZrotdHOo12nQuZlHEmtuXdqGoOD0OhaxopaNFxWzInpEgaLWoVuAMbTzixuosCx2nEG58ngzW3vxdWoxIgdg==}
@@ -7478,6 +7549,12 @@ packages:
   standard-as-callback@2.1.0:
     resolution: {integrity: sha512-qoRRSyROncaz1z0mvYqIE4lCd9p2R90i6GxW3uZv5ucSu8tU7B5HXUP1gG8pVZsYNVaXjk8ClXHPttLyxAL48A==}
 
+  standardwebhooks@1.0.0:
+    resolution: {integrity: sha512-BbHGOQK9olHPMvQNHWul6MYlrRTAOKn03rOe4A8O3CLWhNf4YHBqq2HJKKC+sfqpxiBY52pNeesD6jIiLDz8jg==}
+
+  standardwebhooks@1.1.1:
+    resolution: {integrity: sha512-bCbX9ZEyFkWPsRz7Bl3NuQUJohmwGSev/yhr7vhaGPlc4AfIrspIRa6cPTBuI1ItmrTDJ4d/S2hCsfe4+vQGnQ==}
+
   statuses@2.0.2:
     resolution: {integrity: sha512-DvEy55V3DB7uknRo+4iOGT5fP1slR8wQohVdknigZPMpMstaKJQWhwiYBACJE3Ul2pTnATihhBYnRhZQHGBiRw==}
     engines: {node: '>= 0.8'}
@@ -7710,6 +7787,9 @@ packages:
   tree-kill@1.2.2:
     resolution: {integrity: sha512-L0Orpi8qGpRG//Nd+H90vFB+3iHnue1zSSGmNOOCh1GLJ7rUKVwV2HvijphGQS2UmhUZewS9VgvxYIdgr+fG1A==}
     hasBin: true
+
+  ts-algebra@2.0.0:
+    resolution: {integrity: sha512-FPAhNPFMrkwz76P7cdjdmiShwMynZYN6SgOujD1urY4oNm80Ou9oMdmbR45LotcKOXoy7wSmHkRFE6Mxbrhefw==}
 
   ts-api-utils@2.5.0:
     resolution: {integrity: sha512-OJ/ibxhPlqrMM0UiNHJ/0CKQkoKF243/AEmplt3qpRgkW8VG7IfOS41h7V8TjITqdByHzrjcS/2si+y4lIh8NA==}
@@ -8484,6 +8564,13 @@ snapshots:
       antd: 5.29.3(luxon@3.7.2)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       react: 19.2.8
       react-dom: 19.2.8(react@19.2.8)
+
+  '@anthropic-ai/sdk@0.124.0(zod@4.5.4)':
+    dependencies:
+      json-schema-to-ts: 3.1.1
+      standardwebhooks: 1.1.1
+    optionalDependencies:
+      zod: 4.5.4
 
   '@asamuzakjp/css-color@6.0.7':
     dependencies:
@@ -9292,6 +9379,8 @@ snapshots:
   '@formatjs/intl-localematcher@0.8.13':
     dependencies:
       '@formatjs/fast-memoize': 3.1.7
+
+  '@google/generative-ai@0.24.1': {}
 
   '@humanfs/core@0.19.2':
     dependencies:
@@ -10621,6 +10710,8 @@ snapshots:
     dependencies:
       tslib: 2.8.1
 
+  '@stablelib/base64@1.0.1': {}
+
   '@standard-schema/spec@1.1.0': {}
 
   '@swc/core-darwin-arm64@1.16.1':
@@ -11417,6 +11508,11 @@ snapshots:
 
   '@xtuc/long@4.2.2': {}
 
+  abort-controller@3.0.0:
+    dependencies:
+      event-target-shim: 5.0.1
+    optional: true
+
   accepts@2.0.0:
     dependencies:
       mime-types: 3.0.2
@@ -11829,6 +11925,12 @@ snapshots:
     dependencies:
       base64-js: 1.5.1
       ieee754: 1.2.1
+
+  buffer@6.0.3:
+    dependencies:
+      base64-js: 1.5.1
+      ieee754: 1.2.1
+    optional: true
 
   buffers@0.1.1: {}
 
@@ -12712,6 +12814,9 @@ snapshots:
 
   etag@1.8.1: {}
 
+  event-target-shim@5.0.1:
+    optional: true
+
   eventemitter2@6.4.9: {}
 
   events@3.3.0: {}
@@ -12795,6 +12900,8 @@ snapshots:
       fast-decode-uri-component: 1.0.1
 
   fast-safe-stringify@2.1.1: {}
+
+  fast-sha256@1.3.0: {}
 
   fast-string-truncated-width@3.0.3: {}
 
@@ -13348,6 +13455,11 @@ snapshots:
   jsesc@3.1.0: {}
 
   json-buffer@3.0.1: {}
+
+  json-schema-to-ts@3.1.1:
+    dependencies:
+      '@babel/runtime': 7.29.7
+      ts-algebra: 2.0.0
 
   json-schema-traverse@0.4.1: {}
 
@@ -14076,6 +14188,8 @@ snapshots:
 
   possible-typed-array-names@1.1.0: {}
 
+  postal-mime@2.7.5: {}
+
   postcss-load-config@6.0.1(jiti@2.7.0)(postcss@8.5.26)(tsx@4.23.13)(yaml@2.9.0):
     dependencies:
       lilconfig: 3.1.3
@@ -14140,6 +14254,9 @@ snapshots:
       - react-dom
 
   process-nextick-args@2.0.1: {}
+
+  process@0.11.10:
+    optional: true
 
   prop-types@15.8.1:
     dependencies:
@@ -14571,6 +14688,15 @@ snapshots:
       string_decoder: 1.3.0
       util-deprecate: 1.0.2
 
+  readable-stream@4.7.0:
+    dependencies:
+      abort-controller: 3.0.0
+      buffer: 6.0.3
+      events: 3.3.0
+      process: 0.11.10
+      string_decoder: 1.3.0
+    optional: true
+
   readdir-glob@1.1.3:
     dependencies:
       minimatch: 5.1.9
@@ -14610,9 +14736,18 @@ snapshots:
 
   remeda@2.33.4: {}
 
+  replicate@1.4.0:
+    optionalDependencies:
+      readable-stream: 4.7.0
+
   require-from-string@2.0.2: {}
 
   requires-port@1.0.0: {}
+
+  resend@6.26.0:
+    dependencies:
+      postal-mime: 2.7.5
+      standardwebhooks: 1.0.0
 
   resize-observer-polyfill@1.5.1: {}
 
@@ -14938,6 +15073,16 @@ snapshots:
 
   standard-as-callback@2.1.0: {}
 
+  standardwebhooks@1.0.0:
+    dependencies:
+      '@stablelib/base64': 1.0.1
+      fast-sha256: 1.3.0
+
+  standardwebhooks@1.1.1:
+    dependencies:
+      '@stablelib/base64': 1.0.1
+      fast-sha256: 1.3.0
+
   statuses@2.0.2: {}
 
   std-env@3.10.0: {}
@@ -15191,6 +15336,8 @@ snapshots:
   traverse@0.3.9: {}
 
   tree-kill@1.2.2: {}
+
+  ts-algebra@2.0.0: {}
 
   ts-api-utils@2.5.0(typescript@6.0.3):
     dependencies:

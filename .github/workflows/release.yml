@@ -1,82 +1,52 @@
-name: Release framework RC packages
+name: Prepare framework release
 
 on:
   workflow_dispatch:
     inputs:
-      registry_url:
-        description: Private npm-compatible registry URL
-        required: true
-        type: string
       dist_tag:
-        description: npm distribution tag
+        description: npm distribution tag for this reviewed bundle
         required: true
-        default: rc
+        default: latest
         type: string
-      dry_run:
-        description: Verify publish metadata without uploading packages
-        required: true
-        default: true
-        type: boolean
 
 concurrency:
-  group: framework-rc-release
+  group: framework-release-preparation
   cancel-in-progress: false
 
-env:
-  NODE_VERSION: '22'
+permissions:
+  contents: read
+  actions: read
 
 jobs:
-  release:
-    name: Verify and publish immutable RCs
+  prepare:
+    name: Prepare the exact CI-verified bundle
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ inputs.dist_tag }}
     steps:
       - uses: actions/checkout@v7
-
-      - uses: pnpm/action-setup@v6
-
       - uses: actions/setup-node@v7
         with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
+          node-version: '24.14.1'
+          package-manager-cache: false
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - name: Install the pinned publishing CLI
+        run: npm install --global npm@11.19.1 --ignore-scripts --no-audit --no-fund
 
-      - name: Build, test, and lint
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/zucker_build
-        run: |
-          pnpm build
-          pnpm test
-          pnpm lint
+      - name: Require successful CI and download its verified bundle
+        run: node scripts/prepare-release.mjs download-ci --output artifacts/release
 
-      - name: Build audited RC bundle
-        run: pnpm pack:rc
+      - name: Verify the exact tarballs with npm without uploading
+        run: node scripts/publish-packages.mjs --bundle artifacts/release --dry-run --tag "$RELEASE_TAG"
 
-      - name: Upload audited bundle
+      - name: Record the reviewed bundle and approval checksum
+        run: node scripts/prepare-release.mjs seal --bundle artifacts/release --tag "$RELEASE_TAG"
+
+      - name: Save the immutable reviewed bundle
         uses: actions/upload-artifact@v7
         with:
-          name: zucker-framework-rc-${{ github.sha }}
-          path: artifacts/rc
+          name: zucker-framework-release-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/release
           if-no-files-found: error
           retention-days: 30
-
-      - name: Validate npm publish metadata
-        if: inputs.dry_run
-        run: >-
-          pnpm publish:rc --
-          --dry-run
-          --registry=${{ inputs.registry_url }}
-          --tag=${{ inputs.dist_tag }}
-
-      - name: Publish immutable RCs
-        if: ${{ !inputs.dry_run }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.PACKAGE_REGISTRY_TOKEN || secrets.NPM_TOKEN }}
-        run: >-
-          pnpm publish:rc --
-          --registry=${{ inputs.registry_url }}
-          --tag=${{ inputs.dist_tag }}

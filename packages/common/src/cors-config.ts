@@ -1,14 +1,13 @@
 /**
- * CORS 配置 — 对应 hsweb CorsProperties / CorsAutoConfiguration
+ * CORS 配置
  *
- * hsweb 通过 CorsProperties 定义路径级 CORS 配置：
+ * CorsProperties 定义路径级 CORS 配置：
  *   - allowedOrigins / allowedMethods / allowedHeaders / exposedHeaders
  *   - allowCredentials / maxAge
  *   - 支持多路径规则 (configs 数组)
  *   - 未配置时使用默认值 (origins=*, methods=[GET,HEAD,POST], credentials=true, maxAge=1800)
  *
- * 本实现将 hsweb 的配置模型迁移为 TS 接口，
- * 并提供 NestJS 适配的 buildCorsOptions() 工厂方法。
+ * 提供配置接口和 NestJS 适配的 buildCorsOptions() 工厂方法。
  */
 
 export interface CorsPathConfig {
@@ -36,7 +35,7 @@ export interface CorsProperties {
 }
 
 /**
- * 默认 CORS 配置 — 对齐 hsweb CorsConfiguration.applyPermitDefaultValues()
+ * 默认 CORS 配置
  */
 export const DEFAULT_CORS_CONFIG: Required<CorsPathConfig> = {
   path: '/**',

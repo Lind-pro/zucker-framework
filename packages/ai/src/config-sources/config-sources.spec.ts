@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { DatabaseAdapter } from '@zucker/core';
+import type { DatabaseAdapter } from '@zucker-framework/core';
 import { AIConfigService } from '../config.service';
 import type { AIConfigSource } from '../config-source';
 import { DatabaseAIConfigSource } from './database-config.source';

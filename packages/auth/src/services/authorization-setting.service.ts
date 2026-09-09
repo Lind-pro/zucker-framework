@@ -1,6 +1,6 @@
 import { Injectable, Inject, Logger, Optional } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import type { DatabaseAdapter } from '@zucker/core';
+import type { DatabaseAdapter } from '@zucker-framework/core';
 import { DimensionService } from './dimension.service';
 import {
   AUTH_EVENT_TOPICS,
@@ -8,7 +8,7 @@ import {
   type DimensionDeletedEvent,
 } from '../events/auth-events';
 
-/** Minimal TopicEventBus interface to avoid hard dependency on @zucker/event */
+/** Minimal TopicEventBus interface to avoid hard dependency on @zucker-framework/event */
 interface TopicEventBusLike {
   publish(topic: string, payload: unknown): Promise<void>;
   subscribe?(topic: string, handler: (payload: unknown) => void | Promise<void>): void;
@@ -18,8 +18,6 @@ interface TopicEventBusLike {
  * Authorization setting entity shape.
  * Each row maps a permission to a dimension (role/department/etc.)
  * with specific action access.
- *
- * Reference: hsweb AuthorizationSettingEntity
  */
 export interface AuthorizationSettingEntity {
   id: string;
@@ -37,18 +35,16 @@ export interface AuthorizationSettingEntity {
   status?: number;
 }
 
-import { DATABASE_ADAPTER } from '@zucker/crud';
+import { DATABASE_ADAPTER } from '@zucker-framework/crud';
 const TOPIC_EVENT_BUS = 'TOPIC_EVENT_BUS';
 
 /**
- * AuthorizationSettingService -- corresponds to hsweb DefaultAuthorizationSettingService.
+ * AuthorizationSettingService
  *
  * Manages the mapping between permissions and dimensions (roles, departments, etc.).
  * - Generates deterministic IDs from permission + dimensionType + dimensionTarget
  * - Clears user authorization cache when settings are modified
  * - Cascade-deletes settings when a dimension is deleted
- *
- * Reference: hsweb-system-authorization DefaultAuthorizationSettingService
  */
 @Injectable()
 export class AuthorizationSettingService {
@@ -71,7 +67,6 @@ export class AuthorizationSettingService {
   /**
    * Generate a deterministic ID for an authorization setting.
    *
-   * Reference: hsweb DefaultAuthorizationSettingService.generateId()
    * -- uses DigestUtils.md5Hex(permission + dimensionType + dimensionTarget)
    */
   generateId(entity: Pick<AuthorizationSettingEntity, 'permission' | 'dimensionType' | 'dimensionTarget'>): string {
@@ -82,8 +77,6 @@ export class AuthorizationSettingService {
   /**
    * Save (upsert) one or more authorization settings.
    * Auto-generates IDs if not set.
-   *
-   * Reference: hsweb DefaultAuthorizationSettingService.save()
    */
   async save(
     settings: AuthorizationSettingEntity | AuthorizationSettingEntity[],
@@ -174,7 +167,6 @@ export class AuthorizationSettingService {
   /**
    * Clear user authorization cache for users affected by setting changes.
    *
-   * Reference: hsweb DefaultAuthorizationSettingService.clearUserAuthCache()
    * -- resolves dimension providers to find all affected user IDs,
    *    then publishes ClearUserAuthorizationCacheEvent
    */
@@ -219,8 +211,6 @@ export class AuthorizationSettingService {
 
   /**
    * Handle dimension deletion -- cascade delete associated authorization settings.
-   *
-   * Reference: hsweb DefaultAuthorizationSettingService.handleDimensionAdd() / handleDimensionDeletedEvent()
    */
   private async handleDimensionDeleted(event: DimensionDeletedEvent): Promise<void> {
     try {

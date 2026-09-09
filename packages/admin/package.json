@@ -1,33 +1,48 @@
 {
-  "name": "@zucker/admin",
+  "name": "@zucker-framework/admin",
   "version": "1.0.0",
   "description": "Zucker Admin — pluggable management REST API module for NestJS",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "LICENSE",
+    "NOTICE",
+    "THIRD_PARTY_NOTICES"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format cjs,esm --dts --external @nestjs/common --external @nestjs/core --external @nestjs/event-emitter --external @zucker/auth --external @zucker/crud --external @zucker/core --external @zucker/dictionary --external @zucker/config --external @zucker/credit --external @zucker/logging --external @zucker/notification --external @zucker/form",
+    "build": "tsup src/index.ts --format cjs,esm --dts --external @nestjs/common --external @nestjs/core --external @nestjs/event-emitter --external @zucker-framework/auth --external @zucker-framework/crud --external @zucker-framework/core --external @zucker-framework/dictionary --external @zucker-framework/config --external @zucker-framework/credit --external @zucker-framework/logging --external @zucker-framework/notification --external @zucker-framework/form",
     "clean": "rm -rf dist",
-    "lint": "eslint src/"
+    "lint": "eslint src/",
+    "prepack": "node ../../scripts/prepare-package-legal.mjs"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.1",
     "@nestjs/core": "^12.0.1",
     "@nestjs/event-emitter": "^12.0.0",
-    "@zucker/auth": "workspace:*",
-    "@zucker/config": "workspace:*",
-    "@zucker/core": "workspace:*",
-    "@zucker/credit": "workspace:*",
-    "@zucker/crud": "workspace:*",
-    "@zucker/dictionary": "workspace:*",
-    "@zucker/form": "workspace:*",
-    "@zucker/logging": "workspace:*",
-    "@zucker/notification": "workspace:*"
+    "@zucker-framework/auth": "workspace:*",
+    "@zucker-framework/config": "workspace:*",
+    "@zucker-framework/core": "workspace:*",
+    "@zucker-framework/credit": "workspace:*",
+    "@zucker-framework/crud": "workspace:*",
+    "@zucker-framework/dictionary": "workspace:*",
+    "@zucker-framework/form": "workspace:*",
+    "@zucker-framework/logging": "workspace:*",
+    "@zucker-framework/notification": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^20.19.43"
+  },
+  "license": "Apache-2.0",
+  "author": "Lind",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Lind-pro/zucker-framework.git",
+    "directory": "packages/admin"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }

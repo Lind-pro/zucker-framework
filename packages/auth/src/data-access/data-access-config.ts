@@ -1,6 +1,5 @@
 /**
  * Data access control configuration types.
- * Mirrors hsweb DataAccessConfig hierarchy for row/column-level permission control.
  */
 
 /** Data access control type identifier */
@@ -63,15 +62,14 @@ export interface ScopeDataAccessConfig extends DataAccessConfig {
 /**
  * Dimension-based row-level access control.
  * Uses the dimension system to filter rows based on user's dimension membership.
- * Mirrors hsweb DimensionDataAccessConfig which extends ScopeDataAccessConfig.
  */
 export interface DimensionDataAccessConfig extends DataAccessConfig {
   type: typeof DefaultDataAccessType.DIMENSION_SCOPE;
-  /** Dimension type / scopeType (maps to hsweb DimensionDataAccessConfig.scopeType / DimensionType.getId) */
+  /** Dimension type / scopeType  */
   dimensionType: string;
   /** The field on the resource that holds the dimension value */
   dimensionField?: string;
-  /** Whether to include child dimensions in scope (mirrors hsweb DimensionDataAccessConfig.children) */
+  /** Whether to include child dimensions in scope  */
   children?: boolean;
 }
 

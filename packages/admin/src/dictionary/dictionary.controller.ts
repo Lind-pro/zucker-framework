@@ -19,9 +19,9 @@ import {
   HttpStatus,
   UseGuards,
 } from '@nestjs/common';
-import { DictionaryService, DictionaryItemService } from '@zucker/dictionary';
-import type { Dictionary, DictionaryItem } from '@zucker/dictionary';
-import { JwtAuthGuard, PermissionsGuard, Permissions } from '@zucker/auth';
+import { DictionaryService, DictionaryItemService } from '@zucker-framework/dictionary';
+import type { Dictionary, DictionaryItem } from '@zucker-framework/dictionary';
+import { JwtAuthGuard, PermissionsGuard, Permissions } from '@zucker-framework/auth';
 
 /** Generic paginated response shape used by all _query endpoints */
 interface PageResult<T> {

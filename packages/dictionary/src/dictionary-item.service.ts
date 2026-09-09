@@ -1,10 +1,10 @@
 import { Injectable, Inject, Logger, Optional } from '@nestjs/common';
-import { type DatabaseAdapter } from '@zucker/core';
+import { type DatabaseAdapter } from '@zucker-framework/core';
 import { EventEmitter2 } from 'eventemitter2';
 import type { DictionaryItem } from './index';
 import { ClearDictionaryCacheEvent } from './clear-dictionary-cache-event';
 
-import { DATABASE_ADAPTER } from '@zucker/crud';
+import { DATABASE_ADAPTER } from '@zucker-framework/crud';
 
 export interface TreeNode {
   id: string;
@@ -70,7 +70,7 @@ export class DictionaryItemService {
       ? await this.buildPath(data.parentId)
       : '';
 
-    // Auto-fill ordinal if not provided — mirrors hsweb DefaultDictionaryItemService.fillOrdinal()
+    // Auto-fill ordinal if not provided
     let ordinal = data.sortIndex;
     if (ordinal === undefined || ordinal === null) {
       ordinal = await this.nextOrdinal(data.dictId);
@@ -89,8 +89,6 @@ export class DictionaryItemService {
 
   /**
    * Batch create items, auto-filling ordinals for items that don't have one.
-   *
-   * Reference: hsweb DefaultDictionaryItemService.fillOrdinal() batch logic
    */
   async createBatch(items: Array<{
     dictId: string;
@@ -143,8 +141,6 @@ export class DictionaryItemService {
 
   /**
    * Find items by search code (fuzzy/quick lookup).
-   *
-   * Reference: hsweb DictionaryItemEntity.searchCode field
    */
   async findBySearchCode(dictId: string, searchCode: string): Promise<DictionaryItem[]> {
     return this.db.model('dictionaryItem').findMany({
@@ -230,8 +226,6 @@ export class DictionaryItemService {
   /**
    * Get the next ordinal value for a dictionary.
    * Finds the current max ordinal and returns max + 1.
-   *
-   * Reference: hsweb DefaultDictionaryItemService.fillOrdinal() — queries max ordinal
    */
   private async nextOrdinal(dictId: string): Promise<number> {
     const items = (await this.db.model('dictionaryItem').findMany({
@@ -290,7 +284,6 @@ export class DictionaryItemService {
   /**
    * Emit a cache clear event for dictionary caches.
    *
-   * Reference: hsweb DefaultDictionaryItemService — publishes ClearDictionaryCacheEvent.of()
    * on every insert, update, delete, save operation.
    */
   private emitCacheClear(): void {

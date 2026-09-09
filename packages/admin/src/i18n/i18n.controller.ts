@@ -1,7 +1,7 @@
 /**
  * I18nManagementController — admin 后台国际化条目管理接口
  *
- * 注意：@zucker/i18n 是基础设施包（locale context、FileMessageSource），
+ * 注意：@zucker-framework/i18n 是基础设施包（locale context、FileMessageSource），
  * 不提供 i18n key 的 CRUD service。此模块通过 I18N_STORE token 注入存储层。
  *
  * 端点列表：
@@ -21,8 +21,8 @@ import {
   UseGuards,
   Logger,
 } from '@nestjs/common';
-import { NotFoundException } from '@zucker/core';
-import { JwtAuthGuard, PermissionsGuard, Permissions } from '@zucker/auth';
+import { NotFoundException } from '@zucker-framework/core';
+import { JwtAuthGuard, PermissionsGuard, Permissions } from '@zucker-framework/auth';
 import {
   I18N_STORE,
   type I18nStoreInterface,

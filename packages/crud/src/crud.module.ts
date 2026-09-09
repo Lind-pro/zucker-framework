@@ -7,11 +7,11 @@ import {
   type InjectionToken,
   type OptionalFactoryDependency,
 } from '@nestjs/common';
-import { DATABASE_ADAPTER, type DatabaseAdapter } from '@zucker/core';
+import { DATABASE_ADAPTER, type DatabaseAdapter } from '@zucker-framework/core';
 import { DynamicQueryService, DynamicQueryParamService } from './dynamic-query.service';
 import { FilterOperatorFactory, FILTER_OPERATORS, ALL_OPERATORS } from './operators';
 
-export { DATABASE_ADAPTER } from '@zucker/core';
+export { DATABASE_ADAPTER } from '@zucker-framework/core';
 
 export interface CrudModuleAsyncOptions {
   imports?: Array<Type | DynamicModule>;

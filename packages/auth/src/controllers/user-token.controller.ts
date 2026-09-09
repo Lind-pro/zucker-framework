@@ -1,5 +1,5 @@
 /**
- * User token management controller — mirrors hsweb ReactiveUserTokenController.
+ * User token management controller
  *
  * Provides REST endpoints for token lifecycle management:
  * - Query tokens by user/token

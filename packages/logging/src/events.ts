@@ -4,19 +4,19 @@ export const OPERATION_LOG_EVENT = 'zucker.operation-log';
 export const SYSTEM_LOG_EVENT = 'zucker.system-log';
 
 /**
- * 访问日志数据 — 对齐 hsweb AccessLoggerInfo
+ * 访问日志数据
  *
  * 新增字段（相对初始版本）:
- * - httpHeaders: 完整请求头映射（对齐 hsweb httpHeaders）
- * - context: 上下文键值对（对齐 hsweb putContext）
+ * - httpHeaders: 完整请求头映射
+ * - context: 上下文键值对
  */
 export interface AccessLogPayload {
-  /** 日志唯一 ID — 对齐 hsweb AccessLoggerInfo.id */
+  /** 日志唯一 ID */
   id: string;
   action: string;
   describe: string;
   module: string;
-  /** 目标类/控制器名 — 对齐 hsweb AccessLoggerInfo.target (class name) */
+  /** 目标类/控制器名 */
   target?: string;
   userId?: string;
   username?: string;
@@ -24,9 +24,9 @@ export interface AccessLogPayload {
   method: string;
   ip: string;
   userAgent?: string;
-  /** HTTP 请求头集合 — 对齐 hsweb AccessLoggerInfo.httpHeaders */
+  /** HTTP 请求头集合 */
   httpHeaders?: Record<string, string | undefined>;
-  /** 上下文键值对 — 对齐 hsweb AccessLoggerInfo.context / putContext */
+  /** 上下文键值对 */
   context?: Record<string, string>;
   requestTime: Date;
   responseTime: number;
@@ -73,10 +73,10 @@ export interface SystemLogPayload {
 }
 
 /**
- * 将 AccessLogPayload 转为可序列化的简单 Map — 对齐 hsweb AccessLoggerInfo.toSimpleMap
+ * 将 AccessLogPayload 转为可序列化的简单 Map
  *
  * @param payload 访问日志数据
- * @param objectFilter 可选的值过滤函数 — 对齐 hsweb toSimpleMap(Function<Object, Serializable> objectFilter, ...)
+ * @param objectFilter 可选的值过滤函数
  *   用于对 parameters / response 等值做序列化转换（如截断大对象）
  */
 export function accessLogToSimpleMap(

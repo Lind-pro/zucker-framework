@@ -25,7 +25,7 @@ import {
   EmptyOperator,
   NotEmptyOperator,
 } from './operators';
-import type { TreeSortSupportEntity } from '@zucker/core';
+import type { TreeSortSupportEntity } from '@zucker-framework/core';
 
 // ---------------------------------------------------------------------------
 // Test entity type

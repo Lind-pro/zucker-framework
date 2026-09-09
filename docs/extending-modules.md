@@ -29,10 +29,10 @@ model Product {
 
 ```typescript
 import { Injectable, Inject } from '@nestjs/common';
-import { BaseService } from '@zucker/crud';
-import { DATABASE_ADAPTER } from '@zucker/crud';
-import { DynamicQueryService } from '@zucker/crud';
-import { DatabaseAdapter } from '@zucker/core';
+import { BaseService } from '@zucker-framework/crud';
+import { DATABASE_ADAPTER } from '@zucker-framework/crud';
+import { DynamicQueryService } from '@zucker-framework/crud';
+import { DatabaseAdapter } from '@zucker-framework/core';
 
 interface Product {
   id: string;
@@ -64,8 +64,8 @@ export class ProductService extends BaseService<Product> {
 
 ```typescript
 import { Controller, Get, Param } from '@nestjs/common';
-import { BaseController } from '@zucker/crud';
-import { Resource, QueryAction, CreateAction, UpdateAction, DeleteAction } from '@zucker/auth';
+import { BaseController } from '@zucker-framework/crud';
+import { Resource, QueryAction, CreateAction, UpdateAction, DeleteAction } from '@zucker-framework/auth';
 import { ProductService } from './product.service';
 
 class Product {
@@ -268,7 +268,7 @@ export class OrderController extends BaseController(Order) {
 `parseExpression` 支持 SQL 风格的 WHERE 表达式：
 
 ```typescript
-import { parseExpression } from '@zucker/crud';
+import { parseExpression } from '@zucker-framework/crud';
 
 const terms = parseExpression("name = '张三' and age > 16 or status = 'active'");
 // 结果: [
@@ -305,7 +305,7 @@ BaseService 在 CRUD 操作时自动发射实体生命周期事件。
 ```typescript
 import { Injectable } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
-import { EntityEvent, EntityEventType, EntityEventPhase } from '@zucker/event';
+import { EntityEvent, EntityEventType, EntityEventPhase } from '@zucker-framework/event';
 
 @Injectable()
 export class ProductEventListener {
@@ -338,7 +338,7 @@ export class ProductEventListener {
 **CreatorEventListener** — PREPARE 阶段自动填充 `creatorId`/`createdAt` 和 `modifierId`/`updatedAt`：
 
 ```typescript
-import { CreatorEventListener } from '@zucker/event';
+import { CreatorEventListener } from '@zucker-framework/event';
 
 // 在模块中注册
 const creatorListener = new CreatorEventListener(() => getCurrentUserId());
@@ -350,7 +350,7 @@ TopicEventBus 支持层级化 topic 和通配符，适用于跨模块通信：
 
 ```typescript
 import { Inject, Injectable } from '@nestjs/common';
-import { TopicEventBus, TOPIC_EVENT_BUS } from '@zucker/event';
+import { TopicEventBus, TOPIC_EVENT_BUS } from '@zucker-framework/event';
 
 @Injectable()
 export class DeviceService {
@@ -483,9 +483,9 @@ async findOne(@Param('id') id: string) { ... }
 
 ```typescript
 import { Injectable, Inject } from '@nestjs/common';
-import { TreeService } from '@zucker/crud';
-import { DATABASE_ADAPTER, DynamicQueryService } from '@zucker/crud';
-import { DatabaseAdapter, TreeSortSupportEntity } from '@zucker/core';
+import { TreeService } from '@zucker-framework/crud';
+import { DATABASE_ADAPTER, DynamicQueryService } from '@zucker-framework/crud';
+import { DatabaseAdapter, TreeSortSupportEntity } from '@zucker-framework/core';
 
 interface Category extends TreeSortSupportEntity {
   name: string;
@@ -520,7 +520,7 @@ TreeService 额外提供：
 
 ```typescript
 import { Injectable } from '@nestjs/common';
-import { NotifierProvider, NotifyChannel, NotifyMessage } from '@zucker/notification';
+import { NotifierProvider, NotifyChannel, NotifyMessage } from '@zucker-framework/notification';
 
 @Injectable()
 export class SlackProvider implements NotifierProvider {
@@ -553,7 +553,7 @@ ZuckerNotificationModule.forRoot({
 
 ```typescript
 import { Injectable, OnModuleInit } from '@nestjs/common';
-import { AIProvider, AIModelConfig, AIProviderManager } from '@zucker/ai';
+import { AIProvider, AIModelConfig, AIProviderManager } from '@zucker-framework/ai';
 
 @Injectable()
 export class ClaudeProvider implements AIProvider, OnModuleInit {
@@ -581,7 +581,7 @@ export class ClaudeProvider implements AIProvider, OnModuleInit {
 使用 AI 调用：
 
 ```typescript
-import { AIProviderManager, AIConfigService, AICallWrapper } from '@zucker/ai';
+import { AIProviderManager, AIConfigService, AICallWrapper } from '@zucker-framework/ai';
 
 @Injectable()
 export class SummaryService {
@@ -615,7 +615,7 @@ import {
   EnvironmentAIConfigSource,
   RemoteAIConfigSource,
   ZuckerAIModule,
-} from '@zucker/ai';
+} from '@zucker-framework/ai';
 
 ZuckerAIModule.forRoot({
   configSources: [

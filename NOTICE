@@ -1,0 +1,22 @@
+Zucker Framework
+Copyright 2026 Lind and Zucker Framework contributors
+
+Licensed under the Apache License, Version 2.0. See LICENSE.
+
+The framework includes TypeScript adaptations and enhancements of concepts and
+implementations from hsweb-framework and jetlinks-community, both distributed
+under the Apache License, Version 2.0. Individual packages use different subsets
+of the framework. The TypeScript adaptations and Node.js integrations were
+modified for Zucker Framework; they are not the original upstream distribution.
+
+hsweb-framework
+https://github.com/hs-web/hsweb-framework
+Copyright 2020 http://hsweb.me
+
+jetlinks-community
+https://github.com/jetlinks/jetlinks-community
+
+See THIRD_PARTY_NOTICES for license texts and attribution for bundled dependencies
+and reference implementations relevant to this package. External dependencies
+remain subject to their own licenses. This NOTICE is informational and does not
+modify any license or grant rights to upstream trademarks.

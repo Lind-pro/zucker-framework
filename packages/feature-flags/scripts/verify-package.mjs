@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 
 const packageDirectory = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const repositoryRoot = resolve(packageDirectory, '../..');
+const sourceManifest = JSON.parse(readFileSync(join(packageDirectory, 'package.json'), 'utf8'));
 const allowDirty = process.argv.includes('--allow-dirty');
 const sourceDirty = runCapture('git', ['status', '--porcelain'], repositoryRoot).trim().length > 0;
 
@@ -37,7 +38,7 @@ try {
 
   verifyPackedManifest(firstTarball);
   verifyExternalConsumer(firstTarball);
-  process.stdout.write(`Verified @zucker/feature-flags artifact sha256:${firstDigest}\n`);
+  process.stdout.write(`Verified @zucker-framework/feature-flags artifact sha256:${firstDigest}\n`);
 } finally {
   rmSync(temporaryRoot, { recursive: true, force: true });
 }
@@ -52,10 +53,9 @@ function pack(outputDirectory) {
 
 function verifyPackedManifest(tarball) {
   const manifest = JSON.parse(runCapture('tar', ['-xOf', tarball, 'package/package.json']));
-  if (manifest.name !== '@zucker/feature-flags' || manifest.version !== '0.1.0-rc.1') {
+  if (manifest.name !== sourceManifest.name || manifest.version !== sourceManifest.version) {
     throw new Error(`Unexpected packed identity: ${manifest.name}@${manifest.version}`);
   }
-  if (!manifest.version.includes('-rc.')) throw new Error('Package version must be immutable');
 
   const listing = runCapture('tar', ['-tf', tarball]);
   for (const file of [
@@ -86,7 +86,7 @@ function verifyExternalConsumer(tarball) {
   );
 
   const esmSmoke = [
-    "import { FeatureFlagEvaluator } from '@zucker/feature-flags';",
+    "import { FeatureFlagEvaluator } from '@zucker-framework/feature-flags';",
     "const flags = new FeatureFlagEvaluator((key) => key === 'ROLLOUT' ? 'true' : undefined);",
     "flags.register({ key: 'rollout', envKey: 'ROLLOUT', defaultValue: false });",
     "if (!flags.isEnabled('rollout')) throw new Error('ESM evaluation failed');",
@@ -94,7 +94,7 @@ function verifyExternalConsumer(tarball) {
   run('node', ['--input-type=module', '--eval', esmSmoke], consumerDirectory);
 
   const cjsSmoke = [
-    "const { FeatureFlagEvaluator } = require('@zucker/feature-flags');",
+    "const { FeatureFlagEvaluator } = require('@zucker-framework/feature-flags');",
     'const flags = new FeatureFlagEvaluator();',
     "flags.register({ key: 'off', defaultValue: false });",
     "if (flags.isEnabled('off')) throw new Error('CJS evaluation failed');",
@@ -102,7 +102,7 @@ function verifyExternalConsumer(tarball) {
   run('node', ['--input-type=commonjs', '--eval', cjsSmoke], consumerDirectory);
 
   const typeSmoke = [
-    "import { FeatureFlagEvaluator, type FeatureFlagEvaluation } from '@zucker/feature-flags';",
+    "import { FeatureFlagEvaluator, type FeatureFlagEvaluation } from '@zucker-framework/feature-flags';",
     'const evaluator = new FeatureFlagEvaluator();',
     "const decision: FeatureFlagEvaluation = evaluator.evaluate('typed');",
     'const enabled: boolean = decision.enabled;',

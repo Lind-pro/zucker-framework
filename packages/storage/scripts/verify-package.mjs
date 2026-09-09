@@ -38,7 +38,7 @@ try {
 
   verifyPackedManifest(firstTarball);
   verifyExternalConsumer(firstTarball);
-  process.stdout.write(`Verified @zucker/storage artifact sha256:${firstDigest}\n`);
+  process.stdout.write(`Verified @zucker-framework/storage artifact sha256:${firstDigest}\n`);
 } finally {
   rmSync(temporaryRoot, { recursive: true, force: true });
 }
@@ -56,7 +56,6 @@ function verifyPackedManifest(tarball) {
   if (manifest.name !== sourceManifest.name || manifest.version !== sourceManifest.version) {
     throw new Error(`Unexpected packed identity: ${manifest.name}@${manifest.version}`);
   }
-  if (!manifest.version.includes('-rc.')) throw new Error('Package version must be immutable');
   if (manifest.scripts?.['canary:r2'] !== 'node scripts/r2-storage-canary.mjs') {
     throw new Error('Packed R2 canary must execute the published script without rebuilding source');
   }
@@ -93,9 +92,7 @@ function verifyExternalConsumer(tarball) {
       '--no-fund',
       '--no-package-lock',
       tarball,
-      '@nestjs/common@^11.0.0',
-      '@nestjs/core@^11.0.0',
-      'webdav@^5.0.0',
+      ...Object.entries(sourceManifest.peerDependencies ?? {}).map(([name, version]) => `${name}@${version}`),
       'reflect-metadata@^0.2.0',
       'rxjs@^7.8.0',
     ],
@@ -103,19 +100,19 @@ function verifyExternalConsumer(tarball) {
   );
 
   const esmSmoke = [
-    "import { S3Storage } from '@zucker/storage';",
+    "import { S3Storage } from '@zucker-framework/storage';",
     "if (typeof S3Storage !== 'function') throw new Error('ESM export missing');",
   ].join('\n');
   run('node', ['--input-type=module', '--eval', esmSmoke], consumerDirectory);
 
   const cjsSmoke = [
-    "const { S3Storage } = require('@zucker/storage');",
+    "const { S3Storage } = require('@zucker-framework/storage');",
     "if (typeof S3Storage !== 'function') throw new Error('CJS export missing');",
   ].join('\n');
   run('node', ['--input-type=commonjs', '--eval', cjsSmoke], consumerDirectory);
 
   const typeSmoke = [
-    "import type { S3ObjectAclMode, S3StorageOptions } from '@zucker/storage';",
+    "import type { S3ObjectAclMode, S3StorageOptions } from '@zucker-framework/storage';",
     "const objectAclMode: S3ObjectAclMode = 'none';",
     'const options: S3StorageOptions = {',
     "  accessKeyId: 'test',",
@@ -153,7 +150,7 @@ function verifyPublishedCanaryGuard(consumerDirectory) {
   const script = join(
     consumerDirectory,
     'node_modules',
-    '@zucker',
+    '@zucker-framework',
     'storage',
     'scripts',
     'r2-storage-canary.mjs',

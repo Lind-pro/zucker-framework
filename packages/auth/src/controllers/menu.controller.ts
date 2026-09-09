@@ -1,7 +1,6 @@
 /**
  * MenuController — 菜单管理接口
  *
- * 对标 hsweb MenuController：
  * - GET  /api/menu/tree       — 获取当前用户可见菜单树
  * - GET  /api/menu/all        — 获取全部菜单（管理用）
  * - GET  /api/menu/:id        — 查询单个菜单
@@ -29,7 +28,7 @@ import { PermissionService } from '../services/permission.service';
 import { Permissions } from '../decorators';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
-import type { DatabaseAdapter } from '@zucker/core';
+import type { DatabaseAdapter } from '@zucker-framework/core';
 import { DATABASE_ADAPTER } from '../guards/data-permission.guard';
 
 @Controller('menu')

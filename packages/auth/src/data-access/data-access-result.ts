@@ -1,8 +1,8 @@
-import { type Term } from '@zucker/core';
+import { type Term } from '@zucker-framework/core';
 
 /**
- * Re-export Term from @zucker/core for backward compatibility.
- * In Java hsweb, the same Term class (from ezorm) is used in both
+ * Re-export Term from @zucker-framework/core for backward compatibility.
+ * The same Term type is used in both
  * query building and data-access filter conditions.
  */
 export type { Term };

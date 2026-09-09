@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { type ModelOperations, NotFoundException } from '@zucker/core';
+import { type ModelOperations, NotFoundException } from '@zucker-framework/core';
 import { DataSourceNotFoundException, DataSourceClosedException } from './datasource-errors';
 
 export interface DataSourceConfig {

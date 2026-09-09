@@ -3,7 +3,6 @@ import type { RuleDefinition } from './rule-engine.service';
 
 /**
  * 规则版本管理。
- * 对标 hsweb RuleManager 的版本控制能力。
  */
 export interface RuleVersion {
   ruleId: string;
@@ -102,7 +101,6 @@ export class RuleVersionManager {
 
 /**
  * 规则测试框架 — 验证规则定义的正确性。
- * 对标 hsweb RuleEngine 的规则单元测试能力。
  */
 export interface RuleTestCase {
   name: string;

@@ -1,31 +1,29 @@
 /**
  * 异常层次结构
- * 参考: hsweb-framework exception 包
  *
- * 对比 hsweb:
- * - BusinessException 增加 HTTP status 和 i18n code 支持
- * - 增加 TraceSourceException 的 source/operation 追踪能力
- * - 增加 NoStackTrace 子类优化高频异常性能
+ * - BusinessException 支持 HTTP status 和 i18n code
+ * - 通过 source/operation 记录异常来源和操作
+ * - 提供仅保留异常名称和消息的 stack 格式
  */
 
 export class BusinessException extends Error {
   readonly code: string;
   readonly status: number;
 
-  /** i18n 消息 code（参考 hsweb I18nSupportException.i18nCode） */
+  /** i18n 消息 code */
   readonly i18nCode?: string;
   /** i18n 消息参数 */
   readonly i18nArgs?: unknown[];
 
   /**
-   * 附加详情（参考 hsweb ValidationException.Detail / ResponseMessage.result）
+   * 附加详情
    * 可携带结构化错误信息，由异常过滤器放入响应的 result 字段
    */
   readonly details?: unknown;
 
-  /** 异常源追踪（参考 hsweb TraceSourceException.source） */
+  /** 异常源追踪 */
   private _source?: unknown;
-  /** 操作追踪（参考 hsweb TraceSourceException.operation） */
+  /** 操作追踪 */
   private _operation?: string;
 
   constructor(message: string, code = 'BUSINESS_ERROR', status = 500, details?: unknown) {
@@ -34,13 +32,12 @@ export class BusinessException extends Error {
     this.code = code;
     this.status = status;
     this.details = details;
-    // 对齐 hsweb I18nSupportException: this.i18nCode = code (message 同时作为 i18n key)
+    // message 同时作为默认 i18n key
     this.i18nCode = message;
   }
 
   /**
    * 设置 i18n 消息参数
-   * 参考 hsweb I18nSupportException(String code, Object... args)
    */
   withI18nArgs(...args: unknown[]): this {
     (this as { i18nArgs?: unknown[] }).i18nArgs = args;
@@ -49,7 +46,6 @@ export class BusinessException extends Error {
 
   /**
    * 获取原始消息（不经过 i18n 解析）
-   * 参考 hsweb I18nSupportException.getOriginalMessage()
    */
   get originalMessage(): string {
     return super.message ?? this.i18nCode ?? '';
@@ -57,7 +53,6 @@ export class BusinessException extends Error {
 
   /**
    * 设置异常源
-   * 参考 hsweb TraceSourceException.withSource
    */
   withSource(source: unknown): this {
     this._source = source;
@@ -66,7 +61,6 @@ export class BusinessException extends Error {
 
   /**
    * 设置操作和异常源
-   * 参考 hsweb TraceSourceException.withSource(operation, source)
    */
   withOperation(operation: string, source?: unknown): this {
     this._operation = operation;
@@ -85,7 +79,7 @@ export class BusinessException extends Error {
   }
 
   /**
-   * 尝试从错误中获取源（参考 hsweb TraceSourceException.tryGetSource）
+   * 尝试从错误中获取源
    */
   static tryGetSource(err: unknown): unknown {
     if (err instanceof BusinessException) {
@@ -95,7 +89,7 @@ export class BusinessException extends Error {
   }
 
   /**
-   * 尝试从错误中获取操作名（参考 hsweb TraceSourceException.tryGetOperation）
+   * 尝试从错误中获取操作名
    */
   static tryGetOperation(err: unknown): string | undefined {
     if (err instanceof BusinessException) {
@@ -109,7 +103,7 @@ export class NotFoundException extends BusinessException {
   /**
    * @param message i18n message key 或直接消息
    * @param args i18n 消息参数
-   * 对齐 hsweb NotFoundException(String message, Object... args): 默认 message 为 i18n key "error.not_found"
+   * 默认 message 为 i18n key "error.not_found"
    */
   constructor(message = 'error.not_found', ...args: unknown[]) {
     super(message, 'NOT_FOUND', 404);
@@ -122,7 +116,7 @@ export class NotFoundException extends BusinessException {
 
 /**
  * 验证异常
- * 对比 hsweb ValidationException:
+ *
  * - 增加 details 列表支持（property + message + detail 三元组）
  * - 保留原有的 errors Record 格式以保持向后兼容
  */
@@ -154,7 +148,6 @@ export class ValidationException extends BusinessException {
 
   /**
    * 从 details 列表创建
-   * 参考 hsweb ValidationException(String message, List<Detail> details)
    */
   static fromDetails(details: ValidationDetail[], message = 'validation.property_validate_failed'): ValidationException {
     const errors: Record<string, string[]> = {};
@@ -180,7 +173,6 @@ export class UnauthorizedException extends BusinessException {
 
 /**
  * 未授权异常 — 不捕获调用栈
- * 对齐 hsweb 5.x UnAuthorizedException.NoStackTrace (commit 775f8f161)
  *
  * 每个未认证请求都会触发此异常，属于高频路径，
  * 跳过堆栈收集可显著降低 GC 压力。
@@ -202,10 +194,8 @@ export class ForbiddenException extends BusinessException {
 
 /**
  * 访问拒绝异常 (HTTP 403) — 不捕获调用栈
- * 对齐 hsweb 5.x AccessDenyException.NoStackTrace (commit 2aed8345f)
  *
  * 在高频触发的权限校验场景中（如未认证请求），跳过堆栈收集以提升性能。
- * hsweb 5.x 在 AccessDenyException 中新增了 NoStackTrace 内部类，
  * 用于不需要调试信息的拒绝响应。
  */
 export class ForbiddenNoStackTrace extends ForbiddenException {
@@ -225,7 +215,7 @@ export class OperationCancelledException extends BusinessException {
 
 /**
  * 冲突异常 (HTTP 409)
- * 对比 hsweb: 数据冲突场景（如并发修改、唯一约束冲突）
+ * 用于数据冲突场景（如并发修改、唯一约束冲突）
  */
 export class ConflictException extends BusinessException {
   constructor(message = '数据冲突') {
@@ -236,7 +226,6 @@ export class ConflictException extends BusinessException {
 
 /**
  * 超时异常 (HTTP 504)
- * 对比 hsweb CommonErrorControllerAdvice.handleException(TimeoutException)
  */
 export class TimeoutException extends BusinessException {
   constructor(message = '请求超时') {
@@ -246,15 +235,9 @@ export class TimeoutException extends BusinessException {
 }
 
 /**
- * 不填充线程栈的异常工厂 — 对齐 hsweb 5.x NoStackTrace 模式
+ * 不填充线程栈的异常工厂
  *
- * hsweb 5.x 在 I18nSupportException, BusinessException, AccessDenyException,
- * NotFoundException, ValidationException 等多个异常类中增加了 NoStackTrace 内部类。
- * 其核心设计：在高频异常路径（如未认证请求、参数校验失败等对 stack trace 不敏感的场景）
- * 跳过 fillInStackTrace() 以提升性能。
- *
- * TypeScript/V8 等价方案：通过 Error.captureStackTrace 控制或直接清空 stack，
- * 避免 V8 在高频抛出路径上收集完整调用栈的开销。
+ * 在不需要完整调试信息的高频异常路径中，将 stack 替换为异常名称和消息。
  *
  * @example
  * ```ts
@@ -274,11 +257,10 @@ export function noStack<T extends Error>(error: T): T {
 }
 
 /**
- * 列名合法性校验 — 对齐 hsweb 5.x QueryHelperUtils.assertLegalColumn
+ * 列名合法性校验
  *
  * 仅允许字母、数字、下划线和 $ 符号，防止 SQL 注入。
- * hsweb 5.x 在 QueryHelperUtils 中新增此方法，用于动态查询场景下
- * 对用户传入的列名进行安全校验。
+ * 用于动态查询场景下对用户传入的列名进行安全校验。
  */
 export function assertLegalColumn(col: string): void {
   if (!isLegalColumn(col)) {

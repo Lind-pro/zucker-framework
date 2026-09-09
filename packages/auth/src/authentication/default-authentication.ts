@@ -15,8 +15,6 @@ function dimTypeId(type: string | DimensionType): string {
 /**
  * Default implementation of Authentication.
  * Supports merge() for combining permissions and dimensions from multiple suppliers.
- *
- * Mirrors hsweb SimpleAuthentication.
  */
 export class DefaultAuthentication implements Authentication {
   private user: AuthUser;
@@ -51,21 +49,11 @@ export class DefaultAuthentication implements Authentication {
   }
 
   /**
-   * 权限检查 — 对齐 hsweb hasPermission(String, Collection<String>)
+   * 权限检查
    *
-   * Java reference (Authentication.java):
-   *   for (Permission permission : getPermissions()) {
-   *     if (Objects.equals(permission.getId(), "*")) return true;   // wildcard = all access
-   *     if (Objects.equals(permissionId, permission.getId())) {
-   *       return actions.isEmpty() || permission.getActions().containsAll(actions) || permission.getActions().contains("*");
-   *     }
-   *   }
-   *
-   * Key: wildcard permission '*' grants ALL access unconditionally (no action check).
-   *
-   * 并发安全改进（对齐 hsweb 5.x commit ba707cd39）：
-   * 在方法入口先捕获 this.permissions 到局部变量，防止在迭代过程中
-   * 字段被 merge() 方法并发修改导致 NPE（Java 中）或意外行为。
+   * 权限 id 为 '*' 时允许所有操作；否则需要匹配权限 id，
+   * 并满足全部请求动作或拥有动作通配符 '*'。
+   * 在方法入口捕获权限列表引用，整个检查过程使用同一列表。
    */
   hasPermission(permissionId: string, ...actions: string[]): boolean {
     const permissions = this.permissions; // local capture for safety
@@ -84,7 +72,7 @@ export class DefaultAuthentication implements Authentication {
   }
 
   /**
-   * 维度检查 — 对齐 hsweb 5.x 并发安全模式
+   * 维度检查
    * 先捕获 this.dimensions 到局部变量再操作。
    */
   hasDimension(type: string | DimensionType, ...ids: string[]): boolean {
@@ -103,10 +91,8 @@ export class DefaultAuthentication implements Authentication {
 
   /**
    * Get dimension by type and id.
-   * When type is a string, uses case-insensitive comparison
-   * (mirrors hsweb: `type.equalsIgnoreCase(dimension.getType().getId())`).
-   * When type is a DimensionType, uses isSameType
-   * (mirrors hsweb: `type.isSameType(dimension.getType())`).
+   * When type is a string, uses case-insensitive comparison.
+   * When type is a DimensionType, uses isSameType.
    */
   getDimension(type: string | DimensionType, id: string): Dimension | undefined {
     if (!type) return undefined;
@@ -139,14 +125,12 @@ export class DefaultAuthentication implements Authentication {
 
   /**
    * Set the user. Also adds the user as a dimension of type 'user'
-   * (mirrors hsweb SimpleAuthentication.setUser which calls `dimensions.add(user)`).
    *
-   * Java hsweb unconditionally appends the user to the dimensions list since
-   * User implements Dimension. We replicate this behavior.
+   * A user with an id is appended without deduplicating existing dimensions.
    */
   setUser(user: AuthUser): void {
     this.user = user;
-    // Add user as a dimension (mirrors hsweb: User extends Dimension, dimensions.add(user))
+    // Add user as a dimension
     if (user.id) {
       const userDim: Dimension = {
         id: user.id,
@@ -159,7 +143,6 @@ export class DefaultAuthentication implements Authentication {
 
   /**
    * Set user without adding to dimensions list.
-   * Mirrors hsweb SimpleAuthentication.setUser0 (protected method).
    */
   setUser0(user: AuthUser): void {
     this.user = user;
@@ -170,8 +153,7 @@ export class DefaultAuthentication implements Authentication {
   }
 
   /**
-   * Add dimensions to the existing list (mirrors hsweb SimpleAuthentication.setDimensions
-   * which calls `this.dimensions.addAll(dimensions)`).
+   * Append dimensions to the existing list.
    */
   setDimensions(dimensions: Dimension[]): void {
     this.dimensions.push(...dimensions);
@@ -185,27 +167,27 @@ export class DefaultAuthentication implements Authentication {
   }
 
   /**
-   * Factory method for subclasses to override (mirrors hsweb SimpleAuthentication.newInstance).
+   * Factory method for subclasses to override.
    */
   protected newInstance(): DefaultAuthentication {
     return new DefaultAuthentication();
   }
 
   /**
-   * Static factory (mirrors hsweb SimpleAuthentication.of).
+   * Static factory.
    */
   static of(): DefaultAuthentication {
     return new DefaultAuthentication();
   }
 
   /**
-   * Copy with filters (mirrors hsweb SimpleAuthentication.copy).
+   * Copy with filters.
    */
   copy(
     permissionFilter: (permission: Permission, action: string) => boolean = () => true,
     dimensionFilter: (dimension: Dimension) => boolean = () => true,
   ): DefaultAuthentication {
-    // Mirrors hsweb SimpleAuthentication.copy: uses newInstance() for subclass support
+    // Use newInstance() for subclass support
     const authentication = this.newInstance();
 
     authentication.replaceDimensions(
@@ -233,14 +215,14 @@ export class DefaultAuthentication implements Authentication {
         })
         .filter((p) => p.actions.length > 0),
     );
-    // mirrors hsweb: authentication.setUser(user) — uses setUser0 to avoid re-adding to dimensions
+    // Use setUser0 to avoid re-adding the user to dimensions
     authentication.setUser0(this.user);
     authentication.setAttributes({ ...this.attributes });
     return authentication;
   }
 
   /**
-   * Add a single dimension (mirrors hsweb SimpleAuthentication.addDimension).
+   * Add a single dimension.
    */
   addDimension(dimension: Dimension): void {
     this.dimensions.push(dimension);
@@ -248,11 +230,11 @@ export class DefaultAuthentication implements Authentication {
 
   /**
    * Merge another Authentication into this one.
-   * Mostly mirrors hsweb SimpleAuthentication.merge:
+   * Merge behavior:
    * - User: later suppliers override the current user when present
    * - Permissions: merge by ID, combining actions and dataAccesses; when
-   *   other permission is new, use permission.copy() (mirrors hsweb: `permissions.add(permission.copy())`)
-   * - Dimensions: merge by type+id dedup (hsweb 5.x: (a, b) -> a keeps first)
+   *   other permission is new, use permission.copy()
+   * - Dimensions: merge by type+id dedup
    * - Attributes: shallow merge (other wins on conflict)
    */
   merge(other: Authentication): DefaultAuthentication {
@@ -261,7 +243,7 @@ export class DefaultAuthentication implements Authentication {
       this.user = otherUser;
     }
 
-    // Merge attributes first (mirrors hsweb: attributes.putAll before permission merge)
+    // Merge attributes first
     const otherAttrs = other.getAttributes();
     for (const [k, v] of Object.entries(otherAttrs)) {
       this.attributes[k] = v;
@@ -293,15 +275,15 @@ export class DefaultAuthentication implements Authentication {
           }),
         );
       } else {
-        // mirrors hsweb: permissions.add(permission.copy())
+        // Copy new permissions before adding them
         permMap.set(p.id, p.copy ? p.copy() : p);
       }
     }
     this.permissions = Array.from(permMap.values());
 
     // Merge dimensions (dedup by type+id)
-    // Mirrors hsweb SimpleAuthentication.merge: getDimension(type,id).isPresent() check
-    // Also aligns with hsweb 5.x (a, b) -> a merge function to keep first on duplicate
+    // Deduplicate dimensions by type and id
+    // Keep the first dimension when duplicates occur
     for (const d of other.getDimensions()) {
       if (!this.getDimension(d.type.id, d.id)) {
         this.dimensions.push(d);

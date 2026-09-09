@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 /**
  * 访问日志持久化存储接口。
- * 对标 hsweb AccessLoggerService — 将访问日志写入数据库而非仅内存。
+ * 将访问日志写入数据库而非仅内存。
  *
  * 默认实现为内存存储（ring buffer），生产环境可替换为数据库实现。
  */

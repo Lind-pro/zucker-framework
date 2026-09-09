@@ -1,0 +1,18 @@
+{
+  "@zucker-framework/ai-access": [
+    {
+      "name": "OpenClaw reference implementation",
+      "version": "8d82e26e5f3460d40197ff9b4ddcf04117682547",
+      "url": "https://github.com/openclaw/openclaw/tree/8d82e26e5f3460d40197ff9b4ddcf04117682547",
+      "license": "MIT",
+      "file": "legal/licenses/openclaw-8d82e26-MIT.txt"
+    },
+    {
+      "name": "Hermes Agent reference implementation",
+      "version": "c693c772b55ba412da21405a230a5431353fd816",
+      "url": "https://github.com/NousResearch/hermes-agent/tree/c693c772b55ba412da21405a230a5431353fd816",
+      "license": "MIT",
+      "file": "legal/licenses/hermes-c693c77-MIT.txt"
+    }
+  ]
+}

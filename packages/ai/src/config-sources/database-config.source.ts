@@ -1,4 +1,4 @@
-import { BusinessException, type DatabaseAdapter } from '@zucker/core';
+import { BusinessException, type DatabaseAdapter } from '@zucker-framework/core';
 import type { AIModelConfig, AIScenario } from '../ai-provider.interface';
 import type { AIConfigSource, AIConfigSourceOptions } from '../config-source';
 

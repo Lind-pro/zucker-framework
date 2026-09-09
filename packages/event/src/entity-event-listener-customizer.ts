@@ -1,7 +1,7 @@
 import { EntityEventListenerConfigure } from './entity-event-listener-configure';
 
 /**
- * 实体事件监听器自定义接口 — 参考 hsweb EntityEventListenerCustomizer
+ * 实体事件监听器自定义接口
  *
  * 实现此接口可在应用启动时对 EntityEventListenerConfigure 进行编程式配置。
  *

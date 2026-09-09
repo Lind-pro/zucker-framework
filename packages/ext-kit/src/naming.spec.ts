@@ -71,15 +71,15 @@ describe('urlBaseName', () => {
 describe('buildBatchFileName', () => {
   it('prefixes zero-padded index inside the batch folder', () => {
     expect(
-      buildBatchFileName('SiteShots/acme.com-20260101-0900', { url: 'https://acme.com/a', index: 7 }, 'png'),
-    ).toBe('SiteShots/acme.com-20260101-0900/007_acme.com-a.png');
+      buildBatchFileName('ExampleCapture/acme.com-20260101-0900', { url: 'https://acme.com/a', index: 7 }, 'png'),
+    ).toBe('ExampleCapture/acme.com-20260101-0900/007_acme.com-a.png');
   });
 });
 
 describe('buildQuickFileName', () => {
   it('places quick files under the brand quick folder with a timestamp', () => {
-    const name = buildQuickFileName('SitePDF', 'Quick Converts', 'https://acme.com/report', 'pdf');
-    expect(name).toMatch(/^SitePDF\/Quick Converts\/acme\.com-report-\d{8}-\d{6}\.pdf$/);
+    const name = buildQuickFileName('ExampleExport', 'Quick Converts', 'https://acme.com/report', 'pdf');
+    expect(name).toMatch(/^ExampleExport\/Quick Converts\/acme\.com-report-\d{8}-\d{6}\.pdf$/);
   });
 });
 

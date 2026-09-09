@@ -5,7 +5,7 @@ import {
   CallHandler,
 } from '@nestjs/common';
 import { Observable } from 'rxjs';
-import { BusinessException } from '@zucker/core';
+import { BusinessException } from '@zucker-framework/core';
 import { TenantContext } from './tenant-context';
 
 export type TenantResolveStrategy = 'header' | 'jwt' | 'subdomain';

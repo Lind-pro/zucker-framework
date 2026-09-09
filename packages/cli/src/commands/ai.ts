@@ -5,8 +5,8 @@ import {
   PostgresCredentialProfileStore,
   type CredentialProfile,
   type CredentialProfileStore,
-} from '@zucker/ai-access';
-import { createOpenAICodexAccessProvider } from '@zucker/ai-access/openai-codex';
+} from '@zucker-framework/ai-access';
+import { createOpenAICodexAccessProvider } from '@zucker-framework/ai-access/openai-codex';
 
 interface AIStoreResource {
   store: CredentialProfileStore;

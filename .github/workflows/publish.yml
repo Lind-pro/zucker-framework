@@ -1,0 +1,74 @@
+name: Publish prepared framework release
+
+on:
+  workflow_dispatch:
+    inputs:
+      prepared_run_id:
+        description: Successful Prepare framework release run ID
+        required: true
+        type: string
+      manifest_sha256:
+        description: Approved manifest SHA-256 from that preparation run summary
+        required: true
+        type: string
+      dist_tag:
+        description: Must match the prepared distribution tag
+        required: true
+        default: latest
+        type: string
+
+concurrency:
+  group: framework-package-publication
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  publish:
+    name: Publish the approved bundle through OIDC
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PREPARED_RUN_ID: ${{ inputs.prepared_run_id }}
+      APPROVED_MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
+      RELEASE_TAG: ${{ inputs.dist_tag }}
+    steps:
+      # Dispatch at the preparation commit/ref so GitHub's OIDC identity and
+      # the checked-out source identify the same SHA.
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.14.1'
+          package-manager-cache: false
+
+      - name: Install the pinned publishing CLI
+        run: npm install --global npm@11.19.1 --ignore-scripts --no-audit --no-fund
+
+      - name: Download the approved bundle without building or packing
+        run: >-
+          node scripts/prepare-release.mjs download-prepared
+          --run "$PREPARED_RUN_ID"
+          --manifest-sha256 "$APPROVED_MANIFEST_SHA256"
+          --output artifacts/release
+
+      - name: Publish the exact reviewed tarballs in dependency order
+        run: >-
+          node scripts/publish-packages.mjs
+          --bundle artifacts/release
+          --publish --auth oidc
+          --manifest-sha256 "$APPROVED_MANIFEST_SHA256"
+          --tag "$RELEASE_TAG"
+
+      - name: Save registry verification results
+        uses: actions/upload-artifact@v7
+        with:
+          name: zucker-framework-published-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/release/registry-verification.json
+          if-no-files-found: error
+          retention-days: 30

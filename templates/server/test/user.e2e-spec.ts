@@ -2,7 +2,7 @@
  * User API e2e tests.
  *
  * NOTE: The zucker-framework does not ship a pre-built UserController — the
- * UserService lives in @zucker/auth as a service-layer primitive.  This spec
+ * UserService lives in @zucker-framework/auth as a service-layer primitive.  This spec
  * registers a minimal inline UserController (identical to what application
  * code would write) so that the HTTP surface can be exercised end-to-end
  * using the same InMemoryDatabaseAdapter as the auth spec.
@@ -32,7 +32,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { ZuckerCrudModule } from '@zucker/crud';
+import { ZuckerCrudModule } from '@zucker-framework/crud';
 import {
   ZuckerAuthModule,
   AuthorizationController,
@@ -42,9 +42,9 @@ import {
   UserService,
   Permissions,
   Public,
-} from '@zucker/auth';
-import type { AuthenticationManagerLike } from '@zucker/auth';
-import { HttpExceptionFilter } from '@zucker/common';
+} from '@zucker-framework/auth';
+import type { AuthenticationManagerLike } from '@zucker-framework/auth';
+import { HttpExceptionFilter } from '@zucker-framework/common';
 import { InMemoryDatabaseAdapter } from './helpers/in-memory-db';
 
 // ---------------------------------------------------------------------------

@@ -65,8 +65,6 @@ export interface QueryParam {
 /**
  * Query term — represents a single filter condition.
  * Supports nested terms for complex boolean expressions.
- *
- * Mirrors hsweb Term structure for dynamic query building.
  */
 export interface Term {
   /** Column/field name to filter on */

@@ -5,7 +5,7 @@ import {
   type Provider,
   type InjectionToken,
 } from '@nestjs/common';
-import { type DatabaseAdapter } from '@zucker/core';
+import { type DatabaseAdapter } from '@zucker-framework/core';
 import { DATABASE_ADAPTER } from './crud.module';
 import { PrismaAdapter } from './prisma-adapter';
 
@@ -23,13 +23,13 @@ export interface PrismaDatabaseAdapterModuleOptions {
    */
   modelAliases?: Record<string, string>;
 
-  /** 是否注册为 @Global()。默认 true（@zucker/ai 等需全局可见 DATABASE_ADAPTER） */
+  /** 是否注册为 @Global()。默认 true（@zucker-framework/ai 等需全局可见 DATABASE_ADAPTER） */
   global?: boolean;
 }
 
 /**
  * 现成的 Nest dynamic module：把 PrismaService 包装成 `DATABASE_ADAPTER`
- * provider，让 @zucker/ai 的 AIConfigService、PromptManager 等开箱使用。
+ * provider，让 @zucker-framework/ai 的 AIConfigService、PromptManager 等开箱使用。
  *
  * 比 ZuckerCrudModule.forRootAsync 更轻量：不带 dynamic-query / 操作符 /
  * BaseService 等 CRUD 周边，仅注册 DATABASE_ADAPTER + PrismaAdapter 实例。

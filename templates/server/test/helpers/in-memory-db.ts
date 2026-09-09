@@ -2,9 +2,9 @@
  * In-memory DatabaseAdapter for e2e tests.
  *
  * Stores all records in Maps keyed by model name.
- * Supports the full ModelOperations contract used by @zucker/* services.
+ * Supports the full ModelOperations contract used by @zucker-framework/* services.
  */
-import type { DatabaseAdapter, ModelOperations } from '@zucker/core';
+import type { DatabaseAdapter, ModelOperations } from '@zucker-framework/core';
 
 type Row = Record<string, unknown>;
 

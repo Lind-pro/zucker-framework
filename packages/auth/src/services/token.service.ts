@@ -1,8 +1,8 @@
 import { Injectable, Inject, Logger, Optional } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { BusinessException } from '@zucker/core';
+import { BusinessException } from '@zucker-framework/core';
 import { TokenState, AllopatricLoginMode, type TokenInfo } from '../interfaces';
-import type { ICache } from '@zucker/cache';
+import type { ICache } from '@zucker-framework/cache';
 import {
   AUTH_EVENT_TOPICS,
   createTokenCreatedEvent,
@@ -10,7 +10,7 @@ import {
   createTokenRemovedEvent,
 } from '../events';
 
-/** Minimal TopicEventBus interface to avoid hard dependency on @zucker/event */
+/** Minimal TopicEventBus interface to avoid hard dependency on @zucker-framework/event */
 interface TopicEventBusLike {
   publish(topic: string, payload: unknown): Promise<void>;
 }
@@ -27,7 +27,7 @@ export interface TokenServiceOptions {
   maxActiveSessions?: number;
   /** Token 黑名单 TTL（毫秒），默认 7 天 */
   blacklistTtlMs?: number;
-  /** 异地登录模式 (mirrors hsweb AllopatricLoginMode) */
+  /** 异地登录模式  */
   allopatricLoginMode?: AllopatricLoginMode;
 }
 
@@ -63,7 +63,7 @@ export class TokenService {
   }
 
   async signIn(userId: string, token: string, type = 'default', maxInactiveInterval?: number): Promise<TokenInfo> {
-    // Allopatric login mode handling (mirrors hsweb DefaultUserTokenManager)
+    // Allopatric login mode handling
     const existing = await this.getByUserId(userId);
     const activeSessions = existing.filter(
       (t) => t.state === TokenState.NORMAL && t.type === type,
@@ -121,7 +121,7 @@ export class TokenService {
     userSet.add(token);
     this.userTokens.set(userId, userSet);
 
-    // Publish token created event (mirrors hsweb UserTokenCreatedEvent)
+    // Publish token created event
     await this.publishEvent(
       AUTH_EVENT_TOPICS.TOKEN_CREATED,
       createTokenCreatedEvent(token, userId, type),
@@ -138,7 +138,7 @@ export class TokenService {
       if (userSet?.size === 0) {
         this.userTokens.delete(info.userId);
       }
-      // Publish token removed event (mirrors hsweb UserTokenRemovedEvent)
+      // Publish token removed event
       await this.publishEvent(
         AUTH_EVENT_TOPICS.TOKEN_REMOVED,
         createTokenRemovedEvent(token, info.userId),
@@ -212,22 +212,15 @@ export class TokenService {
 
   /**
    * Get token info, checking for timeout expiration first.
-   * Mirrors hsweb DefaultUserTokenManager.getByToken which calls checkTimeout().
    *
-   * Java reference:
-   *   private Mono<UserToken> checkTimeout(UserToken detail) {
-   *     if (detail.getMaxInactiveInterval() <= 0) return Mono.just(detail);
-   *     if (System.currentTimeMillis() - detail.getLastRequestTime() > detail.getMaxInactiveInterval()) {
-   *       return changeTokenState(detail, TokenState.expired).thenReturn(detail);
-   *     }
-   *     return Mono.just(detail);
-   *   }
+   * A normal token expires when its positive maxInactiveInterval is exceeded.
+   * Missing tokens return null; other token states are preserved.
    */
   async getByToken(token: string): Promise<TokenInfo | null> {
     const info = this.tokens.get(token) || null;
     if (!info) return null;
 
-    // checkTimeout: auto-expire inactive tokens (mirrors hsweb checkTimeout)
+    // checkTimeout: auto-expire inactive tokens
     if (
       info.maxInactiveInterval &&
       info.maxInactiveInterval > 0 &&
@@ -252,7 +245,7 @@ export class TokenService {
     if (info) {
       const oldState = info.state;
       info.state = state;
-      // Publish token changed event (mirrors hsweb UserTokenChangedEvent)
+      // Publish token changed event
       await this.publishEvent(
         AUTH_EVENT_TOPICS.TOKEN_CHANGED,
         createTokenChangedEvent(token, info.userId, oldState, state),
@@ -268,29 +261,29 @@ export class TokenService {
     }
   }
 
-  /** Check if a user has any active (normal) sessions. Mirrors hsweb UserTokenManager.userIsLoggedIn */
+  /** Check if a user has any active (normal) sessions. */
   async userIsLoggedIn(userId: string): Promise<boolean> {
     const tokens = await this.getByUserId(userId);
     return tokens.some((t) => t.state === TokenState.NORMAL);
   }
 
-  /** Check if a specific token is logged in (normal state). Mirrors hsweb UserTokenManager.tokenIsLoggedIn */
+  /** Check if a specific token is logged in (normal state). */
   async tokenIsLoggedIn(token: string): Promise<boolean> {
     const info = await this.getByToken(token);
     return info?.state === TokenState.NORMAL;
   }
 
-  /** Total number of unique logged-in users. Mirrors hsweb UserTokenManager.totalUser */
+  /** Total number of unique logged-in users. */
   async totalUsers(): Promise<number> {
     return this.userTokens.size;
   }
 
-  /** Get all active tokens. Mirrors hsweb UserTokenManager.allLoggedUser */
+  /** Get all active tokens. */
   async allLoggedTokens(): Promise<TokenInfo[]> {
     return Array.from(this.tokens.values());
   }
 
-  /** Change state for all tokens of a user. Mirrors hsweb UserTokenManager.changeUserState */
+  /** Change state for all tokens of a user. */
   async changeUserState(userId: string, state: TokenState): Promise<void> {
     const tokens = await this.getByUserId(userId);
     for (const tokenInfo of tokens) {
@@ -301,7 +294,6 @@ export class TokenService {
   /**
    * Check all tokens for expiration, expire timed-out ones and remove them.
    *
-   * Mirrors hsweb DefaultUserTokenManager.checkExpiredToken():
    *   Flux.fromIterable(tokenStorage.values())
    *     .doOnNext(this::checkTimeout)     // marks as expired via changeTokenState
    *     .filter(UserToken::isExpired)
@@ -319,11 +311,11 @@ export class TokenService {
         info.maxInactiveInterval > 0 &&
         now - info.lastRequestTime.getTime() > info.maxInactiveInterval
       ) {
-        // Publish state change event first (mirrors hsweb checkTimeout -> changeTokenState)
+        // Publish state change event first
         await this.changeState(token, TokenState.EXPIRED);
       }
     }
-    // Now remove all expired tokens (mirrors hsweb filter(isExpired) -> signOutByToken)
+    // Now remove all expired tokens
     for (const [token, info] of Array.from(this.tokens.entries())) {
       if (info.state === TokenState.EXPIRED) {
         await this.signOut(token);
@@ -335,7 +327,7 @@ export class TokenService {
     const tokenIds = this.userTokens.get(userId);
     if (!tokenIds) return;
     for (const token of Array.from(tokenIds)) {
-      // Publish token removed event for each token (mirrors hsweb UserTokenRemovedEvent)
+      // Publish token removed event for each token
       await this.publishEvent(
         AUTH_EVENT_TOPICS.TOKEN_REMOVED,
         createTokenRemovedEvent(token, userId),

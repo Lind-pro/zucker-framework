@@ -10,7 +10,7 @@ import type { TokenUsage } from './ai-provider.interface';
  *
  * @example
  * ```ts
- * import { openAIStreamExtractor, AICallWrapper } from '@zucker/ai';
+ * import { openAIStreamExtractor, AICallWrapper } from '@zucker-framework/ai';
  * import OpenAI from 'openai';
  *
  * const stream = await openai.chat.completions.create({

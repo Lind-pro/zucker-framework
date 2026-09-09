@@ -9,7 +9,7 @@ import {
   Type,
 } from '@nestjs/common';
 import { ApiResponse, ApiOperation } from '@nestjs/swagger';
-import { type TreeSortSupportEntity } from '@zucker/core';
+import { type TreeSortSupportEntity } from '@zucker-framework/core';
 import { TreeService } from './tree.service';
 import { type DynamicQueryParam } from './dynamic-query.service';
 
@@ -23,7 +23,7 @@ export class TreeControllerHost<T extends TreeSortSupportEntity> {
 
 /**
  * 树形结构控制器工厂
- * 对齐 hsweb ReactiveTreeServiceQueryController + ReactiveTreeServiceCrudController 路由
+ * 提供树形查询和树节点 CRUD 路由
  *
  * 路由:
  * - GET  /_query/tree          动态查询并返回树形结构
@@ -42,7 +42,6 @@ export function TreeController<T extends TreeSortSupportEntity>(
 
     /**
      * GET 方式动态查询并返回树形结构
-     * 对齐 hsweb GET /_query/tree
      */
     @Get('_query/tree')
     @ApiOperation({ summary: '使用GET动态查询并返回树形结构' })
@@ -53,7 +52,6 @@ export function TreeController<T extends TreeSortSupportEntity>(
 
     /**
      * POST 方式动态查询并返回树形结构
-     * 对齐 hsweb POST /_query/tree
      */
     @Post('_query/tree')
     @ApiOperation({ summary: '使用POST动态查询并返回树形结构' })
@@ -64,7 +62,6 @@ export function TreeController<T extends TreeSortSupportEntity>(
 
     /**
      * GET 方式动态查询并返回子节点数据（扁平列表）
-     * 对齐 hsweb GET /_query/_children
      */
     @Get('_query/_children')
     @ApiOperation({ summary: '使用GET动态查询并返回子节点数据' })
@@ -75,7 +72,6 @@ export function TreeController<T extends TreeSortSupportEntity>(
 
     /**
      * POST 方式动态查询并返回子节点数据（扁平列表）
-     * 对齐 hsweb POST /_query/_children
      */
     @Post('_query/_children')
     @ApiOperation({ summary: '使用POST动态查询并返回子节点数据' })
@@ -86,7 +82,6 @@ export function TreeController<T extends TreeSortSupportEntity>(
 
     /**
      * GET 方式动态查询并返回子节点树形结构
-     * 对齐 hsweb GET /_query/_children/tree
      */
     @Get('_query/_children/tree')
     @ApiOperation({ summary: '使用GET动态查询并返回子节点树形结构数据' })
@@ -97,7 +92,6 @@ export function TreeController<T extends TreeSortSupportEntity>(
 
     /**
      * POST 方式动态查询并返回子节点树形结构
-     * 对齐 hsweb POST /_query/_children/tree
      */
     @Post('_query/_children/tree')
     @ApiOperation({ summary: '使用POST动态查询并返回子节点树形结构数据' })
@@ -108,7 +102,7 @@ export function TreeController<T extends TreeSortSupportEntity>(
 
     /**
      * 删除节点及其所有子节点
-     * 对齐 hsweb ReactiveTreeSortEntityService.deleteById — 级联删除子节点
+     * 级联删除子节点
      */
     @Delete(':id')
     @ApiOperation({ summary: '删除节点及其所有子节点' })
