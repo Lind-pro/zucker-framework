@@ -2,9 +2,11 @@ import { randomUUID } from 'node:crypto';
 import { setTimeout as wait } from 'node:timers/promises';
 
 export function createRegistryReader(registry, { request = globalThis.fetch, sleep = wait } = {}) {
-  async function document(name, version) {
+  async function document(name, version, tags = false) {
     if (!/^@[a-z0-9._-]+\/[a-z0-9][a-z0-9._-]*$/.test(name)) throw new Error('Invalid registry package name');
-    const path = `${name.replace('/', '%2F')}${version ? `/${encodeURIComponent(version)}` : ''}`;
+    const encodedName = name.replace('/', '%2F');
+    const path = tags ? `-/package/${encodedName}/dist-tags`
+      : `${encodedName}${version ? `/${encodeURIComponent(version)}` : ''}`;
     for (let attempt = 0; attempt < 3; attempt++) {
       const url = new URL(path, registry.endsWith('/') ? registry : `${registry}/`);
       // Registry edges can cache the 404 read before a package's first publish.
@@ -55,8 +57,8 @@ export function createRegistryReader(registry, { request = globalThis.fetch, sle
       if (metadata.dist.shasum !== expectedSha1) throw new Error(`Registry checksum verification failed after publishing ${name}@${expectedVersion}`);
     },
     async verifyTag(name, expectedVersion, tag) {
-      const metadata = await afterPublish(() => document(name), `${name} tags`);
-      if (metadata.name !== name || metadata['dist-tags']?.[tag] !== expectedVersion) {
+      const metadata = await afterPublish(() => document(name, undefined, true), `${name} tags`);
+      if (metadata?.[tag] !== expectedVersion) {
         throw new Error(`Registry tag verification failed: ${name}@${tag} does not select ${expectedVersion}`);
       }
     },

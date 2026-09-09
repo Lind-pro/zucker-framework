@@ -162,6 +162,8 @@ so a partially completed first release can be prepared again without trying to
 simulate overwriting an existing version.
 At the end of the batch it also checks the requested distribution tag for every
 package, including versions skipped on retry, and writes `registry-verification.json`.
+Tag checks use npm's dedicated `/-/package/<name>/dist-tags` endpoint, because the
+aggregated package index can remain unavailable briefly after a first publication.
 It fails on a tag mismatch instead of silently moving a tag with different credentials.
 
 Uploads follow the dependency graph from the actual packed manifests, including

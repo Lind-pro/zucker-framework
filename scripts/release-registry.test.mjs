@@ -6,6 +6,16 @@ const name = '@zucker-framework/core', version = '1.0.0', shasum = 'a'.repeat(40
 const metadata = { name, version, dist: { shasum }, 'dist-tags': { latest: version } };
 const response = (body, status = 200) => new Response(JSON.stringify(body), { status });
 
+test('reads tags through the native dist-tags endpoint rather than the delayed package index', async () => {
+  const reader = createRegistryReader('https://registry.npmjs.org/', {
+    request: async url => {
+      assert.equal(new URL(url).pathname, '/-/package/@zucker-framework%2Fcore/dist-tags');
+      return response({ latest: version });
+    },
+  });
+  await reader.verifyTag(name, version, 'latest');
+});
+
 test('uses fresh version-specific reads and tolerates a temporarily missing post-publish document', async () => {
   const urls = [], waits = [];
   const reader = createRegistryReader('https://registry.npmjs.org/', {

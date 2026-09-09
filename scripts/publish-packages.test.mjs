@@ -72,6 +72,7 @@ globalThis.fetch = async (url) => {
   if (parsed.hostname !== 'registry.npmjs.org' || !parsed.searchParams.has('release_check')) throw new Error('Unexpected registry request');
   fs.appendFileSync(${JSON.stringify(networkLog)}, String(url) + '\\n');
   if (!fs.existsSync(${JSON.stringify(published)})) return new Response('{}', { status: 404 });
+  if (parsed.pathname.endsWith('/dist-tags')) return new Response(JSON.stringify({ latest: process.env.ZUCKER_TEST_TAG_VERSION || '1.0.0' }));
   return new Response(JSON.stringify({ name: '@zucker-framework/publish-fixture', version: '1.0.0', dist: { shasum: ${JSON.stringify(digest)} },
     'dist-tags': { latest: process.env.ZUCKER_TEST_TAG_VERSION || '1.0.0' } }));
 };\n`);
