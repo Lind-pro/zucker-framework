@@ -27,13 +27,16 @@ const data = JSON.parse(fs.readFileSync(${JSON.stringify(file)}, 'utf8'));
 fs.appendFileSync(${JSON.stringify(join(directory, 'github-calls.jsonl'))}, JSON.stringify(args) + '\\n');
 if (args[0] === 'api') {
   const path = args.at(-1);
-  if (path.includes('/workflows/')) console.log(JSON.stringify({ workflow_runs: data.runs ?? [data.ci] }));
+  if (path.includes('/workflows/${releasePolicy.automaticWorkflow}/')) console.log(JSON.stringify({ workflow_runs: data.automaticRuns ?? [] }));
+  else if (path.includes('/workflows/')) console.log(JSON.stringify({ workflow_runs: data.runs ?? [data.ci] }));
   else if (path.includes('/jobs?')) console.log(JSON.stringify({ jobs: data.jobs }));
-  else if (path.includes('/artifacts?')) console.log(JSON.stringify({ artifacts: path.includes('/' + data.ci.id + '/') ? data.ciArtifacts : data.releaseArtifacts }));
+  else if (path.includes('/artifacts?')) console.log(JSON.stringify({ artifacts: data.ci.id === data.preparation.id
+    ? [...data.ciArtifacts, ...data.releaseArtifacts] : path.includes('/' + data.ci.id + '/') ? data.ciArtifacts : data.releaseArtifacts }));
   else if (path.endsWith('/' + data.preparation.id)) console.log(JSON.stringify(data.preparation));
+  else if (path.endsWith('/' + data.ci.id)) console.log(JSON.stringify(data.ci));
   else throw new Error('Unexpected fixture GitHub API path: ' + path);
 } else if (args[0] === 'run' && args[1] === 'download') {
-  const source = args[2] === String(data.ci.id) ? data.ciDirectory : data.preparedDirectory;
+  const source = args[args.indexOf('--name') + 1].startsWith('${releasePolicy.ciArtifactPrefix}-') ? data.ciDirectory : data.preparedDirectory;
   if (!source) throw new Error('No fixture artifact directory configured');
   fs.cpSync(source, args[args.indexOf('--dir') + 1], { recursive: true });
 } else throw new Error('Unexpected gh command');

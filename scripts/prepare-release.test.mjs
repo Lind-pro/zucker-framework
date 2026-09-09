@@ -28,11 +28,13 @@ function fixture() {
 const value = process.argv.at(-1) === 'HEAD' ? ${JSON.stringify(commit)} : ${JSON.stringify(tree)};
 console.log(value);
 `, { mode: 0o755 });
+  const environment = { GITHUB_ACTIONS: 'true', GITHUB_SHA: commit, GITHUB_RUN_ID: '200', GITHUB_RUN_ATTEMPT: '1',
+    GITHUB_STEP_SUMMARY: '', GITHUB_OUTPUT: '', GITHUB_WORKFLOW_REF: '' };
   const run = (...args) => spawnSync(process.execPath, [join(root, 'scripts/prepare-release.mjs'), ...args], {
     cwd: directory, encoding: 'utf8', env: { ...process.env, PATH: `${join(directory, 'bin')}:${process.env.PATH}`,
-      GITHUB_ACTIONS: 'true', GITHUB_SHA: commit, GITHUB_RUN_ID: '200', GITHUB_RUN_ATTEMPT: '1', GITHUB_STEP_SUMMARY: '' },
+      ...environment },
   });
-  return { directory, source, hash, github, run };
+  return { directory, source, hash, github, run, environment };
 }
 
 test('downloads, seals and retrieves the same CI bytes with the approved checksum', () => {
@@ -83,10 +85,11 @@ test('workflows retain verified artifacts and the publication job cannot rebuild
   assert(ciSteps.some(step => step.run?.includes('--output artifacts/ci-release')));
   assert(ciSteps.at(-1).with.name.startsWith(releasePolicy.ciArtifactPrefix));
   for (const workflow of [prepare, publish]) {
-    const job = Object.values(workflow.jobs)[0];
-    for (const step of job.steps) {
+    for (const job of Object.values(workflow.jobs)) {
+    for (const step of job.steps ?? []) {
       assert(!/pnpm (?:build|pack|install)|npm run (?:build|pack)|verify-package-artifacts/.test(step.run ?? ''));
       assert(!/\$\{\{\s*inputs\./.test(step.run ?? ''));
+    }
     }
   }
   assert.equal(publish.jobs.publish.permissions['id-token'], 'write');
@@ -94,4 +97,45 @@ test('workflows retain verified artifacts and the publication job cannot rebuild
   assert(publish.jobs.publish.steps.some(step => step.run?.includes('--auth oidc')));
   assert(!JSON.stringify(publish).includes('NODE_AUTH_TOKEN'));
   assert(prepare.jobs.prepare.steps.some(step => step.run?.includes('--dry-run')));
+  assert.deepEqual(publish.on.push.branches, ['main']);
+  assert.equal(publish.on.workflow_run, undefined);
+  assert.equal(ci.on.push, undefined);
+  assert('workflow_call' in ci.on);
+  assert.equal(publish.jobs.ci.uses, './.github/workflows/ci.yml');
+  assert.equal(publish.jobs.prepare.needs, 'ci');
+  assert.equal(publish.jobs.publish.needs, 'prepare');
+  assert.equal(publish.jobs.publish.environment, 'npm-publish');
+});
+
+test('automatic push seals and publishes the same-run artifact only after preparation completes', () => {
+  const f = fixture();
+  try {
+    Object.assign(f.environment, { GITHUB_REPOSITORY: releasePolicy.repository, GITHUB_EVENT_NAME: 'push',
+      GITHUB_REF: 'refs/heads/main', GITHUB_RUN_ID: '100',
+      GITHUB_WORKFLOW_REF: `${releasePolicy.repository}/.github/workflows/publish.yml@refs/heads/main`,
+      GITHUB_OUTPUT: join(f.directory, 'outputs') });
+    Object.assign(f.github.data.ci, { path: '.github/workflows/publish.yml', status: 'in_progress', conclusion: null });
+    f.github.data.preparation = { ...f.github.data.ci };
+    f.github.data.jobs = f.github.data.jobs.map(job => ({ ...job, name: `CI / ${job.name}` }));
+    const preparationJob = { name: releasePolicy.automaticPrepareJob, status: 'in_progress', conclusion: null };
+    f.github.data.jobs.push(preparationJob);
+    f.github.data.releaseArtifacts[0].name = `${releasePolicy.releaseArtifactPrefix}-100-1`;
+    f.github.save();
+    const prepared = join(f.directory, 'prepared');
+    assert.equal(f.run('download-ci', '--output', prepared).status, 0);
+    const seal = f.run('seal', '--bundle', prepared, '--tag', 'latest');
+    assert.equal(seal.status, 0, seal.stderr);
+    assert.equal(readFileSync(f.environment.GITHUB_OUTPUT, 'utf8'), `manifest_sha256=${f.hash}\n`);
+    f.github.data.preparedDirectory = prepared; f.github.save();
+    const output = join(f.directory, 'downloaded');
+    const download = () => f.run('download-prepared', '--run', '100', '--manifest-sha256', f.hash, '--output', output);
+    assert.match(download().stderr, /Required CI job/);
+    assert(!existsSync(output));
+    Object.assign(preparationJob, { status: 'completed', conclusion: 'success' });
+    // The fixture uses the artifact name, because both artifacts share one run.
+    f.github.save();
+    const result = download();
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(readFileSync(join(output, 'artifact.bin')), readFileSync(join(f.source, 'artifact.bin')));
+  } finally { rmSync(f.directory, { recursive: true, force: true }); }
 });

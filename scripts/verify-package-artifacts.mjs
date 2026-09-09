@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertTarballContent } from './verify-package-content.mjs';
+import { assertStaticRuntimeDependencies } from './verify-runtime-dependencies.mjs';
 
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const rootManifest = JSON.parse(readFileSync(join(rootDir, 'package.json'), 'utf8'));
@@ -108,6 +109,9 @@ try {
     }
     const manifest = readPackedManifest(tarball);
     assertTarballContent(tarball);
+    for (const file of capture('tar', ['-tf', tarball]).trim().split('\n').filter(file => file.endsWith('.mjs'))) {
+      assertStaticRuntimeDependencies(manifest, capture('tar', ['-xOf', tarball, '--', file]), file);
+    }
     assertPortableDependencies(manifest);
     assertPublishedFiles(manifest, tarball);
     return { filename, tarball, manifest, sha256: sha256(tarball) };

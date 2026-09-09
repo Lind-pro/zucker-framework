@@ -1,6 +1,6 @@
 {
   "name": "@zucker-framework/crud",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -37,14 +37,6 @@
     "@nestjs/swagger": "^12.0.0",
     "@zucker-framework/cache": "workspace:*",
     "@zucker-framework/event": "workspace:*"
-  },
-  "peerDependenciesMeta": {
-    "@zucker-framework/cache": {
-      "optional": true
-    },
-    "@zucker-framework/event": {
-      "optional": true
-    }
   },
   "devDependencies": {
     "@nestjs/swagger": "^12.0.1",

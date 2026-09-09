@@ -1,5 +1,17 @@
 # @zucker-framework/admin
 
+## 1.0.1
+
+### Patch Changes
+
+- Updated dependencies
+  - @zucker-framework/crud@1.0.1
+  - @zucker-framework/credit@1.0.1
+  - @zucker-framework/auth@1.0.1
+  - @zucker-framework/config@1.0.1
+  - @zucker-framework/dictionary@1.0.1
+  - @zucker-framework/form@1.0.1
+
 ## 1.0.0
 
 ### Major Changes

@@ -1,5 +1,16 @@
 # @zucker-framework/credit
 
+## 1.0.1
+
+### Patch Changes
+
+- Declare cache/event peers required where the public entry imports their runtime
+  tokens unconditionally. This fixes missing modules when consumers install auth,
+  crud or rule-engine without the rest of the monorepo. Refresh the CLI scaffold
+  catalog so newly generated server projects include the required cache package.
+  Refresh credit's packed development dependency metadata for the new CRUD version
+  without rebuilding different metadata under an already published credit version.
+
 ## 1.0.0
 
 ### Major Changes

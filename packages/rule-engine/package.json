@@ -1,6 +1,6 @@
 {
   "name": "@zucker-framework/rule-engine",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -24,11 +24,6 @@
     "@nestjs/common": "^12.0.0",
     "@nestjs/core": "^12.0.0",
     "@zucker-framework/event": "workspace:*"
-  },
-  "peerDependenciesMeta": {
-    "@zucker-framework/event": {
-      "optional": true
-    }
   },
   "devDependencies": {
     "@zucker-framework/event": "workspace:*",

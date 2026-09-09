@@ -1,5 +1,12 @@
 # @zucker-framework/form
 
+## 1.0.1
+
+### Patch Changes
+
+- Updated dependencies
+  - @zucker-framework/crud@1.0.1
+
 ## 1.0.0
 
 ### Major Changes

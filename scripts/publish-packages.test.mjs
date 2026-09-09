@@ -39,6 +39,7 @@ function fixture(name = '@zucker-framework/publish-fixture', version = '1.0.0') 
   writeFileSync(join(bin, 'npm'), '#!/usr/bin/env node\nrequire("node:fs").appendFileSync(process.env.ZUCKER_NPM_TEST_LOG, JSON.stringify(process.argv.slice(2)) + "\\n");\n', { mode: 0o755 });
   const run = (args = [], environment = {}) => spawnSync(process.execPath, [script, '--bundle', directory, '--allow-dirty', ...args], {
     cwd: rootDir, encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, ZUCKER_NPM_TEST_LOG: log,
+      GITHUB_RUN_ID: '', GITHUB_WORKFLOW_REF: '',
       NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${pathToFileURL(missingRegistry).href}`.trim(), ...environment },
   });
   return { directory, manifest, manifestFile, log, run };

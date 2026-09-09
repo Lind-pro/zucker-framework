@@ -22,9 +22,10 @@ second SDK merely because a consumer uses the reliability wrapper.
 ## Release prerequisites
 
 1. The worktree is clean and the source commit is available from a protected remote.
-2. The latest main-branch push run of `ci.yml` has succeeded for that exact commit.
-   Both `Build & Lint` and `Durable Runtime Contracts` must succeed; skipped jobs,
-   PR runs, other workflows and other commits do not satisfy this requirement.
+2. The main-branch push pipeline in `publish.yml` has completed both reusable CI
+   jobs for that exact commit: `CI / Build & Lint` and `CI / Durable Runtime Contracts`.
+   Skipped jobs, PR runs and other commits do not satisfy this requirement. The
+   publisher validates job completion through GitHub’s API for the current attempt.
 3. The npm account has permission to publish to the `zucker-framework` organization. The
    current target is public packages at `https://registry.npmjs.org/`, retaining
    `@zucker-framework/*`. Owning a GitHub namespace does not establish npm scope permission.
@@ -122,31 +123,62 @@ Turning off source maps does not remove old output. Rebuild clean artifacts duri
 an authorized release preparation; do not overwrite previously audited or published
 versions. Old archives containing source maps are intentionally rejected.
 
-## Publishing
+## Automatic publication
 
-1. Submit the reviewed source to `main` and wait for CI on that commit to finish.
-   CI keeps the verified release artifact only for main-branch push runs.
-2. Run `Prepare framework release` (`release.yml`) at that same commit, selecting
-   the distribution tag (`latest` for 1.0.0). It checks CI through GitHub's API,
-   downloads the exact CI artifact, performs npm dry runs and records a release
-   receipt. Its summary contains the preparation run ID and manifest SHA-256.
-3. Review that run's package list, versions and checksum. The successful run retains
-   `zucker-framework-release-<run-id>-<attempt>`. Missing, expired or superseded
-   workflow attempts fail verification rather than silently rebuilding artifacts.
-   When rerunning CI, rerun all jobs so both required checks and the build artifact
-   belong to the same attempt, then prepare the release again.
-4. For the first release, download that approved artifact locally and publish using
-   the maintainer's session and 2FA, as shown below. After trusted publishing is
-   configured, use `Publish prepared framework release` (`publish.yml`), entering
-   the preparation run ID, approved manifest SHA-256 and the same distribution tag.
+A push to `main` starts `Publish framework packages` (`publish.yml`). It calls
+`ci.yml`, waits for both required jobs, downloads their exact verified artifact,
+checks all tarballs and registry versions in a dry run, seals a receipt, and then
+publishes through npm OIDC. Preparation and publication run in separate jobs and
+never rebuild or repack. Only the publication job receives `id-token: write`.
+PRs run CI without publishing. Source checkout, CI artifacts, receipt and GitHub
+OIDC identity all identify the original push SHA, even when `main` advances.
+Publication runs are serialized and an active upload is never automatically cancelled.
 
-Dispatch publication at a ref that still identifies the preparation commit. If
-`main` has advanced, use a release tag pointing to the original commit. The workflow
-does not check out a different commit behind GitHub's OIDC identity. An altered
-manifest, wrong source commit, tag mismatch, failed CI job or stale receipt stops
-publication before npm uploads. Workflow dispatch with the reviewed run ID and
-checksum is the explicit upload decision; additional GitHub environment reviewer
-rules can be configured separately if a second approver is desired.
+Before pushing a package change:
+
+```bash
+pnpm changeset
+pnpm version-packages
+pnpm install --lockfile-only --ignore-scripts
+```
+
+Select patch/minor/major according to the public contract, review the generated
+versions and changelogs, and commit those files with the change. `pnpm changeset`
+records release intent; `pnpm version-packages` applies it before CI builds the
+artifacts. Unconsumed Changeset files alone do not change published versions.
+The CLI's embedded release catalog changes whenever any framework version changes,
+so include a CLI patch in release plans. Also bump a package when a changed
+workspace dependency appears in its packed metadata, including development peers.
+The dry-run checksum check catches missed version bumps before any package upload.
+
+A push with no changed package bytes skips all uploads. Changing package bytes
+without increasing that package's version fails preparation rather than overwriting
+an existing version. There is no automatic version increase for a documentation
+commit. New packages require an initial maintainer publication and their own npm
+trusted publisher binding before they can join automatic publication.
+
+The npm bindings for all existing packages use GitHub owner `Lind-pro`, repository
+`zucker-framework`, workflow filename `publish.yml`, environment `npm-publish`,
+and direct `npm publish` permission. GitHub's `npm-publish` environment allows only
+the `main` branch and requires no manual reviewer. No npm token secret is used.
+Changing the workflow filename, repository or environment requires updating npm's
+external bindings as well. The repository remains private; npm does not generate
+provenance for private source repositories.
+
+For recovery, use **Re-run all jobs** on the original push run. This keeps source
+identity fixed and produces matching CI and preparation artifacts for the new
+attempt. Byte-identical versions already uploaded are skipped. Re-running only the
+failed job cannot reuse a receipt from an older attempt. If build inputs have
+changed despite the lockfile and produce different bytes, stop and prepare a new
+version; never replace a published artifact. Artifact retention is 30 days.
+
+The manual `release.yml` preparation and the `publish.yml` dispatch inputs remain
+available for a reviewed bundle at the current `main` commit. The latter requires
+the preparation run ID, manifest SHA-256 and matching distribution tag; it downloads
+that approved bundle without running CI again. Older `ci.yml` main push evidence
+remains supported for historical initial-release receipts. For a historical commit
+that is no longer `main`, use the original push run's complete rerun instead of
+changing checkout behind the workflow's OIDC identity.
 
 The publisher verifies every checksum before upload. It queries all package versions
 before publishing: an existing version with the same registry SHA-1 is skipped, while
@@ -204,18 +236,10 @@ authentication occurs during `npm publish`, so `npm whoami` is deliberately skip
 for that mode. Public registry version/checksum reads do not require OIDC. The job
 must run on GitHub-hosted runners at the exact release SHA with `id-token: write`.
 
-After the packages exist, configure each package's npm trusted publisher with
-GitHub owner `Lind-pro`, repository `zucker-framework`, workflow `publish.yml`, and
-permission for direct `npm publish`. Newly configured trusted publishers may
-default to stage-only access; that is not sufficient for this workflow. These npm
-settings are external prerequisites, not changes made by committing workflow files.
-The workflows pin Node 24.14.1 and publishing npm 11.19.1; OIDC itself requires npm
->=11.5.1. Source repositories may remain private; npm provenance is not generated
-for private repositories.
-
-Optional future staged publishing requires npm >=11.15.0, existing package records
-and maintainer 2FA approval. It cannot bootstrap a brand-new package and is not used
-by this direct-publication workflow. See npm's [trusted publishing](https://docs.npmjs.com/trusted-publishers)
+The workflows pin Node 24.14.1 and npm 11.19.1; OIDC requires npm >=11.5.1.
+Use GitHub-hosted runners. npm's direct-publish permission is required: stage-only
+permission would still require human 2FA approval and does not provide automatic
+publication. See npm's [trusted publishing](https://docs.npmjs.com/trusted-publishers)
 and [staged publishing](https://docs.npmjs.com/staged-publishing) documentation.
 
 `--publish`, `--dry-run` and `--plan` must be used consistently; `--plan` cannot
@@ -223,6 +247,17 @@ upload packages. Dirty source is never accepted for upload. Keep registry tokens
 out of tracked `.npmrc` files and command history.
 
 ## Consumer checks
+
+The published 1.0.0 CRUD entry imports cache and event runtime tokens while marking
+those peers optional; rule-engine likewise imports its optional event peer. Consumers remaining on 1.0.0 and using auth/CRUD should install
+`@zucker-framework/cache@1.0.0` and `@zucker-framework/event@1.0.0` explicitly.
+Rule-engine consumers must include event. A direct public-registry install with
+these peers has passed ESM/CJS and CLI checks. Version 1.0.1 corrects the
+required-peer declarations and refreshes the CLI scaffold catalog.
+
+Artifact verification now checks static ESM imports against runtime dependency
+declarations before installing the entire bundle, preventing unrelated installed
+workspace packages from hiding this class of missing-dependency problem.
 
 Artifact verification installs tarballs in fresh npm and pnpm consumers, verifies
 portable dependency declarations, checks peers and exercises ESM/CommonJS exports.

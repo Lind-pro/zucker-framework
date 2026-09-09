@@ -1,10 +1,12 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
+  workflow_call:
   pull_request:
     branches: [main]
+
+permissions:
+  contents: read
 
 env:
   NODE_VERSION: '24.14.1'
@@ -32,7 +34,8 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Test package content checks
-        run: node --test scripts/verify-package-content.test.mjs scripts/prepare-package-legal.test.mjs scripts/publish-packages.test.mjs scripts/release-graph.test.mjs scripts/release-github.test.mjs scripts/release-registry.test.mjs scripts/prepare-release.test.mjs
+        # Declaration checks alone cannot detect optional peers that a barrel imports at runtime.
+        run: node --test scripts/verify-package-content.test.mjs scripts/verify-runtime-dependencies.test.mjs scripts/prepare-package-legal.test.mjs scripts/publish-packages.test.mjs scripts/release-graph.test.mjs scripts/release-github.test.mjs scripts/release-registry.test.mjs scripts/prepare-release.test.mjs
 
       - name: Build all packages
         env:

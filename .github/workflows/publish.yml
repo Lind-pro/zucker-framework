@@ -1,6 +1,8 @@
-name: Publish prepared framework release
+name: Publish framework packages
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       prepared_run_id:
@@ -26,21 +28,67 @@ permissions:
   actions: read
 
 jobs:
+  ci:
+    name: CI
+    if: github.event_name == 'push'
+    uses: ./.github/workflows/ci.yml
+
+  prepare:
+    name: Prepare the exact CI-verified bundle
+    needs: ci
+    runs-on: ubuntu-latest
+    outputs:
+      manifest_sha256: ${{ steps.seal.outputs.manifest_sha256 }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.14.1'
+          package-manager-cache: false
+
+      - name: Install the pinned publishing CLI
+        run: npm install --global npm@11.19.1 --ignore-scripts --no-audit --no-fund
+
+      - name: Download the exact bundle from the successful CI jobs
+        run: node scripts/prepare-release.mjs download-ci --output artifacts/release
+
+      - name: Verify all versions and tarballs before any upload
+        run: node scripts/publish-packages.mjs --bundle artifacts/release --dry-run --tag latest
+
+      - name: Seal the verified bundle
+        id: seal
+        run: node scripts/prepare-release.mjs seal --bundle artifacts/release --tag latest
+
+      - name: Save the immutable prepared bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: zucker-framework-release-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/release
+          if-no-files-found: error
+          retention-days: 30
+
   publish:
     name: Publish the approved bundle through OIDC
+    needs: prepare
+    if: >-
+      always() && !cancelled() && github.ref == 'refs/heads/main' &&
+      (needs.prepare.result == 'success' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
+    environment: npm-publish
     permissions:
       contents: read
       actions: read
       id-token: write
     env:
       GH_TOKEN: ${{ github.token }}
-      PREPARED_RUN_ID: ${{ inputs.prepared_run_id }}
-      APPROVED_MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
-      RELEASE_TAG: ${{ inputs.dist_tag }}
+      PREPARED_RUN_ID: ${{ github.event_name == 'push' && github.run_id || inputs.prepared_run_id }}
+      APPROVED_MANIFEST_SHA256: ${{ github.event_name == 'push' && needs.prepare.outputs.manifest_sha256 || inputs.manifest_sha256 }}
+      RELEASE_TAG: ${{ github.event_name == 'push' && 'latest' || inputs.dist_tag }}
     steps:
-      # Dispatch at the preparation commit/ref so GitHub's OIDC identity and
-      # the checked-out source identify the same SHA.
+      # Push, checkout, CI bundle and OIDC identity all refer to the same SHA.
+      # Never use workflow_run with a checkout of a different producer commit.
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:

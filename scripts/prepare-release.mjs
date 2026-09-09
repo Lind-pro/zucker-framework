@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, writeFileSync, appendFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
-import { releasePolicy, githubApi, assertSuccessfulRun, verifyReleaseCI, verifyPreparedRelease } from './release-github.mjs';
+import { releasePolicy, githubApi, assertPreparationRun, verifyReleaseCI, verifyPreparedRelease } from './release-github.mjs';
 
 const [command, ...args] = process.argv.slice(2);
 function option(name) {
@@ -66,6 +66,7 @@ if (command === 'download-ci') {
   const path = join(directory, 'release-receipt.json');
   if (existsSync(path)) throw new Error('Refusing to replace an existing release receipt');
   writeFileSync(path, `${JSON.stringify(receipt, null, 2)}\n`);
+  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `manifest_sha256=${manifestSha256}\n`);
   const summary = `Source commit: ${commit}\n\nPreparation run: ${preparationRunId}\n\nApproved manifest SHA-256: ${manifestSha256}\n\nRegistry: ${receipt.registry}\n\nDistribution tag: ${distTag}\n`;
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
   console.log(summary);
@@ -74,7 +75,9 @@ if (command === 'download-ci') {
   const expected = option('--manifest-sha256');
   if (!/^[1-9]\d*$/.test(runId) || !Number.isSafeInteger(Number(runId)) || !/^[a-f0-9]{64}$/.test(expected)) throw new Error('Invalid preparation run or approved manifest SHA-256');
   const run = githubApi(`repos/${releasePolicy.repository}/actions/runs/${runId}`);
-  assertSuccessfulRun(run, { commit, workflow: releasePolicy.prepareWorkflow, event: 'workflow_dispatch' });
+  const { jobs = [] } = run.path === `.github/workflows/${releasePolicy.automaticWorkflow}`
+    ? githubApi(`repos/${releasePolicy.repository}/actions/runs/${run.id}/attempts/${run.run_attempt}/jobs?per_page=100`) : {};
+  assertPreparationRun(run, commit, jobs);
   const directory = resolve(option('--output'));
   download(run, releasePolicy.releaseArtifactPrefix, directory);
   const { manifestSha256 } = loadBundle(directory);
