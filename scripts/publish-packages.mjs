@@ -193,17 +193,19 @@ try {
         cwd: npmConfigDirectory, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: npmEnvironment,
       });
     }
-    for (let index = 0; index < artifacts.length; index += 6) {
-      const batch = artifacts.slice(index, index + 6);
-      const versions = await Promise.all(batch.map(artifact => registryReader.version(artifact.name, artifact.version)));
-      for (const [offset, metadata] of versions.entries()) {
-        const artifact = batch[offset];
-        if (!metadata) continue;
-        if (metadata.dist.shasum !== artifact.sha1) {
-          throw new Error(`Immutable version conflict: ${artifact.name}@${artifact.version} already exists with a different checksum`);
-        }
-        alreadyPublished.add(`${artifact.name}@${artifact.version}`);
+  }
+  // Dry runs also skip byte-identical versions: npm itself rejects an attempt
+  // to publish an existing version even when --dry-run is present.
+  for (let index = 0; index < artifacts.length; index += 6) {
+    const batch = artifacts.slice(index, index + 6);
+    const versions = await Promise.all(batch.map(artifact => registryReader.version(artifact.name, artifact.version)));
+    for (const [offset, metadata] of versions.entries()) {
+      const artifact = batch[offset];
+      if (!metadata) continue;
+      if (metadata.dist.shasum !== artifact.sha1) {
+        throw new Error(`Immutable version conflict: ${artifact.name}@${artifact.version} already exists with a different checksum`);
       }
+      alreadyPublished.add(`${artifact.name}@${artifact.version}`);
     }
   }
 

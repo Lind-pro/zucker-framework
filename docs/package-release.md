@@ -157,6 +157,9 @@ cached pre-publication 404 responses. A new version that is temporarily absent i
 retried within a bounded window; an actual identity or checksum mismatch still
 stops immediately. Read-only preflight requests run in small parallel batches;
 uploads remain sequential in dependency order.
+Preparation dry runs likewise skip versions whose published bytes already match,
+so a partially completed first release can be prepared again without trying to
+simulate overwriting an existing version.
 At the end of the batch it also checks the requested distribution tag for every
 package, including versions skipped on retry, and writes `registry-verification.json`.
 It fails on a tag mismatch instead of silently moving a tag with different credentials.

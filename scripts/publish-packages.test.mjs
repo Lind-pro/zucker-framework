@@ -34,9 +34,12 @@ function fixture(name = '@zucker-framework/publish-fixture', version = '1.0.0') 
   writeFileSync(manifestFile, JSON.stringify(manifest));
   const bin = join(directory, 'bin'); mkdirSync(bin);
   const log = join(directory, 'npm-calls.jsonl');
+  const missingRegistry = join(directory, 'missing-registry.mjs');
+  writeFileSync(missingRegistry, 'globalThis.fetch = async () => new Response("{}", { status: 404 });\n');
   writeFileSync(join(bin, 'npm'), '#!/usr/bin/env node\nrequire("node:fs").appendFileSync(process.env.ZUCKER_NPM_TEST_LOG, JSON.stringify(process.argv.slice(2)) + "\\n");\n', { mode: 0o755 });
   const run = (args = [], environment = {}) => spawnSync(process.execPath, [script, '--bundle', directory, '--allow-dirty', ...args], {
-    cwd: rootDir, encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, ZUCKER_NPM_TEST_LOG: log, ...environment },
+    cwd: rootDir, encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, ZUCKER_NPM_TEST_LOG: log,
+      NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${pathToFileURL(missingRegistry).href}`.trim(), ...environment },
   });
   return { directory, manifest, manifestFile, log, run };
 }
@@ -204,6 +207,9 @@ test('resumes identical published versions and verifies the final tag for the wh
     const calls = readFileSync(f.log, 'utf8').trim().split('\n').map(JSON.parse);
     assert.equal(calls.filter(args => args[0] === 'publish').length, 1);
     assert(existsSync(join(f.directory, 'registry-verification.json')));
+    assert.equal(f.run(['--dry-run'], environment).status, 0);
+    const afterDryRun = readFileSync(f.log, 'utf8').trim().split('\n').map(JSON.parse);
+    assert.equal(afterDryRun.filter(args => args[0] === 'publish').length, 1);
     assert.match(f.run(['--publish', '--auth', 'session'], { ...environment, ZUCKER_TEST_TAG_VERSION: '0.9.0' }).stderr, /Registry tag verification failed/);
   } finally { rmSync(f.directory, { recursive: true, force: true }); }
 });
