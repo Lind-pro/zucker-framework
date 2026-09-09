@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { assertTarballContent } from './verify-package-content.mjs';
 import { orderReleasePackages } from './release-graph.mjs';
 import { verifyPreparedRelease } from './release-github.mjs';
+import { createRegistryReader } from './release-registry.mjs';
 
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -178,6 +179,7 @@ try {
     npmEnvironment.NPM_CONFIG_GLOBALCONFIG = globalConfig;
   }
   const alreadyPublished = new Set();
+  const registryReader = createRegistryReader(registry);
   if (!dryRun) {
     if (authentication === 'oidc') {
       const version = execFileSync('npm', ['--version'], { encoding: 'utf8', env: npmEnvironment }).trim();
@@ -191,15 +193,17 @@ try {
         cwd: npmConfigDirectory, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: npmEnvironment,
       });
     }
-    for (const artifact of artifacts) {
-      const publishedSha1 = publishedShasum(artifact, registry, npmEnvironment, npmConfigDirectory);
-      if (!publishedSha1) continue;
-      if (publishedSha1 !== artifact.sha1) {
-        throw new Error(
-          `Immutable version conflict: ${artifact.name}@${artifact.version} already exists with a different checksum`,
-        );
+    for (let index = 0; index < artifacts.length; index += 6) {
+      const batch = artifacts.slice(index, index + 6);
+      const versions = await Promise.all(batch.map(artifact => registryReader.version(artifact.name, artifact.version)));
+      for (const [offset, metadata] of versions.entries()) {
+        const artifact = batch[offset];
+        if (!metadata) continue;
+        if (metadata.dist.shasum !== artifact.sha1) {
+          throw new Error(`Immutable version conflict: ${artifact.name}@${artifact.version} already exists with a different checksum`);
+        }
+        alreadyPublished.add(`${artifact.name}@${artifact.version}`);
       }
-      alreadyPublished.add(`${artifact.name}@${artifact.version}`);
     }
   }
 
@@ -230,22 +234,14 @@ try {
       env: npmEnvironment,
     });
     if (!dryRun) {
-      const publishedSha1 = publishedShasum(artifact, registry, npmEnvironment, npmConfigDirectory);
-      if (publishedSha1 !== artifact.sha1) {
-        throw new Error(`Registry checksum verification failed after publishing ${packageId}`);
-      }
+      await registryReader.verifyVersion(artifact.name, artifact.version, artifact.sha1);
     }
   }
   if (!dryRun) {
     // A matching existing tarball does not prove the requested dist-tag still
     // selects it. Check the entire batch, including packages skipped on retry.
     for (const artifact of artifacts) {
-      const tags = JSON.parse(execFileSync('npm', ['view', artifact.name, 'dist-tags', '--json', '--registry', registry], {
-        cwd: npmConfigDirectory, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: npmEnvironment,
-      }));
-      if (tags[distTag] !== artifact.version) {
-        throw new Error(`Registry tag verification failed: ${artifact.name}@${distTag} does not select ${artifact.version}`);
-      }
+      await registryReader.verifyTag(artifact.name, artifact.version, distTag);
     }
     writeFileSync(join(bundleDir, 'registry-verification.json'), `${JSON.stringify({ sourceCommit: manifest.sourceCommit,
       manifestSha256: sha256(manifestPath), registry, distTag,
@@ -253,29 +249,4 @@ try {
   }
 } finally {
   rmSync(npmConfigDirectory, { recursive: true, force: true });
-}
-
-function publishedShasum(artifact, registry, env, cwd) {
-  try {
-    const output = execFileSync(
-      'npm',
-      [
-        'view',
-        `${artifact.name}@${artifact.version}`,
-        'dist.shasum',
-        '--json',
-        '--registry',
-        registry,
-      ],
-      { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env },
-    );
-    const value = JSON.parse(output);
-    return typeof value === 'string' ? value : undefined;
-  } catch (error) {
-    const details = `${error?.stdout ?? ''}\n${error?.stderr ?? ''}`;
-    if (/E404|404 Not Found|not found/i.test(details)) return undefined;
-    throw new Error(`Unable to inspect ${artifact.name}@${artifact.version} before publishing`, {
-      cause: error,
-    });
-  }
 }

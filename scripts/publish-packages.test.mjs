@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { githubFixture, releaseReceipt } from './release-test-fixtures.mjs';
 
@@ -61,6 +61,17 @@ console.log(values[args[1]]);
   const digest = createHash('sha1').update(readFileSync(join(f.directory, f.manifest.packages[0].filename))).digest('hex');
   const auth = join(f.directory, 'auth.json');
   const published = join(f.directory, 'published');
+  const networkLog = join(f.directory, 'registry-requests.jsonl');
+  const preload = join(f.directory, 'registry-fetch.mjs');
+  writeFileSync(preload, `import fs from 'node:fs';
+globalThis.fetch = async (url) => {
+  const parsed = new URL(url);
+  if (parsed.hostname !== 'registry.npmjs.org' || !parsed.searchParams.has('release_check')) throw new Error('Unexpected registry request');
+  fs.appendFileSync(${JSON.stringify(networkLog)}, String(url) + '\\n');
+  if (!fs.existsSync(${JSON.stringify(published)})) return new Response('{}', { status: 404 });
+  return new Response(JSON.stringify({ name: '@zucker-framework/publish-fixture', version: '1.0.0', dist: { shasum: ${JSON.stringify(digest)} },
+    'dist-tags': { latest: process.env.ZUCKER_TEST_TAG_VERSION || '1.0.0' } }));
+};\n`);
   writeFileSync(join(bin, 'npm'), `#!/usr/bin/env node
 const fs = require('node:fs');
 const args = process.argv.slice(2);
@@ -69,17 +80,14 @@ if (args[0] === 'whoami' || args[0] === '--version') {
   const config = process.env.NPM_CONFIG_USERCONFIG;
   fs.writeFileSync(${JSON.stringify(auth)}, JSON.stringify({ config, contents: fs.readFileSync(config, 'utf8'), hasNodeAuthToken: Boolean(process.env.NODE_AUTH_TOKEN) }));
   console.log(args[0] === '--version' ? '11.19.1' : 'jetlinks');
-} else if (args[0] === 'view') {
-  if (!fs.existsSync(${JSON.stringify(published)})) { process.stderr.write('E404'); process.exit(1); }
-  console.log(JSON.stringify(args[2] === 'dist-tags'
-    ? { latest: process.env.ZUCKER_TEST_TAG_VERSION || '1.0.0' }
-    : ${JSON.stringify(digest)}));
 } else if (args[0] === 'publish') {
   fs.writeFileSync(${JSON.stringify(published)}, 'synthetic registry state');
 } else throw new Error('Unexpected npm command');
 `, { mode: 0o755 });
-  return { ...f, auth, github, approvedHash, rawRun: f.run,
-    run: (args = [], environment = {}) => f.run([...args, '--manifest-sha256', approvedHash], environment) };
+  return { ...f, auth, github, approvedHash, networkLog, rawRun: f.run,
+    run: (args = [], environment = {}) => f.run([...args, '--manifest-sha256', approvedHash], {
+      ...environment, NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${pathToFileURL(preload).href}`.trim(),
+    }) };
 }
 
 test('default release command performs only npm dry runs with public access', () => {
@@ -138,9 +146,9 @@ for (const mode of ['local login', 'CI token']) {
       });
       assert.equal(result.status, 0, result.stderr);
       const calls = readFileSync(f.log, 'utf8').trim().split('\n').map(JSON.parse);
-      assert.deepEqual(calls.map((args) => args[0]), ['whoami', 'view', 'publish', 'view', 'view']);
-      assert.equal(calls.at(-1)[2], 'dist-tags');
-      assert(!calls[2].includes('--dry-run'));
+      assert.deepEqual(calls.map((args) => args[0]), ['whoami', 'publish']);
+      assert.equal(readFileSync(f.networkLog, 'utf8').trim().split('\n').length, 3);
+      assert(!calls[1].includes('--dry-run'));
       const auth = JSON.parse(readFileSync(f.auth, 'utf8'));
       if (mode === 'local login') {
         assert.equal(auth.config, config);
@@ -165,7 +173,7 @@ test('OIDC publishing skips whoami and removes token fallback credentials', () =
     });
     assert.equal(result.status, 0, result.stderr);
     const calls = readFileSync(f.log, 'utf8').trim().split('\n').map(JSON.parse);
-    assert.deepEqual(calls.map(args => args[0]), ['--version', 'view', 'publish', 'view', 'view']);
+    assert.deepEqual(calls.map(args => args[0]), ['--version', 'publish']);
     const auth = JSON.parse(readFileSync(f.auth, 'utf8'));
     assert.equal(auth.hasNodeAuthToken, false);
     assert(!auth.contents.includes('_authToken'));

@@ -32,7 +32,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Test package content checks
-        run: node --test scripts/verify-package-content.test.mjs scripts/prepare-package-legal.test.mjs scripts/publish-packages.test.mjs scripts/release-graph.test.mjs scripts/release-github.test.mjs scripts/prepare-release.test.mjs
+        run: node --test scripts/verify-package-content.test.mjs scripts/prepare-package-legal.test.mjs scripts/publish-packages.test.mjs scripts/release-graph.test.mjs scripts/release-github.test.mjs scripts/release-registry.test.mjs scripts/prepare-release.test.mjs
 
       - name: Build all packages
         env:

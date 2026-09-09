@@ -152,6 +152,11 @@ The publisher verifies every checksum before upload. It queries all package vers
 before publishing: an existing version with the same registry SHA-1 is skipped, while
 an existing version with different bytes stops the release. Each uploaded package is
 queried again to verify the registry checksum.
+Registry checks use public version-specific metadata with unique read URLs to avoid
+cached pre-publication 404 responses. A new version that is temporarily absent is
+retried within a bounded window; an actual identity or checksum mismatch still
+stops immediately. Read-only preflight requests run in small parallel batches;
+uploads remain sequential in dependency order.
 At the end of the batch it also checks the requested distribution tag for every
 package, including versions skipped on retry, and writes `registry-verification.json`.
 It fails on a tag mismatch instead of silently moving a tag with different credentials.
