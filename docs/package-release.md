@@ -186,7 +186,9 @@ an existing version with different bytes stops the release. Each uploaded packag
 queried again to verify the registry checksum.
 Registry checks use public version-specific metadata with unique read URLs to avoid
 cached pre-publication 404 responses. A new version that is temporarily absent is
-retried within a bounded window; an actual identity or checksum mismatch still
+retried with up to five minutes of backoff, allowing npm's asynchronous processing
+after an acknowledged upload to finish. Only metadata reads are retried; the upload
+is never repeated automatically. An actual identity or checksum mismatch still
 stops immediately. Read-only preflight requests run in small parallel batches;
 uploads remain sequential in dependency order.
 Preparation dry runs likewise skip versions whose published bytes already match,

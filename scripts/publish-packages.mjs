@@ -179,7 +179,9 @@ try {
     npmEnvironment.NPM_CONFIG_GLOBALCONFIG = globalConfig;
   }
   const alreadyPublished = new Set();
-  const registryReader = createRegistryReader(registry);
+  const registryReader = createRegistryReader(registry, {
+    onPending: description => process.stdout.write(`Waiting for npm processing: ${description}\n`),
+  });
   if (!dryRun) {
     if (authentication === 'oidc') {
       const version = execFileSync('npm', ['--version'], { encoding: 'utf8', env: npmEnvironment }).trim();

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { setTimeout as wait } from 'node:timers/promises';
 
-export function createRegistryReader(registry, { request = globalThis.fetch, sleep = wait } = {}) {
+export function createRegistryReader(registry, { request = globalThis.fetch, sleep = wait, onPending = () => {} } = {}) {
   async function document(name, version, tags = false) {
     if (!/^@[a-z0-9._-]+\/[a-z0-9][a-z0-9._-]*$/.test(name)) throw new Error('Invalid registry package name');
     const encodedName = name.replace('/', '%2F');
@@ -42,10 +42,15 @@ export function createRegistryReader(registry, { request = globalThis.fetch, sle
   }
 
   async function afterPublish(read, description) {
-    for (let attempt = 0; attempt < 5; attempt++) {
+    // npm can acknowledge a successful publish before its asynchronous processing
+    // exposes the version. Allow five minutes of backoff without retrying a PUT.
+    for (let attempt = 0; attempt < 24; attempt++) {
       const metadata = await read();
       if (metadata !== undefined) return metadata;
-      if (attempt < 4) await sleep(500 * 2 ** attempt);
+      if (attempt < 23) {
+        onPending(description);
+        await sleep(Math.min(1000 * 2 ** attempt, 15000));
+      }
     }
     throw new Error(`Registry did not expose ${description} after publishing; retry the same approved bundle later`);
   }

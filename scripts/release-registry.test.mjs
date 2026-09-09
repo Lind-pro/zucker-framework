@@ -31,7 +31,7 @@ test('uses fresh version-specific reads and tolerates a temporarily missing post
   await reader.verifyVersion(name, version, shasum);
   assert.equal(new Set(urls).size, 3);
   assert(urls.every(url => new URL(url).pathname.endsWith('/1.0.0') && new URL(url).searchParams.has('release_check')));
-  assert.deepEqual(waits, [500]);
+  assert.deepEqual(waits, [1000]);
 });
 
 test('never retries checksum, identity or tag conflicts as propagation delays', async () => {
@@ -52,8 +52,21 @@ test('bounds transient retries and refuses authentication failures or permanentl
   assert.equal(calls, 2);
   const unauthorized = createRegistryReader('https://registry.npmjs.org/', { request: async () => response({}, 403), sleep: async () => assert.fail('403 must fail immediately') });
   await assert.rejects(unauthorized.version(name, version), /failed \(403\)/);
-  let missing = 0;
-  const absent = createRegistryReader('https://registry.npmjs.org/', { request: async () => { missing++; return response({}, 404); }, sleep: async () => {} });
+  let missing = 0, elapsed = 0;
+  const absent = createRegistryReader('https://registry.npmjs.org/', { request: async () => { missing++; return response({}, 404); }, sleep: async ms => { elapsed += ms; } });
   await assert.rejects(absent.verifyVersion(name, version, shasum), /did not expose/);
-  assert.equal(missing, 5);
+  assert.equal(missing, 24);
+  assert.equal(elapsed, 300000);
+});
+
+test('accepts a published version that remains in npm processing for over a minute', async () => {
+  let calls = 0, elapsed = 0, notices = 0;
+  const reader = createRegistryReader('https://registry.npmjs.org/', {
+    request: async () => ++calls < 10 ? response({}, 404) : response(metadata),
+    sleep: async ms => { elapsed += ms; }, onPending: () => { notices++; },
+  });
+  await reader.verifyVersion(name, version, shasum);
+  assert.equal(calls, 10);
+  assert.equal(notices, 9);
+  assert(elapsed > 60000 && elapsed < 300000);
 });
