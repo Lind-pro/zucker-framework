@@ -38,5 +38,7 @@
     "clean": {
       "cache": false
     }
-  }
+  },
+  "globalPassThroughEnv": ["pnpm_config_verify_deps_before_run"],
+  "globalEnv": ["DEV_DEPENDENCY_LOCK_HASH"]
 }
