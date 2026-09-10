@@ -259,3 +259,13 @@ export type { AllowPermissionConfig } from './handlers/user-allow-permission.han
 // Module
 export { ZuckerAuthModule } from './auth.module';
 export type { ZuckerAuthModuleAsyncOptions, ZuckerAuthModuleOptionsFactory } from './auth.module';
+
+// Durable sessions and HttpOnly refresh-cookie transport
+export { PersistentSessionService } from './session/persistent-session.service';
+export type { PersistentSession, PersistentSessionOptions } from './session/persistent-session.service';
+export { RefreshTokenCookie } from './session/refresh-token-cookie';
+export type { RefreshTokenCookieOptions, RefreshCookieResponse } from './session/refresh-token-cookie';
+export { ResourceOwnershipGuard, RESOURCE_OWNERSHIP_OPTIONS } from './guards/resource-ownership.guard';
+export type { ResourceOwnershipOptions } from './guards/resource-ownership.guard';
+export { OWN_CREATED_OPTIONS } from './data-access/own-created.handler';
+export type { OwnCreatedHandlerOptions } from './data-access/own-created.handler';
