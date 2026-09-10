@@ -16,16 +16,22 @@ export async function pLimit<T, R>(
   items: T[],
   concurrency: number,
   fn: (item: T, index: number) => Promise<R>,
+  options: { rejectOnError?: boolean } = {},
 ): Promise<R[]> {
   const results: R[] = new Array(items.length);
   let index = 0;
+  let failed = false;
 
   async function worker(): Promise<void> {
-    while (index < items.length) {
+    while (index < items.length && !failed) {
       const current = index++;
       try {
         results[current] = await fn(items[current], current);
       } catch (error) {
+        if (options.rejectOnError) {
+          failed = true;
+          throw error;
+        }
         results[current] = error as R;
       }
     }

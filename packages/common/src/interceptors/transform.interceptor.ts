@@ -1,11 +1,12 @@
 import {
   Injectable,
-  NestInterceptor,
-  ExecutionContext,
-  CallHandler,
+  type NestInterceptor,
+  type ExecutionContext,
+  type CallHandler,
   HttpStatus,
+  StreamableFile,
 } from '@nestjs/common';
-import { Observable } from 'rxjs';
+import type { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 
 /**
@@ -20,21 +21,26 @@ export interface ApiResponse<T = unknown> {
 }
 
 @Injectable()
-export class TransformInterceptor<T>
-  implements NestInterceptor<T, ApiResponse<T>>
-{
+export class TransformInterceptor<T> implements NestInterceptor<
+  T,
+  ApiResponse<T> | StreamableFile
+> {
   intercept(
     context: ExecutionContext,
     next: CallHandler,
-  ): Observable<ApiResponse<T>> {
+  ): Observable<ApiResponse<T> | StreamableFile> {
     return next.handle().pipe(
-      map(data => ({
-        status: HttpStatus.OK,
-        code: 'success',
-        message: 'success',
-        result: data,
-        timestamp: Date.now(),
-      })),
+      map((data) =>
+        data instanceof StreamableFile
+          ? data
+          : {
+              status: HttpStatus.OK,
+              code: 'success',
+              message: 'success',
+              result: data,
+              timestamp: Date.now(),
+            },
+      ),
     );
   }
 }
