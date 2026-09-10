@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, type PersistOptions } from 'zustand/middleware';
 
 /** Adapter interface for pluggable auth token/user storage backends. */
 export interface StorageAdapter {
@@ -13,6 +13,8 @@ export interface StorageAdapter {
 export interface AuthStoreConfig {
   storage?: StorageAdapter;
   persistKey?: string;
+  /** Consumer migration, hydration and persistence policy, configured before initial hydration. */
+  persistOptions?: Omit<PersistOptions<AuthStore, Partial<AuthState>>, 'name'>;
 }
 
 /** The authentication state shape managed by the auth store. */
@@ -43,7 +45,7 @@ export interface AuthStore extends AuthState {
 
 /** Create a Zustand-based auth store with optional persistent storage and permission checking. */
 export function createAuthStore(config: AuthStoreConfig = {}) {
-  const { storage, persistKey = 'auth-storage' } = config;
+  const { storage, persistKey = 'auth-storage', persistOptions } = config;
 
   return create<AuthStore>()(
     persist(
@@ -132,6 +134,7 @@ export function createAuthStore(config: AuthStoreConfig = {}) {
           isAuthenticated: state.isAuthenticated,
           permissions: state.permissions,
         }),
+        ...persistOptions,
       },
     ),
   );

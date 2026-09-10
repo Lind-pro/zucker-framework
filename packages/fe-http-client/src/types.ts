@@ -52,7 +52,15 @@ export interface HttpClientConfig {
   /** Clear all stored authentication data (tokens, user info). */
   clearAuth?: () => void;
   /** Async function that exchanges a refresh token for new token pair. */
-  refreshTokenFn?: (refreshToken: string) => Promise<{ access_token: string; refresh_token: string }>;
+  refreshTokenFn?: (
+    refreshToken: string,
+  ) => Promise<{ access_token: string; refresh_token: string }>;
+  /** Refresh using a browser-managed HttpOnly cookie, without exposing a refresh token to JavaScript. */
+  refreshWithCookie?: () => Promise<{ access_token: string }>;
+  /** Optional browser lock name shared by applications using the same refresh session. */
+  refreshLockName?: string;
+  /** Handle non-authentication response errors; return true to suppress the general error handler. */
+  onResponseError?: (error: Error, response: Record<string, unknown>) => boolean | void;
   /** Global error handler invoked on request failures. */
   errorHandler?: ErrorHandler;
   /** Callback triggered on 401 Unauthorized responses. */
