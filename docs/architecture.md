@@ -171,7 +171,7 @@ const result = LoginRequestSchema.safeParse(formValues);
 
 关键约束：
 - `@zucker-framework/core` 不依赖 NestJS（可在非 NestJS 环境使用）
-- `@zucker-framework/fe-types` 不依赖任何后端包（前端可独立使用）
+- `@zucker-framework/fe-types` 不依赖 NestJS 或 Node 运行时；共享脱敏与 UA 机制只使用 Core 明确的浏览器安全入口（`core/privacy`、`core/user-agent`），不导入 Core 根入口。
 - 所有包通过 `exports` 字段限制公开 API
 
 ---
