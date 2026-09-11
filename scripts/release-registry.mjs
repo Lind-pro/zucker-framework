@@ -33,9 +33,19 @@ export function createRegistryReader(registry, { request = globalThis.fetch, sle
   }
 
   async function version(name, expectedVersion) {
-    const metadata = await document(name, expectedVersion);
-    if (metadata === undefined) return undefined;
-    if (metadata.name !== name || metadata.version !== expectedVersion || !/^[a-f0-9]{40}$/.test(metadata.dist?.shasum ?? '')) {
+    let metadata = await document(name, expectedVersion);
+    if (metadata === undefined) {
+      // npm's version route and package index can become visible at different
+      // times. Both are authoritative registry documents; never infer success
+      // from a dist-tag or npm's upload acknowledgement alone.
+      const index = await document(name);
+      if (index === undefined) return undefined;
+      if (index?.name !== name || !index.versions || typeof index.versions !== 'object'
+        || Array.isArray(index.versions)) throw new Error(`Unexpected registry package metadata for ${name}`);
+      metadata = Object.hasOwn(index.versions, expectedVersion) ? index.versions[expectedVersion] : undefined;
+      if (metadata === undefined) return undefined;
+    }
+    if (metadata?.name !== name || metadata.version !== expectedVersion || !/^[a-f0-9]{40}$/.test(metadata.dist?.shasum ?? '')) {
       throw new Error(`Unexpected registry version metadata for ${name}@${expectedVersion}`);
     }
     return metadata;

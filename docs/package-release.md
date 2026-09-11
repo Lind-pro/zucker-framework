@@ -201,12 +201,16 @@ before publishing: an existing version with the same registry SHA-1 is skipped, 
 an existing version with different bytes stops the release. Each uploaded package is
 queried again to verify the registry checksum.
 Registry checks use public version-specific metadata with unique read URLs to avoid
-cached pre-publication 404 responses. A new version that is temporarily absent is
-retried with up to five minutes of backoff, allowing npm's asynchronous processing
-after an acknowledged upload to finish. Only metadata reads are retried; the upload
-is never repeated automatically. An actual identity or checksum mismatch still
-stops immediately. Read-only preflight requests run in small parallel batches;
-uploads remain sequential in dependency order.
+cached pre-publication 404 responses. When that route returns 404, the reader also
+checks the same registry's package index for the exact version and checksum. A
+dist-tag or upload acknowledgement alone never proves that the correct bytes exist.
+Uploads remain sequential in dependency order; final version and tag verification
+runs in batches of six after all uploads are acknowledged. This lets registry
+propagation overlap with the remaining uploads. Missing metadata receives up to
+five minutes of backoff per verification. Only metadata reads are retried; the
+upload is never repeated automatically. An identity or checksum mismatch still
+fails verification. Conflicts found during preflight stop the batch before any
+upload. The verification report is written only when the entire batch passes.
 Preparation dry runs likewise skip versions whose published bytes already match,
 so a partially completed first release can be prepared again without trying to
 simulate overwriting an existing version.

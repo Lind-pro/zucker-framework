@@ -74,7 +74,7 @@ globalThis.fetch = async (url) => {
   fs.appendFileSync(${JSON.stringify(networkLog)}, String(url) + '\\n');
   if (!fs.existsSync(${JSON.stringify(published)})) return new Response('{}', { status: 404 });
   if (parsed.pathname.endsWith('/dist-tags')) return new Response(JSON.stringify({ latest: process.env.ZUCKER_TEST_TAG_VERSION || '1.0.0' }));
-  return new Response(JSON.stringify({ name: '@zucker-framework/publish-fixture', version: '1.0.0', dist: { shasum: ${JSON.stringify(digest)} },
+  return new Response(JSON.stringify({ name: '@zucker-framework/publish-fixture', version: '1.0.0', dist: { shasum: process.env.ZUCKER_TEST_DIGEST || ${JSON.stringify(digest)} },
     'dist-tags': { latest: process.env.ZUCKER_TEST_TAG_VERSION || '1.0.0' } }));
 };\n`);
   writeFileSync(join(bin, 'npm'), `#!/usr/bin/env node
@@ -152,7 +152,7 @@ for (const mode of ['local login', 'CI token']) {
       assert.equal(result.status, 0, result.stderr);
       const calls = readFileSync(f.log, 'utf8').trim().split('\n').map(JSON.parse);
       assert.deepEqual(calls.map((args) => args[0]), ['whoami', 'publish']);
-      assert.equal(readFileSync(f.networkLog, 'utf8').trim().split('\n').length, 3);
+      assert.equal(readFileSync(f.networkLog, 'utf8').trim().split('\n').length, 4);
       assert(!calls[1].includes('--dry-run'));
       const auth = JSON.parse(readFileSync(f.auth, 'utf8'));
       if (mode === 'local login') {
@@ -213,6 +213,67 @@ test('resumes identical published versions and verifies the final tag for the wh
     const afterDryRun = readFileSync(f.log, 'utf8').trim().split('\n').map(JSON.parse);
     assert.equal(afterDryRun.filter(args => args[0] === 'publish').length, 1);
     assert.match(f.run(['--publish', '--auth', 'session'], { ...environment, ZUCKER_TEST_TAG_VERSION: '0.9.0' }).stderr, /Registry tag verification failed/);
+    assert.match(f.run(['--publish', '--auth', 'session'], { ...environment, ZUCKER_TEST_DIGEST: 'b'.repeat(40) }).stderr, /Immutable version conflict/);
+    assert.equal(readFileSync(f.log, 'utf8').trim().split('\n').map(JSON.parse).filter(args => args[0] === 'publish').length, 1);
+  } finally { rmSync(f.directory, { recursive: true, force: true }); }
+});
+
+test('submits the whole batch before checking delayed post-upload metadata', () => {
+  const f = cleanFixture();
+  try {
+    const name = '@zucker-framework/second-fixture';
+    const packageDir = join(f.directory, 'package');
+    const packed = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8'));
+    packed.name = name;
+    writeFileSync(join(packageDir, 'package.json'), JSON.stringify(packed));
+    writeFileSync(join(packageDir, 'THIRD_PARTY_NOTICES'), `${name}\nNo bundled dependencies.\n`);
+    const filename = 'zucker-framework-second-fixture-1.0.0.tgz';
+    execFileSync('tar', ['-czf', join(f.directory, filename), '-C', f.directory, 'package']);
+    f.manifest.packages.push({ name, version: '1.0.0', filename,
+      sha256: createHash('sha256').update(readFileSync(join(f.directory, filename))).digest('hex') });
+    writeFileSync(f.manifestFile, JSON.stringify(f.manifest));
+    const approvedHash = createHash('sha256').update(readFileSync(f.manifestFile)).digest('hex');
+    writeFileSync(join(f.directory, 'release-receipt.json'), JSON.stringify(releaseReceipt(f.manifest.sourceCommit, approvedHash)));
+    const entries = f.manifest.packages.map(p => ({ ...p, tarball: join(f.directory, p.filename),
+      shasum: createHash('sha1').update(readFileSync(join(f.directory, p.filename))).digest('hex') }));
+    const state = join(f.directory, 'batch-uploads.json');
+    writeFileSync(state, '[]');
+    writeFileSync(join(f.directory, 'bin/npm'), `#!/usr/bin/env node
+const fs = require('node:fs'), args = process.argv.slice(2), entries = ${JSON.stringify(entries)};
+fs.appendFileSync(process.env.ZUCKER_NPM_TEST_LOG, JSON.stringify(args) + '\\n');
+if (args[0] === '--version') console.log('11.19.1');
+else if (args[0] === 'publish') {
+  const entry = entries.find(p => p.tarball === args[1]);
+  if (!entry) throw new Error('Unexpected archive');
+  const uploaded = JSON.parse(fs.readFileSync(${JSON.stringify(state)}, 'utf8'));
+  uploaded.push(entry.name); fs.writeFileSync(${JSON.stringify(state)}, JSON.stringify(uploaded));
+} else throw new Error('Unexpected npm command');
+`, { mode: 0o755 });
+    const preload = join(f.directory, 'batch-registry.mjs');
+    writeFileSync(preload, `import fs from 'node:fs';
+const entries = ${JSON.stringify(entries)};
+globalThis.fetch = async url => {
+  const uploaded = JSON.parse(fs.readFileSync(${JSON.stringify(state)}, 'utf8'));
+  if (!uploaded.length) return new Response('{}', { status: 404 });
+  // Fail immediately if the publisher stalls on a read between the two uploads.
+  if (uploaded.length !== entries.length) return new Response('{}', { status: 403 });
+  const pathname = decodeURIComponent(new URL(url).pathname);
+  const entry = entries.find(p => pathname.includes(p.name));
+  if (!entry) throw new Error('Unexpected registry request');
+  const data = pathname.endsWith('/dist-tags') ? { latest: entry.version }
+    : { name: entry.name, version: entry.version, dist: { shasum: entry.shasum } };
+  return new Response(JSON.stringify(data));
+};\n`);
+    const result = f.rawRun(['--publish', '--auth', 'oidc', '--manifest-sha256', approvedHash], {
+      NODE_OPTIONS: `--import=${pathToFileURL(preload).href}`,
+      GITHUB_ACTIONS: 'true', GITHUB_SHA: f.manifest.sourceCommit,
+      ACTIONS_ID_TOKEN_REQUEST_URL: 'https://token.actions.githubusercontent.com/fixture',
+      ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'synthetic-oidc-request',
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(readFileSync(state, 'utf8')), entries.map(p => p.name));
+    const verified = JSON.parse(readFileSync(join(f.directory, 'registry-verification.json'), 'utf8'));
+    assert.equal(verified.packages.length, 2);
   } finally { rmSync(f.directory, { recursive: true, force: true }); }
 });
 

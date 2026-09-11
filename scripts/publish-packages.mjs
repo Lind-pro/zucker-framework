@@ -237,15 +237,18 @@ try {
       stdio: 'inherit',
       env: npmEnvironment,
     });
-    if (!dryRun) {
-      await registryReader.verifyVersion(artifact.name, artifact.version, artifact.sha1);
-    }
   }
   if (!dryRun) {
+    // An acknowledged upload can precede npm's read-side propagation. Submit
+    // the batch in dependency order before waiting, so one delayed read does
+    // not leave unrelated packages unsubmitted. Only reads are retried.
     // A matching existing tarball does not prove the requested dist-tag still
     // selects it. Check the entire batch, including packages skipped on retry.
-    for (const artifact of artifacts) {
-      await registryReader.verifyTag(artifact.name, artifact.version, distTag);
+    for (let index = 0; index < artifacts.length; index += 6) {
+      await Promise.all(artifacts.slice(index, index + 6).map(async (artifact) => {
+        await registryReader.verifyVersion(artifact.name, artifact.version, artifact.sha1);
+        await registryReader.verifyTag(artifact.name, artifact.version, distTag);
+      }));
     }
     writeFileSync(join(bundleDir, 'registry-verification.json'), `${JSON.stringify({ sourceCommit: manifest.sourceCommit,
       manifestSha256: sha256(manifestPath), registry, distTag,

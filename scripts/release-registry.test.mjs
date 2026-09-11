@@ -18,20 +18,48 @@ test('reads tags through the native dist-tags endpoint rather than the delayed p
 
 test('uses fresh version-specific reads and tolerates a temporarily missing post-publish document', async () => {
   const urls = [], waits = [];
+  let versions = 0;
   const reader = createRegistryReader('https://registry.npmjs.org/', {
     request: async (url, options) => {
       urls.push(String(url));
       assert.equal(options.headers['cache-control'], 'no-cache');
       assert.equal(options.headers.authorization, undefined);
-      return urls.length < 3 ? response({ error: 'not found' }, 404) : response(metadata);
+      if (!new URL(url).pathname.endsWith('/1.0.0')) return response({}, 404);
+      return ++versions < 3 ? response({ error: 'not found' }, 404) : response(metadata);
     },
     sleep: async ms => { waits.push(ms); },
   });
   assert.equal(await reader.version(name, version), undefined);
   await reader.verifyVersion(name, version, shasum);
-  assert.equal(new Set(urls).size, 3);
-  assert(urls.every(url => new URL(url).pathname.endsWith('/1.0.0') && new URL(url).searchParams.has('release_check')));
+  assert.equal(new Set(urls).size, 5);
+  assert(urls.every(url => new URL(url).searchParams.has('release_check')));
   assert.deepEqual(waits, [1000]);
+});
+
+test('verifies the package-index version when the version route still returns 404', async () => {
+  const urls = [];
+  const reader = createRegistryReader('https://registry.npmjs.org/', {
+    request: async url => {
+      urls.push(new URL(url).pathname);
+      return urls.length === 1 ? response({}, 404) : response({ name, versions: { [version]: metadata } });
+    },
+    sleep: async () => assert.fail('Visible immutable metadata needs no propagation wait'),
+  });
+  await reader.verifyVersion(name, version, shasum);
+  assert.deepEqual(urls, ['/@zucker-framework%2Fcore/1.0.0', '/@zucker-framework%2Fcore']);
+});
+
+test('the index fallback retains identity and checksum checks and rejects malformed metadata', async () => {
+  const indexReader = body => createRegistryReader('https://registry.npmjs.org/', {
+    request: async url => new URL(url).pathname.endsWith('/1.0.0') ? response({}, 404) : response(body),
+    sleep: async () => assert.fail('Invalid metadata must not be retried'),
+  });
+  await assert.rejects(indexReader({ name, versions: { [version]: metadata } }).verifyVersion(name, version, 'b'.repeat(40)), /checksum verification failed/);
+  await assert.rejects(indexReader({ name, versions: { [version]: { ...metadata, name: '@other/core' } } }).version(name, version), /Unexpected registry version metadata/);
+  await assert.rejects(indexReader({ name: '@other/core', versions: {} }).version(name, version), /Unexpected registry package metadata/);
+  await assert.rejects(indexReader({ name }).version(name, version), /Unexpected registry package metadata/);
+  await assert.rejects(indexReader(null).version(name, version), /Unexpected registry package metadata/);
+  assert.equal(await indexReader({ name, versions: {} }).version(name, version), undefined);
 });
 
 test('never retries checksum, identity or tag conflicts as propagation delays', async () => {
@@ -55,14 +83,14 @@ test('bounds transient retries and refuses authentication failures or permanentl
   let missing = 0, elapsed = 0;
   const absent = createRegistryReader('https://registry.npmjs.org/', { request: async () => { missing++; return response({}, 404); }, sleep: async ms => { elapsed += ms; } });
   await assert.rejects(absent.verifyVersion(name, version, shasum), /did not expose/);
-  assert.equal(missing, 24);
+  assert.equal(missing, 48);
   assert.equal(elapsed, 300000);
 });
 
 test('accepts a published version that remains in npm processing for over a minute', async () => {
   let calls = 0, elapsed = 0, notices = 0;
   const reader = createRegistryReader('https://registry.npmjs.org/', {
-    request: async () => ++calls < 10 ? response({}, 404) : response(metadata),
+    request: async url => !new URL(url).pathname.endsWith('/1.0.0') || ++calls < 10 ? response({}, 404) : response(metadata),
     sleep: async ms => { elapsed += ms; }, onPending: () => { notices++; },
   });
   await reader.verifyVersion(name, version, shasum);
