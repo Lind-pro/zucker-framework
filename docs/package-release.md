@@ -275,7 +275,12 @@ required-peer declarations and refreshes the CLI scaffold catalog.
 
 Artifact verification now checks static ESM imports against runtime dependency
 declarations before installing the entire bundle, preventing unrelated installed
-workspace packages from hiding this class of missing-dependency problem.
+workspace packages from hiding this class of missing-dependency problem. Default
+entries and their transitive local chunks must not require optional peers. Explicit
+opt-in subpaths may load declared optional peers; shared chunks remain strict when
+reachable from a default entry. Undeclared dependencies are rejected everywhere.
+The independent consumer also imports the AI LangChain subpath in ESM and CommonJS
+with its documented peers installed.
 
 Artifact verification installs tarballs in fresh npm and pnpm consumers, verifies
 portable dependency declarations, checks peers and exercises ESM/CommonJS exports.

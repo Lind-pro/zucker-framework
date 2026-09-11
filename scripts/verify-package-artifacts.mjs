@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertTarballContent } from './verify-package-content.mjs';
-import { assertStaticRuntimeDependencies } from './verify-runtime-dependencies.mjs';
+import { assertPackageRuntimeDependencies } from './verify-runtime-dependencies.mjs';
 
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const rootManifest = JSON.parse(readFileSync(join(rootDir, 'package.json'), 'utf8'));
@@ -109,9 +109,10 @@ try {
     }
     const manifest = readPackedManifest(tarball);
     assertTarballContent(tarball);
-    for (const file of capture('tar', ['-tf', tarball]).trim().split('\n').filter(file => file.endsWith('.mjs'))) {
-      assertStaticRuntimeDependencies(manifest, capture('tar', ['-xOf', tarball, '--', file]), file);
-    }
+    const esmSources = new Map(capture('tar', ['-tf', tarball]).trim().split('\n')
+      .filter(file => file.endsWith('.mjs'))
+      .map(file => [file, capture('tar', ['-xOf', tarball, '--', file])]));
+    assertPackageRuntimeDependencies(manifest, esmSources);
     assertPortableDependencies(manifest);
     assertPublishedFiles(manifest, tarball);
     return { filename, tarball, manifest, sha256: sha256(tarball) };
@@ -259,6 +260,11 @@ if (typeof notification.DurableNotificationWorker !== 'function') throw new Erro
         '@nestjs/common': '12.0.1',
         '@nestjs/core': '12.0.1',
         '@nestjs/event-emitter': '12.0.0',
+        '@langchain/core': installedVersion('packages/ai', '@langchain/core'),
+        zod: installedVersion('packages/ai', 'zod'),
+        ioredis: installedVersion('packages/cache', 'ioredis'),
+        stripe: installedVersion('packages/payment', 'stripe'),
+        '@paypal/paypal-server-sdk': installedVersion('packages/payment', '@paypal/paypal-server-sdk'),
         bullmq: '6.3.4',
         openai: '7.9.0',
         webdav: '5.10.0',

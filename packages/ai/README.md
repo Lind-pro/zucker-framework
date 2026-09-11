@@ -10,7 +10,7 @@ Publish new package versions before registry-based consumers use these new expor
 
 ## Optional LangChain observation
 
-Import `LangChainCallObserver` from `@zucker-framework/ai/langchain` when `@langchain/core` is installed. Configure success/error callbacks; the observer owns per-run timing and usage normalization, while the consumer owns metadata projections, sinks, cost tables and diagnostics. The main AI entry does not require the optional LangChain runtime. `createAbortScope` now exposes its controller alongside signal/dispose and preserves AI-specific cancellation/timeout errors.
+Import `LangChainCallObserver` from `@zucker-framework/ai/langchain` after installing `@langchain/core` and `zod`, the runtime peers of this opt-in entry. Configure success/error callbacks; the observer owns per-run timing and usage normalization, while the consumer owns metadata projections, sinks, cost tables and diagnostics. The main AI entry does not require the optional LangChain runtime. `createAbortScope` now exposes its controller alongside signal/dispose and preserves AI-specific cancellation/timeout errors.
 
 ## Optional LangChain execution
 

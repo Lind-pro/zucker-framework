@@ -66,6 +66,17 @@ for (const name of ${JSON.stringify(runtimeNames)}) {
 }\n`);
 run(['runtime-contract.mjs']);
 
+// Opt-in entry consumers install the entry's documented peers explicitly.
+write('optional-entry-contract.mjs', `import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+for (const entry of [await import('@zucker-framework/ai/langchain'), require('@zucker-framework/ai/langchain')]) {
+  assert.equal(typeof entry.LangChainCallObserver, 'function');
+  assert.equal(typeof entry.collectLangChainText, 'function');
+  assert.equal(typeof entry.executeLangChainStructured, 'function');
+}\n`);
+run(['optional-entry-contract.mjs']);
+
 const cli = join(directory, 'node_modules/@zucker-framework/cli/dist/index.js');
 const cliVersion = JSON.parse(readFileSync(join(directory, 'node_modules/@zucker-framework/cli/package.json'), 'utf8')).version;
 assert.equal(run([cli, '--version']).trim(), cliVersion);
@@ -131,6 +142,7 @@ const result = { strictTypePackages: strictNames.length, runtimePackages: runtim
   packageVersions: [...new Set(names.map((name) => installedManifest(name).version))],
   frontendAntdVersions: [installedManifest('antd').version], frontendReactVersion: installedManifest('react').version,
   frontend: 'strict Bundler/NodeNext callers, skipLibCheck=true, concrete Rule type and SSR verified', cliVersion,
+  optionalEntries: 'ai/langchain ESM and CJS imports with explicit @langchain/core and zod peers',
   standaloneServer: 'compiled and HTTP 401 verified using the generated main entry', node: process.version };
 if (process.argv[3]) writeFileSync(resolve(process.argv[3]), `${JSON.stringify(result, null, 2)}\n`);
 process.stdout.write(`${JSON.stringify(result)}\n`);
