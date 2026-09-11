@@ -21,7 +21,8 @@ export class InMemoryNotificationDedup implements NotificationDedup {
   private readonly windowMs: number;
   private cleanupTimer?: ReturnType<typeof setInterval>;
 
-  constructor(windowMs = 300_000) { // 默认5分钟去重窗口
+  constructor(windowMs = 300_000) {
+    // 默认5分钟去重窗口
     this.windowMs = windowMs;
     // 自动清理：每个窗口周期清理一次过期记录
     this.cleanupTimer = setInterval(() => this.cleanup(), this.windowMs);
@@ -38,7 +39,7 @@ export class InMemoryNotificationDedup implements NotificationDedup {
 
   isDuplicate(key: string): boolean {
     const sentAt = this.sent.get(key);
-    if (!sentAt) return false;
+    if (sentAt === undefined) return false;
     return Date.now() - sentAt < this.windowMs;
   }
 
@@ -53,6 +54,11 @@ export class InMemoryNotificationDedup implements NotificationDedup {
         this.sent.delete(key);
       }
     }
+  }
+
+  get size(): number {
+    this.cleanup();
+    return this.sent.size;
   }
 
   /**

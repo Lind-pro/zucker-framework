@@ -1,4 +1,4 @@
-import { Injectable, Logger, Optional, Inject } from '@nestjs/common';
+import { Injectable, Logger, Optional, Inject, type OnModuleInit, type OnModuleDestroy } from '@nestjs/common';
 
 export const SEARCH_CLIENT = 'SEARCH_CLIENT';
 
@@ -8,7 +8,7 @@ export const SEARCH_CLIENT = 'SEARCH_CLIENT';
  */
 export interface SearchClient {
   index(params: { index: string; id?: string; body: Record<string, unknown> }): Promise<unknown>;
-  search(params: { index: string; body: Record<string, unknown> }): Promise<SearchResponse>;
+  search(params: { index: string; body: Record<string, unknown> }, options?: { signal?: AbortSignal }): Promise<SearchResponse>;
   delete(params: { index: string; id: string }): Promise<unknown>;
   bulk(params: { body: Array<Record<string, unknown>> }): Promise<unknown>;
   indices: {
@@ -16,16 +16,42 @@ export interface SearchClient {
     delete(params: { index: string }): Promise<unknown>;
     exists(params: { index: string }): Promise<boolean>;
     putMapping(params: { index: string; body: Record<string, unknown> }): Promise<unknown>;
+    existsAlias?(params: { name: string }): Promise<boolean>;
+    putAlias?(params: { index: string; name: string }): Promise<unknown>;
+    getAlias?(params: { name: string }): Promise<Record<string, unknown>>;
+    updateAliases?(params: { actions: Array<Record<string, { index: string; alias: string }>> }): Promise<unknown>;
   };
   count(params: { index: string; body?: Record<string, unknown> }): Promise<{ count: number }>;
+  ping?(): Promise<unknown>;
+  close?(): Promise<void>;
+  getPlugins?(): Promise<string[]>;
+  clusterHealth?(): Promise<string>;
+}
+
+export interface SearchIndexDefinition {
+  mappings?: Record<string, unknown>;
+  settings?: Record<string, unknown>;
+}
+
+export interface SearchAliasDefinition {
+  alias: string;
+  indexPrefix?: string;
+  definition: SearchIndexDefinition | ((plugins: readonly string[]) => SearchIndexDefinition | Promise<SearchIndexDefinition>);
+}
+
+export interface SearchServiceOptions {
+  enabled?: boolean;
+  /** Close the injected client once when this service is destroyed. */
+  ownsClient?: boolean;
+  aliases?: SearchAliasDefinition[];
 }
 
 export interface SearchResponse {
   hits: {
-    total: { value: number };
+    total?: { value: number } | number;
     hits: Array<{
       _id: string;
-      _score: number;
+      _score?: number | null;
       _source: Record<string, unknown>;
       highlight?: Record<string, string[]>;
     }>;
@@ -39,7 +65,7 @@ export interface SearchQuery {
   query?: Record<string, unknown>;
   from?: number;
   size?: number;
-  sort?: Array<Record<string, 'asc' | 'desc'>>;
+  sort?: Array<Record<string, unknown>>;
   highlight?: { fields: Record<string, Record<string, unknown>> };
   aggs?: Record<string, unknown>;
   suggest?: Record<string, unknown>;
@@ -54,27 +80,130 @@ export interface SearchResult<T = Record<string, unknown>> {
 }
 
 @Injectable()
-export class SearchService {
+export class SearchService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(SearchService.name);
+  private healthy = false;
+  private stopped = false;
+  private initialization?: Promise<void>;
+  private shutdown?: Promise<void>;
 
   constructor(
     @Optional() @Inject(SEARCH_CLIENT) private readonly client?: SearchClient,
+    @Optional() private readonly options: SearchServiceOptions = {},
   ) {}
+
+  onModuleInit(): Promise<void> {
+    if (this.stopped) return Promise.resolve();
+    return (this.initialization ??= this.initialize());
+  }
+
+  private async initialize(): Promise<void> {
+    if (!this.isAvailable()) return;
+    try {
+      await this.client?.ping?.();
+      for (const alias of this.options.aliases ?? []) await this.ensureAlias(alias);
+      if (!this.stopped) this.healthy = true;
+    } catch {
+      this.healthy = false;
+      this.logger.warn('Search initialization failed; consumer fallback remains available');
+    }
+  }
+
+  onModuleDestroy(): Promise<void> {
+    this.stopped = true;
+    this.healthy = false;
+    return (this.shutdown ??= this.options.ownsClient ? this.client?.close?.() ?? Promise.resolve() : Promise.resolve());
+  }
+
+  isHealthy(): boolean { return this.isAvailable() && this.healthy; }
+
+  async refreshHealth(): Promise<boolean> {
+    if (!this.isAvailable()) return false;
+    try {
+      await this.client?.ping?.();
+      this.healthy = !this.stopped;
+    } catch { this.healthy = false; }
+    return this.healthy;
+  }
+
+  async getPlugins(): Promise<string[]> {
+    if (!this.isAvailable()) return [];
+    try { return await this.client?.getPlugins?.() ?? []; }
+    catch {
+      this.logger.warn('Search plugin discovery failed; using consumer fallback analyzers');
+      return [];
+    }
+  }
+
+  async ensureAlias(definition: SearchAliasDefinition): Promise<void> {
+    const indices = this.client?.indices;
+    if (!this.isAvailable() || !indices?.existsAlias || !indices.putAlias) {
+      throw new Error('Search alias management is not configured');
+    }
+    if (await indices.existsAlias({ name: definition.alias })) return;
+    const index = await this.createIndexWithTimestamp(definition.alias, definition);
+    await indices.putAlias({ index, name: definition.alias });
+  }
+
+  async createIndexWithTimestamp(alias: string, definition?: SearchAliasDefinition): Promise<string> {
+    if (!this.isAvailable()) throw new Error('Search client not configured');
+    const configured = definition ?? this.options.aliases?.find(item => item.alias === alias);
+    if (!configured) throw new Error('Search index definition is not configured');
+    const index = `${configured.indexPrefix ?? alias}_${Date.now()}`;
+    const schema = typeof configured.definition === 'function'
+      ? await configured.definition(await this.getPlugins()) : configured.definition;
+    await this.ensureIndex(index, schema.mappings, schema.settings);
+    return index;
+  }
+
+  async switchAlias(alias: string, newIndex: string, deleteOldIndices = false): Promise<void> {
+    const indices = this.client?.indices;
+    if (!this.isAvailable() || !indices?.getAlias || !indices.updateAliases) {
+      throw new Error('Search alias management is not configured');
+    }
+    let previous: string[];
+    try { previous = Object.keys(await indices.getAlias({ name: alias })); }
+    catch (error) {
+      const status = error as { statusCode?: number; meta?: { statusCode?: number } };
+      if ((status?.statusCode ?? status?.meta?.statusCode) !== 404) throw error;
+      previous = [];
+    }
+    const actions: Array<Record<string, { index: string; alias: string }>> = previous
+      .filter(index => index !== newIndex).map(index => ({ remove: { index, alias } }));
+    actions.push({ add: { index: newIndex, alias } });
+    await indices.updateAliases({ actions });
+    if (deleteOldIndices) {
+      for (const index of previous.filter(index => index !== newIndex)) {
+        try { await indices.delete({ index }); }
+        catch { this.logger.warn('Retired search index could not be deleted'); }
+      }
+    }
+  }
+
+  async getStats(index: string): Promise<{ documentCount: number; clusterHealth: string; healthy: boolean; error?: string }> {
+    try {
+      const documentCount = await this.count(index);
+      const clusterHealth = await this.client?.clusterHealth?.() ?? 'unknown';
+      return { documentCount, clusterHealth, healthy: this.isHealthy() };
+    } catch {
+      return { documentCount: 0, clusterHealth: 'unavailable', healthy: false, error: 'Search unavailable' };
+    }
+  }
 
   /** 检查搜索服务是否可用 */
   isAvailable(): boolean {
-    return !!this.client;
+    return !!this.client && this.options.enabled !== false && !this.stopped;
   }
 
   /** 索引文档 */
   async indexDocument(index: string, id: string, document: Record<string, unknown>): Promise<void> {
-    if (!this.client) throw new Error('Search client not configured');
+    if (!this.client || !this.isAvailable()) throw new Error('Search client not configured');
     await this.client.index({ index, id, body: document });
   }
 
   /** 批量索引 */
   async bulkIndex(index: string, documents: Array<{ id: string; data: Record<string, unknown> }>): Promise<{ indexed: number; errors: number }> {
-    if (!this.client) throw new Error('Search client not configured');
+    if (!this.client || !this.isAvailable()) throw new Error('Search client not configured');
     const body: Array<Record<string, unknown>> = [];
     for (const doc of documents) {
       body.push({ index: { _index: index, _id: doc.id } });
@@ -87,8 +216,8 @@ export class SearchService {
   }
 
   /** 搜索 */
-  async search<T = Record<string, unknown>>(query: SearchQuery): Promise<SearchResult<T>> {
-    if (!this.client) throw new Error('Search client not configured');
+  async search<T = Record<string, unknown>>(query: SearchQuery, options?: { signal?: AbortSignal }): Promise<SearchResult<T>> {
+    if (!this.client || !this.isAvailable()) throw new Error('Search client not configured');
     const { index, from, size, sort, highlight, aggs, suggest, _source, ...rest } = query;
     const body: Record<string, unknown> = { ...rest };
     if (from !== undefined) body.from = from;
@@ -99,12 +228,12 @@ export class SearchService {
     if (suggest) body.suggest = suggest;
     if (_source) body._source = _source;
 
-    const response = await this.client.search({ index, body });
+    const response = await this.client.search({ index, body }, options);
     return {
-      total: response.hits.total.value,
+      total: typeof response.hits.total === 'number' ? response.hits.total : response.hits.total?.value ?? 0,
       hits: response.hits.hits.map(hit => ({
         id: hit._id,
-        score: hit._score,
+        score: hit._score ?? 0,
         source: hit._source as T,
         highlight: hit.highlight,
       })),
@@ -115,7 +244,7 @@ export class SearchService {
 
   /** 自动补全 */
   async suggest(index: string, field: string, text: string, size = 5): Promise<string[]> {
-    if (!this.client) throw new Error('Search client not configured');
+    if (!this.client || !this.isAvailable()) throw new Error('Search client not configured');
     const response = await this.client.search({
       index,
       body: {
@@ -135,20 +264,20 @@ export class SearchService {
 
   /** 删除文档 */
   async deleteDocument(index: string, id: string): Promise<void> {
-    if (!this.client) throw new Error('Search client not configured');
+    if (!this.client || !this.isAvailable()) throw new Error('Search client not configured');
     await this.client.delete({ index, id });
   }
 
   /** 统计 */
   async count(index: string, query?: Record<string, unknown>): Promise<number> {
-    if (!this.client) throw new Error('Search client not configured');
+    if (!this.client || !this.isAvailable()) throw new Error('Search client not configured');
     const result = await this.client.count({ index, body: query ? { query } : undefined });
     return result.count;
   }
 
   /** 确保索引存在 */
   async ensureIndex(index: string, mappings?: Record<string, unknown>, settings?: Record<string, unknown>): Promise<void> {
-    if (!this.client) throw new Error('Search client not configured');
+    if (!this.client || !this.isAvailable()) throw new Error('Search client not configured');
     const exists = await this.client.indices.exists({ index });
     if (!exists) {
       const body: Record<string, unknown> = {};
@@ -161,7 +290,7 @@ export class SearchService {
 
   /** 删除索引 */
   async deleteIndex(index: string): Promise<void> {
-    if (!this.client) throw new Error('Search client not configured');
+    if (!this.client || !this.isAvailable()) throw new Error('Search client not configured');
     await this.client.indices.delete({ index });
   }
 }

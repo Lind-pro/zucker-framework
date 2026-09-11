@@ -4,7 +4,12 @@ export * from './id-generator';
 export * from './exceptions';
 export * from './types';
 export { diff, deepEquals, collectionEquals, type FieldChange } from './diff';
-export { parseTemplate, parseTemplateWithMapper, type ParseTemplateOptions } from './template';
+export {
+  parseTemplate,
+  parseTemplateWithMapper,
+  escapeHtml,
+  type ParseTemplateOptions,
+} from './template';
 export * from './validator';
 export * from './transaction-context';
 export * from './transaction-utils';
@@ -123,3 +128,55 @@ export {
   type OutboundUrlPolicy,
   type OutboundUrlRejectionReason,
 } from './outbound-url-policy';
+
+export { SecretCipher, isSecureCiphertext, isLegacyCiphertext } from './secret-cipher';
+export type { SecretCipherOptions } from './secret-cipher';
+
+export { stripNullBytes, deepStripNullBytes } from './null-byte-sanitizer';
+export {
+  readPositiveIntegerConfiguration,
+  postgresIdleInTransactionSessionOptions,
+  registerPostgresPoolErrorHandler,
+  createPostgresConnectionErrorHandler,
+  type PostgresConnectionSource,
+  type PostgresErrorLogger,
+} from './postgres-connection-safety';
+export {
+  runWithPostgresAdvisoryLock,
+  type PostgresAdvisoryLockResult,
+  type PostgresAdvisoryLockConnection,
+  type PostgresAdvisoryLockOptions,
+} from './postgres-advisory-lock';
+export { maskEmail, maskRecipients, scrubSensitive } from './sensitive-text';
+export {
+  withStreamIdleTimeout,
+  StreamIdleTimeoutError,
+  type StreamIdleTimeoutOptions,
+} from './stream-idle-timeout';
+export {
+  ScopedCancellationRegistry,
+  type ScopedCancellationRegistryOptions,
+} from './scoped-cancellation-registry';
+export {
+  mergeImageManifest,
+  parseKeyValueManifest,
+  verifyImageManifest,
+  type ImageManifestComponents,
+  type ImageManifest,
+  type ImageManifestIdentity,
+  type MergeImageManifestOptions,
+} from './image-manifest';
+export { ConcurrencyBulkhead } from './concurrency-bulkhead';
+export { ZonedTime } from './zoned-time';
+export {
+  createCancellationScope,
+  waitForSignal,
+  type CancellationScope,
+  type CancellationScopeOptions,
+} from './cancellation-scope';
+
+export { redactFields } from './privacy';
+
+export { safeHtmlLinkHref } from './template/safe-link-href';
+
+export { inspectUserAgent, type UserAgentDetails } from './user-agent';

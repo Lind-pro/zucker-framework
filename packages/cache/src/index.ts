@@ -24,3 +24,10 @@ export { CacheWarmer, CacheStatsCollector } from './cache-warmer';
 export type { CacheWarmerTask, CacheStats } from './cache-warmer';
 
 export { TaggedCache } from './tagged-cache';
+
+export { CacheService } from './cache.service';
+export type { CacheServiceOptions } from './cache.service';
+export { RedisCacheService } from './redis-cache.service';
+export type { RedisCacheServiceOptions } from './redis-cache.service';
+export type { CacheProviderModuleOptions, CacheServiceModuleOptions } from './cache.module';
+export type { MemoryCacheOptions } from './memory-cache';

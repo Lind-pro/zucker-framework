@@ -28,3 +28,5 @@ export {
   detectFormatFromBuffer,
 } from './format-detect';
 export type { FileFormat } from './format-detect';
+
+export { TemporaryExportJobs, type TemporaryExportJobsOptions, type TemporaryExportJob, type TemporaryExportStatus, type ExportProgress, type ExportArtifact } from './temporary-export-jobs';

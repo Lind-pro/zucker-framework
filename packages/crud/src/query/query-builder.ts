@@ -1,4 +1,5 @@
-import { type DatabaseAdapter, type GenericEntity } from '@zucker-framework/core';
+import type { CrudEntity } from '../crud-entity';
+import { type DatabaseAdapter } from '@zucker-framework/core';
 import { coerceComparable } from './coerce-comparable';
 
 /** 查询条件节点 */
@@ -31,7 +32,7 @@ interface JoinDefinition {
 /**
  * 链式查询构建器接口
  */
-export interface IQueryBuilder<T extends GenericEntity> {
+export interface IQueryBuilder<T extends CrudEntity> {
   where<K extends string & keyof T>(field: K, op: string, value: unknown): IQueryBuilder<T>;
   whereEq<K extends string & keyof T>(field: K, value: T[K]): IQueryBuilder<T>;
   in<K extends string & keyof T>(field: K, values: unknown[]): IQueryBuilder<T>;
@@ -83,7 +84,7 @@ export interface GroupByQueryArgs {
 }
 
 /** JOIN 子句接口 */
-export interface IJoinClause<T extends GenericEntity> {
+export interface IJoinClause<T extends CrudEntity> {
   on(localField: string, foreignField: string): IQueryBuilder<T>;
 }
 
@@ -91,14 +92,18 @@ export interface IJoinClause<T extends GenericEntity> {
  * 链式查询构建器实现
  * 通过 DatabaseAdapter 执行查询，将链式 API 转换为 Prisma 兼容的查询参数
  */
-export class QueryBuilder<T extends GenericEntity> implements IQueryBuilder<T> {
+export class QueryBuilder<T extends CrudEntity> implements IQueryBuilder<T> {
   private _conditions: ConditionGroup = { type: 'and', conditions: [] };
   private _orderBy: OrderItem[] = [];
   private _selectFields: string[] = [];
   private _distinctFields: string[] = [];
   private _groupByFields: string[] = [];
   private _havingConditions: Array<{ field: string; op: string; value: unknown }> = [];
-  private _existsConditions: Array<{ relation: string; where?: Record<string, unknown>; not?: boolean }> = [];
+  private _existsConditions: Array<{
+    relation: string;
+    where?: Record<string, unknown>;
+    not?: boolean;
+  }> = [];
   private _limit?: number;
   private _offset?: number;
   private _includes: string[] = [];
@@ -203,21 +208,25 @@ export class QueryBuilder<T extends GenericEntity> implements IQueryBuilder<T> {
   }
 
   exists(relation: string, fn?: (q: IQueryBuilder<any>) => IQueryBuilder<any>): this {
-    const sub = fn ? (() => {
-      const q = new QueryBuilder<any>(this.db, relation);
-      fn(q);
-      return this.buildWhere(q._conditions);
-    })() : undefined;
+    const sub = fn
+      ? (() => {
+          const q = new QueryBuilder<any>(this.db, relation);
+          fn(q);
+          return this.buildWhere(q._conditions);
+        })()
+      : undefined;
     this._existsConditions.push({ relation, where: sub, not: false });
     return this;
   }
 
   notExists(relation: string, fn?: (q: IQueryBuilder<any>) => IQueryBuilder<any>): this {
-    const sub = fn ? (() => {
-      const q = new QueryBuilder<any>(this.db, relation);
-      fn(q);
-      return this.buildWhere(q._conditions);
-    })() : undefined;
+    const sub = fn
+      ? (() => {
+          const q = new QueryBuilder<any>(this.db, relation);
+          fn(q);
+          return this.buildWhere(q._conditions);
+        })()
+      : undefined;
     this._existsConditions.push({ relation, where: sub, not: true });
     return this;
   }
@@ -279,7 +288,7 @@ export class QueryBuilder<T extends GenericEntity> implements IQueryBuilder<T> {
   async fetchOne(): Promise<T | null> {
     const args = this.buildQueryArgs();
     args.take = 1;
-    const results = await this.db.model(this.modelName).findMany(args) as T[];
+    const results = (await this.db.model(this.modelName).findMany(args)) as T[];
     return results[0] ?? null;
   }
 
@@ -377,7 +386,7 @@ export class QueryBuilder<T extends GenericEntity> implements IQueryBuilder<T> {
     const prismaConditions: Record<string, unknown>[] = [];
 
     for (const cond of group.conditions) {
-      if ('type' in cond && ('conditions' in cond)) {
+      if ('type' in cond && 'conditions' in cond) {
         // 嵌套条件组
         const nested = this.buildWhere(cond as ConditionGroup);
         if (Object.keys(nested).length > 0) {
@@ -401,11 +410,29 @@ export class QueryBuilder<T extends GenericEntity> implements IQueryBuilder<T> {
 
   /** Allowed Prisma operators — prevents arbitrary operator injection */
   private static readonly ALLOWED_OPS = new Set([
-    'eq', 'neq', 'gt', 'gte', 'lt', 'lte',
-    'in', 'notIn', 'like', 'isNull', 'isNotNull', 'between',
-    'contains', 'startsWith', 'endsWith', 'not',
-    'has', 'hasEvery', 'hasSome', 'isEmpty',
-    'equals', 'search', 'mode',
+    'eq',
+    'neq',
+    'gt',
+    'gte',
+    'lt',
+    'lte',
+    'in',
+    'notIn',
+    'like',
+    'isNull',
+    'isNotNull',
+    'between',
+    'contains',
+    'startsWith',
+    'endsWith',
+    'not',
+    'has',
+    'hasEvery',
+    'hasSome',
+    'isEmpty',
+    'equals',
+    'search',
+    'mode',
   ]);
 
   /** 将单个条件转换为 Prisma 条件 */
@@ -437,7 +464,9 @@ export class QueryBuilder<T extends GenericEntity> implements IQueryBuilder<T> {
         return { [field]: { not: null } };
       case 'between': {
         if (!Array.isArray(value) || value.length !== 2) {
-          throw new Error(`between operator requires [low, high] array, got: ${JSON.stringify(value)}`);
+          throw new Error(
+            `between operator requires [low, high] array, got: ${JSON.stringify(value)}`,
+          );
         }
         const [low, high] = value;
         return { [field]: { gte: low, lte: high } };
@@ -483,9 +512,7 @@ export class QueryBuilder<T extends GenericEntity> implements IQueryBuilder<T> {
     const result: Record<string, unknown> = {};
     for (const h of this._havingConditions) {
       const built = this.buildCondition(h);
-      result[h.field] = h.field in built
-        ? built[h.field]
-        : { [h.op]: h.value };
+      result[h.field] = h.field in built ? built[h.field] : { [h.op]: h.value };
     }
     return result;
   }

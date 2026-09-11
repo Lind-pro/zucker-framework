@@ -9,11 +9,12 @@ import {
 import {
   RateLimiterMemory,
   RateLimiterRedis,
-  RateLimiterRes,
   IRateLimiterOptions,
 } from 'rate-limiter-flexible';
 import { BusinessException, NotFoundException } from '@zucker-framework/core';
 import { createHmac } from 'node:crypto';
+import type Redis from 'ioredis';
+import type { RedisOptions } from 'ioredis';
 
 type RateLimiterUnion = RateLimiterMemory | RateLimiterRedis;
 
@@ -28,8 +29,19 @@ export interface LimiterConfig {
   keyPrefix?: string;
 }
 
+export interface RateLimiterRedisOptions {
+  url: string;
+  commandTimeoutMs?: number;
+  createClient?: (url: string, options: RedisOptions) => Redis | Promise<Redis>;
+}
+
 export interface RateLimiterModuleOptions {
+  /** Externally owned client: observed, but never disconnected by this service. */
   redisClient?: unknown;
+  /** Internally owned Redis connection. Mutually exclusive with redisClient. */
+  redis?: RateLimiterRedisOptions;
+  operationDeadlineMs?: number;
+  circuitBreakerMs?: number;
   /** Optional secret used to HMAC consumer keys before memory/Redis storage. */
   keyHashSecret?: string;
   /** Register the rate-limit guard globally. Set false when guard ordering matters. */
@@ -66,18 +78,68 @@ export class TooManyRequestsException extends HttpException {
 export class RateLimiterService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(RateLimiterService.name);
   private readonly limiters = new Map<string, RateLimiterUnion>();
+  private readonly insuranceLimiters = new Map<string, RateLimiterMemory>();
   private useRedis = false;
+  private redisClient: Redis | null = null;
+  private redisDegraded = false;
+  private redisRetryAt = 0;
+  private redisResetPending = false;
+  private shuttingDown = false;
+  private initialization?: Promise<void>;
+  private readonly onRedisError = (error: unknown) => this.markRedisDegraded('error', error);
+  private readonly onRedisClose = () => this.markRedisDegraded('close');
+  private readonly onRedisReady = () => {
+    this.redisResetPending = false;
+    this.markRedisRecovered();
+  };
 
   constructor(private readonly options: RateLimiterModuleOptions) {}
 
-  async onModuleInit() {
-    if (this.options.redisClient) {
-      this.useRedis = true;
-      this.logger.log('RateLimiterService 使用 Redis 分布式限流');
+  onModuleInit(): Promise<void> {
+    if (this.shuttingDown) return Promise.resolve();
+    return (this.initialization ??= this.initialize());
+  }
+
+  private async initialize(): Promise<void> {
+    if (this.options.redis && this.options.redisClient) {
+      throw new Error('Configure redis or redisClient, not both');
     }
+    if (this.options.redisClient) {
+      this.redisClient = this.options.redisClient as Redis;
+      this.useRedis = true;
+      this.observeRedis();
+    } else if (this.options.redis) {
+      try {
+        const { url, createClient, commandTimeoutMs } = this.options.redis;
+        const create = createClient ?? (async (address: string, options: RedisOptions) => {
+          const { default: Redis } = await import('ioredis');
+          return new Redis(address, options);
+        });
+        this.redisClient = await create(url, {
+          maxRetriesPerRequest: 3,
+          commandTimeout: commandTimeoutMs ?? 500,
+          lazyConnect: true,
+          enableOfflineQueue: false,
+          autoResendUnfulfilledCommands: false,
+        });
+        if (this.shuttingDown) {
+          this.redisClient.disconnect(false);
+          this.redisClient = null;
+          return;
+        }
+        this.observeRedis();
+        await this.redisClient.connect();
+        this.useRedis = true;
+      } catch (error) {
+        this.markRedisDegraded('initial-connect', error);
+        this.redisClient?.disconnect(false);
+        this.redisClient = null;
+      }
+    }
+    if (this.shuttingDown) return;
 
     for (const [name, config] of Object.entries(this.options.limiters)) {
-      if (config.points <= 0 || config.duration <= 0) {
+      if (!Number.isFinite(config.points) || !Number.isFinite(config.duration) || config.points <= 0 || config.duration <= 0) {
         this.logger.warn(
           `限流器 '${name}' 配置无效 (points=${config.points}, duration=${config.duration})，已跳过`,
         );
@@ -90,17 +152,20 @@ export class RateLimiterService implements OnModuleInit, OnModuleDestroy {
         blockDuration: config.blockDuration ?? config.duration,
       };
 
+      const insurance = new RateLimiterMemory(opts);
+      this.insuranceLimiters.set(name, insurance);
       if (this.useRedis) {
         this.limiters.set(
           name,
           new RateLimiterRedis({
             ...opts,
-            storeClient: this.options.redisClient,
+            storeClient: this.redisClient,
+            rejectIfRedisNotReady: true,
             keyPrefix: config.keyPrefix ?? `rl:${name}:`,
           }),
         );
       } else {
-        this.limiters.set(name, new RateLimiterMemory(opts));
+        this.limiters.set(name, insurance);
       }
     }
 
@@ -110,8 +175,78 @@ export class RateLimiterService implements OnModuleInit, OnModuleDestroy {
   }
 
   onModuleDestroy(): void {
+    if (this.shuttingDown) return;
+    this.shuttingDown = true;
+    this.redisResetPending = false;
+    this.redisClient?.removeListener?.('error', this.onRedisError);
+    this.redisClient?.removeListener?.('close', this.onRedisClose);
+    this.redisClient?.removeListener?.('ready', this.onRedisReady);
+    if (this.options.redis) this.redisClient?.disconnect(false);
+    this.redisClient = null;
+    this.useRedis = false;
     this.limiters.clear();
-    this.logger.log('RateLimiterService 已清理');
+    this.insuranceLimiters.clear();
+  }
+
+  private observeRedis(): void {
+    this.redisClient?.on?.('error', this.onRedisError);
+    this.redisClient?.on?.('close', this.onRedisClose);
+    this.redisClient?.on?.('ready', this.onRedisReady);
+  }
+
+  private markRedisDegraded(event: string, error?: unknown): void {
+    if (this.shuttingDown) return;
+    this.redisRetryAt = Date.now() + (this.options.circuitBreakerMs ?? 5_000);
+    if (this.redisDegraded) return;
+    this.redisDegraded = true;
+    const code = error && typeof error === 'object' && 'code' in error &&
+      typeof error.code === 'string' && /^[A-Za-z0-9_-]{1,32}$/.test(error.code)
+      ? error.code : 'unknown';
+    this.logger.warn(
+      `Redis rate limiter degraded; using bounded in-process insurance limiter (event=${event}, code=${code})`,
+    );
+  }
+
+  private markRedisRecovered(): void {
+    if (this.shuttingDown || !this.redisDegraded) return;
+    this.redisDegraded = false;
+    this.redisRetryAt = 0;
+    this.logger.log('Redis rate limiter recovered; distributed limits restored');
+  }
+
+  private async executeWithInsurance<T>(
+    name: string,
+    operation: (limiter: RateLimiterUnion) => Promise<T>,
+  ): Promise<T> {
+    const primary = this.getLimiter(name);
+    const insurance = this.insuranceLimiters.get(name)!;
+    if (!this.useRedis || primary === insurance ||
+      (this.redisDegraded && Date.now() < this.redisRetryAt)) {
+      return operation(insurance);
+    }
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<never>((_, reject) => {
+      timeout = setTimeout(() => reject(Object.assign(new Error('Redis operation timed out'), {
+        code: 'ETIMEDOUT',
+      })), this.options.operationDeadlineMs ?? 750);
+    });
+    try {
+      const result = await Promise.race([operation(primary), deadline]);
+      this.markRedisRecovered();
+      return result;
+    } catch (error) {
+      // RateLimiterRes is a rejection describing quota exhaustion, not an Error.
+      // Never retry a distributed denial against a fresh insurance quota.
+      if (!(error instanceof Error)) throw error;
+      this.markRedisDegraded('command', error);
+      if (this.options.redis && this.redisClient && !this.shuttingDown && !this.redisResetPending) {
+        this.redisResetPending = true;
+        this.redisClient.disconnect(true);
+      }
+      return operation(insurance);
+    } finally {
+      if (timeout) clearTimeout(timeout);
+    }
   }
 
   /**
@@ -124,7 +259,7 @@ export class RateLimiterService implements OnModuleInit, OnModuleDestroy {
     pointsToConsume = 1,
     errorMessage = '请求过于频繁，请稍后再试',
   ): Promise<ConsumeResult> {
-    const limiter = this.getLimiter(limiterName);
+    this.getLimiter(limiterName);
     const storageKey = this.toStorageKey(key);
 
     if (pointsToConsume <= 0 || !Number.isFinite(pointsToConsume)) {
@@ -132,7 +267,7 @@ export class RateLimiterService implements OnModuleInit, OnModuleDestroy {
     }
 
     try {
-      const res = await limiter.consume(storageKey, pointsToConsume);
+      const res = await this.executeWithInsurance(limiterName, limiter => limiter.consume(storageKey, pointsToConsume));
       return {
         remaining: res.remainingPoints,
         msBeforeNext: res.msBeforeNext,
@@ -155,13 +290,39 @@ export class RateLimiterService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /** Atomic consumption with a per-subject cap, without allocating a limiter per subject.
+   * Configure the named limiter's points at the maximum supported cap and blockDuration: 0.
+   * Consumers own the subject/window key; rejected requests still advance the counter.
+   */
+  async checkLimit(
+    limiterName: string,
+    key: string,
+    pointsLimit: number,
+  ): Promise<{ allowed: boolean; remaining: number; resetAt: Date }> {
+    const configured = this.options.limiters[limiterName];
+    this.getLimiter(limiterName);
+    if (!Number.isFinite(pointsLimit) || pointsLimit <= 0 || pointsLimit > configured.points) {
+      throw new BusinessException('Invalid subject rate limit', 'INVALID_POINTS', 400);
+    }
+    try {
+      const result = await this.consume(limiterName, key);
+      return {
+        allowed: result.consumedPoints <= pointsLimit,
+        remaining: Math.max(0, pointsLimit - result.consumedPoints),
+        resetAt: new Date(Date.now() + result.msBeforeNext),
+      };
+    } catch (error) {
+      if (!(error instanceof TooManyRequestsException)) throw error;
+      return { allowed: false, remaining: 0, resetAt: new Date(Date.now() + error.retryAfter * 1000) };
+    }
+  }
+
   /**
    * Apply a penalty by consuming extra points, extending the block time.
    * Useful for failed login attempts, abuse detection, etc.
    */
   async penalty(limiterName: string, key: string, points = 1): Promise<void> {
-    const limiter = this.getLimiter(limiterName);
-    await limiter.penalty(this.toStorageKey(key), points);
+    await this.executeWithInsurance(limiterName, limiter => limiter.penalty(this.toStorageKey(key), points));
     this.logger.log(`限流惩罚: limiter=${limiterName}, points=${points}`);
   }
 
@@ -169,17 +330,14 @@ export class RateLimiterService implements OnModuleInit, OnModuleDestroy {
    * Reward by reducing consumed points (opposite of penalty).
    */
   async reward(limiterName: string, key: string, points = 1): Promise<void> {
-    const limiter = this.getLimiter(limiterName);
-    await limiter.reward(this.toStorageKey(key), points);
+    await this.executeWithInsurance(limiterName, limiter => limiter.reward(this.toStorageKey(key), points));
   }
 
   async getRemaining(
     limiterName: string,
     key: string,
   ): Promise<{ remaining: number; resetAt: Date }> {
-    const limiter = this.getLimiter(limiterName);
-
-    const res = await limiter.get(this.toStorageKey(key));
+    const res = await this.executeWithInsurance(limiterName, limiter => limiter.get(this.toStorageKey(key)));
     if (!res) {
       const config = this.options.limiters[limiterName];
       return {
@@ -195,8 +353,9 @@ export class RateLimiterService implements OnModuleInit, OnModuleDestroy {
   }
 
   async reset(limiterName: string, key: string): Promise<void> {
-    const limiter = this.getLimiter(limiterName);
-    await limiter.delete(this.toStorageKey(key));
+    const storageKey = this.toStorageKey(key);
+    await this.executeWithInsurance(limiterName, limiter => limiter.delete(storageKey));
+    await this.insuranceLimiters.get(limiterName)!.delete(storageKey);
   }
 
   /**
@@ -241,7 +400,7 @@ export class RateLimiterService implements OnModuleInit, OnModuleDestroy {
   }
 
   isDistributed(): boolean {
-    return this.useRedis;
+    return this.useRedis && !this.redisDegraded && !this.shuttingDown;
   }
 
   /** Get a limiter by name, throwing if not found */

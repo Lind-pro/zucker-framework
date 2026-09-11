@@ -1,5 +1,10 @@
+import type { CrudEntity } from './crud-entity';
 import { Injectable, NotFoundException, Logger, Inject, Optional } from '@nestjs/common';
-import { type DatabaseAdapter, type GenericEntity, type Term, OperationCancelledException } from '@zucker-framework/core';
+import {
+  type DatabaseAdapter,
+  type Term,
+  OperationCancelledException,
+} from '@zucker-framework/core';
 import {
   EntityEventType,
   EntityEventPhase,
@@ -11,13 +16,22 @@ import {
   type TopicEventBus,
   TOPIC_EVENT_BUS,
 } from '@zucker-framework/event';
-import { DynamicQueryService, DynamicQueryParamService, type DynamicQueryParam } from './dynamic-query.service';
+import {
+  DynamicQueryService,
+  DynamicQueryParamService,
+  type DynamicQueryParam,
+} from './dynamic-query.service';
 import { type PaginatedResult } from './pagination';
 import { DATABASE_ADAPTER } from './crud.module';
 import { QueryBuilder, type IQueryBuilder } from './query/query-builder';
 
 function hasErrorCode(error: unknown, code: string): boolean {
-  return typeof error === 'object' && error !== null && 'code' in error && (error as { code: unknown }).code === code;
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code: unknown }).code === code
+  );
 }
 
 /**
@@ -25,19 +39,18 @@ function hasErrorCode(error: unknown, code: string): boolean {
  *
  * Subclasses should provide the model name and optionally customize the default order field.
  *
- * @template T - The entity type, must extend GenericEntity
+ * @template T - The entity type, must extend CrudEntity
  */
-@Injectable()
-export abstract class BaseService<T extends GenericEntity> {
+export abstract class CrudService<T extends CrudEntity> {
   protected readonly logger = new Logger(this.constructor.name);
   protected readonly modelName: string;
   protected readonly defaultOrderField: string = 'createdAt';
 
   constructor(
-    @Inject(DATABASE_ADAPTER) protected readonly db: DatabaseAdapter,
+    protected readonly db: DatabaseAdapter,
     protected readonly dynamicQuery: DynamicQueryService,
     modelName: string,
-    @Optional() @Inject(TOPIC_EVENT_BUS) protected readonly eventBus?: TopicEventBus,
+    protected readonly eventBus?: TopicEventBus,
     options?: { defaultOrderField?: string },
   ) {
     this.modelName = modelName;
@@ -57,7 +70,7 @@ export abstract class BaseService<T extends GenericEntity> {
     // BEFORE 阶段：监听器可 cancel() 取消操作
     await this.emitEventWithCancelCheck(EntityEventType.CREATE, data);
 
-    const result = await this.db.model(this.modelName).create({ data }) as T;
+    const result = (await this.db.model(this.modelName).create({ data })) as T;
 
     await this.emitEvent(EntityEventType.CREATE, EntityEventPhase.AFTER, result);
     return result;
@@ -77,10 +90,10 @@ export abstract class BaseService<T extends GenericEntity> {
     await this.emitEventWithCancelCheck(EntityEventType.MODIFY, data);
 
     try {
-      const result = await this.db.model(this.modelName).update({
+      const result = (await this.db.model(this.modelName).update({
         where: { id },
         data,
-      }) as T;
+      })) as T;
 
       await this.emitEvent(EntityEventType.MODIFY, EntityEventPhase.AFTER, result);
       return result;
@@ -109,10 +122,10 @@ export abstract class BaseService<T extends GenericEntity> {
     if (id) {
       // update 路径 — 跳过 update 自身的事件（已在 save 层级发出）
       try {
-        result = await this.db.model(this.modelName).update({
+        result = (await this.db.model(this.modelName).update({
           where: { id },
           data,
-        }) as T;
+        })) as T;
       } catch (error) {
         if (hasErrorCode(error, 'P2025')) {
           throw new NotFoundException(`${this.modelName} with ID "${id}" not found`);
@@ -120,7 +133,7 @@ export abstract class BaseService<T extends GenericEntity> {
         throw error;
       }
     } else {
-      result = await this.db.model(this.modelName).create({ data }) as T;
+      result = (await this.db.model(this.modelName).create({ data })) as T;
     }
 
     // AFTER 阶段（save 语义）
@@ -142,9 +155,9 @@ export abstract class BaseService<T extends GenericEntity> {
     await this.emitEventWithCancelCheck(EntityEventType.DELETE, entity);
 
     try {
-      const result = await this.db.model(this.modelName).delete({
+      const result = (await this.db.model(this.modelName).delete({
         where: { id },
-      }) as T;
+      })) as T;
 
       await this.emitEvent(EntityEventType.DELETE, EntityEventPhase.AFTER, result);
       return result;
@@ -224,12 +237,16 @@ export abstract class BaseService<T extends GenericEntity> {
    */
   async countByQuery(query: DynamicQueryParam): Promise<number> {
     // 使用 DynamicQueryParamService.parseFilters 解析，确保与 findMany 的过滤逻辑一致
-    const result = await this.dynamicQuery.findMany(this.modelName, {
-      ...query,
-      page: 1,
-      pageSize: 1,
-      total: undefined,
-    }, this.defaultOrderField);
+    const result = await this.dynamicQuery.findMany(
+      this.modelName,
+      {
+        ...query,
+        page: 1,
+        pageSize: 1,
+        total: undefined,
+      },
+      this.defaultOrderField,
+    );
     return result.total;
   }
 
@@ -237,11 +254,15 @@ export abstract class BaseService<T extends GenericEntity> {
    * 判断数据是否存在
    */
   async exists(query: DynamicQueryParam): Promise<boolean> {
-    const result = await this.dynamicQuery.findMany(this.modelName, {
-      ...query,
-      page: 1,
-      pageSize: 1,
-    }, this.defaultOrderField);
+    const result = await this.dynamicQuery.findMany(
+      this.modelName,
+      {
+        ...query,
+        page: 1,
+        pageSize: 1,
+      },
+      this.defaultOrderField,
+    );
     return result.data.length > 0;
   }
 
@@ -263,9 +284,16 @@ export abstract class BaseService<T extends GenericEntity> {
       total = param.total;
     } else {
       // 通过 DynamicQueryParamService 解析过滤条件，避免原始 JSON 直接注入查询
-      const countResult = await this.dynamicQuery.findMany(this.modelName, {
-        ...param, page: 1, pageSize: 1, total: undefined,
-      }, this.defaultOrderField);
+      const countResult = await this.dynamicQuery.findMany(
+        this.modelName,
+        {
+          ...param,
+          page: 1,
+          pageSize: 1,
+          total: undefined,
+        },
+        this.defaultOrderField,
+      );
       total = countResult.total;
     }
 
@@ -305,10 +333,10 @@ export abstract class BaseService<T extends GenericEntity> {
     const idsToCheck = entities.map((e) => e.id).filter((id): id is string => !!id);
     const existingIds = new Set<string>();
     if (idsToCheck.length > 0) {
-      const existingRecords = await this.db.model(this.modelName).findMany({
+      const existingRecords = (await this.db.model(this.modelName).findMany({
         where: { id: { in: idsToCheck } },
         select: { id: true },
-      }) as Array<{ id: string }>;
+      })) as Array<{ id: string }>;
       for (const record of existingRecords) {
         existingIds.add(record.id);
       }
@@ -318,14 +346,14 @@ export abstract class BaseService<T extends GenericEntity> {
     for (const entity of entities) {
       const id = entity.id;
       if (id && existingIds.has(id)) {
-        const result = await this.db.model(this.modelName).update({
+        const result = (await this.db.model(this.modelName).update({
           where: { id },
           data: entity,
-        }) as T;
+        })) as T;
         results.push(result);
         updated++;
       } else {
-        const result = await this.db.model(this.modelName).create({ data: entity }) as T;
+        const result = (await this.db.model(this.modelName).create({ data: entity })) as T;
         results.push(result);
         created++;
       }
@@ -454,7 +482,7 @@ export abstract class BaseService<T extends GenericEntity> {
         await this.emitEventWithCancelCheck(EntityEventType.CREATE, item);
       }
 
-      const result = await this.db.model(this.modelName).create({ data: item }) as T;
+      const result = (await this.db.model(this.modelName).create({ data: item })) as T;
       results.push(result);
 
       if (!options?.skipEvents) {
@@ -467,7 +495,10 @@ export abstract class BaseService<T extends GenericEntity> {
   /**
    * 批量更新（带事件）
    */
-  async updateBatch(items: (Partial<T> & { id: string })[], options?: { skipEvents?: boolean }): Promise<T[]> {
+  async updateBatch(
+    items: (Partial<T> & { id: string })[],
+    options?: { skipEvents?: boolean },
+  ): Promise<T[]> {
     if (!items || items.length === 0) return [];
     const results: T[] = [];
     for (const item of items) {
@@ -479,10 +510,10 @@ export abstract class BaseService<T extends GenericEntity> {
       }
 
       try {
-        const result = await this.db.model(this.modelName).update({
+        const result = (await this.db.model(this.modelName).update({
           where: { id },
           data,
-        }) as T;
+        })) as T;
         results.push(result);
 
         if (!options?.skipEvents) {
@@ -505,12 +536,12 @@ export abstract class BaseService<T extends GenericEntity> {
     if (!ids || ids.length === 0) return 0;
 
     // Batch-fetch all entities upfront to avoid N+1 findUnique calls
-    const entities = await this.db.model(this.modelName).findMany({
+    const entities = (await this.db.model(this.modelName).findMany({
       where: { id: { in: ids } },
-    }) as T[];
+    })) as T[];
     const entityMap = new Map<string, T>();
     for (const entity of entities) {
-      entityMap.set((entity as GenericEntity).id, entity);
+      entityMap.set((entity as CrudEntity).id, entity);
     }
 
     let count = 0;
@@ -547,7 +578,11 @@ export abstract class BaseService<T extends GenericEntity> {
     return this.db.$transaction(fn);
   }
 
-  protected async emitEvent(type: EntityEventType, phase: EntityEventPhase, entity: unknown): Promise<EntityEvent> {
+  protected async emitEvent(
+    type: EntityEventType,
+    phase: EntityEventPhase,
+    entity: unknown,
+  ): Promise<EntityEvent> {
     const event = createEntityEvent(type, phase, this.modelName, entity);
     if (!this.eventBus) return event;
     // 检查 EntityEventHelper 的 doFireEvent 上下文标志
@@ -570,5 +605,20 @@ export abstract class BaseService<T extends GenericEntity> {
         event.cancelReason ?? `${this.modelName} ${type} operation cancelled`,
       );
     }
+  }
+}
+
+/** Nest-injected base retained for consumers whose constructor follows this signature.
+ * Custom constructor layouts should extend CrudService and inject their own dependencies. */
+@Injectable()
+export abstract class BaseService<T extends CrudEntity> extends CrudService<T> {
+  constructor(
+    @Inject(DATABASE_ADAPTER) db: DatabaseAdapter,
+    dynamicQuery: DynamicQueryService,
+    modelName: string,
+    @Optional() @Inject(TOPIC_EVENT_BUS) eventBus?: TopicEventBus,
+    options?: { defaultOrderField?: string },
+  ) {
+    super(db, dynamicQuery, modelName, eventBus, options);
   }
 }

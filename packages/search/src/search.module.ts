@@ -7,15 +7,15 @@ import {
   type InjectionToken,
   type OptionalFactoryDependency,
 } from '@nestjs/common';
-import { SearchService, SEARCH_CLIENT, type SearchClient } from './search.service';
+import { SearchService, SEARCH_CLIENT, type SearchClient, type SearchServiceOptions } from './search.service';
 
-export interface SearchModuleOptions {
+export interface SearchModuleOptions extends SearchServiceOptions {
   client: SearchClient;
 }
 
 export interface SearchModuleAsyncOptions {
   imports?: Array<Type | DynamicModule>;
-  useFactory?: (...args: unknown[]) => SearchClient | Promise<SearchClient>;
+  useFactory?: (...args: unknown[]) => SearchClient | SearchModuleOptions | Promise<SearchClient | SearchModuleOptions>;
   useClass?: Type<SearchModuleOptionsFactory>;
   useExisting?: Type<SearchModuleOptionsFactory>;
   inject?: Array<InjectionToken | OptionalFactoryDependency>;
@@ -39,7 +39,7 @@ export class ZuckerSearchModule {
           provide: SEARCH_CLIENT,
           useValue: options.client,
         },
-        SearchService,
+        { provide: SearchService, useFactory: () => new SearchService(options.client, options) },
       ],
       exports: [SEARCH_CLIENT, SearchService],
     };
@@ -53,7 +53,16 @@ export class ZuckerSearchModule {
       imports: options.imports ?? [],
       providers: [
         ...asyncProviders,
-        SearchService,
+        {
+          provide: SEARCH_CLIENT,
+          useFactory: (options: SearchModuleOptions) => options.client,
+          inject: [SEARCH_MODULE_OPTIONS],
+        },
+        {
+          provide: SearchService,
+          useFactory: (options: SearchModuleOptions) => new SearchService(options.client, options),
+          inject: [SEARCH_MODULE_OPTIONS],
+        },
       ],
       exports: [SEARCH_CLIENT, SearchService],
     };
@@ -63,16 +72,19 @@ export class ZuckerSearchModule {
     if (options.useFactory) {
       return [
         {
-          provide: SEARCH_CLIENT,
-          useFactory: options.useFactory,
+          provide: SEARCH_MODULE_OPTIONS,
+          useFactory: async (...args: unknown[]) => {
+            const result = await options.useFactory!(...args);
+            return 'index' in result ? { client: result } : result;
+          },
           inject: options.inject ?? [],
         },
       ];
     }
 
     const clientProvider: Provider = {
-      provide: SEARCH_CLIENT,
-      useFactory: async (factory: SearchModuleOptionsFactory) => factory.createSearchClient(),
+      provide: SEARCH_MODULE_OPTIONS,
+      useFactory: async (factory: SearchModuleOptionsFactory) => ({ client: await factory.createSearchClient() }),
       inject: [options.useClass ?? options.useExisting!],
     };
 

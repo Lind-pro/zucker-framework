@@ -1,5 +1,11 @@
 import { ICache } from './cache.interface';
 
+export interface MemoryCacheOptions {
+  defaultTtlMs?: number;
+  /** Maximum resident entries, evicting the oldest inserted key when full. */
+  maxEntries?: number;
+}
+
 interface CacheEntry<T> {
   value: T;
   expiresAt: number | null;
@@ -10,11 +16,17 @@ export class MemoryCache<T = unknown> implements ICache<T> {
   private readonly store = new Map<string, CacheEntry<T>>();
   private readonly defaultTtlMs: number | null;
 
-  constructor(options?: { defaultTtlMs?: number }) {
+  constructor(private readonly options: MemoryCacheOptions = {}) {
     this.defaultTtlMs = options?.defaultTtlMs ?? null;
   }
 
-  async get(key: string): Promise<T | undefined> {
+  /** Resident size, including entries not yet pruned by a read or keys(). */
+  get size(): number { return this.store.size; }
+
+  async get(key: string): Promise<T | undefined> { return this.getSync(key); }
+
+  /** Synchronous access for local state that cannot cross an asynchronous boundary. */
+  getSync(key: string): T | undefined {
     const entry = this.store.get(key);
     if (!entry) return undefined;
     if (entry.expiresAt !== null && Date.now() >= entry.expiresAt) {
@@ -25,7 +37,19 @@ export class MemoryCache<T = unknown> implements ICache<T> {
   }
 
   async set(key: string, value: T, ttlMs?: number): Promise<void> {
+    this.setSync(key, value, ttlMs);
+  }
+
+  setSync(key: string, value: T, ttlMs?: number): void {
     const effectiveTtl = ttlMs ?? this.defaultTtlMs;
+    if (!this.store.has(key) && this.options.maxEntries !== undefined) {
+      if (this.options.maxEntries <= 0) return;
+      while (this.store.size >= this.options.maxEntries) {
+        const oldest = this.store.keys().next();
+        if (oldest.done) break;
+        this.store.delete(oldest.value);
+      }
+    }
     this.store.set(key, {
       value,
       expiresAt: effectiveTtl ? Date.now() + effectiveTtl : null,

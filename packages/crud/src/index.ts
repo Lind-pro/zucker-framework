@@ -56,7 +56,7 @@ export {
 } from './query/query-builder';
 
 // Base Service & Controller
-export { BaseService } from './base.service';
+export { BaseService, CrudService } from './base.service';
 export { BaseController, BaseControllerHost } from './base.controller';
 
 // Cache Enabled Service
@@ -125,3 +125,8 @@ export type { CrudModuleAsyncOptions } from './crud.module';
 // CRUD Controller Factory
 export { CrudControllerFactory, CRUD_METADATA } from './crud.decorator';
 export type { CrudOptions, CrudRouteConfig } from './crud.decorator';
+
+export type { CrudEntity } from './crud-entity';
+export type { BaseControllerOptions, BaseControllerRouteOptions, BaseControllerMethod } from './base.controller';
+
+export { QueryParamDto } from './query/query-param.dto';

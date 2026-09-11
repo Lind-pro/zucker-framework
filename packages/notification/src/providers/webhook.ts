@@ -17,6 +17,24 @@ export interface WebhookProviderOptions {
   timeoutMs?: number;
   /** HTTP method, defaults to POST */
   method?: 'POST' | 'PUT';
+  /** Optional provider acknowledgement validation, within the same request timeout. */
+  validateResponse?: (response: Response) => Promise<void>;
+  fetch?: WebhookFetch;
+  /** Keep normal fetch behavior unless the caller requires redirects to fail. */
+  redirect?: RequestInit['redirect'];
+}
+
+export type WebhookFetch = (input: string | URL, init?: RequestInit) => Promise<Response>;
+export class WebhookDeliveryError extends Error {
+  constructor(
+    readonly reason: 'http' | 'timeout' | 'transport',
+    message: string,
+    readonly status?: number,
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
+    this.name = 'WebhookDeliveryError';
+  }
 }
 
 @Injectable()
@@ -27,44 +45,84 @@ export class WebhookProvider implements SimpleNotifierProvider {
   private readonly headers: Record<string, string>;
   private readonly timeoutMs: number;
   private readonly method: string;
+  private readonly validateResponse?: (response: Response) => Promise<void>;
+  private readonly request: WebhookFetch;
+  private readonly redirect?: RequestInit['redirect'];
 
   constructor(options: WebhookProviderOptions = {}) {
     this.defaultUrl = options.defaultUrl ?? '';
     this.headers = options.headers ?? {};
     this.timeoutMs = options.timeoutMs ?? 30000;
     this.method = options.method ?? 'POST';
+    this.validateResponse = options.validateResponse;
+    this.request = options.fetch ?? ((input, init) => fetch(input, init));
+    this.redirect = options.redirect;
   }
 
   async send(message: NotifyMessage): Promise<void> {
     const to = Array.isArray(message.to) ? message.to[0] : message.to;
-    const url = to || this.defaultUrl;
+    await this.sendPayload(
+      {
+        subject: message.subject,
+        content: message.content,
+        variables: message.variables,
+        channel: message.channel,
+        templateId: message.templateId,
+      },
+      to || this.defaultUrl,
+    );
+  }
+
+  /** Deliver a provider-specific JSON envelope using the same timeout/status handling. */
+  async sendPayload(payload: unknown, url = this.defaultUrl): Promise<void> {
+    await this.sendPayloadWithResponse(payload, url);
+  }
+
+  /** Same delivery path, with the response available to probes and protocol adapters. */
+  async sendPayloadWithResponse(payload: unknown, url = this.defaultUrl): Promise<Response> {
     if (!url) throw new Error('Webhook URL not configured');
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
 
     try {
-      const response = await fetch(url, {
-        method: this.method,
-        headers: {
-          'Content-Type': 'application/json',
-          ...this.headers,
-        },
-        body: JSON.stringify({
-          subject: message.subject,
-          content: message.content,
-          variables: message.variables,
-          channel: message.channel,
-          templateId: message.templateId,
-        }),
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        throw new Error(`Webhook failed: ${response.status} ${response.statusText}`);
+      let response: Response;
+      try {
+        response = await this.request(url, {
+          method: this.method,
+          headers: {
+            'Content-Type': 'application/json',
+            ...this.headers,
+          },
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+          ...(this.redirect ? { redirect: this.redirect } : {}),
+        });
+      } catch (error) {
+        throw new WebhookDeliveryError(
+          controller.signal.aborted ? 'timeout' : 'transport',
+          controller.signal.aborted
+            ? 'Webhook timed out'
+            : error instanceof Error
+              ? error.message
+              : String(error),
+          undefined,
+          { cause: error },
+        );
       }
 
-      this.logger.log(`Webhook sent: url=${url}`);
+      if (!response.ok) {
+        throw new WebhookDeliveryError(
+          'http',
+          `Webhook failed: ${response.status} ${response.statusText}`,
+          response.status,
+        );
+      }
+
+      await this.validateResponse?.(response);
+      // Webhook URLs often contain bearer credentials; never write them to logs.
+      this.logger.log('Webhook sent');
+      return response;
     } finally {
       clearTimeout(timeout);
     }

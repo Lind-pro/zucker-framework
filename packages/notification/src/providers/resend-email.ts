@@ -10,22 +10,30 @@ import type {
   ConfigMetadataItem,
 } from '../notifier.interface';
 import { notificationDeliveryLog } from '../delivery-log';
+import {
+  abortedMailResult,
+  type MailProvider,
+  type MailDeliveryContext,
+  type SendMailOptions,
+  type SendMailResult,
+} from '../mail/mail-provider';
 
 interface ResendClient {
   emails: {
-    send(input: {
-      from: string;
-      to: string[];
-      subject: string;
-      html: string;
-    }): Promise<{ error?: { message?: string } | null }>;
+    send(
+      input: SendMailOptions & { from: string; to: string[] },
+      context?: MailDeliveryContext,
+    ): Promise<{
+      data?: { id?: string } | null;
+      error?: { message?: string } | null;
+    }>;
   };
 }
 
 type ResendConstructor = new (apiKey: string) => ResendClient;
 
 export interface ResendEmailProviderOptions {
-  apiKey: string;
+  apiKey?: string;
   from: string;
 }
 
@@ -34,55 +42,92 @@ export interface ResendEmailProviderOptions {
  * SDK: resend
  */
 @Injectable()
-export class ResendEmailProvider implements SimpleNotifierProvider {
+export class ResendEmailProvider implements SimpleNotifierProvider, MailProvider {
   private readonly logger = new Logger(ResendEmailProvider.name);
   readonly channel = 'EMAIL' as NotifyChannel;
-  private client?: ResendClient;
+  readonly name = 'Resend';
+  readonly supportsIdempotency = true;
+  private clientPromise?: Promise<ResendClient>;
+  private closed = false;
   private readonly from: string;
 
-  constructor(options: ResendEmailProviderOptions) {
+  constructor(private readonly options: ResendEmailProviderOptions) {
     this.from = options.from;
-    this.initClient(options.apiKey);
   }
 
-  private async initClient(apiKey: string): Promise<void> {
-    try {
+  isConfigured(): boolean {
+    return !!this.options.apiKey && !this.closed;
+  }
+
+  private client(): Promise<ResendClient> {
+    return (this.clientPromise ??= (async () => {
       const mod = (await import('resend' as string)) as unknown as {
         Resend?: ResendConstructor;
         default?: ResendConstructor;
       };
-      const Resend = mod.Resend ?? mod.default;
-      if (!Resend) throw new Error('Resend constructor is unavailable');
-      this.client = new Resend(apiKey);
-      this.logger.log('Resend email service initialized');
-    } catch {
-      this.logger.error('resend package not installed. Run: npm install resend');
+      const Constructor = mod.Resend ?? mod.default;
+      if (!Constructor) throw new Error('Resend constructor is unavailable');
+      return new Constructor(this.options.apiKey!);
+    })());
+  }
+
+  async deliver(options: SendMailOptions, context?: MailDeliveryContext): Promise<SendMailResult> {
+    if (context?.signal?.aborted) return abortedMailResult();
+    if (!this.isConfigured()) return { success: false, error: 'Resend 未配置' };
+    try {
+      const client = await this.client();
+      if (context?.signal?.aborted || this.closed) return abortedMailResult();
+      const result = await client.emails.send(
+        {
+          from: options.from || this.from,
+          to: Array.isArray(options.to) ? options.to : [options.to],
+          subject: options.subject,
+          html: options.html,
+          text: options.text,
+          replyTo: options.replyTo,
+          cc: options.cc,
+          bcc: options.bcc,
+          attachments: options.attachments?.map((attachment) => ({
+            ...attachment,
+            // The SDK maps field names but does not encode Buffer payloads.
+            content: Buffer.isBuffer(attachment.content)
+              ? attachment.content.toString('base64')
+              : attachment.content,
+          })),
+        },
+        context?.idempotencyKey || context?.signal
+          ? {
+              ...(context.idempotencyKey ? { idempotencyKey: context.idempotencyKey } : {}),
+              ...(context.signal ? { signal: context.signal } : {}),
+            }
+          : undefined,
+      );
+      if (result.error) {
+        if (context?.signal?.aborted) return abortedMailResult();
+        this.logger.error('Resend delivery failed');
+        return { success: false, error: result.error.message ?? 'Resend delivery failed' };
+      }
+      this.logger.log(notificationDeliveryLog('EMAIL', 'resend', options.to));
+      return { success: true, messageId: result.data?.id };
+    } catch (error) {
+      if (context?.signal?.aborted) return abortedMailResult();
+      this.logger.error('Resend delivery failed');
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   }
 
   async send(message: NotifyMessage): Promise<void> {
-    if (!this.client) {
-      throw new Error('Resend client not initialized');
-    }
-
-    const to = Array.isArray(message.to) ? message.to : [message.to];
-
-    const { error } = await this.client.emails.send({
-      from: this.from,
-      to,
+    const result = await this.deliver({
+      to: message.to,
       subject: message.subject ?? '',
       html: message.content ?? '',
     });
-
-    if (error) {
-      throw new Error(`Resend API error: ${error.message ?? 'unknown'}`);
-    }
-
-    this.logger.log(notificationDeliveryLog('EMAIL', 'resend', to));
+    if (!result.success) throw new Error(result.error);
   }
 
   async close(): Promise<void> {
-    this.client = undefined;
+    this.closed = true;
+    this.clientPromise = undefined;
   }
 }
 
@@ -104,9 +149,20 @@ export class ResendEmailNotifierProvider implements NotifierProvider {
       provider: this.provider,
       async send(message: NotifyMessage): Promise<NotifyResult> {
         try {
-          await resendProvider.send(message);
+          const delivered = await resendProvider.deliver({
+            to: message.to,
+            subject: message.subject ?? '',
+            html: message.content ?? '',
+          });
+          if (!delivered.success) throw new Error(delivered.error);
           const to = Array.isArray(message.to) ? message.to.join(',') : message.to;
-          return { success: true, timestamp: new Date(), channel: 'EMAIL' as NotifyChannel, to };
+          return {
+            success: true,
+            messageId: delivered.messageId,
+            timestamp: new Date(),
+            channel: 'EMAIL' as NotifyChannel,
+            to,
+          };
         } catch (err) {
           const to = Array.isArray(message.to) ? message.to.join(',') : message.to;
           return {

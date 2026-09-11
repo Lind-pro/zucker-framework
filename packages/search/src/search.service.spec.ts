@@ -203,3 +203,83 @@ describe('SearchService', () => {
     });
   });
 });
+
+describe('SearchService connection and alias lifecycle', () => {
+  it('initializes one client and creates a configured alias from discovered capabilities', async () => {
+    const client = createMockClient();
+    client.ping = vi.fn().mockResolvedValue(true);
+    client.close = vi.fn().mockResolvedValue(undefined);
+    client.getPlugins = vi.fn().mockResolvedValue(['synthetic-analyzer']);
+    client.indices.existsAlias = vi.fn().mockResolvedValue(false);
+    client.indices.putAlias = vi.fn().mockResolvedValue({});
+    const definition = vi.fn().mockReturnValue({ mappings: { properties: { text: { type: 'text' } } } });
+    const service = new SearchService(client, {
+      ownsClient: true, aliases: [{ alias: 'documents', definition }],
+    });
+    await Promise.all([service.onModuleInit(), service.onModuleInit()]);
+    expect(client.ping).toHaveBeenCalledTimes(1);
+    expect(definition).toHaveBeenCalledWith(['synthetic-analyzer']);
+    expect(client.indices.putAlias).toHaveBeenCalledWith({ index: expect.stringMatching(/^documents_\d+$/), name: 'documents' });
+    expect(service.isHealthy()).toBe(true);
+    await service.onModuleDestroy();
+    await service.onModuleDestroy();
+    expect(client.close).toHaveBeenCalledTimes(1);
+    expect(service.isHealthy()).toBe(false);
+  });
+
+  it('does not touch disabled search and leaves externally owned clients open', async () => {
+    const client = createMockClient();
+    client.ping = vi.fn();
+    client.close = vi.fn();
+    const service = new SearchService(client, { enabled: false });
+    await service.onModuleInit();
+    await expect(service.indexDocument('index', 'id', {})).rejects.toThrow('Search client not configured');
+    expect(client.ping).not.toHaveBeenCalled();
+    expect(client.index).not.toHaveBeenCalled();
+    await service.onModuleDestroy();
+    expect(client.close).not.toHaveBeenCalled();
+  });
+
+  it('keeps startup available after a dependency failure and exposes later health recovery', async () => {
+    const client = createMockClient();
+    const ping = vi.fn().mockRejectedValueOnce(new Error('dependency unavailable')).mockResolvedValue(true);
+    client.ping = ping;
+    const service = new SearchService(client);
+    await expect(service.onModuleInit()).resolves.toBeUndefined();
+    expect(service.isHealthy()).toBe(false);
+    await expect(service.refreshHealth()).resolves.toBe(true);
+    await service.onModuleDestroy();
+  });
+
+  it('switches aliases before retiring old indices and never deletes the active target', async () => {
+    const client = createMockClient();
+    client.indices.getAlias = vi.fn().mockResolvedValue({ previous: {}, replacement: {} });
+    client.indices.updateAliases = vi.fn().mockResolvedValue({});
+    const service = new SearchService(client);
+    await service.switchAlias('documents', 'replacement', true);
+    expect(client.indices.updateAliases).toHaveBeenCalledWith({ actions: [
+      { remove: { index: 'previous', alias: 'documents' } },
+      { add: { index: 'replacement', alias: 'documents' } },
+    ] });
+    expect(client.indices.delete).toHaveBeenCalledExactlyOnceWith({ index: 'previous' });
+  });
+
+  it('does not mutate aliases when discovery fails for a reason other than not found', async () => {
+    const client = createMockClient();
+    client.indices.getAlias = vi.fn().mockRejectedValue({ statusCode: 503 });
+    client.indices.updateAliases = vi.fn();
+    const service = new SearchService(client);
+    await expect(service.switchAlias('documents', 'replacement', true)).rejects.toEqual({ statusCode: 503 });
+    expect(client.indices.updateAliases).not.toHaveBeenCalled();
+    expect(client.indices.delete).not.toHaveBeenCalled();
+  });
+
+  it('keeps numeric or missing hit totals compatible and forwards cancellation', async () => {
+    const client = createMockClient();
+    (client.search as ReturnType<typeof vi.fn>).mockResolvedValue({ hits: { total: 2, hits: [] } });
+    const service = new SearchService(client);
+    const signal = new AbortController().signal;
+    await expect(service.search({ index: 'documents' }, { signal })).resolves.toMatchObject({ total: 2 });
+    expect(client.search).toHaveBeenCalledWith({ index: 'documents', body: {} }, { signal });
+  });
+});

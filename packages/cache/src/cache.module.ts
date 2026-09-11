@@ -11,10 +11,12 @@ import { MemoryCache } from './memory-cache';
 import { RedisCache, type RedisClient } from './redis-cache';
 import { HybridCache } from './hybrid-cache';
 import type { ICache } from './cache.interface';
+import { CacheService, type CacheServiceOptions } from './cache.service';
+import { RedisCacheService } from './redis-cache.service';
 
 export const CACHE_PROVIDER = 'CACHE_PROVIDER';
 
-export interface CacheModuleOptions {
+export interface CacheProviderModuleOptions {
   provider: 'memory' | 'redis' | 'hybrid';
   redis?: {
     client: RedisClient;
@@ -23,7 +25,15 @@ export interface CacheModuleOptions {
   defaultTtlMs?: number;
 }
 
+/** Seconds-based cache service mode; legacy ICache provider modes retain ms TTLs. */
+export interface CacheServiceModuleOptions extends CacheServiceOptions {
+  provider: 'fallback';
+}
+
+export type CacheModuleOptions = CacheProviderModuleOptions | CacheServiceModuleOptions;
+
 export interface CacheModuleAsyncOptions {
+  mode?: 'provider' | 'service';
   imports?: Array<Type | DynamicModule>;
   useFactory?: (...args: unknown[]) => CacheModuleOptions | Promise<CacheModuleOptions>;
   useClass?: Type<CacheModuleOptionsFactory>;
@@ -41,6 +51,14 @@ const CACHE_MODULE_OPTIONS = Symbol('CACHE_MODULE_OPTIONS');
 @Module({})
 export class ZuckerCacheModule {
   static forRoot(options: CacheModuleOptions): DynamicModule {
+    if (options.provider === 'fallback') {
+      return {
+        module: ZuckerCacheModule,
+        global: true,
+        providers: this.serviceProviders({ provide: CACHE_MODULE_OPTIONS, useValue: options }),
+        exports: [CacheService, RedisCacheService],
+      };
+    }
     return {
       module: ZuckerCacheModule,
       global: true,
@@ -56,6 +74,15 @@ export class ZuckerCacheModule {
 
   static forRootAsync(options: CacheModuleAsyncOptions): DynamicModule {
     const asyncProviders = this.createAsyncProviders(options);
+    if (options.mode === 'service') {
+      return {
+        module: ZuckerCacheModule,
+        global: true,
+        imports: options.imports ?? [],
+        providers: [...asyncProviders, ...this.serviceProviders()],
+        exports: [CacheService, RedisCacheService],
+      };
+    }
     return {
       module: ZuckerCacheModule,
       global: true,
@@ -72,7 +99,30 @@ export class ZuckerCacheModule {
     };
   }
 
+  private static serviceProviders(optionsProvider?: Provider): Provider[] {
+    return [
+      ...(optionsProvider ? [optionsProvider] : []),
+      {
+        provide: RedisCacheService,
+        useFactory: (options: CacheModuleOptions) => {
+          if (options.provider !== 'fallback') throw new Error('Cache service mode requires provider: fallback');
+          return new RedisCacheService(options.redis);
+        },
+        inject: [CACHE_MODULE_OPTIONS],
+      },
+      {
+        provide: CacheService,
+        useFactory: (redis: RedisCacheService, options: CacheServiceModuleOptions) =>
+          new CacheService(redis, options),
+        inject: [RedisCacheService, CACHE_MODULE_OPTIONS],
+      },
+    ];
+  }
+
   private static createCache(options: CacheModuleOptions): ICache {
+    if (options.provider === 'fallback') {
+      throw new Error('Async cache service mode requires mode: service');
+    }
     const memory = new MemoryCache({ defaultTtlMs: options.defaultTtlMs });
 
     if (options.provider === 'memory') {

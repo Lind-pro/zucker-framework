@@ -5,6 +5,7 @@ import {
   CallHandler,
   Inject,
   Optional,
+  HttpException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { EventEmitter2 } from 'eventemitter2';
@@ -21,8 +22,14 @@ import {
 } from './events';
 import { getCorrelationId } from './correlation-id';
 import { PiiFilter } from './pii-filter';
+import { AccessLogService, OperationLogService } from './persistent-logs';
 
 export const ACCESS_LOG_BUS = Symbol('ACCESS_LOG_BUS');
+export const ACCESS_LOG_CAPTURE_OPTIONS = Symbol('ACCESS_LOG_CAPTURE_OPTIONS');
+export interface AccessLogCaptureOptions {
+  /** Retain client IPs for authorized audit/timeline queries. Disabled by default. */
+  retainClientIp?: boolean;
+}
 
 export interface AccessLogBus {
   publish(topic: string, payload: unknown): Promise<void>;
@@ -46,7 +53,7 @@ const DEFAULT_SENSITIVE_FIELDS = ['password', 'secret', 'token', 'authorization'
 
 @Injectable()
 export class AccessLoggerInterceptor implements NestInterceptor {
-  private readonly piiFilter = new PiiFilter();
+  private readonly piiFilter: PiiFilter;
 
   constructor(
     private readonly reflector: Reflector,
@@ -54,7 +61,15 @@ export class AccessLoggerInterceptor implements NestInterceptor {
     @Optional()
     @Inject(ACCESS_LOG_BUS)
     private readonly bus?: AccessLogBus,
-  ) {}
+    @Optional() piiFilter?: PiiFilter,
+    @Optional() private readonly accessLogs?: AccessLogService,
+    @Optional() private readonly operationLogs?: OperationLogService,
+    @Optional()
+    @Inject(ACCESS_LOG_CAPTURE_OPTIONS)
+    private readonly captureOptions?: AccessLogCaptureOptions,
+  ) {
+    this.piiFilter = piiFilter ?? new PiiFilter();
+  }
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     // Support class + method level composition:
@@ -89,7 +104,8 @@ export class AccessLoggerInterceptor implements NestInterceptor {
     const username = this.sanitizeOptional(request.user?.username || request.user?.email);
     const method = request.method;
     const requestUrl = this.piiFilter.sanitize(request.url);
-    const ip = this.piiFilter.sanitize(this.getClientIp(request));
+    const clientIp = this.getClientIp(request);
+    const ip = this.captureOptions?.retainClientIp ? clientIp : this.piiFilter.sanitize(clientIp);
     const userAgent = this.sanitizeOptional(request.headers?.['user-agent']);
 
     // 完整请求头
@@ -216,15 +232,16 @@ export class AccessLoggerInterceptor implements NestInterceptor {
         this.eventEmitter?.emit(ACCESS_LOG_EVENT, accessPayload);
         this.eventEmitter?.emit(OPERATION_LOG_EVENT, operationPayload);
         this.bus?.publish('system/access-log', accessPayload);
+        void Promise.allSettled([
+          this.accessLogs?.log(accessPayload),
+          this.operationLogs?.log(operationPayload),
+        ]);
       }),
       catchError((error) => {
         const duration = Date.now() - startTime;
         const targetId = this.extractTargetId(request, null);
 
-        // exception 包含完整堆栈
-        const exceptionStr = this.piiFilter.sanitize(
-          error instanceof Error ? (error.stack ?? error.message) : String(error),
-        );
+        const exceptionStr = this.piiFilter.sanitize(this.extractErrorMessage(error));
 
         const accessPayload: AccessLogPayload = {
           id: logId,
@@ -261,9 +278,7 @@ export class AccessLoggerInterceptor implements NestInterceptor {
           userAgent,
           duration,
           requestData: parameters,
-          errorMessage: this.piiFilter.sanitize(
-            error instanceof Error ? error.message : String(error),
-          ),
+          errorMessage: exceptionStr,
           correlationId,
           metadata: {
             errorStack:
@@ -276,6 +291,10 @@ export class AccessLoggerInterceptor implements NestInterceptor {
         this.eventEmitter?.emit(ACCESS_LOG_EVENT, accessPayload);
         this.eventEmitter?.emit(OPERATION_LOG_EVENT, operationPayload);
         this.bus?.publish('system/access-log', accessPayload);
+        void Promise.allSettled([
+          this.accessLogs?.log(accessPayload),
+          this.operationLogs?.log(operationPayload),
+        ]);
 
         return throwError(() => error);
       }),
@@ -352,9 +371,23 @@ export class AccessLoggerInterceptor implements NestInterceptor {
     sensitiveFields: string[],
   ): Record<string, unknown> | undefined {
     if (!params) return undefined;
-    return new PiiFilter({
-      sensitiveFields,
-    }).sanitizeObject(params);
+    return this.piiFilter.sanitizeObject(
+      new PiiFilter({
+        sensitiveFields,
+      }).sanitizeObject(params),
+    );
+  }
+
+  private extractErrorMessage(error: unknown): string {
+    if (error instanceof HttpException) {
+      const response = error.getResponse();
+      if (typeof response === 'string') return response;
+      const data = response as { message?: string | string[]; code?: string };
+      const message =
+        (Array.isArray(data.message) ? data.message[0] : data.message) || error.message;
+      return data.code ? `[${data.code}] ${message}` : message;
+    }
+    return error instanceof Error ? error.message : String(error);
   }
 
   private simplifyResult(result: unknown): unknown {

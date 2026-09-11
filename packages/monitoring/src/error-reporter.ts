@@ -24,7 +24,7 @@ export const ERROR_REPORTER = Symbol.for('@zucker-framework/monitoring/error-rep
  * Provider-neutral error reporting port.
  *
  * Sentry, Datadog, Rollbar, or an internal collector belongs behind this port;
- * the framework intentionally does not depend on any vendor SDK.
+ * provider adapters may load an explicitly configured optional vendor SDK.
  */
 export interface ErrorReporter {
   captureException(error: unknown, context?: ErrorContext): void;

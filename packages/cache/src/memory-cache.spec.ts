@@ -198,3 +198,23 @@ describe('MemoryCache', () => {
     expect(await cache.get('c')).toBeUndefined();
   });
 });
+
+describe('MemoryCache synchronous local state', () => {
+  it('shares expiry and capacity with the asynchronous API while exposing resident size', async () => {
+    vi.useFakeTimers();
+    try {
+      const cache = new MemoryCache<string>({ maxEntries: 2 });
+      cache.setSync('one', 'first', 1000);
+      await cache.set('two', 'second', 1000);
+      expect(cache.getSync('one')).toBe('first');
+      expect(await cache.get('two')).toBe('second');
+      cache.setSync('three', 'third', 1000);
+      expect(cache.getSync('one')).toBeUndefined();
+      expect(cache.size).toBe(2);
+      vi.advanceTimersByTime(1000);
+      expect(cache.size).toBe(2);
+      expect(cache.getSync('two')).toBeUndefined();
+      expect(cache.size).toBe(1);
+    } finally { vi.useRealTimers(); }
+  });
+});

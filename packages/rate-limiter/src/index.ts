@@ -5,6 +5,7 @@ export {
 } from './rate-limiter.service';
 export type {
   RateLimiterModuleOptions,
+  RateLimiterRedisOptions,
   LimiterConfig,
   ConsumeResult,
 } from './rate-limiter.service';

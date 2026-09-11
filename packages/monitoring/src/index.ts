@@ -48,3 +48,15 @@ export { AlertController } from './alert/alert.controller';
 
 export { UsageTracker } from './usage-tracker';
 export type { UsageMetrics, UsageSummary } from './usage-tracker';
+
+export { errorFingerprint, ERROR_TRACKER_OPTIONS } from './error-tracker';
+export type { ErrorTrackerOptions } from './error-tracker';
+
+export {
+  SentryErrorReporter,
+  type SentryErrorReporterOptions,
+  type SentrySdkPort,
+  type SentryScopePort,
+  type SentryScopeContext,
+  type SentryEvent,
+} from './sentry-error-reporter';

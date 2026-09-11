@@ -8,7 +8,13 @@ export type {
   ChunkUploadState,
   PosixFilePermissions,
 } from './storage.interface';
-export { isFileDenied, generateDateBasedKey, DANGEROUS_EXTENSIONS, sanitizeFileName, isSafeOriginalFileName } from './storage.interface';
+export {
+  isFileDenied,
+  generateDateBasedKey,
+  DANGEROUS_EXTENSIONS,
+  sanitizeFileName,
+  isSafeOriginalFileName,
+} from './storage.interface';
 
 export enum StorageProvider {
   LOCAL = 'LOCAL',
@@ -18,11 +24,7 @@ export enum StorageProvider {
 
 export { LocalFileStorage } from './local-storage';
 export { S3Storage } from './s3-storage';
-export type {
-  S3StorageOptions,
-  S3ObjectAclMode,
-  S3UploadUrlMode,
-} from './s3-storage';
+export type { S3StorageOptions, S3ObjectAclMode, S3UploadUrlMode } from './s3-storage';
 export { WebDavStorage } from './webdav-storage';
 export type { WebDavStorageOptions } from './webdav-storage';
 export {
@@ -32,4 +34,27 @@ export {
   type LifecycleResult,
 } from './file-lifecycle';
 export { ZuckerStorageModule, FILE_MANAGER } from './storage.module';
-export type { StorageModuleOptions, StorageModuleAsyncOptions, StorageModuleOptionsFactory } from './storage.module';
+export type {
+  StorageModuleOptions,
+  StorageModuleAsyncOptions,
+  StorageModuleOptionsFactory,
+} from './storage.module';
+
+export { hydrateStorageUrls, type StorageUrlHydrationOptions } from './storage-url-hydrator';
+
+export { UnavailableFileManager } from './unavailable-file-manager';
+
+export {
+  transferVerifiedObject,
+  verifyStoredObject,
+  StorageTransferError,
+} from './verified-object-transfer';
+export type {
+  BufferedObjectStore,
+  DownloadedStorageObject,
+  VerifiedStorageMetadata,
+  VerifiedObjectTransferOptions,
+  StorageTransferErrorCode,
+  StorageTransferErrorFactory,
+} from './verified-object-transfer';
+export { BufferedFileManagerStore } from './buffered-file-manager-store';

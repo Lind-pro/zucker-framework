@@ -17,7 +17,11 @@
     "prepack": "node ../../scripts/prepare-package-legal.mjs"
   },
   "dependencies": {
-    "eventemitter2": "^6.4.9"
+    "@zucker-framework/core": "workspace:*",
+    "eventemitter2": "^6.4.9",
+    "winston": "^3.19.0",
+    "winston-daily-rotate-file": "^5.0.0",
+    "winston-transport": "^4.9.0"
   },
   "devDependencies": {
     "@types/node": "^20.19.43"

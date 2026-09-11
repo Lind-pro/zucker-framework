@@ -26,10 +26,7 @@ export type {
 } from './notifier.interface';
 
 export { NotifierEventDispatcher, NotifierEventTopics } from './notifier-event-dispatcher';
-export type {
-  NotificationEventBus,
-  NotifierEvent,
-} from './notifier-event-dispatcher';
+export type { NotificationEventBus, NotifierEvent } from './notifier-event-dispatcher';
 
 export { EmailProvider, EmailNotifierProvider } from './providers/email';
 export type { EmailProviderOptions } from './providers/email';
@@ -57,10 +54,7 @@ export type { NotifyConfigManager } from './notifier-manager.service';
 export { NOTIFY_CONFIG_MANAGER } from './notifier-manager.service';
 
 export { NotifyHistoryService } from './notify-history.service';
-export type {
-  NotifyHistoryRecord,
-  NotifyHistoryStore,
-} from './notify-history.service';
+export type { NotifyHistoryRecord, NotifyHistoryStore } from './notify-history.service';
 
 export {
   ZuckerNotificationModule,
@@ -68,12 +62,21 @@ export {
   NOTIFIER_PROVIDER_REGISTRY,
   TOPIC_EVENT_BUS_TOKEN,
 } from './notification.module';
-export type { NotificationModuleOptions, NotificationModuleAsyncOptions, NotificationModuleOptionsFactory, SmsProviderType } from './notification.module';
+export type {
+  NotificationModuleOptions,
+  NotificationModuleAsyncOptions,
+  NotificationModuleOptionsFactory,
+  SmsProviderType,
+} from './notification.module';
 
 export { NotificationRetryService } from './retry/notification-retry.service';
 export type { RetryPolicy } from './retry/notification-retry.service';
 
-export { InMemoryNotificationDedup, NotificationPriority, PriorityNotificationQueue } from './dedup.service';
+export {
+  InMemoryNotificationDedup,
+  NotificationPriority,
+  PriorityNotificationQueue,
+} from './dedup.service';
 export type { NotificationDedup } from './dedup.service';
 
 export { WebhookRegistry } from './webhook-registry';
@@ -108,3 +111,55 @@ export type {
   DurableNotificationWorkerOptions,
   NotificationWorkerOutcome,
 } from './durable-notification-worker';
+export { MailProviderErrorCode } from './mail/mail-provider';
+export type {
+  MailProvider,
+  MailDeliveryContext,
+  SendMailOptions,
+  SendMailResult,
+} from './mail/mail-provider';
+export { MailService } from './mail/mail.service';
+export type {
+  MailServiceOptions,
+  MailRequestOptions,
+  MailSendResult,
+  MailTemplateContent,
+  MailTemplateData,
+} from './mail/mail.service';
+export { MailTemplateCatalog, extractMailVariables } from './mail/template-catalog';
+export type {
+  MailTemplateCatalogOptions,
+  BuiltInMailTemplate,
+  BuiltInTemplateInfo,
+  ResolvedTemplate,
+} from './mail/template-catalog';
+export { ZuckerMailModule } from './mail/mail.module';
+export type { MailModuleAsyncOptions } from './mail/mail.module';
+
+export * from './mail/mail-engagement.service';
+export * from './mail/resend-webhook.service';
+
+export * from './mail/mail-history.service';
+export * from './mail/mail-batch';
+export * from './mail/mail-campaign.service';
+
+export * from './alert-notification.service';
+export * from './providers/alert-webhook';
+
+export { NotificationInbox, InboxNotificationNotFoundError } from './notification-inbox';
+export type {
+  NotificationInboxRepository,
+  NotificationInboxOptions,
+  NotificationInboxWhere,
+} from './notification-inbox';
+
+export {
+  runMailProviderCanary,
+  runWebhookProviderCanary,
+  NotificationCanaryError,
+  type NotificationCanaryErrorCode,
+  type NotificationCanaryChannelResult,
+  type MailProviderCanaryOptions,
+  type WebhookProviderCanaryOptions,
+} from './provider-canary';
+export { WebhookDeliveryError, type WebhookFetch } from './providers/webhook';

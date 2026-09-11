@@ -11,7 +11,7 @@
     "THIRD_PARTY_NOTICES"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format cjs,esm --dts",
+    "build": "tsup src/index.ts --format cjs,esm --dts --external @nestjs/common --external @nestjs/core --external @zucker-framework/core --external @elastic/elasticsearch",
     "clean": "rm -rf dist",
     "prepack": "node ../../scripts/prepare-package-legal.mjs"
   },
@@ -20,7 +20,11 @@
   },
   "peerDependencies": {
     "@nestjs/common": "^12.0.0",
-    "@nestjs/core": "^12.0.0"
+    "@nestjs/core": "^12.0.0",
+    "@elastic/elasticsearch": "^9.5.1"
+  },
+  "peerDependenciesMeta": {
+    "@elastic/elasticsearch": { "optional": true }
   },
   "license": "Apache-2.0",
   "author": "Lind",

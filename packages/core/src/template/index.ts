@@ -29,7 +29,7 @@ export function parseTemplate(
     const value = getNestedValue(variables, key);
     if (value === undefined) return '';
     const str = String(value);
-    return options?.escapeHtml ? escapeHtmlChars(str) : str;
+    return options?.escapeHtml ? escapeHtml(str) : str;
   }, options);
 }
 
@@ -84,8 +84,8 @@ export function parseTemplateWithMapper(
  * Escape HTML special characters to prevent XSS when template output
  * is rendered in HTML contexts.
  */
-function escapeHtmlChars(str: string): string {
-  return str
+export function escapeHtml(str: string): string {
+  return String(str)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')

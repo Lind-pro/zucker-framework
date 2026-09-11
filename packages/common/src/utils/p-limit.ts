@@ -8,8 +8,8 @@
  * @returns Promise resolving to array of results in input order
  *
  * @example
- * const results = await pLimit(patents, 3, async (patent) => {
- *   return await generateEmbedding(patent);
+ * const results = await pLimit(records, 3, async (record) => {
+ *   return await processRecord(record);
  * });
  */
 export async function pLimit<T, R>(

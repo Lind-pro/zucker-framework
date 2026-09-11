@@ -7,6 +7,9 @@ export type {
   SearchResponse,
   SearchQuery,
   SearchResult,
+  SearchServiceOptions,
+  SearchIndexDefinition,
+  SearchAliasDefinition,
 } from './search.service';
 
 export {
@@ -19,3 +22,6 @@ export type {
 } from './search.module';
 
 export { SearchQueryBuilder } from './query-builder';
+
+export { ElasticsearchSearchClient } from './elasticsearch-client';
+export type { ElasticsearchClientOptions, ElasticsearchTransport } from './elasticsearch-client';

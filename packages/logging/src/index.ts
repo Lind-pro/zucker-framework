@@ -29,6 +29,20 @@ export { BusinessLogger, BUSINESS_LOGGER_BUS, BUSINESS_LOG_EVENT } from './busin
 export type { BusinessLogEntry, BusinessLogBus } from './business-logger';
 
 export { ZuckerLoggingModule } from './logging.module';
+export type { ZuckerLoggingOptions } from './logging.module';
+export { LogSanitizer } from './log-sanitizer';
+export { AccessLogService, OperationLogService, PERSISTENT_LOG_OPTIONS } from './persistent-logs';
+export type {
+  AccessLogData,
+  LogOperationData,
+  StoredAccessLog,
+  StoredOperationLog,
+  OperationLogStatus,
+  LogQuery,
+  PersistentLogOptions,
+} from './persistent-logs';
+export { ACCESS_LOG_CAPTURE_OPTIONS } from './access-logger.interceptor';
+export type { AccessLogCaptureOptions } from './access-logger.interceptor';
 
 export { ACCESS_LOG_STORE, InMemoryAccessLogStore } from './access-log-store';
 export type { AccessLogStore, AccessLogRecord, AccessLogQuery } from './access-log-store';
@@ -48,3 +62,17 @@ export type {
   AuditTarget,
   AuditChange,
 } from './audit-logger';
+
+export * from './application-logger';
+export * from './winston-log-sink';
+export * from './database-log-transport';
+
+export * from './operational-metrics';
+
+export * from './http-error-logger.interceptor';
+export * from './rejected-request-logger.middleware';
+
+export { CORRELATION_ID_OPTIONS } from './correlation-id';
+export type { CorrelationIdOptions } from './correlation-id';
+
+export { MetadataLogService, type MetadataLogOptions } from './persistent-logs';

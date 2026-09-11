@@ -32,7 +32,8 @@ export class HealthCheckService {
     this.indicators = this.indicators.filter((i) => i.name !== name);
   }
 
-  async checkAll(): Promise<{
+  /** Select a declared subset for readiness vs. diagnostics; absent indicators fail closed. */
+  async checkAll(names?: readonly string[]): Promise<{
     status: HealthStatus;
     checks: HealthCheck[];
     timestamp: Date;
@@ -40,7 +41,22 @@ export class HealthCheckService {
     const checks: HealthCheck[] = [];
     let overallStatus = HealthStatus.UP;
 
-    for (const indicator of this.indicators) {
+    const indicators =
+      names === undefined
+        ? this.indicators
+        : names.map(
+            (name) =>
+              this.indicators.find((indicator) => indicator.name === name) ?? {
+                name,
+                check: async (): Promise<HealthCheck> => ({
+                  name,
+                  status: HealthStatus.DOWN,
+                  details: { error: 'Health indicator not registered' },
+                  timestamp: new Date(),
+                }),
+              },
+          );
+    for (const indicator of indicators) {
       try {
         const result = await indicator.check();
         checks.push(result);

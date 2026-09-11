@@ -1,4 +1,4 @@
-import { Injectable, NestMiddleware } from '@nestjs/common';
+import { Injectable, NestMiddleware, Inject, Optional } from '@nestjs/common';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'crypto';
 
@@ -41,19 +41,30 @@ export function normalizeCorrelationId(value: unknown): string {
   return typeof value === 'string' && SAFE_CORRELATION_ID.test(value) ? value : randomUUID();
 }
 
+export interface CorrelationIdOptions {
+  headerName?: string;
+  requestProperty?: string;
+}
+export const CORRELATION_ID_OPTIONS = Symbol('CORRELATION_ID_OPTIONS');
+
 /**
  * NestJS 中间件：从请求头提取或生成 Correlation ID，存入 AsyncLocalStorage
  */
 @Injectable()
 export class CorrelationIdMiddleware implements NestMiddleware {
+  constructor(
+    @Optional() @Inject(CORRELATION_ID_OPTIONS) private readonly options: CorrelationIdOptions = {},
+  ) {}
   use(
-    req: { headers: Record<string, string | string[] | undefined> },
+    req: { headers: Record<string, string | string[] | undefined>; [key: string]: unknown },
     res: { setHeader(name: string, value: string): void },
     next: () => void,
   ): void {
-    const correlationId = normalizeCorrelationId(req.headers[CORRELATION_ID_HEADER]);
+    const header = this.options.headerName ?? CORRELATION_ID_HEADER;
+    const correlationId = normalizeCorrelationId(req.headers[header.toLowerCase()]);
+    if (this.options.requestProperty) req[this.options.requestProperty] = correlationId;
 
-    res.setHeader(CORRELATION_ID_HEADER, correlationId);
+    res.setHeader(header, correlationId);
 
     correlationStorage.run(correlationId, () => {
       next();

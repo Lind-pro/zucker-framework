@@ -103,3 +103,6 @@ export type {
   TaskOutboxDispatcherOptions,
   TaskOutboxDispatchResult,
 } from './task-outbox-dispatcher';
+
+export { SingleProcessTaskSupervisor, type SingleProcessTaskSupervisorOptions } from './single-process-task-supervisor';
+export { runWithExecutionHeartbeat, ExecutionHeartbeatError, type ExecutionHeartbeatOptions } from './execution-heartbeat';

@@ -151,3 +151,17 @@ describe('RateLimiterService', () => {
     expect(deriveRateLimitKey('203.0.113.9')).toBe('203.0.113.9');
   });
 });
+
+describe('RateLimiterService per-subject cap', () => {
+  it('uses one persistent limiter to enforce concurrent independent subject caps', async () => {
+    const service = new RateLimiterService({ limiters: {
+      subjects: { points: 10000, duration: 60, blockDuration: 0 },
+    } });
+    await service.onModuleInit();
+    const outcomes = await Promise.all(Array.from({ length: 10 }, () => service.checkLimit('subjects', 'small', 3)));
+    expect(outcomes.filter(result => result.allowed)).toHaveLength(3);
+    await expect(service.checkLimit('subjects', 'other', 5)).resolves.toMatchObject({ allowed: true, remaining: 4 });
+    expect(service.getLimiterNames()).toEqual(['subjects']);
+    service.onModuleDestroy();
+  });
+});

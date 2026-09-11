@@ -1,0 +1,9 @@
+# Verified object transfers
+
+`BufferedFileManagerStore` adapts the existing FileManager to bounded in-memory transfers. Its explicit positive byte budget applies to reported download size, actual streamed bytes and uploads. Rejected oversized streams are destroyed. Writes always use a private ACL. Read results retain both actual bytes and the reported size for integrity verification.
+
+`transferVerifiedObject` accepts an already downloaded source, an explicit destination key, a content-type detector, and explicit dry-run/apply plus allowUpload flags. It checks source size, derives SHA-256/MIME/size metadata, and verifies an existing object before reuse. A missing object is written only when apply and allowUpload both permit it. Every upload is read back and checked for size, MIME and hash before returning uploaded. Existing conflicting content is never overwritten. `verifyStoredObject` exposes the same integrity contract for resuming previously recorded transfers.
+
+`StorageTransferError` carries a stable code without sensitive content. An errorFactory can preserve application-specific error reporting. Provider errors and MIME-detector exceptions propagate. The functions contain no source URL policy, content-addressed namespace, application schema, manifest protocol, database transaction, source deletion or rollback implementation. The caller must establish ownership and preserve any required journal-before-commit ordering. Copy behavior does not establish an atomic compare-and-write against a concurrently changing destination; migrations still require controlled execution.
+
+No remote storage/database call, migration script, smoke test, typecheck, lint, build or package publication was performed during source migration. Existing application migration tests remain source-level evidence to run in a separately authorized verification stage.

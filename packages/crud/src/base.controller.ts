@@ -12,36 +12,88 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { ApiResponse, ApiOperation } from '@nestjs/swagger';
-import { type GenericEntity } from '@zucker-framework/core';
-import { BaseService } from './base.service';
+import type { CrudEntity } from './crud-entity';
+import { CrudService } from './base.service';
 import { type DynamicQueryParam } from './dynamic-query.service';
 
-export class BaseControllerHost<T extends GenericEntity> {
-  protected declare readonly service: BaseService<T>;
+export class BaseControllerHost<T extends CrudEntity> {
+  declare protected readonly service: CrudService<T>;
 
-  create(..._args: unknown[]): Promise<T> { throw new Error('Not implemented'); }
-  findOne(..._args: unknown[]): Promise<T> { throw new Error('Not implemented'); }
-  findAll(..._args: unknown[]): Promise<unknown> { throw new Error('Not implemented'); }
-  saveOrUpdate(..._args: unknown[]): Promise<T> { throw new Error('Not implemented'); }
-  update(..._args: unknown[]): Promise<T> { throw new Error('Not implemented'); }
-  delete(..._args: unknown[]): Promise<T> { throw new Error('Not implemented'); }
-  save(..._args: unknown[]): Promise<{ created: number; updated: number; total: number }> { throw new Error('Not implemented'); }
-  createMany(..._args: unknown[]): Promise<{ count: number }> { throw new Error('Not implemented'); }
-  updateMany(..._args: unknown[]): Promise<{ count: number }> { throw new Error('Not implemented'); }
-  deleteMany(..._args: unknown[]): Promise<{ count: number }> { throw new Error('Not implemented'); }
-  queryNoPaging(..._args: unknown[]): Promise<T[]> { throw new Error('Not implemented'); }
-  queryNoPagingPost(..._args: unknown[]): Promise<T[]> { throw new Error('Not implemented'); }
-  queryPager(..._args: unknown[]): Promise<unknown> { throw new Error('Not implemented'); }
-  queryPagerPost(..._args: unknown[]): Promise<unknown> { throw new Error('Not implemented'); }
-  count(..._args: unknown[]): Promise<{ total: number }> { throw new Error('Not implemented'); }
-  countPost(..._args: unknown[]): Promise<{ total: number }> { throw new Error('Not implemented'); }
-  exists(..._args: unknown[]): Promise<{ exists: boolean }> { throw new Error('Not implemented'); }
-  existsPost(..._args: unknown[]): Promise<{ exists: boolean }> { throw new Error('Not implemented'); }
+  create(..._args: unknown[]): Promise<T> {
+    throw new Error('Not implemented');
+  }
+  findOne(..._args: unknown[]): Promise<T> {
+    throw new Error('Not implemented');
+  }
+  findAll(..._args: unknown[]): Promise<unknown> {
+    throw new Error('Not implemented');
+  }
+  saveOrUpdate(..._args: unknown[]): Promise<T> {
+    throw new Error('Not implemented');
+  }
+  update(..._args: unknown[]): Promise<T> {
+    throw new Error('Not implemented');
+  }
+  delete(..._args: unknown[]): Promise<T> {
+    throw new Error('Not implemented');
+  }
+  save(..._args: unknown[]): Promise<{ created: number; updated: number; total: number }> {
+    throw new Error('Not implemented');
+  }
+  createMany(..._args: unknown[]): Promise<{ count: number }> {
+    throw new Error('Not implemented');
+  }
+  updateMany(..._args: unknown[]): Promise<{ count: number }> {
+    throw new Error('Not implemented');
+  }
+  deleteMany(..._args: unknown[]): Promise<{ count: number }> {
+    throw new Error('Not implemented');
+  }
+  queryNoPaging(..._args: unknown[]): Promise<T[]> {
+    throw new Error('Not implemented');
+  }
+  queryNoPagingPost(..._args: unknown[]): Promise<T[]> {
+    throw new Error('Not implemented');
+  }
+  queryPager(..._args: unknown[]): Promise<unknown> {
+    throw new Error('Not implemented');
+  }
+  queryPagerPost(..._args: unknown[]): Promise<unknown> {
+    throw new Error('Not implemented');
+  }
+  count(..._args: unknown[]): Promise<{ total: number }> {
+    throw new Error('Not implemented');
+  }
+  countPost(..._args: unknown[]): Promise<{ total: number }> {
+    throw new Error('Not implemented');
+  }
+  exists(..._args: unknown[]): Promise<{ exists: boolean }> {
+    throw new Error('Not implemented');
+  }
+  existsPost(..._args: unknown[]): Promise<{ exists: boolean }> {
+    throw new Error('Not implemented');
+  }
 }
 
-export function BaseController<T extends GenericEntity>(EntityClass: Type<T>): Type<BaseControllerHost<T>> {
+export type BaseControllerMethod = Exclude<keyof BaseControllerHost<CrudEntity>, 'service'>;
+export interface BaseControllerRouteOptions {
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  path?: string;
+  decorators?: MethodDecorator[];
+}
+export interface BaseControllerOptions {
+  /** Restrict the generated HTTP surface to these operations. Defaults to existing standard routes. */
+  only?: readonly BaseControllerMethod[];
+  routes?: Partial<Record<BaseControllerMethod, BaseControllerRouteOptions | false>>;
+  /** Runtime query DTO for the host's validation/defaults policy. */
+  queryDto?: Type<DynamicQueryParam>;
+}
+export function BaseController<T extends CrudEntity>(
+  EntityClass: Type<T>,
+  options: BaseControllerOptions = {},
+): Type<BaseControllerHost<T>> {
   class BaseControllerHostImpl {
-    constructor(protected readonly service: BaseService<T>) {}
+    constructor(protected readonly service: CrudService<T>) {}
 
     // ===================== Query Routes  =====================
 
@@ -151,6 +203,12 @@ export function BaseController<T extends GenericEntity>(EntityClass: Type<T>): T
       return this.service.findAll(query);
     }
 
+    /** Explicitly opt into single-record upsert through routes/only. */
+    @Patch('save')
+    async saveOrUpdate(@Body() data: Partial<T>): Promise<T> {
+      return this.service.saveOrUpdate(data);
+    }
+
     // ===================== Save Routes  =====================
 
     /**
@@ -177,9 +235,14 @@ export function BaseController<T extends GenericEntity>(EntityClass: Type<T>): T
      * 保存数据（upsert：有ID则update，无ID则create）
      */
     @Patch()
-    @ApiOperation({ summary: '保存数据', description: '如果传入了id,并且对应数据存在,则尝试覆盖,不存在则新增.' })
+    @ApiOperation({
+      summary: '保存数据',
+      description: '如果传入了id,并且对应数据存在,则尝试覆盖,不存在则新增.',
+    })
     @ApiResponse({ status: HttpStatus.OK })
-    async save(@Body() data: Partial<T>[]): Promise<{ created: number; updated: number; total: number }> {
+    async save(
+      @Body() data: Partial<T>[],
+    ): Promise<{ created: number; updated: number; total: number }> {
       return this.service.save(data);
     }
 
@@ -189,10 +252,7 @@ export function BaseController<T extends GenericEntity>(EntityClass: Type<T>): T
     @Put(':id')
     @ApiOperation({ summary: '根据ID修改数据' })
     @ApiResponse({ status: HttpStatus.OK, type: EntityClass })
-    async update(
-      @Param('id') id: string,
-      @Body() data: Partial<T>,
-    ): Promise<T> {
+    async update(@Param('id') id: string, @Body() data: Partial<T>): Promise<T> {
       return this.service.update(id, data);
     }
 
@@ -236,6 +296,31 @@ export function BaseController<T extends GenericEntity>(EntityClass: Type<T>): T
       }
       return this.service.deleteMany(where);
     }
+  }
+
+  const prototype = BaseControllerHostImpl.prototype;
+  const verbs = { GET: Get, POST: Post, PUT: Put, PATCH: Patch, DELETE: Delete };
+  for (const name of Object.getOwnPropertyNames(prototype)) {
+    if (name === 'constructor') continue;
+    const key = name as BaseControllerMethod;
+    const route = options.routes?.[key];
+    const enabled = options.only
+      ? options.only.includes(key)
+      : key !== 'saveOrUpdate' || route !== undefined;
+    if (!enabled || route === false) {
+      Reflect.deleteProperty(prototype, key);
+      continue;
+    }
+    if (route) {
+      const descriptor = Object.getOwnPropertyDescriptor(prototype, key)!;
+      if (route.method) verbs[route.method](route.path ?? '')(prototype, key, descriptor);
+      else if (route.path !== undefined)
+        throw new Error('A route path override requires an HTTP method');
+      for (const decorator of route.decorators ?? []) decorator(prototype, key, descriptor);
+    }
+  }
+  if (options.queryDto && Object.hasOwn(prototype, 'findAll')) {
+    Reflect.defineMetadata('design:paramtypes', [options.queryDto], prototype, 'findAll');
   }
 
   return BaseControllerHostImpl as unknown as Type<BaseControllerHost<T>>;

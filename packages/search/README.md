@@ -1,0 +1,13 @@
+# @zucker-framework/search
+
+`SearchService` retains its injected `SearchClient` contract and existing search, index, bulk, count and index-management operations. `ElasticsearchSearchClient` adapts that body-based port to Elasticsearch 9's document/operations/top-level query shapes, including AbortSignal forwarding. It loads the optional `@elastic/elasticsearch` peer lazily and creates one transport.
+
+Configure `ZuckerSearchModule` once at the composition root. `forRoot({ client, enabled, ownsClient, aliases })` accepts optional lifecycle settings. `forRootAsync` factories may return this options object or the previous bare SearchClient. Features inject SearchService and supply their document/query policy.
+
+`onModuleInit` pings the configured dependency and ensures configured aliases. Failure preserves application startup and exposes `isHealthy() === false`, allowing a consumer's database fallback. Disabled services perform no connection/index operations. `refreshHealth` supports a later explicit recheck. `ownsClient: true` closes the client once during shutdown; externally owned clients remain open. The lazy adapter has no Nest lifecycle hook, so the service is the sole lifecycle owner.
+
+Alias definitions specify an alias, optional index prefix and static mappings/settings or a function of installed plugin names. Alias creation only evaluates the schema when a new index is needed. `createIndexWithTimestamp`, `switchAlias` and `getStats` are generic index primitives. Switching uses one alias update; old-index deletion is opt-in and never deletes the active target. Discovery errors other than 404 stop the switch. Failed old-index cleanup is best effort. Request errors remain caller-visible; health/statistics failure logs use fixed text to avoid credential-bearing transport errors.
+
+Document schemas, analyzer choice, shard policy, alias naming, fields, boosts, facets, synchronization policy and retirement decisions remain in consumers. No product module is imported. Existing SearchClient implementations need not implement optional lifecycle/plugin/alias operations unless their consumer enables those features.
+
+The adapter adds an optional Elasticsearch 9 peer without changing existing client injection. No schema or index-format migration is required by adoption. Rollback restores the consumer composition and pinned package. Tests were added for lazy lifecycle, disabled startup, failure/recovery, modern request shapes, cancellation and safe alias switching, but were not run in this source-only migration. Real Elasticsearch plugin/mapping/search/reindex checks remain unverified.

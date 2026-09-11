@@ -23,7 +23,7 @@
     "THIRD_PARTY_NOTICES"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format cjs,esm --dts --external @nestjs/common --external @nestjs/core --external @nestjs/swagger --external @zucker-framework/core --external @zucker-framework/event --external @zucker-framework/cache --external eventemitter2",
+    "build": "tsup src/index.ts --format cjs,esm --dts --external @nestjs/common --external @nestjs/core --external @nestjs/swagger --external @zucker-framework/core --external @zucker-framework/event --external @zucker-framework/cache --external eventemitter2 --external class-transformer --external class-validator",
     "clean": "rm -rf dist",
     "lint": "eslint src/",
     "prepack": "node ../../scripts/prepare-package-legal.mjs"
@@ -36,13 +36,17 @@
     "@nestjs/core": "^12.0.0",
     "@nestjs/swagger": "^12.0.0",
     "@zucker-framework/cache": "workspace:*",
-    "@zucker-framework/event": "workspace:*"
+    "@zucker-framework/event": "workspace:*",
+    "class-transformer": "^0.5.0",
+    "class-validator": "^0.14.0 || ^0.15.0"
   },
   "devDependencies": {
     "@nestjs/swagger": "^12.0.1",
     "@zucker-framework/cache": "workspace:*",
     "@zucker-framework/event": "workspace:*",
-    "@types/node": "^20.19.43"
+    "@types/node": "^20.19.43",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.15.1"
   },
   "license": "Apache-2.0",
   "author": "Lind",

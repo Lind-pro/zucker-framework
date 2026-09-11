@@ -5,6 +5,8 @@ import {
   HttpException,
   HttpStatus,
   Logger,
+  Inject,
+  Optional,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { BusinessException, ValidationException } from '@zucker-framework/core';
@@ -14,6 +16,31 @@ interface ValidationErrorLike {
   constraints?: Record<string, string>;
   children?: ValidationErrorLike[];
 }
+
+export interface NormalizedHttpError {
+  status: number;
+  code: string;
+  message: string;
+  result: unknown;
+  timestamp: number;
+}
+export interface HttpErrorRequest {
+  requestId?: string;
+  method?: string;
+  url?: string;
+  originalUrl?: string;
+  user?: { id?: string };
+}
+export interface HttpErrorContext {
+  exception: unknown;
+  request: HttpErrorRequest;
+  kind: 'validation' | 'business' | 'http' | 'unknown';
+}
+export interface HttpExceptionFilterOptions {
+  formatResponse?: (body: NormalizedHttpError, context: HttpErrorContext) => unknown;
+  onServerError?: (context: HttpErrorContext) => void;
+}
+export const HTTP_EXCEPTION_FILTER_OPTIONS = Symbol('HTTP_EXCEPTION_FILTER_OPTIONS');
 
 /**
  * 统一异常过滤器
@@ -29,11 +56,17 @@ interface ValidationErrorLike {
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(HttpExceptionFilter.name);
+  constructor(
+    @Optional()
+    @Inject(HTTP_EXCEPTION_FILTER_OPTIONS)
+    private readonly options: HttpExceptionFilterOptions = {},
+  ) {}
 
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
 
+    let kind: HttpErrorContext['kind'] = 'unknown';
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let code = 'INTERNAL_ERROR';
     let message = '服务器内部错误';
@@ -41,6 +74,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     let retryAfterSeconds: number | undefined;
 
     if (exception instanceof ValidationException || this.isValidationLike(exception)) {
+      kind = 'validation';
       // ValidationException is a BusinessException subclass — handle first for detail extraction
       const e = exception as ValidationException;
       status = e.status;
@@ -48,6 +82,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       message = e.message;
       result = e.details;
     } else if (exception instanceof BusinessException || this.isBusinessLike(exception)) {
+      kind = 'business';
       // BusinessException hierarchy (NotFoundException, UnauthorizedException, ForbiddenException, etc.)
       // Also handles cross-module-boundary instanceof failures (e.g. ESM/CJS dual loading in test env)
       const e = exception as BusinessException;
@@ -58,6 +93,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
         result = e.details;
       }
     } else if (exception instanceof HttpException) {
+      kind = 'http';
       // NestJS built-in HttpException (BadRequestException, etc.)
       status = exception.getStatus();
       code = this.statusToCode(status);
@@ -116,13 +152,20 @@ export class HttpExceptionFilter implements ExceptionFilter {
       response.setHeader('Retry-After', String(retryAfterSeconds));
     }
 
-    response.status(status).json({
-      status,
-      code,
-      message,
-      result,
-      timestamp: Date.now(),
-    });
+    const body: NormalizedHttpError = { status, code, message, result, timestamp: Date.now() };
+    const context: HttpErrorContext = {
+      exception,
+      kind,
+      request: ctx.getRequest?.<HttpErrorRequest>() ?? {},
+    };
+    if (status >= 500) {
+      try {
+        this.options.onServerError?.(context);
+      } catch {
+        /* Reporting must not change the HTTP response. */
+      }
+    }
+    response.status(status).json(this.options.formatResponse?.(body, context) ?? body);
   }
 
   /**
