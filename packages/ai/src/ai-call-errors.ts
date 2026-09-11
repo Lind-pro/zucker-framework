@@ -23,6 +23,27 @@ export interface ClassifiedAIError {
   retryable: boolean;
 }
 
+export type AICallFailureOutcome = 'error' | 'timeout' | 'cancelled';
+
+/** Diagnostic outcome classification; it does not change provider retry decisions. */
+export function classifyAICallOutcome(error: Error): AICallFailureOutcome {
+  const message = error.message?.toLowerCase() ?? '';
+  if (
+    error instanceof AICallAbortedError ||
+    error.name === 'AbortError' ||
+    message.includes('aborted') ||
+    message.includes('cancelled')
+  )
+    return 'cancelled';
+  if (
+    error instanceof AICallTimeoutError ||
+    message.includes('timeout') ||
+    message.includes('timed out')
+  )
+    return 'timeout';
+  return 'error';
+}
+
 export function classifyAIError(error: Error): ClassifiedAIError {
   if (error instanceof AICallTimeoutError) {
     return { type: AIErrorType.TIMEOUT, retryable: false };

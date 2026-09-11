@@ -174,3 +174,25 @@ export function sanitizeSvgMarkup(svg: string): string | null {
     .replace(/\s(?:xlink:href|href)\s*=\s*(?:javascript:|data:text\/html)[^\s>]*/gi, '');
   return /<(script|foreignObject|iframe|object|embed)\b/i.test(sanitized) ? null : sanitized;
 }
+
+export {
+  detectMermaidDiagramType,
+  getMermaidStructuralError,
+  sanitizeMermaidCode,
+} from './mermaid/sanitize';
+export type { MermaidDiagramType } from './mermaid/sanitize';
+export { renderMermaidSvg } from './mermaid/render';
+export type {
+  MermaidRenderProfile,
+  MermaidRenderOptions,
+  MermaidRenderResult,
+} from './mermaid/render';
+
+export { requestSvgRender, SvgRenderRequestError } from './svg-render-client';
+export type { SvgRenderRequest, SvgRenderResponse } from './svg-render-client';
+export { requestKrokiSvg } from './kroki-render-client';
+export type { KrokiSvgRequest } from './kroki-render-client';
+export { renderSmilesSvg, RdkitLoadError, InvalidSmilesError } from './rdkit-svg-renderer';
+export type { RdkitSvgModule, RdkitMolecule } from './rdkit-svg-renderer';
+export { renderVegaLiteSvg, VegaSvgRenderError } from './vega-svg-renderer';
+export type { VegaSvgModules, VegaSvgView } from './vega-svg-renderer';

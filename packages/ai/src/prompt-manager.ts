@@ -1,5 +1,9 @@
 import { Injectable, Logger, Inject, Optional } from '@nestjs/common';
-import { DATABASE_ADAPTER, type DatabaseAdapter } from '@zucker-framework/core';
+import {
+  DATABASE_ADAPTER,
+  parseTemplateWithMapper,
+  type DatabaseAdapter,
+} from '@zucker-framework/core';
 
 /** 期望的响应格式（对齐 OpenAI Chat Completions API response_format 字段）*/
 export type ResponseFormat = 'json_object' | 'json_array' | 'text' | 'json_schema';
@@ -186,9 +190,7 @@ export class PromptManager {
    * - json_schema 缺 schema → 降级 json_object（warn）
    * - json_array / text / undefined → undefined（消费方自行处理）
    */
-  getResponseFormat(
-    template: PromptTemplate,
-  ):
+  getResponseFormat(template: PromptTemplate):
     | { type: 'json_object' }
     | {
         type: 'json_schema';
@@ -242,11 +244,19 @@ export class PromptManager {
       }
     }
 
-    // 替换 {{variable}}
-    content = content.replace(/\{\{(\w+)\}\}/g, (_, key) => {
-      const val = allVars[key];
-      return val !== undefined ? String(val) : `{{${key}}}`;
-    });
+    content = parseTemplateWithMapper(
+      content,
+      (expression) => {
+        let value: unknown = allVars;
+        for (const key of expression.trim().split('.')) {
+          if (!value || typeof value !== 'object' || !Object.hasOwn(value, key))
+            return `{{${expression}}}`;
+          value = (value as Record<string, unknown>)[key];
+        }
+        return value === undefined || value === null ? `{{${expression}}}` : String(value);
+      },
+      { startSymbol: '{{', endSymbol: '}}' },
+    );
 
     return content;
   }

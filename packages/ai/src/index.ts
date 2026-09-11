@@ -6,9 +6,16 @@ export type {
   TokenUsage,
 } from './ai-provider.interface';
 export { AIErrorType } from './ai-provider.interface';
-export { AICallAbortedError, AICallTimeoutError, classifyAIError } from './ai-call-errors';
+export {
+  AICallAbortedError,
+  AICallTimeoutError,
+  classifyAIError,
+  classifyAICallOutcome,
+  type AICallFailureOutcome,
+} from './ai-call-errors';
 export type { ClassifiedAIError } from './ai-call-errors';
-export { providerRequestSignal } from './abort-signal';
+export { providerRequestSignal, createAbortScope } from './abort-signal';
+export type { AbortScope } from './abort-signal';
 
 export {
   CodexSubscriptionAuthClient,
@@ -124,3 +131,19 @@ export { StabilityProvider } from './providers/stability.provider';
 export { ReplicateProvider } from './providers/replicate.provider';
 export { RunwayProvider } from './providers/runway.provider';
 export { KlingProvider } from './providers/kling.provider';
+
+export * from './model-catalog.service';
+
+export type { ImageProvider, ImageProviderOptions, ImageProviderResult } from './image-provider';
+export { ImageProviderConfigError } from './image-provider';
+export { OpenAIImageProvider } from './providers/openai-image.provider';
+export type {
+  OpenAIImageProviderConfig,
+  OpenAIImageQuality,
+  OpenAIImageFormat,
+  OpenAIImageModeration,
+} from './providers/openai-image.provider';
+export { GeminiImageProvider } from './providers/gemini-image.provider';
+export type { GeminiImageProviderConfig } from './providers/gemini-image.provider';
+
+export * from './structured-output';

@@ -1,32 +1,19 @@
+import {
+  createCancellationScope,
+  waitForSignal,
+  type CancellationScope,
+} from '@zucker-framework/core';
 import { AICallAbortedError, AICallTimeoutError } from './ai-call-errors';
 
-export interface AbortScope {
-  signal: AbortSignal;
-  dispose(): void;
-}
+export type AbortScope = CancellationScope;
 
 export function createAbortScope(parent?: AbortSignal, timeoutMs?: number): AbortScope {
-  if (timeoutMs !== undefined && timeoutMs <= 0) {
-    throw new RangeError('timeoutMs must be greater than 0');
-  }
-
-  const controller = new AbortController();
-  const abortFromParent = () => controller.abort(new AICallAbortedError(parent?.reason));
-  if (parent?.aborted) abortFromParent();
-  else parent?.addEventListener('abort', abortFromParent, { once: true });
-
-  const timeout =
-    timeoutMs === undefined
-      ? undefined
-      : setTimeout(() => controller.abort(new AICallTimeoutError(timeoutMs)), timeoutMs);
-
-  return {
-    signal: controller.signal,
-    dispose: () => {
-      if (timeout) clearTimeout(timeout);
-      parent?.removeEventListener('abort', abortFromParent);
-    },
-  };
+  return createCancellationScope({
+    parent,
+    timeoutMs,
+    abortReason: (reason) => new AICallAbortedError(reason),
+    timeoutReason: (timeout) => new AICallTimeoutError(timeout),
+  });
 }
 
 export function abortError(signal: AbortSignal): Error {
@@ -34,26 +21,7 @@ export function abortError(signal: AbortSignal): Error {
 }
 
 export function waitForAbortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-  if (signal.aborted) return Promise.reject(abortError(signal));
-
-  return new Promise<T>((resolve, reject) => {
-    const onAbort = () => {
-      cleanup();
-      reject(abortError(signal));
-    };
-    const cleanup = () => signal.removeEventListener('abort', onAbort);
-    signal.addEventListener('abort', onAbort, { once: true });
-    void promise.then(
-      (value) => {
-        cleanup();
-        resolve(value);
-      },
-      (error: unknown) => {
-        cleanup();
-        reject(error);
-      },
-    );
-  });
+  return waitForSignal(promise, signal, () => abortError(signal));
 }
 
 export function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {

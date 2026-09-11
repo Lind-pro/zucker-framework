@@ -38,9 +38,14 @@ export {
   OpenAICodexCliSubscriptionProvider,
   createOpenAICodexCliAccessProvider,
 } from './providers/openai-codex-cli';
+export { startCodexCliHost, runCodexCliHostClient } from './providers/codex-cli-host';
+export type { CodexCliHostOptions, CodexCliHostClientOptions } from './providers/codex-cli-host';
 export type {
   CodexCliCommand,
   CodexCliCommandRunner,
   CodexCliSubscriptionErrorCode,
   OpenAICodexCliSubscriptionProviderOptions,
 } from './providers/openai-codex-cli';
+
+export { AIAccessClientSession } from './client-session';
+export type { AIAccessClient, AIAccessInvocationObserver } from './client-session';

@@ -29,7 +29,9 @@
     "@zucker-framework/dictionary": "workspace:*",
     "@zucker-framework/form": "workspace:*",
     "@zucker-framework/logging": "workspace:*",
-    "@zucker-framework/notification": "workspace:*"
+    "@zucker-framework/notification": "workspace:*",
+    "@zucker-framework/common": "workspace:*",
+    "@zucker-framework/ai": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^20.19.43"

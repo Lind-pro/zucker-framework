@@ -135,3 +135,12 @@ describe('PromptManager', () => {
     });
   });
 });
+
+
+describe('nested prompt rendering', () => {
+  it('uses own nested properties and preserves unresolved placeholders', () => {
+    const manager = new PromptManager();
+    expect(manager.render({ id: 'nested', content: '{{ account.name }} / {{missing}} / {{constructor}}' }, { account: { name: 'Example' } }))
+      .toBe('Example / {{missing}} / {{constructor}}');
+  });
+});

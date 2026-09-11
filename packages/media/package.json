@@ -24,7 +24,7 @@
     "THIRD_PARTY_NOTICES"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format cjs,esm --dts",
+    "build": "tsup src/index.ts --format cjs,esm --dts --external @rdkit/rdkit --external vega --external vega-lite",
     "clean": "rm -rf dist",
     "lint": "eslint src/",
     "prepack": "node ../../scripts/prepare-package-legal.mjs"
@@ -39,5 +39,31 @@
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
+  },
+  "peerDependencies": {
+    "mermaid": "^11.17.2",
+    "@rdkit/rdkit": "2025.3.4-1.0.0",
+    "vega": "^6.4.0",
+    "vega-lite": "^6.4.3"
+  },
+  "peerDependenciesMeta": {
+    "mermaid": {
+      "optional": true
+    },
+    "@rdkit/rdkit": {
+      "optional": true
+    },
+    "vega": {
+      "optional": true
+    },
+    "vega-lite": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "mermaid": "11.17.2",
+    "@rdkit/rdkit": "2025.3.4-1.0.0",
+    "vega": "^6.4.0",
+    "vega-lite": "^6.4.3"
   }
 }
