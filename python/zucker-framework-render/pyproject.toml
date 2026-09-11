@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zucker-framework-render"
+version = "0.1.0"
+description = "Deterministic SVG rendering for circuit, reaction and scientific plots"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{name = "Lind"}]
+dependencies = [
+  "schemdraw==0.22",
+  "matplotlib==3.10.0",
+  "pydantic==2.10.0",
+  "rdkit==2024.9.4",
+  "numpy==2.1.3",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
