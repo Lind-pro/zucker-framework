@@ -1,5 +1,21 @@
 # @zucker-framework/fe-permission
 
+## 1.0.2
+
+### Patch Changes
+
+- c0de08f: Add reusable client CRUD, typed auth stores with consumer logout/permission hooks, best-effort browser storage, portable Mermaid sanitization/layout/rendering, and shared template placeholders.
+- Align all public Framework packages to the maintainer-selected 1.0.2 release and keep subsequent releases synchronized through a Changesets fixed group. Package dependencies and the CLI scaffold catalog follow the same version.
+
+  This release consolidates the pending API migrations, including breaking auth and payment persistence contracts. Review docs/package-release-1.0.2.md before upgrading from 1.0.0 or 1.0.1.
+
+- Updated dependencies [d8b086d]
+- Updated dependencies [c0de08f]
+- Updated dependencies [c0de08f]
+- Updated dependencies [c0de08f]
+- Updated dependencies
+  - @zucker-framework/fe-auth@1.0.2
+
 ## 1.0.0
 
 ### Major Changes

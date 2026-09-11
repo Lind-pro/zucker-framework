@@ -1,5 +1,18 @@
 # @zucker-framework/ai-access
 
+## 1.0.2
+
+### Patch Changes
+
+- c0de08f: Add explicit LangChain chat/embedding construction, text stream collection, structured execution and strict schema postprocessing through public AI entry points. Keep provider routing, chat retry count, recovery prompts/budgets and optional array-root mapping caller-controlled. SDKs remain lazy; idle/cancel failures bypass parser recovery.
+
+  Add a lazy coalesced AI access client session with one provider attempt per explicit invocation and awaited outcome observers. Failed initialization can recover on a later request without automatically retrying provider work.
+
+- c0de08f: Add paired Unix socket host/client transport for restricted Codex CLI inference, with explicit host configuration, allowed model arguments, schema transfer, separated stdout/stderr/exit status, cancellation and per-request scratch cleanup. Product paths, environment variables and service startup remain in the consumer.
+- Align all public Framework packages to the maintainer-selected 1.0.2 release and keep subsequent releases synchronized through a Changesets fixed group. Package dependencies and the CLI scaffold catalog follow the same version.
+
+  This release consolidates the pending API migrations, including breaking auth and payment persistence contracts. Review docs/package-release-1.0.2.md before upgrading from 1.0.0 or 1.0.1.
+
 ## 1.0.0
 
 ### Major Changes

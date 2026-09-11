@@ -1,6 +1,6 @@
 {
   "name": "@zucker-framework/notification",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "Notification providers and durable delivery primitives for Zucker applications",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -37,9 +37,9 @@
   "peerDependencies": {
     "@nestjs/common": "^12.0.0",
     "@nestjs/core": "^12.0.0",
-    "@zucker-framework/core": "^1.0.0",
+    "@zucker-framework/core": "workspace:*",
     "resend": "^6.26.0",
-    "@zucker-framework/queue": "^1.0.0"
+    "@zucker-framework/queue": "workspace:*"
   },
   "license": "Apache-2.0",
   "author": "Lind",

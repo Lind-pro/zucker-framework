@@ -5,6 +5,7 @@ packages:
 minimumReleaseAge: 1440
 
 allowBuilds:
+  "@google/genai": true
   "@parcel/watcher": true
   "@prisma/engines": true
   "@scarf/scarf": false
@@ -12,6 +13,7 @@ allowBuilds:
   esbuild: true
   msgpackr-extract: true
   prisma: true
+  protobufjs: true
   unrs-resolver: true
 
 overrides:

@@ -1,5 +1,25 @@
 # @zucker-framework/cli
 
+## 1.0.2
+
+### Patch Changes
+
+- c0de08f: Allow module-wiring consumers to declare expected named APP_GUARD factories separately from class registrations. Imported aliases resolve to the original symbol, and missing, duplicate, unknown or wrong-owner factory registrations remain errors. The audit checks registration identity without pretending to infer a factory's returned guard class.
+- c0de08f: Centralize browser-safe field redaction and UA inspection in Core public subpaths; keep existing auth and frontend exports backed by those implementations. Add an optional, explicitly configured Sentry adapter, health-check subsets that fail closed when probes are absent, and reusable mail/webhook provider probes. Reuse webhook transport with injectable fetch, redirect policy and typed delivery errors. Add the runtime-template safe link primitive.
+
+  Applications retain routes, business queries, thresholds, field selections, SDK configuration, locale labels, external-call authorization and message content. Sources and independent tests are prepared; verification and immutable release remain pending.
+
+- c0de08f: Export a directly executable JavaScript agent-instruction audit subpath with configurable document, skill-alias and Git-visibility policy. Both repository scripts use the same implementation; the source file and declaration are explicitly included in the package so running this tool does not require a build or load the TypeScript/CLI command entry.
+- c0de08f: Add a side-effect-free library entry for module lifecycle/guard composition, interactive transaction boundaries, Framework import rules and pnpm workflow pin audits. Consumers supply application owner lists and call patterns. Keep the zucker executable at its existing dist/index.js path, separate from library imports, and declare the TypeScript parser dependency.
+- Align all public Framework packages to the maintainer-selected 1.0.2 release and keep subsequent releases synchronized through a Changesets fixed group. Package dependencies and the CLI scaffold catalog follow the same version.
+
+  This release consolidates the pending API migrations, including breaking auth and payment persistence contracts. Review docs/package-release-1.0.2.md before upgrading from 1.0.0 or 1.0.1.
+
+- Updated dependencies [c0de08f]
+- Updated dependencies [c0de08f]
+- Updated dependencies
+  - @zucker-framework/ai-access@1.0.2
+
 ## 1.0.1
 
 ### Patch Changes

@@ -25,7 +25,7 @@
     "test:e2e:server": "pnpm --filter @zucker-framework/template-server test:e2e",
     "test:e2e:ui": "playwright test",
     "changeset": "changeset",
-    "version-packages": "changeset version",
+    "version-packages": "pnpm_config_verify_deps_before_run=false changeset version",
     "release": "node scripts/publish-packages.mjs"
   },
   "devDependencies": {

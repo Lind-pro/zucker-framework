@@ -8,13 +8,24 @@ version is not a production release.
 
 The package manifests and generated release manifest define the release set
 and SDK peer ranges. Do not use version numbers from historical release inventories.
-The first public release starts all 51 libraries at `1.0.0` under
-`@zucker-framework`, using the `latest` tag. Changesets prerelease mode has been
-exited. This shared starting version does not link future releases: packages remain
-independently versioned, with empty `fixed` and `linked` groups. After 1.0.0, use
-patch versions for compatible fixes, minor versions for compatible new features,
-and major versions for breaking public API changes. Review the generated changelogs
-before upload. Any later prerelease must use a separate tag, such as `rc`;
+The first public release started all 51 libraries at `1.0.0` under
+`@zucker-framework`; nine packages subsequently received `1.0.1`. The maintainer
+selected `1.0.2` as the next shared version. All public `packages/*` libraries now
+belong to one explicit Changesets `fixed` group, with no `linked` groups. A release
+of any member versions and publishes the entire group together, including packages
+whose implementation did not change. Add each new public package to this group;
+private templates and the separate Python package are not members.
+
+For subsequent releases, record patch for compatible fixes, minor for compatible
+new features, and major for breaking public API changes. Changesets applies the
+highest required bump to every member, preserving one shared version. The initial
+alignment to `1.0.2` is an explicit maintainer-selected exception: it includes
+breaking auth and payment changes. Read the [1.0.2 migration notes](package-release-1.0.2.md)
+and package changelogs before upgrading; this release's patch number does not imply
+backward compatibility.
+
+Changesets prerelease mode has been exited; stable releases use `latest`.
+Any later prerelease must use a separate tag, such as `rc`;
 the publisher rejects prerelease versions under `latest`.
 Check `packages/ai/package.json` before SDK compatibility work. Do not bundle a
 second SDK merely because a consumer uses the reliability wrapper.
@@ -146,10 +157,15 @@ Select patch/minor/major according to the public contract, review the generated
 versions and changelogs, and commit those files with the change. `pnpm changeset`
 records release intent; `pnpm version-packages` applies it before CI builds the
 artifacts. Unconsumed Changeset files alone do not change published versions.
-The CLI's embedded release catalog changes whenever any framework version changes,
-so include a CLI patch in release plans. Also bump a package when a changed
-workspace dependency appears in its packed metadata, including development peers.
-The dry-run checksum check catches missed version bumps before any package upload.
+The version command disables implicit dependency installation in its subprocesses
+while manifests are being updated. Synchronize the lockfile explicitly afterward
+with the command above; versioning does not need to reinstall application packages.
+The fixed group automatically includes CLI and packages affected only by internal
+dependency metadata. Keep internal declarations as `workspace:*`; pnpm converts
+them to the group's exact version when packing. Regenerate the CLI's embedded
+release catalog during its normal build. The dry-run checksum check catches stale
+versions or artifacts before any package upload. A synchronized version does not
+make npm's sequential package uploads atomic.
 
 A push with no changed package bytes skips all uploads. Changing package bytes
 without increasing that package's version fails preparation rather than overwriting

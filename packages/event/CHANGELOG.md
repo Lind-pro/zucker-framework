@@ -1,5 +1,22 @@
 # @zucker-framework/event
 
+## 1.0.2
+
+### Patch Changes
+
+- Add ReplayEventBus and RedisReplayEventBus for configurable process-local replay and optional Redis Pub/Sub progress delivery, with terminal completion, stale-channel cleanup and owned-client shutdown. Declare the external rxjs peer. This feature is included in the maintainer-selected unified 1.0.2 release.
+- Align all public Framework packages to the maintainer-selected 1.0.2 release and keep subsequent releases synchronized through a Changesets fixed group. Package dependencies and the CLI scaffold catalog follow the same version.
+
+  This release consolidates the pending API migrations, including breaking auth and payment persistence contracts. Review docs/package-release-1.0.2.md before upgrading from 1.0.0 or 1.0.1.
+
+- Updated dependencies [c0de08f]
+- Updated dependencies [c0de08f]
+- Updated dependencies [c0de08f]
+- Updated dependencies [c0de08f]
+- Updated dependencies
+- Updated dependencies [c0de08f]
+  - @zucker-framework/core@1.0.2
+
 ## 1.0.0
 
 ### Major Changes
