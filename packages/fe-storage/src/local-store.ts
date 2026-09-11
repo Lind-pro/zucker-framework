@@ -7,15 +7,24 @@ import { TOKEN_KEY, USER_KEY, REFRESH_TOKEN_KEY } from './constants';
  * All methods are static so the class can be used without instantiation.
  */
 export class LocalStore {
+  private static attempt<T>(operation: () => T, fallback: T): T {
+    try {
+      return operation();
+    } catch {
+      return fallback;
+    }
+  }
   /** Store a value under the given key. Non-string values are JSON-serialized. */
   static set(key: string, data: unknown): void {
-    const value = typeof data === 'string' ? data : JSON.stringify(data);
-    localStorage.setItem(key, value);
+    this.attempt(() => {
+      const value = typeof data === 'string' ? data : JSON.stringify(data);
+      localStorage.setItem(key, value);
+    }, undefined);
   }
 
   /** Retrieve and JSON-parse a value by key. Returns null if the key does not exist. */
   static get<T = unknown>(key: string): T | null {
-    const dataStr = localStorage.getItem(key);
+    const dataStr = this.attempt(() => localStorage.getItem(key), null);
     if (!dataStr) return null;
 
     try {
@@ -27,22 +36,22 @@ export class LocalStore {
 
   /** Remove a single key from localStorage. */
   static remove(key: string): void {
-    localStorage.removeItem(key);
+    this.attempt(() => localStorage.removeItem(key), undefined);
   }
 
   /** Clear all keys from localStorage. */
   static removeAll(): void {
-    localStorage.clear();
+    this.attempt(() => localStorage.clear(), undefined);
   }
 
   /** Check whether a key exists in localStorage. */
   static has(key: string): boolean {
-    return localStorage.getItem(key) !== null;
+    return this.attempt(() => localStorage.getItem(key) !== null, false);
   }
 
   /** Return all keys currently stored in localStorage. */
   static keys(): string[] {
-    return Object.keys(localStorage);
+    return this.attempt(() => Object.keys(localStorage), []);
   }
 
   /** Retrieve the stored access token. */
@@ -71,7 +80,7 @@ export class LocalStore {
   }
 
   /** Persist a user profile object. */
-  static setUserInfo(userInfo: Record<string, unknown>): void {
+  static setUserInfo<TUser extends object>(userInfo: TUser): void {
     this.set(USER_KEY, userInfo);
   }
 

@@ -769,3 +769,15 @@ export class HttpClient {
 export function createHttpClient(config: HttpClientConfig = {}): HttpClient {
   return new HttpClient(config);
 }
+
+/** Refresh through an HttpOnly cookie without exposing a refresh token to the caller. */
+export function createCookieRefresh(url: string): () => Promise<{ access_token: string }> {
+  return async () => {
+    const response = await axios.post(url, {}, { withCredentials: true });
+    const payload = response.data?.result ?? response.data;
+    if (typeof payload?.access_token !== 'string' || !payload.access_token) {
+      throw new Error('Invalid access-token refresh response');
+    }
+    return { access_token: payload.access_token };
+  };
+}

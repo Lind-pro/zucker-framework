@@ -138,3 +138,9 @@ export interface AuthState {
   /** Flat list of permission codes granted to the user. */
   permissions: string[];
 }
+
+export { TEMPLATE_VARIABLE_REGEX, extractTemplateVariables } from './template-variables';
+
+export { redactFields } from './redact-fields';
+
+export { inspectUserAgent, type UserAgentDetails } from '@zucker-framework/core/user-agent';

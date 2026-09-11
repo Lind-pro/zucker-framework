@@ -3,7 +3,7 @@ import type { AuthStore } from '@zucker-framework/fe-auth';
 
 /** Configuration for the permission hook factory, requiring an auth store selector. */
 export interface UsePermissionConfig {
-  useAuthStore: <T>(selector: (state: AuthStore) => T) => T;
+  useAuthStore: <T>(selector: (state: Pick<AuthStore, 'permissions'>) => T) => T;
 }
 
 /** Create a React hook for checking user permissions against the auth store. */

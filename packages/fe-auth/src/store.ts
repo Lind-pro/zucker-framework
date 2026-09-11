@@ -2,39 +2,49 @@ import { create } from 'zustand';
 import { persist, type PersistOptions } from 'zustand/middleware';
 
 /** Adapter interface for pluggable auth token/user storage backends. */
-export interface StorageAdapter {
+export interface StorageAdapter<TUser extends object = Record<string, unknown>> {
   set: (key: string, data: unknown) => void;
   get: <T = unknown>(key: string) => T | null;
   remove: (key: string) => void;
   clearAuth: () => void;
+  /** Use the storage backend's auth keys when it exposes typed auth accessors. */
+  setToken?: (token: string) => void;
+  setRefreshToken?: (token: string) => void;
+  setUserInfo?: (user: TUser) => void;
 }
 
 /** Configuration for creating an auth store instance. */
-export interface AuthStoreConfig {
-  storage?: StorageAdapter;
+export interface AuthStoreConfig<TUser extends object = Record<string, unknown>> {
+  storage?: StorageAdapter<TUser>;
+  /** Consumer-specific authorization vocabulary; defaults to the existing wildcard matcher. */
+  permissionMatcher?: (permissions: string[], permission: string) => boolean;
+  onBeforeLogout?: () => void;
+  onAfterLogout?: () => void;
   persistKey?: string;
   /** Consumer migration, hydration and persistence policy, configured before initial hydration. */
-  persistOptions?: Omit<PersistOptions<AuthStore, Partial<AuthState>>, 'name'>;
+  persistOptions?: Omit<PersistOptions<AuthStore<TUser>, Partial<AuthState<TUser>>>, 'name'>;
 }
 
 /** The authentication state shape managed by the auth store. */
-export interface AuthState {
+export interface AuthState<TUser extends object = Record<string, unknown>> {
   isAuthenticated: boolean;
   token: string | null;
   refreshToken: string | null;
-  user: Record<string, unknown> | null;
+  user: TUser | null;
   permissions: string[];
 }
 
 /** Full auth store interface combining state with actions for authentication management. */
-export interface AuthStore extends AuthState {
+export interface AuthStore<
+  TUser extends object = Record<string, unknown>,
+> extends AuthState<TUser> {
   setAuthState: (data: {
     token: string;
     refreshToken?: string;
-    user: Record<string, unknown>;
+    user: TUser;
     permissions?: string[];
   }) => void;
-  updateUser: (user: Record<string, unknown>) => void;
+  updateUser: (user: TUser) => void;
   updatePermissions: (permissions: string[]) => void;
   updateToken: (token: string) => void;
   logout: () => void;
@@ -44,10 +54,21 @@ export interface AuthStore extends AuthState {
 }
 
 /** Create a Zustand-based auth store with optional persistent storage and permission checking. */
-export function createAuthStore(config: AuthStoreConfig = {}) {
+export function createAuthStore<TUser extends object = Record<string, unknown>>(
+  config: AuthStoreConfig<TUser> = {},
+) {
   const { storage, persistKey = 'auth-storage', persistOptions } = config;
 
-  return create<AuthStore>()(
+  const saveToken = (token: string) => {
+    if (storage?.setToken) storage.setToken(token);
+    else storage?.set('token', token);
+  };
+  const saveUser = (user: TUser) => {
+    if (storage?.setUserInfo) storage.setUserInfo(user);
+    else storage?.set('userInfo', user);
+  };
+
+  return create<AuthStore<TUser>>()(
     persist(
       (set, get) => ({
         isAuthenticated: false,
@@ -58,11 +79,12 @@ export function createAuthStore(config: AuthStoreConfig = {}) {
 
         setAuthState: (data) => {
           if (storage) {
-            storage.set('token', data.token);
+            saveToken(data.token);
             if (data.refreshToken) {
-              storage.set('refreshToken', data.refreshToken);
+              if (storage.setRefreshToken) storage.setRefreshToken(data.refreshToken);
+              else storage.set('refreshToken', data.refreshToken);
             }
-            storage.set('userInfo', data.user);
+            saveUser(data.user);
           }
           set({
             isAuthenticated: true,
@@ -75,7 +97,7 @@ export function createAuthStore(config: AuthStoreConfig = {}) {
 
         updateUser: (user) => {
           if (storage) {
-            storage.set('userInfo', user);
+            saveUser(user);
           }
           set({ user });
         },
@@ -84,26 +106,34 @@ export function createAuthStore(config: AuthStoreConfig = {}) {
 
         updateToken: (token) => {
           if (storage) {
-            storage.set('token', token);
+            saveToken(token);
           }
           set({ token });
         },
 
         logout: () => {
-          if (storage) {
-            storage.clearAuth();
+          try {
+            config.onBeforeLogout?.();
+          } finally {
+            try {
+              storage?.clearAuth();
+            } finally {
+              set({
+                isAuthenticated: false,
+                token: null,
+                refreshToken: null,
+                user: null,
+                permissions: [],
+              });
+              config.onAfterLogout?.();
+            }
           }
-          set({
-            isAuthenticated: false,
-            token: null,
-            refreshToken: null,
-            user: null,
-            permissions: [],
-          });
         },
 
         hasPermission: (permissionCode) => {
           const { permissions } = get();
+          if (config.permissionMatcher)
+            return config.permissionMatcher(permissions, permissionCode);
           if (!permissions || permissions.length === 0) return false;
           if (permissions.includes('*') || permissions.includes('superadmin')) return true;
           if (permissions.includes(permissionCode)) return true;
@@ -135,6 +165,16 @@ export function createAuthStore(config: AuthStoreConfig = {}) {
           permissions: state.permissions,
         }),
         ...persistOptions,
+        onRehydrateStorage: (state) => {
+          const onHydrated = persistOptions?.onRehydrateStorage?.(state);
+          return (hydrated, error) => {
+            if (!error && hydrated?.isAuthenticated && hydrated.token) {
+              saveToken(hydrated.token);
+              if (hydrated.user) saveUser(hydrated.user);
+            }
+            onHydrated?.(hydrated, error);
+          };
+        },
       },
     ),
   );

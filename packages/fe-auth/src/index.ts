@@ -5,3 +5,6 @@ export {
   type AuthStore,
   createAuthStore,
 } from './store';
+
+export { createUseAuthHydration, type AuthHydrationStore } from './hydration';
+export { isSafeRelativeRedirect } from './redirect';

@@ -15,21 +15,43 @@ export interface AnalyticsConfig {
   flushInterval?: number;
   enabled?: boolean;
   getSessionId?: () => string;
+  sessionStorageKey?: string;
+  createSessionId?: () => string;
+  /** Dynamic headers require fetch because sendBeacon cannot carry authorization headers. */
+  getHeaders?: () => Record<string, string>;
+  /** Adapt the wire payload without changing which fields the consumer collects. */
+  serializeEvents?: (events: AnalyticsEvent[]) => string;
 }
 
-let config: Required<AnalyticsConfig> = {
+let cachedSessionId: string | null = null;
+
+function getStoredSessionId(): string {
+  if (cachedSessionId) return cachedSessionId;
+  try {
+    cachedSessionId = sessionStorage.getItem(config.sessionStorageKey);
+  } catch {
+    // Blocked storage must not interrupt the action being tracked.
+  }
+  if (!cachedSessionId) {
+    cachedSessionId = config.createSessionId();
+    try {
+      sessionStorage.setItem(config.sessionStorageKey, cachedSessionId);
+    } catch {
+      // The in-memory identifier remains stable for this page.
+    }
+  }
+  return cachedSessionId;
+}
+
+let config: Required<Omit<AnalyticsConfig, 'getHeaders'>> & Pick<AnalyticsConfig, 'getHeaders'> = {
   endpoint: '/api/analytics/events',
   batchSize: 10,
   flushInterval: 30000,
   enabled: true,
-  getSessionId: () => {
-    let sessionId = sessionStorage.getItem('analytics_session_id');
-    if (!sessionId) {
-      sessionId = `s_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-      sessionStorage.setItem('analytics_session_id', sessionId);
-    }
-    return sessionId;
-  },
+  getSessionId: getStoredSessionId,
+  sessionStorageKey: 'analytics_session_id',
+  createSessionId: () => `s_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+  serializeEvents: JSON.stringify,
 };
 
 let eventQueue: AnalyticsEvent[] = [];
@@ -37,6 +59,12 @@ let flushTimer: ReturnType<typeof setInterval> | null = null;
 
 /** Initialize or update the analytics configuration. Restarts the flush timer if enabled. */
 export function configureAnalytics(options: AnalyticsConfig): void {
+  if (
+    options.sessionStorageKey !== undefined &&
+    options.sessionStorageKey !== config.sessionStorageKey
+  ) {
+    cachedSessionId = null;
+  }
   config = { ...config, ...options };
 
   if (flushTimer) {
@@ -49,11 +77,8 @@ export function configureAnalytics(options: AnalyticsConfig): void {
 }
 
 /** Track a custom event. Events are batched and flushed periodically or when the batch size is reached. */
-export function trackEvent(
-  eventName: string,
-  eventData?: Record<string, unknown>,
-): void {
-  if (!config.enabled) return;
+export function trackEvent(eventName: string, eventData?: Record<string, unknown>): void {
+  if (!config.enabled || typeof window === 'undefined') return;
 
   const event: AnalyticsEvent = {
     eventName,
@@ -86,17 +111,22 @@ export function flushEvents(): void {
   const events = [...eventQueue];
   eventQueue = [];
 
-  if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
-    navigator.sendBeacon(config.endpoint, JSON.stringify(events));
-  } else if (typeof fetch !== 'undefined') {
-    fetch(config.endpoint, {
+  try {
+    const body = config.serializeEvents(events);
+    if (!config.getHeaders && typeof navigator !== 'undefined' && navigator.sendBeacon) {
+      if (navigator.sendBeacon(config.endpoint, body)) return;
+    }
+    if (typeof fetch === 'undefined') return;
+    void fetch(config.endpoint, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(events),
+      headers: { 'Content-Type': 'application/json', ...config.getHeaders?.() },
+      body,
       keepalive: true,
     }).catch(() => {
       // 静默失败，不影响用户体验
     });
+  } catch {
+    // Serialization, storage or transport failures never block application behavior.
   }
 }
 

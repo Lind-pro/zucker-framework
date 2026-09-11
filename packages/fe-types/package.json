@@ -29,7 +29,8 @@
     "prepack": "node ../../scripts/prepare-package-legal.mjs"
   },
   "dependencies": {
-    "zod": "^4.5.4"
+    "zod": "^4.5.4",
+    "@zucker-framework/core": "workspace:*"
   },
   "license": "Apache-2.0",
   "author": "Lind",
