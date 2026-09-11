@@ -8,7 +8,8 @@ import { assertPackageContent, assertTarballContent, verifyPackageDirectories } 
 
 test('keeps runnable code, declaration files and required schema assets', () => {
   const files = ['dist/index.js', 'dist/index.mjs', 'dist/index.cjs', 'dist/index.d.ts',
-    'dist/index.d.mts', 'dist/index.d.cts', 'assets/runtime.prisma', 'assets/migration.sql'];
+    'dist/index.d.mts', 'dist/index.d.cts', 'assets/runtime.prisma', 'assets/migration.sql',
+    'tooling/agent-instructions.mjs', 'tooling/agent-instructions.d.mts'];
   assert.doesNotThrow(() => assertPackageContent('fixture', files, () => Buffer.from('export {};')));
 });
 

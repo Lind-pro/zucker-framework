@@ -16,15 +16,29 @@ const workspaceAliases = readdirSync(packagesDir, { withFileTypes: true })
 
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
       name?: string;
+      exports?: Record<string, unknown>;
     };
     if (!manifest.name) return [];
 
     const escapedName = manifest.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return [{ find: new RegExp(`^${escapedName}$`), replacement: sourceEntry }];
+    const aliases = [{ find: new RegExp(`^${escapedName}$`), replacement: sourceEntry }];
+    for (const entry of Object.keys(manifest.exports ?? {})) {
+      if (!entry.startsWith('./') || entry.includes('*')) continue;
+      const subpath = entry.slice(2);
+      const sourceSubpath = resolve(packageDir, 'src', `${subpath}.ts`);
+      if (!existsSync(sourceSubpath)) continue;
+      const escapedSubpath = subpath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      aliases.push({
+        find: new RegExp(`^${escapedName}/${escapedSubpath}$`),
+        replacement: sourceSubpath,
+      });
+    }
+    return aliases;
   });
 
 export default defineConfig({
   resolve: {
+    dedupe: ['react', 'react-dom'],
     // Unit tests consume workspace source, never stale or missing dist output.
     alias: workspaceAliases,
   },

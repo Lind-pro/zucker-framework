@@ -5,16 +5,18 @@
   "bin": {
     "zucker": "./dist/index.js"
   },
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "dist/tooling.js",
+  "types": "dist/tooling.d.ts",
   "files": [
     "dist",
     "LICENSE",
     "NOTICE",
-    "THIRD_PARTY_NOTICES"
+    "THIRD_PARTY_NOTICES",
+    "tooling/agent-instructions.mjs",
+    "tooling/agent-instructions.d.mts"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format cjs --dts && node ../../scripts/prepare-cli-catalog.mjs",
+    "build": "tsup --config tsup.config.ts && node ../../scripts/prepare-cli-catalog.mjs",
     "clean": "rm -rf dist",
     "lint": "eslint src/",
     "prepack": "node ../../scripts/prepare-package-legal.mjs"
@@ -25,7 +27,8 @@
     "commander": "^15.0.0",
     "dotenv": "^17.4.2",
     "openai": "7.8.0",
-    "pg": "8.23.0"
+    "pg": "8.23.0",
+    "typescript": "^6.0.3"
   },
   "devDependencies": {
     "@types/node": "^20.19.43",
@@ -44,5 +47,23 @@
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
+  },
+  "module": "dist/tooling.mjs",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/tooling.d.mts",
+        "default": "./dist/tooling.mjs"
+      },
+      "require": {
+        "types": "./dist/tooling.d.ts",
+        "default": "./dist/tooling.js"
+      }
+    },
+    "./agent-instructions": {
+      "types": "./tooling/agent-instructions.d.mts",
+      "import": "./tooling/agent-instructions.mjs",
+      "default": "./tooling/agent-instructions.mjs"
+    }
   }
 }

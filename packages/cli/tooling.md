@@ -1,0 +1,13 @@
+# Source audit tooling
+
+The package root exports `auditModuleWiring`, `findTransactionBoundaryViolations`, `checkTransactionBoundaries`, `auditFrameworkSourceText` and `auditPnpmWorkflowVersions`. Importing that root loads only the library; it does not parse process arguments, read environment files, connect to services or execute CLI commands. The `zucker` executable keeps its existing `dist/index.js` path through a separate bin entry.
+
+Module wiring checks use the TypeScript AST to identify Nest scheduler/cron imports, provider registrations, lifecycle declarations, guard composition and lifecycle aliases. Consumers supply their source root, scheduler owner, expected guards and infrastructure-provider owners. Transaction checks likewise receive root-client names and service/external-call patterns. Framework import checks accept consumer runtime-import restrictions; workflow checks receive the package-manager pin and workflow contents.
+
+These are syntactic checks, retaining the original limits: they do not resolve a complete TypeScript program, infer dynamic module factories or prove database/provider behavior. Directory scanners read only the selected local source. Product module lists, service names, repository paths, workflow sets, command dispatch and output formatting stay in consumers.
+
+TypeScript is a declared runtime dependency of these audit APIs. The release retains both CJS/ESM library entries and the executable. Source tests in `src/tooling/tooling.spec.ts` plus consumer characterization tests require validation before an immutable release. Merely importing the package is not authorization to run an audit or release command.
+
+`@zucker-framework/cli/agent-instructions` is a separately exported, directly runnable JavaScript entry. Its `auditAgentInstructions(repository, policy)` checks canonical skill metadata, local Markdown links, configured compatibility aliases and optional Git-ignore visibility. Callers select document paths, alias locations/targets and whether reference-document aliases are permitted. The module imports only Node built-ins, has an explicit declaration file and does not load the TypeScript tooling entry or the CLI executable.
+
+This exact `tooling/agent-instructions.mjs` file is included in the published package without a build transformation. Framework's own bootstrap script references that same in-repository module before dependency installation; external consumers use the published package subpath. There is no copied fallback implementation. CNIPA prepares its pinned root tooling dependency with a filtered frozen install and disabled lifecycle scripts; instruction validation still needs no application build, database or provider access.

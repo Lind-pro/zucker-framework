@@ -27,7 +27,7 @@ function skill(name, body = 'Do the requested work.\n') {
   return `---\nname: ${name}\ndescription: "A focused task-specific skill."\n---\n\n${body}`;
 }
 
-test('portable canonical skills and compatibility links pass without dependencies', (t) => {
+test('portable canonical skills and compatibility links pass with isolated file fixtures', (t) => {
   const f = fixture(t);
   f.write('.gitignore', '/.agents/*\n!/.agents/skills/\n/.claude/*\n!/.claude/skills/\n');
   assert.deepEqual(f.check(), { errors: [], skills: 1, aliases: 2 });

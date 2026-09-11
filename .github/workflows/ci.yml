@@ -27,7 +27,7 @@ jobs:
 
       - name: Validate agent instructions
         run: |
-          node --test scripts/check-agent-instructions.test.mjs
+          node --test packages/cli/tooling/agent-instructions.test.mjs scripts/check-agent-instructions.test.mjs
           node scripts/check-agent-instructions.mjs
 
       - name: Install dependencies
