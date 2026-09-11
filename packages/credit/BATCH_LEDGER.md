@@ -1,0 +1,13 @@
+# Transaction-bound batch credit accounting
+
+`BatchCreditLedger<Tx, Source>` provides persistent lot grants, FIFO consumption, source restrictions, allocation records, balance/journal consistency and remaining-amount expiry. It complements the existing simple balance service; consumers with lot accounting must not substitute the simple account-expiry algorithm.
+
+Configure existing `lots`, `balances`, `transactions`, `consumptions` and `allocations` model ports, account/lot-reference columns and a caller-owned transaction callback. Supply the existing account lock/operation receipt coordinator. The service creates no pool, memory ledger or schema. `grant(tx, ...)` and `consume(tx, ...)` require a real transaction; external effects must run after commit. Existing root-client APIs must enter a transaction before invoking them. `expire` reads candidates from the configured scan port, then locks each account and re-reads the eligible remainder inside its transaction before mutation.
+
+Source names, transaction type values, expiry policy, descriptions, metadata, resource eligibility and billing rules belong to the application. Field mappings preserve native dates and the existing integer balance schema. A preferred source only reorders the allowed source set; it cannot widen eligibility. Consumption writes all lot deductions, allocation rows, balance changes and before/after journal records in the same supplied transaction. Any persistence failure propagates to its owner for rollback; there is no best-effort partial commit.
+
+`grant` can accept the existing operation receipt input. The account and amount must match the grant; a replay returns false before any lot/balance mutation. No second receipt mechanism is introduced. If an application also changes a resource, acquire the account lock before the resource row lock and keep both operations in the same transaction.
+
+`BatchCreditInsufficientError` reports required/available amounts without assigning product HTTP semantics. `BatchCreditAmountError` rejects non-positive/non-integer/32-bit-overflow amounts. Applications translate these into their existing responses.
+
+Validation on 2026-09-11: all 4 credit unit-test files (43 tests) and the package no-emit typecheck passed, including batch accounting, quota capacity and the isolated PGlite operation-coordinator tests. Fake ports and in-process PGlite do not prove multi-connection PostgreSQL concurrency, Redis behavior or the consumer root/transaction integration. No runtime database change or publication was performed by this verification batch. The APIs are additive; consumers require an immutable version and application verification before release.

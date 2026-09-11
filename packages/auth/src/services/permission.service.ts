@@ -11,6 +11,25 @@ interface CachedPermissions {
   expiresAt: number;
 }
 
+export interface PermissionImportRecord {
+  id: string;
+  name: string;
+  description?: string;
+  status?: boolean;
+  actions?: unknown[];
+  optionalFields?: unknown[];
+  parents?: unknown[];
+  properties?: Record<string, unknown>;
+}
+export interface PermissionImportOptions<T extends PermissionImportRecord> {
+  mapData?: (permission: T, normalized: Record<string, unknown>) => {
+    create: Record<string, unknown>; update: Record<string, unknown>;
+  };
+  /** Must be a single atomic upsert. The default requires a native model upsert. */
+  persist?: (id: string, data: { create: Record<string, unknown>; update: Record<string, unknown> }) => Promise<unknown>;
+  successMessage?: string;
+}
+
 @Injectable()
 export class PermissionService {
   protected readonly logger = new Logger(PermissionService.name);
@@ -331,77 +350,38 @@ export class PermissionService {
   /**
    * 批量导入权限
    */
-  async importPermissions(
-    permissions: Array<{
-      id: string;
-      name: string;
-      description?: string;
-      status?: boolean;
-      actions?: unknown[];
-      optionalFields?: unknown[];
-      parents?: string[];
-    }>,
+  async importPermissions<T extends PermissionImportRecord>(
+    permissions: T[], options: PermissionImportOptions<T> = {},
   ) {
-    const results: Array<{
-      id: string;
-      success: boolean;
-      message: string;
-    }> = [];
-
+    const results: Array<{ id: string; success: boolean; message: string }> = [];
     for (const permission of permissions) {
       try {
-        const existing = await this.db
-          .model('permissions')
-          .findUnique({ where: { id: permission.id } });
-
-        const data = {
-          ...permission,
+        const normalized: Record<string, unknown> = {};
+        Object.assign(normalized, permission, {
           status: permission.status ?? true,
-          actions: permission.actions
-            ? JSON.parse(JSON.stringify(permission.actions))
-            : null,
-          optionalFields: permission.optionalFields
-            ? JSON.parse(JSON.stringify(permission.optionalFields))
-            : null,
-          parents: permission.parents
-            ? JSON.parse(JSON.stringify(permission.parents))
-            : null,
-        };
-
-        if (existing) {
-          await this.db
-            .model('permissions')
-            .update({ where: { id: permission.id }, data });
-          results.push({
-            id: permission.id,
-            success: true,
-            message: '权限更新成功',
-          });
-        } else {
-          await this.db.model('permissions').create({ data });
-          results.push({
-            id: permission.id,
-            success: true,
-            message: '权限创建成功',
-          });
-        }
-      } catch (error) {
-        results.push({
-          id: permission.id,
-          success: false,
-          message:
-            error instanceof Error ? error.message : String(error),
+          actions: permission.actions ? JSON.parse(JSON.stringify(permission.actions)) : null,
+          optionalFields: permission.optionalFields ? JSON.parse(JSON.stringify(permission.optionalFields)) : null,
+          parents: permission.parents ? JSON.parse(JSON.stringify(permission.parents)) : null,
         });
+        const data = options.mapData?.(permission, normalized) ?? { create: normalized, update: normalized };
+        if (options.persist) {
+          await options.persist(permission.id, data);
+        } else {
+          const model = this.db.model('permissions') as ReturnType<DatabaseAdapter['model']> & {
+            upsert?: (args: Record<string, unknown>) => Promise<unknown>;
+          };
+          if (!model.upsert) throw new Error('Atomic permission upsert must be configured');
+          await model.upsert({ where: { id: permission.id }, ...data });
+        }
+        results.push({ id: permission.id, success: true, message: options.successMessage ?? '权限同步成功' });
+      } catch (error) {
+        results.push({ id: permission.id, success: false,
+          message: error instanceof Error ? error.message : String(error) });
       }
     }
-
-    const successCount = results.filter((r) => r.success).length;
-    return {
-      total: results.length,
-      success: successCount,
-      fail: results.length - successCount,
-      results,
-    };
+    this.invalidatePermissionCache();
+    const success = results.filter((item) => item.success).length;
+    return { total: results.length, success, fail: results.length - success, results };
   }
 
   private addPermissionToSet(

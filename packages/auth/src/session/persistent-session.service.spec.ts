@@ -113,3 +113,33 @@ describe('PersistentSessionService', () => {
     );
   });
 });
+
+describe('owner-constrained session revocation', () => {
+  it('does not create a revocation cache entry when the database reports no owned row', async () => {
+    const updateMany = vi.fn().mockResolvedValue({ count: 0 });
+    const set = vi.fn();
+    const service = new PersistentSessionService(
+      { model: () => ({ updateMany }) } as unknown as DatabaseAdapter,
+      { modelName: 'sessions', sessionTtlMs: 60_000, cache: { get: vi.fn(), set, del: vi.fn() } },
+    );
+    expect(await service.revokeSessionForUser('session', 'visitor', 'logout')).toBe(false);
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'session', userId: 'visitor' } }),
+    );
+    expect(set).not.toHaveBeenCalled();
+  });
+  it('persists the owner condition before marking the session revoked in cache', async () => {
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const set = vi.fn().mockRejectedValue(new Error('cache unavailable'));
+    const service = new PersistentSessionService(
+      { model: () => ({ updateMany }) } as unknown as DatabaseAdapter,
+      { modelName: 'sessions', sessionTtlMs: 60_000, cache: { get: vi.fn(), set, del: vi.fn() } },
+    );
+    expect(await service.revokeSessionForUser('session', 'owner', 'logout')).toBe(true);
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id: 'session', userId: 'owner' },
+      data: { revokedAt: expect.any(Date), revokedReason: 'logout' },
+    });
+    expect(set).toHaveBeenCalledWith('session:revoked:session', '1', 3_600_000);
+  });
+});

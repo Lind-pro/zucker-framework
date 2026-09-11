@@ -116,7 +116,11 @@ export type {
 // Guards
 export { JwtAuthGuard } from './guards/jwt-auth.guard';
 export { PermissionsGuard } from './guards/permissions.guard';
-export { DataPermissionGuard, DATABASE_ADAPTER, DATA_ACCESS_RESULT_KEY } from './guards/data-permission.guard';
+export {
+  DataPermissionGuard,
+  DATABASE_ADAPTER,
+  DATA_ACCESS_RESULT_KEY,
+} from './guards/data-permission.guard';
 export { TwoFactorGuard } from './guards/two-factor.guard';
 
 // Services
@@ -134,7 +138,13 @@ export type { ThirdPartyProfile } from './services/third-party-account.service';
 export { DepartmentDimensionProvider } from './services/department-dimension.provider';
 export { UserService, PASSWORD_ENCODER } from './services/user.service';
 export type { UserEntity } from './services/user.service';
-export { RoleService, ROLE_EVENT_TOPICS, createRoleCreatedEvent, createRoleModifiedEvent, createRoleDeletedEvent } from './services/role.service';
+export {
+  RoleService,
+  ROLE_EVENT_TOPICS,
+  createRoleCreatedEvent,
+  createRoleModifiedEvent,
+  createRoleDeletedEvent,
+} from './services/role.service';
 export type { RoleEntity } from './services/role.service';
 export { AuthorizationSettingService } from './services/authorization-setting.service';
 export type { AuthorizationSettingEntity } from './services/authorization-setting.service';
@@ -145,12 +155,19 @@ export { PermissionSyncService } from './services/permission-sync.service';
 // Controllers
 export { MenuController } from './controllers/menu.controller';
 export { ThirdPartyAccountController } from './controllers/third-party-account.controller';
-export { AuthorizationController, AUTHENTICATION_MANAGER } from './controllers/authorization.controller';
-export type { LoginRequest, LoginResult, AuthenticationManagerLike } from './controllers/authorization.controller';
+export {
+  AuthorizationController,
+  AUTHENTICATION_MANAGER,
+} from './controllers/authorization.controller';
+export type {
+  LoginRequest,
+  LoginResult,
+  AuthenticationManagerLike,
+} from './controllers/authorization.controller';
 export { UserTokenController } from './controllers/user-token.controller';
 
 // Strategies
-export { JwtStrategy } from './strategies/jwt.strategy';
+export { JwtStrategy, JwtStrategyBase } from './strategies/jwt.strategy';
 export type { JwtPayload } from './strategies/jwt.strategy';
 
 // Events
@@ -262,10 +279,63 @@ export type { ZuckerAuthModuleAsyncOptions, ZuckerAuthModuleOptionsFactory } fro
 
 // Durable sessions and HttpOnly refresh-cookie transport
 export { PersistentSessionService } from './session/persistent-session.service';
-export type { PersistentSession, PersistentSessionOptions } from './session/persistent-session.service';
+export type {
+  PersistentSession,
+  PersistentSessionOptions,
+} from './session/persistent-session.service';
 export { RefreshTokenCookie } from './session/refresh-token-cookie';
-export type { RefreshTokenCookieOptions, RefreshCookieResponse } from './session/refresh-token-cookie';
-export { ResourceOwnershipGuard, RESOURCE_OWNERSHIP_OPTIONS } from './guards/resource-ownership.guard';
+export type {
+  RefreshTokenCookieOptions,
+  RefreshCookieResponse,
+} from './session/refresh-token-cookie';
+export {
+  ResourceOwnershipGuard,
+  RESOURCE_OWNERSHIP_OPTIONS,
+} from './guards/resource-ownership.guard';
 export type { ResourceOwnershipOptions } from './guards/resource-ownership.guard';
 export { OWN_CREATED_OPTIONS } from './data-access/own-created.handler';
 export type { OwnCreatedHandlerOptions } from './data-access/own-created.handler';
+
+export { ScryptEncoder } from './password/scrypt-encoder';
+
+export {
+  OAuthStateService,
+  type OAuthStateOptions,
+  type OAuthStatePayload,
+  type OAuthStateFailure,
+} from './oauth-state';
+
+export { LoginAuditService, type LoginAuditData, type LoginAuditOptions } from './login-audit';
+export { parseUserAgent, type ParsedUserAgent, type UserAgentLabels } from './user-agent';
+
+export { OptionalJwtAuthGuard } from './guards/optional-jwt-auth.guard';
+export { createOAuthStateGuard } from './guards/oauth-state.guard';
+export { createLocalAuthGuard } from './guards/local-auth.guard';
+export {
+  ApiKeyService,
+  type ApiKeyRecord,
+  type ApiKeyRateLimitResult,
+  type ApiKeyServiceOptions,
+  type CreateApiKeyParams,
+  type ApiKeyValidationResult,
+} from './api-key/api-key.service';
+export { ApiKeyGuard, API_KEY_GUARD_OPTIONS, type ApiKeyGuardOptions } from './api-key/api-key.guard';
+
+export {
+  PERMISSIONS_GUARD_OPTIONS,
+  type PermissionsGuardOptions,
+} from './guards/permissions.guard';
+
+export { exchangeGoogleOAuthCode, exchangeGitHubOAuthCode, OAuthCodeExchangeError } from './oauth-code-exchange';
+export type { OAuthCodeExchangeProvider, OAuthCodeExchangeStage, OAuthCodeExchangeOptions, GoogleOAuthCodeExchangeOptions, GoogleOAuthCodeProfile, GitHubOAuthCodeProfile } from './oauth-code-exchange';
+
+export { PostgresIdentityTransactions } from './identity-transactions';
+export type { IdentityTransactions } from './identity-transactions';
+export {
+  VerificationCodeService, DatabaseVerificationCodeStore, CacheVerificationAttemptStore, VerificationCodeError,
+} from './verification-code';
+export type { VerificationCodeRecord, VerificationCodeStore, VerificationAttemptStore } from './verification-code';
+export { OneTimeTicketService, DatabaseOneTimeTicketStore, OneTimeTicketError } from './one-time-ticket';
+export type { OneTimeTicketRecord, OneTimeTicketStore } from './one-time-ticket';
+export type { ThirdPartyAccountOptions, ThirdPartyBindRecord } from './services/third-party-account.service';
+export type { PermissionImportOptions, PermissionImportRecord } from './services/permission.service';

@@ -1,7 +1,6 @@
 import { Injectable, Logger, Optional, Inject } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { OrderService, type Order } from './order.service';
-import { PaymentService } from './payment.service';
+import { OrderService, OrderNotFoundError, type Order } from './order.service';
 import { PaymentEvents, type PaymentRecoverySentEvent } from './payment.events';
 
 /** 挽回邮件发送接口 — 由业务项目实现 */
@@ -19,6 +18,8 @@ export interface RecoveryEmailParams {
   errorReason: string;
   retryUrl: string;
   expireHours: number;
+  /** Stable key for this persisted send attempt. */
+  idempotencyKey: string;
 }
 
 /** 用户信息查询接口 — 由业务项目实现 */
@@ -34,6 +35,13 @@ export interface RecoveryUrlGenerator {
 export const RECOVERY_MAIL_SENDER = 'RECOVERY_MAIL_SENDER';
 export const RECOVERY_USER_LOOKUP = 'RECOVERY_USER_LOOKUP';
 export const RECOVERY_URL_GENERATOR = 'RECOVERY_URL_GENERATOR';
+export const RECOVERY_ATTEMPT_STORE = 'RECOVERY_ATTEMPT_STORE';
+
+/** Persisted attempt limits. claim must atomically reserve a unique number below maxAttempts. */
+export interface RecoveryAttemptStore {
+  claim(orderId: string, maxAttempts: number, at: Date): Promise<{ attemptNumber: number } | null>;
+  get(orderId: string): Promise<{ count: number; lastAt: Date } | undefined>;
+}
 
 export interface RecoveryOptions {
   /** 最大挽回次数（默认 3） */
@@ -65,12 +73,9 @@ export class PaymentRecoveryService {
   private readonly logger = new Logger(PaymentRecoveryService.name);
   private readonly options: Required<RecoveryOptions>;
 
-  /** 内存挽回计数（生产环境建议由业务项目持久化） */
-  private readonly recoveryAttempts = new Map<string, { count: number; lastAt: Date }>();
-
   constructor(
     private readonly orderService: OrderService,
-    private readonly paymentService: PaymentService,
+    @Inject(RECOVERY_ATTEMPT_STORE) private readonly attempts: RecoveryAttemptStore | null,
     @Optional()
     @Inject(RECOVERY_MAIL_SENDER)
     private readonly mailSender?: RecoveryMailSender,
@@ -101,8 +106,9 @@ export class PaymentRecoveryService {
   ): Promise<void> {
     let order: Order;
     try {
-      order = this.orderService.getOrder(orderId);
-    } catch {
+      order = await this.orderService.getOrder(orderId);
+    } catch (error) {
+      if (!(error instanceof OrderNotFoundError)) throw error;
       this.logger.warn(`订单 ${orderId} 不存在，跳过挽回`);
       return;
     }
@@ -112,12 +118,11 @@ export class PaymentRecoveryService {
       return;
     }
 
-    // 检查挽回次数
-    const attempts = this.recoveryAttempts.get(orderId);
-    if (attempts && attempts.count >= this.options.maxAttempts) {
-      this.logger.log(`订单 ${orderId} 已挽回 ${attempts.count} 次，不再发送`);
+    if (!this.mailSender) {
+      this.logger.warn('Recovery mail sender is not configured; no attempt was reserved');
       return;
     }
+    if (!this.attempts) throw new Error('Recovery attempt persistence must be configured');
 
     // 查询用户信息
     const userId = order.metadata?.userId;
@@ -146,39 +151,21 @@ export class PaymentRecoveryService {
       return;
     }
 
-    // 发送挽回邮件
-    const errorReason = friendlyErrorReason(errorCode, errorMessage);
-    const attemptNumber = (attempts?.count ?? 0) + 1;
-
-    if (this.mailSender) {
-      try {
-        await this.mailSender.sendRecoveryEmail({
-          to: email,
-          userName: userName || email.split('@')[0],
-          orderId: order.id,
-          orderNumber: order.metadata?.orderNumber,
-          amount: order.amount,
-          currency: order.currency,
-          errorReason,
-          retryUrl,
-          expireHours: this.options.retryLinkExpireHours,
-        });
-        this.logger.log(`挽回邮件已发送: ${email}, 订单 ${orderId} (第 ${attemptNumber} 次)`);
-      } catch (err) {
-        this.logger.error(`挽回邮件发送失败: ${err instanceof Error ? err.message : String(err)}`);
-        return;
-      }
-    } else {
-      this.logger.log(
-        `[Recovery:NoMailSender] 订单 ${orderId} 需要挽回, ` +
-          `email=${email}, retryUrl=${retryUrl}, reason=${errorReason}`,
-      );
-    }
-
-    // 记录挽回尝试
-    this.recoveryAttempts.set(orderId, {
-      count: attemptNumber,
-      lastAt: new Date(),
+    // Reserve before sending. A crash/unknown mail outcome never frees the same attempt.
+    const reservation = await this.attempts.claim(orderId, this.options.maxAttempts, new Date());
+    if (!reservation) return;
+    const attemptNumber = reservation.attemptNumber;
+    await this.mailSender.sendRecoveryEmail({
+      to: email,
+      userName: userName || email.split('@')[0],
+      orderId: order.id,
+      orderNumber: order.metadata?.orderNumber,
+      amount: order.amount,
+      currency: order.currency,
+      errorReason: friendlyErrorReason(errorCode, errorMessage),
+      retryUrl,
+      expireHours: this.options.retryLinkExpireHours,
+      idempotencyKey: `payment-recovery:${orderId}:${attemptNumber}`,
     });
 
     // 发出挽回事件
@@ -197,33 +184,13 @@ export class PaymentRecoveryService {
   /**
    * 重试失败订单 — 将 failed → created 并重新发起支付
    */
-  async retryOrder(orderId: string): Promise<Order> {
-    const order = this.orderService.getOrder(orderId);
-
-    if (order.status !== 'failed') {
-      throw new Error(`订单 ${orderId} 状态为 ${order.status}，仅 failed 订单可重试`);
-    }
-
-    // 重新发起支付
-    const intent = await this.paymentService.createPaymentIntent(order.providerId, {
-      amount: order.amount,
-      currency: order.currency,
-      metadata: order.metadata,
-    });
-
-    // 手动更新订单状态（OrderService 无直接 update 方法，通过内部访问）
-    const internalOrder = this.orderService.getOrder(orderId);
-    (internalOrder as any).paymentIntentId = intent.id;
-    (internalOrder as any).status = 'paying';
-    (internalOrder as any).updatedAt = new Date();
-
-    this.logger.log(`订单 ${orderId} 重试支付, 新 intentId=${intent.id}`);
-    return { ...internalOrder };
+  retryOrder(orderId: string): Promise<Order> {
+    return this.orderService.retryOrder(orderId);
   }
 
-  /** 获取订单挽回记录 */
-  getRecoveryAttempts(orderId: string): { count: number; lastAt: Date } | undefined {
-    return this.recoveryAttempts.get(orderId);
+  getRecoveryAttempts(orderId: string): Promise<{ count: number; lastAt: Date } | undefined> {
+    if (!this.attempts) throw new Error('Recovery attempt persistence must be configured');
+    return this.attempts.get(orderId);
   }
 
   private async generateRetryUrl(order: Order): Promise<string | null> {

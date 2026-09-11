@@ -37,3 +37,30 @@ export type {
   CreditSqlQueryResult,
   PreparedCreditOperation,
 } from './postgres-credit-operation-coordinator';
+
+export {
+  QuotaCapacity,
+  QuotaCapacityInputError,
+  QuotaCapacityExceededError,
+} from './quota-capacity';
+export type {
+  QuotaCapacityKey,
+  QuotaCapacityStore,
+  QuotaCapacityRequest,
+  QuotaCapacitySnapshot,
+  QuotaUsageSnapshot,
+  QuotaReservationCapacity,
+} from './quota-capacity';
+
+export {
+  BatchCreditLedger,
+  BatchCreditAmountError,
+  BatchCreditInsufficientError,
+} from './batch-credit-ledger';
+export type {
+  CreditLot,
+  BatchCreditModels,
+  BatchCreditLedgerOptions,
+  CreditLotGrant,
+  CreditLotConsumption,
+} from './batch-credit-ledger';

@@ -169,8 +169,8 @@ export class ZuckerAuthModule {
       },
       {
         provide: ThirdPartyAccountService,
-        useFactory: (db: DatabaseAdapter) => new ThirdPartyAccountService(db),
-        inject: [DATABASE_ADAPTER],
+        useFactory: (db: DatabaseAdapter, opts: ZuckerAuthModuleOptions) => new ThirdPartyAccountService(db, opts.thirdPartyAccounts),
+        inject: [DATABASE_ADAPTER, optionsToken],
       },
 
       // --- TokenService with optional cache ---

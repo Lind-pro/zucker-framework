@@ -5,6 +5,7 @@ import {
   Logger,
   ForbiddenException,
   Inject,
+  Optional,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import {
@@ -25,6 +26,13 @@ import type {
 import { PermissionService } from '../services/permission.service';
 
 export const PERMISSION_SERVICE = Symbol('PERMISSION_SERVICE');
+export const PERMISSIONS_GUARD_OPTIONS = Symbol('PERMISSIONS_GUARD_OPTIONS');
+export interface PermissionsGuardOptions {
+  /** Deny access on authorization/provider errors instead of propagating them. */
+  errorPolicy?: 'throw' | 'deny';
+  /** Select a safe diagnostic identity without altering request.user. */
+  denialIdentity?: (user: { id?: string; username?: string }) => string | undefined;
+}
 
 @Injectable()
 export class PermissionsGuard implements CanActivate {
@@ -33,9 +41,21 @@ export class PermissionsGuard implements CanActivate {
   constructor(
     private reflector: Reflector,
     @Inject(PermissionService) private permissionService: PermissionService,
+    @Optional()
+    @Inject(PERMISSIONS_GUARD_OPTIONS)
+    private readonly options: PermissionsGuardOptions = {},
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    try {
+      return await this.evaluate(context);
+    } catch (error) {
+      if (this.options.errorPolicy === 'deny') return false;
+      throw error;
+    }
+  }
+
+  private async evaluate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),
@@ -48,24 +68,20 @@ export class PermissionsGuard implements CanActivate {
     }
 
     // 优先读取字符串权限装饰器
-    const stringPermissions = this.reflector.getAllAndOverride<
-      string[] | undefined
-    >(PERMISSIONS_KEY, [context.getHandler(), context.getClass()]);
+    const stringPermissions = this.reflector.getAllAndOverride<string[] | undefined>(
+      PERMISSIONS_KEY,
+      [context.getHandler(), context.getClass()],
+    );
 
     // 读取 Resource/Action 装饰器
-    const resourceOptions = this.reflector.get<ResourceOptions>(
-      RESOURCE_KEY,
-      context.getClass(),
-    );
-    const actionOptions = this.reflector.get<ActionOptions>(
-      ACTION_KEY,
-      context.getHandler(),
-    );
+    const resourceOptions = this.reflector.get<ResourceOptions>(RESOURCE_KEY, context.getClass());
+    const actionOptions = this.reflector.get<ActionOptions>(ACTION_KEY, context.getHandler());
 
     // 读取 @DimensionCheck / @RequiresRoles 装饰器
-    const dimensionOptions = this.reflector.getAllAndOverride<
-      DimensionOptions | undefined
-    >(DIMENSION_KEY, [context.getHandler(), context.getClass()]);
+    const dimensionOptions = this.reflector.getAllAndOverride<DimensionOptions | undefined>(
+      DIMENSION_KEY,
+      [context.getHandler(), context.getClass()],
+    );
 
     let requiredPermissions: string[] = [];
 
@@ -79,10 +95,7 @@ export class PermissionsGuard implements CanActivate {
         return !!request.user && !!request.user.id;
       }
     } else if (authorizeOptions) {
-      if (
-        authorizeOptions.permissions !== undefined &&
-        authorizeOptions.permissions.length > 0
-      ) {
+      if (authorizeOptions.permissions !== undefined && authorizeOptions.permissions.length > 0) {
         requiredPermissions = authorizeOptions.permissions;
       } else if (
         authorizeOptions.permissions !== undefined &&
@@ -122,7 +135,7 @@ export class PermissionsGuard implements CanActivate {
       );
       if (!hasPermission) {
         this.logger.warn(
-          `Access Denied: User ${user.username} lacks permissions [${requiredPermissions.join(', ')}]`,
+          `Access Denied: User ${this.options.denialIdentity ? this.options.denialIdentity(user) : user.username} lacks permissions [${requiredPermissions.join(', ')}]`,
         );
         return false;
       }
@@ -135,20 +148,17 @@ export class PermissionsGuard implements CanActivate {
       );
       if (!hasResourcePermission) {
         this.logger.warn(
-          `Access Denied: User ${user.username} lacks authorize resources [${authorizeOptions.resources.map((resource) => resource.id).join(', ')}]`,
+          `Access Denied: User ${this.options.denialIdentity ? this.options.denialIdentity(user) : user.username} lacks authorize resources [${authorizeOptions.resources.map((resource) => resource.id).join(', ')}]`,
         );
         throw new ForbiddenException(authorizeOptions.message);
       }
     }
 
     if (authorizeOptions?.dimensions.length) {
-      const hasAuthorizeDimension = await this.hasAuthorizeDimensions(
-        user.id,
-        authorizeOptions,
-      );
+      const hasAuthorizeDimension = await this.hasAuthorizeDimensions(user.id, authorizeOptions);
       if (!hasAuthorizeDimension) {
         this.logger.warn(
-          `Access Denied: User ${user.username} lacks authorize dimensions [${authorizeOptions.dimensions.map((dimension) => `${dimension.type}:${dimension.ids.join(',')}`).join('; ')}]`,
+          `Access Denied: User ${this.options.denialIdentity ? this.options.denialIdentity(user) : user.username} lacks authorize dimensions [${authorizeOptions.dimensions.map((dimension) => `${dimension.type}:${dimension.ids.join(',')}`).join('; ')}]`,
         );
         throw new ForbiddenException(authorizeOptions.message);
       }
@@ -164,7 +174,7 @@ export class PermissionsGuard implements CanActivate {
       );
       if (!hasDimension) {
         this.logger.warn(
-          `Access Denied: User ${user.username} lacks dimension ${dimensionOptions.type} [${dimensionOptions.ids.join(', ')}]`,
+          `Access Denied: User ${this.options.denialIdentity ? this.options.denialIdentity(user) : user.username} lacks dimension ${dimensionOptions.type} [${dimensionOptions.ids.join(', ')}]`,
         );
         return false;
       }
@@ -214,9 +224,7 @@ export class PermissionsGuard implements CanActivate {
     return checks.some(Boolean);
   }
 
-  private resolveAuthorizeOptions(
-    context: ExecutionContext,
-  ): ResolvedAuthorizeOptions | undefined {
+  private resolveAuthorizeOptions(context: ExecutionContext): ResolvedAuthorizeOptions | undefined {
     const classOptions = this.reflector.get<ResolvedAuthorizeOptions | undefined>(
       AUTHORIZE_KEY,
       context.getClass(),
@@ -332,9 +340,7 @@ export class PermissionsGuard implements CanActivate {
     return Array.from(merged.values());
   }
 
-  private cloneAuthorizeOptions(
-    options: ResolvedAuthorizeOptions,
-  ): ResolvedAuthorizeOptions {
+  private cloneAuthorizeOptions(options: ResolvedAuthorizeOptions): ResolvedAuthorizeOptions {
     return {
       resources: options.resources.map((resource) => this.cloneResource(resource)),
       dimensions: options.dimensions.map((dimension) => ({
@@ -384,9 +390,7 @@ export class PermissionsGuard implements CanActivate {
     };
   }
 
-  private normalizeLogical(
-    logical: DimensionOptions['logical'],
-  ): 'AND' | 'OR' {
+  private normalizeLogical(logical: DimensionOptions['logical']): 'AND' | 'OR' {
     return logical === 'AND' ? 'AND' : 'OR';
   }
 }

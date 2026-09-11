@@ -112,6 +112,17 @@ export class PersistentSessionService<T extends PersistentSession = PersistentSe
     await this.cache('revoked', sessionId, this.options.revokedTtlMs ?? 3_600_000);
   }
 
+  /** Revoke only a session belonging to the authenticated owner in one conditional write. */
+  async revokeSessionForUser(sessionId: string, userId: string, reason: string): Promise<boolean> {
+    const changed = await this.model().updateMany({
+      where: { id: sessionId, userId },
+      data: { revokedAt: new Date(), revokedReason: reason },
+    });
+    if (changed.count !== 1) return false;
+    await this.cache('revoked', sessionId, this.options.revokedTtlMs ?? 3_600_000);
+    return true;
+  }
+
   async revokeAllOtherSessions(
     userId: string,
     exceptSessionId: string | null,

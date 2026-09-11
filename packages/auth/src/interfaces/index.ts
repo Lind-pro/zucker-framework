@@ -272,6 +272,7 @@ export interface Authentication {
 // ============================================================
 
 export interface ZuckerAuthModuleOptions {
+  thirdPartyAccounts?: import('../services/third-party-account.service').ThirdPartyAccountOptions;
   jwtSecret?: string;
   /**
    * Register the framework's generic authorization, menu, and third-party

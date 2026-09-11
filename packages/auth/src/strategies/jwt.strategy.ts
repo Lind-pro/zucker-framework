@@ -8,8 +8,7 @@ export interface JwtPayload {
   [key: string]: unknown;
 }
 
-@Injectable()
-export class JwtStrategy extends PassportStrategy(Strategy) {
+export abstract class JwtStrategyBase<TPayload = JwtPayload> extends PassportStrategy(Strategy) {
   constructor(secret: string) {
     const options: StrategyOptionsWithoutRequest = {
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
@@ -19,6 +18,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     super(options);
   }
 
+  abstract validate(payload: TPayload): unknown | Promise<unknown>;
+}
+
+@Injectable()
+export class JwtStrategy extends JwtStrategyBase {
   validate(payload: JwtPayload): Record<string, unknown> & { id: string; username: string } {
     const { sub, ...rest } = payload;
     return { ...rest, id: sub, username: payload.username };
