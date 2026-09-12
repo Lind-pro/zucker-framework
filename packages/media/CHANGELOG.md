@@ -1,5 +1,12 @@
 # @zucker-framework/media
 
+## 1.0.3
+
+### Patch Changes
+
+- Provide a browser export condition containing image, SVG and Mermaid helpers without Node RDKit/Vega renderers. Preserve the Node rendering API.
+
+
 ## 1.0.2
 
 ### Patch Changes

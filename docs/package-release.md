@@ -16,6 +16,21 @@ of any member versions and publishes the entire group together, including packag
 whose implementation did not change. Add each new public package to this group;
 private templates and the separate Python package are not members.
 
+The maintainer explicitly limited the `1.0.3` compatibility release to `media`
+and `logging`; those two manifests/changelogs are versioned directly for this
+exception, and all other packages remain `1.0.2`. Do not run fixed-group versioning
+for this scoped release. Its reviewed `publish.yml` call supplies `release_packages`
+to reusable CI. CI still builds and verifies every package, but only selected
+archives enter the sealed release manifest and publication bundle. Unselected
+archives are verification inputs only and are removed before upload. The normal
+fixed-group policy remains configured for later releases; clear or update this
+explicit publication selection when preparing their reviewed version changes.
+
+`logging@1.0.3` continues to depend on `core@1.0.2`. An application retaining
+`admin@1.0.2` must resolve its exact `logging@1.0.2` reference to `1.0.3` as well
+when adopting the fix, so Nest providers and controllers share one logging
+instance. Consumers must verify that override instead of loading both versions.
+
 For subsequent releases, record patch for compatible fixes, minor for compatible
 new features, and major for breaking public API changes. Changesets applies the
 highest required bump to every member, preserving one shared version. The initial

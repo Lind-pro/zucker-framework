@@ -1,6 +1,27 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { orderReleasePackages } from './release-graph.mjs';
+import { orderReleasePackages, selectReleasePackages } from './release-graph.mjs';
+
+test('selects only requested upload artifacts while retaining their original identities', () => {
+  const packages = [
+    { name: '@zucker-framework/core', version: '1.0.2', sha256: 'core-bytes' },
+    { name: '@zucker-framework/logging', version: '1.0.3', sha256: 'logging-bytes' },
+    { name: '@zucker-framework/media', version: '1.0.3', sha256: 'media-bytes' },
+  ];
+  assert.equal(selectReleasePackages(packages), packages);
+  const selected = selectReleasePackages(packages, '@zucker-framework/media,@zucker-framework/logging');
+  assert.deepEqual(selected, [packages[1], packages[2]]);
+  assert.equal(selected[0], packages[1]);
+  assert.equal(packages.length, 3);
+});
+
+test('rejects misspelled, empty and duplicate release selections', () => {
+  const packages = [{ name: 'media' }];
+  assert.throws(() => selectReleasePackages(packages, 'missing'), /Unknown release package/);
+  for (const selection of ['', 'media,', 'media,media']) {
+    assert.throws(() => selectReleasePackages(packages, selection), /unique, nonempty/);
+  }
+});
 
 test('orders dependencies, optional dependencies and peers before their consumers', () => {
   const packages = [

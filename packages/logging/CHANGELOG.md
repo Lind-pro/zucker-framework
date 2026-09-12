@@ -1,5 +1,12 @@
 # @zucker-framework/logging
 
+## 1.0.3
+
+### Patch Changes
+
+- Preserve the original HTTP exception when ValidationPipe messages contain objects. Record only the exception summary instead of throwing during log redaction or serializing submitted values.
+
+
 ## 1.0.2
 
 ### Patch Changes

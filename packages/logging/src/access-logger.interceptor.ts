@@ -382,10 +382,12 @@ export class AccessLoggerInterceptor implements NestInterceptor {
     if (error instanceof HttpException) {
       const response = error.getResponse();
       if (typeof response === 'string') return response;
-      const data = response as { message?: string | string[]; code?: string };
-      const message =
-        (Array.isArray(data.message) ? data.message[0] : data.message) || error.message;
-      return data.code ? `[${data.code}] ${message}` : message;
+      const data = response as { message?: unknown; code?: unknown };
+      const detail = Array.isArray(data.message) ? data.message[0] : data.message;
+      // ValidationPipe may supply ValidationError objects containing submitted values.
+      // Keep the original HTTP failure and avoid serializing those objects into logs.
+      const message = typeof detail === 'string' && detail ? detail : error.message;
+      return typeof data.code === 'string' && data.code ? `[${data.code}] ${message}` : message;
     }
     return error instanceof Error ? error.message : String(error);
   }

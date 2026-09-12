@@ -6,6 +6,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertTarballContent } from './verify-package-content.mjs';
 import { assertPackageRuntimeDependencies } from './verify-runtime-dependencies.mjs';
+import { selectReleasePackages } from './release-graph.mjs';
 
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const rootManifest = JSON.parse(readFileSync(join(rootDir, 'package.json'), 'utf8'));
@@ -118,6 +119,11 @@ try {
     return { filename, tarball, manifest, sha256: sha256(tarball) };
   });
 
+  const releaseArtifacts = selectReleasePackages(
+    artifacts.map((artifact) => ({ ...artifact, name: artifact.manifest.name })),
+    process.env.RELEASE_PACKAGES || undefined,
+  );
+
   writeFileSync(
     join(packDirectory, 'release-manifest.json'),
     `${JSON.stringify(
@@ -126,7 +132,7 @@ try {
         sourceCommit,
         sourceTree,
         sourceDirty,
-        packages: artifacts.map(({ filename, manifest, sha256: digest }) => ({
+        packages: releaseArtifacts.map(({ filename, manifest, sha256: digest }) => ({
           name: manifest.name,
           version: manifest.version,
           filename,
@@ -322,6 +328,11 @@ if (typeof DurableNotificationWorker !== 'function') throw new Error('notificati
   run('node', ['smoke.mjs'], { cwd: pnpmConsumerDirectory });
   run('node', [join(rootDir, 'scripts/verify-consumer-contracts.mjs'), pnpmConsumerDirectory,
     join(packDirectory, 'consumer-verification.json')]);
+  // Unselected tarballs were verification inputs only; never include them in the upload bundle.
+  const selectedNames = new Set(releaseArtifacts.map(({ name }) => name));
+  for (const artifact of artifacts) {
+    if (!selectedNames.has(artifact.manifest.name)) rmSync(artifact.tarball);
+  }
   succeeded = true;
   process.stdout.write(`Package artifact verification passed: ${packDirectory}\n`);
 } finally {

@@ -1,11 +1,21 @@
 {
   "name": "@zucker-framework/media",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
+      "browser": {
+        "import": {
+          "types": "./dist/browser.d.mts",
+          "default": "./dist/browser.mjs"
+        },
+        "require": {
+          "types": "./dist/browser.d.ts",
+          "default": "./dist/browser.js"
+        }
+      },
       "import": {
         "types": "./dist/index.d.mts",
         "default": "./dist/index.mjs"
@@ -24,7 +34,7 @@
     "THIRD_PARTY_NOTICES"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format cjs,esm --dts --external @rdkit/rdkit --external vega --external vega-lite",
+    "build": "tsup src/index.ts src/browser.ts --format cjs,esm --dts --external @rdkit/rdkit --external vega --external vega-lite",
     "clean": "rm -rf dist",
     "lint": "eslint src/",
     "prepack": "node ../../scripts/prepare-package-legal.mjs"

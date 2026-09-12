@@ -2,6 +2,12 @@ name: CI
 
 on:
   workflow_call:
+    inputs:
+      release_packages:
+        description: Comma-separated package names to publish; empty verifies/releases all packages
+        type: string
+        required: false
+        default: ''
   pull_request:
     branches: [main]
 
@@ -43,6 +49,8 @@ jobs:
         run: pnpm build
 
       - name: Verify package artifacts outside the workspace
+        env:
+          RELEASE_PACKAGES: ${{ inputs.release_packages }}
         run: node scripts/verify-package-artifacts.mjs --output artifacts/ci-release
 
       - name: Test

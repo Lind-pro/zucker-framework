@@ -1,3 +1,17 @@
+/** Select upload artifacts without reducing verification of the full workspace. */
+export function selectReleasePackages(packages, requestedNames) {
+  if (requestedNames === undefined) return packages;
+  const names = requestedNames.split(',').map((name) => name.trim());
+  if (names.some((name) => !name) || new Set(names).size !== names.length) {
+    throw new Error('Release package selection must contain unique, nonempty package names');
+  }
+  const available = new Set(packages.map((pkg) => pkg.name));
+  for (const name of names) {
+    if (!available.has(name)) throw new Error(`Unknown release package: ${name}`);
+  }
+  return packages.filter((pkg) => names.includes(pkg.name));
+}
+
 export function orderReleasePackages(packages) {
   const byName = new Map();
   for (const pkg of packages) {

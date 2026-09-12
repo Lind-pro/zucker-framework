@@ -102,4 +102,20 @@ describe('persistent HTTP audit capture', () => {
     await Promise.resolve();
     expect(operation.log).toHaveBeenCalledOnce();
   });
+
+  it('retains a validation 400 when the response contains ValidationError objects', async () => {
+    const { interceptor, context, access, operation } = setup();
+    const failure = new BadRequestException([
+      { property: 'email', value: 'private@example.test', constraints: { isEmail: 'Invalid email' } },
+    ]);
+    await expect(
+      lastValueFrom(interceptor.intercept(context, { handle: () => throwError(() => failure) })),
+    ).rejects.toBe(failure);
+    expect(access.log).toHaveBeenCalledWith(
+      expect.objectContaining({ exception: 'Bad Request Exception', statusCode: 400 }),
+    );
+    expect(operation.log).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'FAILED', errorMessage: 'Bad Request Exception' }),
+    );
+  });
 });
