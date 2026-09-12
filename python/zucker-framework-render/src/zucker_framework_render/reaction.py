@@ -13,6 +13,7 @@ class ReactionRenderStyle:
     condition_font_size: int = 14
     condition_color: str | None = None
     condition_offset_y: int = 18
+    monochrome: bool = False
 
 
 class ReactionParseError(ValueError):
@@ -40,6 +41,8 @@ def render_reaction(spec: ReactionSpec, *, style: ReactionRenderStyle | None = N
         raise ReactionParseError("Unable to parse reaction SMILES")
     drawer = rdMolDraw2D.MolDraw2DSVG(spec.width, spec.height)
     options = drawer.drawOptions()
+    if style.monochrome:
+        options.useBWAtomPalette()
     if style.bond_line_width is not None:
         options.bondLineWidth = style.bond_line_width
     if style.padding is not None:

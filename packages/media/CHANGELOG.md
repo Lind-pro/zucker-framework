@@ -1,5 +1,12 @@
 # @zucker-framework/media
 
+## 1.0.4
+
+- Add opt-in monochrome Mermaid and RDKit rendering while preserving diagram content.
+- Preserve visible SVG text bounds and improve sequence label wrapping for document export.
+- Accept only the standard SVG 1.1 DTD preamble without resolving external declarations; continue rejecting arbitrary DTDs and entities.
+
+
 ## 1.0.3
 
 ### Patch Changes

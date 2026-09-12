@@ -52,6 +52,16 @@ describe('image media detection', () => {
 });
 
 describe('SVG security policy', () => {
+  it('removes the standard plotting-library SVG DTD without resolving it', () => {
+    const declaration = '<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"\n "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">';
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg"><text>plot</text></svg>';
+    expect(sanitizeSvgMarkup(`<?xml version="1.0"?>\n${declaration}\n${svg}`)).toBe(`<?xml version="1.0"?>\n${svg}`);
+    expect(sanitizeSvgMarkup(`${declaration}\n${svg}`)).toBe(svg);
+    expect(sanitizeSvgMarkup(`<?xml version="1.0"?>\n<!-- plotting tool -->${declaration}\n<!-- graph title -->${svg}`)).toBe(`<?xml version="1.0"?>\n${svg}`);
+    expect(sanitizeSvgMarkup(`${declaration.replace('>', ' [<!ENTITY x SYSTEM "file:///private">]>')}${svg}`)).toBeNull();
+    expect(sanitizeSvgMarkup('<!DOCTYPE svg SYSTEM "https://untrusted.test/svg.dtd"><svg/>')).toBeNull();
+    expect(sanitizeSvgMarkup('<svg><!ENTITY x SYSTEM "file:///private"></svg>')).toBeNull();
+  });
   it('removes executable SVG content and event handlers', () => {
     expect(
       sanitizeSvgMarkup(

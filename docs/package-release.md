@@ -373,3 +373,7 @@ standalone Worker or a specific product's environment from this framework guide.
 
 Rollback changes the exact package version and rebuilds the image. It never overwrites
 an already published package and never deletes durable task records.
+
+## Prepared CNIPA rendering release
+
+The prepared rendering release selects only media 1.0.4. Logging remains 1.0.3 and all other npm packages retain their current versions. The new version and changelog are applied directly for this scoped exception; the fixed-group configuration remains unchanged. CI still validates the whole repository, and only media enters the publication bundle. The maintainer explicitly authorized this scoped 1.0.4 patch release for the CNIPA rollout. Python reaction changes are consumed as an immutable source archive in the CNIPA image, without a PyPI publication.

@@ -2,6 +2,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { renderSmilesSvg, InvalidSmilesError } from './rdkit-svg-renderer';
 
 describe('renderSmilesSvg', () => {
+  it('selects the supported black-and-white atom palette and releases the molecule', async () => {
+    const molecule = { is_valid: () => true, get_svg: vi.fn(), get_svg_with_highlights: vi.fn(() => '<svg/>'), delete: vi.fn() };
+    await renderSmilesSvg('COCN(F)Cl', { get_mol: () => molecule }, { monochrome: true });
+    expect(molecule.get_svg_with_highlights).toHaveBeenCalledWith('{"atomColourPalette":"bw"}');
+    expect(molecule.get_svg).not.toHaveBeenCalled();
+    expect(molecule.delete).toHaveBeenCalledOnce();
+  });
   it('releases each WASM molecule after successful rendering', async () => {
     const molecule = { is_valid: () => true, get_svg: () => '<svg/>', delete: vi.fn() };
     await expect(renderSmilesSvg('CCO', { get_mol: () => molecule })).resolves.toMatchObject({

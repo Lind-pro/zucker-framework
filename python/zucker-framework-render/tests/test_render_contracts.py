@@ -1,13 +1,22 @@
 import unittest
+import re
 from unittest.mock import patch
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from pydantic import ValidationError
 from zucker_framework_render import CircuitSpec, ReactionSpec, MatplotlibSpec, render_reaction, render_plot
+from zucker_framework_render import ReactionRenderStyle
 
 
 class RenderContractTests(unittest.TestCase):
+    def test_monochrome_reaction_retains_atoms_without_colored_symbols(self) -> None:
+        spec = ReactionSpec(reaction_smiles="COCN(F)Cl>>COCN(F)Cl", conditions="20 C")
+        svg = render_reaction(spec, style=ReactionRenderStyle(monochrome=True, condition_color="#000000"))["svg"]
+        colors = set(re.findall(r"#[0-9a-fA-F]{6}", svg))
+        self.assertEqual(colors, {"#000000", "#FFFFFF"})
+        self.assertIn("20 C", svg)
+
     def test_retains_bounded_inputs(self) -> None:
         with self.assertRaises(ValidationError):
             CircuitSpec.model_validate({"elements": [{"type": "resistor"}] * 201})

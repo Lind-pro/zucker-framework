@@ -1,6 +1,9 @@
+import { MERMAID_MONOCHROME_THEME, withMermaidMonochromeTheme } from './monochrome';
 import { detectMermaidDiagramType, sanitizeMermaidCode } from './sanitize';
 import { prepareStateLayout } from './state-layout';
 import { prepareSequenceLayout } from './sequence-layout';
+import { sanitizeSvgMarkup } from '../svg-sanitize';
+import { measureSvgTextBounds } from '../svg-text-bounds';
 
 export type MermaidRenderProfile = 'responsive' | 'export';
 
@@ -33,43 +36,10 @@ function createConfiguration(
     theme: monochrome ? ('base' as const) : ('default' as const),
     ...(monochrome
       ? {
-          themeVariables: {
-            background: '#ffffff',
-            primaryColor: '#ffffff',
-            primaryTextColor: '#000000',
-            primaryBorderColor: '#000000',
-            secondaryColor: '#ffffff',
-            secondaryTextColor: '#000000',
-            secondaryBorderColor: '#000000',
-            tertiaryColor: '#ffffff',
-            tertiaryTextColor: '#000000',
-            tertiaryBorderColor: '#000000',
-            lineColor: '#000000',
-            textColor: '#000000',
-            mainBkg: '#ffffff',
-            nodeBorder: '#000000',
-            nodeTextColor: '#000000',
-            clusterBkg: '#ffffff',
-            clusterBorder: '#000000',
-            edgeLabelBackground: '#ffffff',
-            actorBkg: '#ffffff',
-            actorBorder: '#000000',
-            actorTextColor: '#000000',
-            actorLineColor: '#000000',
-            signalColor: '#000000',
-            signalTextColor: '#000000',
-            labelBoxBkgColor: '#ffffff',
-            labelBoxBorderColor: '#000000',
-            labelTextColor: '#000000',
-            loopTextColor: '#000000',
-            noteBkgColor: '#ffffff',
-            noteBorderColor: '#000000',
-            noteTextColor: '#000000',
-            activationBkgColor: '#ffffff',
-            activationBorderColor: '#000000',
-            attributeBackgroundColorOdd: '#ffffff',
-            attributeBackgroundColorEven: '#ffffff',
-          },
+          // Text remains legible when an incoming cluster edge or a lifeline
+          // passes behind it. Keep the original paths and graph topology intact.
+          themeCSS: 'text { paint-order: stroke; stroke: #ffffff !important; stroke-width: 3px !important; stroke-linejoin: round; }',
+          themeVariables: MERMAID_MONOCHROME_THEME,
         }
       : {}),
     securityLevel: 'strict' as const,
@@ -78,7 +48,11 @@ function createConfiguration(
     flowchart: {
       useMaxWidth,
       htmlLabels: false,
-      ...(compact ? { nodeSpacing: 30, rankSpacing: 30 } : {}),
+      ...(compact ? {
+        nodeSpacing: 30,
+        rankSpacing: 30,
+        subGraphTitleMargin: { top: 8, bottom: 24 },
+      } : {}),
     },
     sequence: {
       useMaxWidth,
@@ -91,6 +65,7 @@ function createConfiguration(
             messageMargin: 24,
             mirrorActors: false,
             wrapPadding: 8,
+            messageAlign: 'left' as const,
           }
         : {}),
     },
@@ -131,6 +106,17 @@ function orthogonalFlowchart(source: string): string {
   );
 }
 
+function orthogonalStateDiagram(source: string): string {
+  // Do not change directions scoped to compound states.
+  if (/^\s*state\b[^\n]*\{/m.test(source)) return source;
+  const direction: Record<string, string> = { LR: 'TB', RL: 'BT', TB: 'LR', TD: 'LR', BT: 'RL' };
+  if (/^[ \t]*direction[ \t]+(?:LR|RL|TB|TD|BT)\b/m.test(source)) {
+    return source.replace(/^([ \t]*direction[ \t]+)(LR|RL|TB|TD|BT)\b/m,
+      (_, prefix: string, axis: string) => prefix + direction[axis]);
+  }
+  return source.replace(/^([ \t]*stateDiagram(?:-v2)?[^\n]*)(\n|$)/m, '$1\ndirection LR$2');
+}
+
 function enqueueRender<T>(task: () => Promise<T>): Promise<T> {
   const result = renderQueue.then(task, task);
   renderQueue = result.then(
@@ -138,6 +124,48 @@ function enqueueRender<T>(task: () => Promise<T>): Promise<T> {
     () => undefined,
   );
   return result;
+}
+
+/** Mermaid can underestimate wrapped self-message width. Expand, never crop. */
+function includeVisibleBounds(source: string): string {
+  if (typeof document === 'undefined' || !document.body) return source;
+  const clean = sanitizeSvgMarkup(source);
+  if (!clean) throw new Error('Mermaid returned invalid SVG markup');
+  const parsed = new DOMParser().parseFromString(clean, 'image/svg+xml');
+  const svg = parsed.documentElement;
+  if (svg.localName !== 'svg' || !(svg instanceof SVGSVGElement)) return source;
+  const box = svg.getAttribute('viewBox')?.trim().split(/[\s,]+/).map(Number);
+  if (!box || box.length !== 4 || !box.every(Number.isFinite) || box[2] <= 0 || box[3] <= 0) return source;
+  const holder = document.createElement('div');
+  holder.dataset.mermaidBounds = '';
+  holder.style.cssText = 'position:fixed;left:-100000px;top:0;visibility:hidden;pointer-events:none;width:1200px;';
+  // Measuring geometry must not fetch external resources a second time.
+  for (const element of Array.from(svg.querySelectorAll('[href], [xlink\\:href]'))) {
+    for (const attr of ['href', 'xlink:href']) {
+      const value = element.getAttribute(attr);
+      if (value && !value.startsWith('#')) element.removeAttribute(attr);
+    }
+  }
+  holder.append(svg);
+  document.body.append(holder);
+  try {
+    // Lifelines may intentionally extend beyond the original viewport.
+    // Preserve the existing plot, expanding only for actual clipped text.
+    const labels = measureSvgTextBounds(svg);
+    if (!labels.length) return source;
+    const left = Math.min(...labels.map(rect => rect.x));
+    const top = Math.min(...labels.map(rect => rect.y));
+    const right = Math.max(...labels.map(rect => rect.x + rect.width));
+    const bottom = Math.max(...labels.map(rect => rect.y + rect.height));
+    const x = left < box[0] ? left - 4 : box[0];
+    const y = top < box[1] ? top - 4 : box[1];
+    const width = (right > box[0] + box[2] ? right + 4 : box[0] + box[2]) - x;
+    const height = (bottom > box[1] + box[3] ? bottom + 4 : box[1] + box[3]) - y;
+    if (x === box[0] && y === box[1] && width === box[2] && height === box[3]) return source;
+    return source.replace(/\bviewBox=(["'])[^"']*\1/i, `viewBox="${x} ${y} ${width} ${height}"`);
+  } finally {
+    holder.remove();
+  }
 }
 
 export function renderMermaidSvg(
@@ -168,12 +196,15 @@ export function renderMermaidSvg(
       ),
     );
     const id = `${idPrefix}-${Date.now()}-${renderSequence}`;
-    let { svg } = await mermaid.render(id, renderSource);
-    if (options.fitToPage && detectMermaidDiagramType(normalizedSource) === 'flowchart') {
-      const alternate = orthogonalFlowchart(stateLayout.source);
+    let { svg } = await mermaid.render(id, options.monochrome ? withMermaidMonochromeTheme(renderSource) : renderSource);
+    const diagramType = detectMermaidDiagramType(normalizedSource);
+    if (options.fitToPage && (diagramType === 'flowchart' || diagramType === 'state')) {
+      const alternate = diagramType === 'flowchart'
+        ? orthogonalFlowchart(stateLayout.source)
+        : orthogonalStateDiagram(stateLayout.source);
       if (alternate !== stateLayout.source) {
         try {
-          const candidate = await mermaid.render(`${id}-alternate`, alternate);
+          const candidate = await mermaid.render(`${id}-alternate`, options.monochrome ? withMermaidMonochromeTheme(alternate) : alternate);
           if (fitScale(candidate.svg, options.fitToPage) > fitScale(svg, options.fitToPage)) {
             svg = candidate.svg;
           }
@@ -182,6 +213,6 @@ export function renderMermaidSvg(
         }
       }
     }
-    return { svg, normalizedSource };
+    return { svg: includeVisibleBounds(svg), normalizedSource };
   });
 }

@@ -1,6 +1,7 @@
 export interface RdkitMolecule {
   is_valid(): boolean;
   get_svg(): string;
+  get_svg_with_highlights?(details: string): string;
   delete(): void;
 }
 export interface RdkitSvgModule {
@@ -29,6 +30,7 @@ async function loadRdkit(): Promise<RdkitSvgModule> {
 export async function renderSmilesSvg(
   smiles: string,
   module?: RdkitSvgModule,
+  options: { monochrome?: boolean } = {},
 ): Promise<{ svg: string; durationMs: number }> {
   const rdkit = module ?? (await loadRdkit());
   const startedAt = Date.now();
@@ -36,7 +38,14 @@ export async function renderSmilesSvg(
   if (!molecule) throw new InvalidSmilesError('Invalid SMILES');
   try {
     if (!molecule.is_valid()) throw new InvalidSmilesError('Invalid SMILES');
-    return { svg: molecule.get_svg(), durationMs: Date.now() - startedAt };
+    let svg: string;
+    if (options.monochrome) {
+      if (!molecule.get_svg_with_highlights) throw new Error('RDKit module does not support drawing options');
+      svg = molecule.get_svg_with_highlights(JSON.stringify({ atomColourPalette: 'bw' }));
+    } else {
+      svg = molecule.get_svg();
+    }
+    return { svg, durationMs: Date.now() - startedAt };
   } finally {
     molecule.delete();
   }

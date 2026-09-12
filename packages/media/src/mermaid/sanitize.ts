@@ -173,6 +173,22 @@ function normalizeCommonSymbols(line: string): string {
   return line.replace(/：/g, ':').replace(/－－>/g, '-->').replace(/—>/g, '-->');
 }
 
+function normalizeSequenceLine(line: string): string {
+  const message = /^(\s*[A-Za-z_][A-Za-z0-9_-]*?\s*(?:-->>|->>|-->|->|--x|-x|--\)|-\))\s*[+-]?[A-Za-z_][A-Za-z0-9_-]*\s*:\s*)(.*)$/u.exec(line);
+  if (!message) return line;
+  const [, prefix, text] = message;
+  // A semicolon before another sequence statement is syntax, not label text.
+  if (/;\s*(?:[A-Za-z_][A-Za-z0-9_-]*?\s*(?:-->>|->>|-->|->|--x|-x|--\)|-\))|(?:participant|actor|note|alt|else|loop|opt|par|and|end)\b)/iu.test(text)) return line;
+  const escaped = text.replace(/#(?:\d+|[A-Za-z]+);|&(?:#\d+|#x[\da-f]+|[A-Za-z]+);|;/giu, (token, offset: number) => {
+    if (token !== ';' || !text.slice(offset + 1).trim()) return token;
+    return '#59;';
+  });
+  // Mermaid sequence labels use <br/> rather than the \n convention used by
+  // generated labels. Keep escaped backslashes and TeX commands literal.
+  const displayText = escaped.includes('$$') ? escaped : escaped.replace(/(?<!\\)\\n/gu, '<br/>');
+  return prefix + displayText;
+}
+
 function unwrapMermaidFence(code: string): string {
   const trimmed = code.trim();
   const fenced = /^```(?:mermaid)?\s*\r?\n?([\s\S]*?)\r?\n?```$/i.exec(trimmed);
@@ -207,7 +223,7 @@ export function sanitizeMermaidCode(code: string): string {
   const lines = source.split('\n').map(normalizeCommonSymbols);
 
   if (diagramType !== 'flowchart') {
-    const sanitized = lines.join('\n');
+    const sanitized = (diagramType === 'sequence' ? lines.map(normalizeSequenceLine) : lines).join('\n');
     return diagramType === 'sequence' ? `${sanitized.trimEnd()}\n` : sanitized;
   }
 

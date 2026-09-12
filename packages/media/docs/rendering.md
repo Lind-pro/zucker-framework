@@ -1,8 +1,12 @@
 # Deterministic SVG rendering
 
+`sanitizeSvgMarkup` removes XML comments and the exact standard SVG 1.1 external DTD emitted by plotting libraries before processing the SVG. It never resolves that DTD. Other DTDs, internal subsets, entity declarations and executable SVG content remain rejected or removed. Raster consumers still control permitted image references and resource limits.
+
 - `requestSvgRender` posts structured JSON to an explicit endpoint and requires a nonempty `svg` response field. `SvgRenderRequestError.stage` distinguishes transport, HTTP and invalid response failures. HTTP detail is limited to 300 characters; callers own localization, endpoint/URL policy and request budgets. Abort errors retain their identity.
 - `requestKrokiSvg` posts plain diagram source to an explicit Kroki endpoint with the same error/cancellation contract. It returns raw SVG text and elapsed time.
 - `renderSmilesSvg` loads the optional RDKit WASM peer only when used. It releases the molecule after success, invalid input or render failure. `RdkitLoadError` and `InvalidSmilesError` distinguish configuration and input failures. An already initialized module can be supplied through `RdkitSvgModule`.
+- `renderSmilesSvg(smiles, module, { monochrome: true })` opts into RDKit's `bw` atom palette, preserving element symbols. Injected modules must support `get_svg_with_highlights` for this option; unsupported modules fail and still release the molecule.
+- `withMermaidMonochromeTheme(source)` applies the same black/white theme used by `renderMermaidSvg(..., { monochrome: true })` to a source-based HTTP renderer. It replaces incoming init directives and explicit style colors while preserving labels, connections and dash patterns. Pie charts use gray levels to preserve legend distinctions. Color is still the default for other Framework consumers; the application chooses when to opt in.
 - `renderVegaLiteSvg` lazily loads optional Vega/Vega-Lite peers, compiles a spec and finalizes the headless view after extraction. `VegaSvgModules` permits reuse of already loaded modules. Renderer failures retain their cause in `VegaSvgRenderError`.
 
 These APIs contain no product model selection, prompt generation, environment reads, route defaults or persistent task state. Application-specific metadata assembly is a consumer concern. Optional rendering peers remain external to the package and are not eagerly loaded by root imports. No runtime tests, actual SVG rendering, builds or publication were executed during the source-only migration.

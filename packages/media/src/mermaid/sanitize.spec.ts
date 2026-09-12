@@ -39,6 +39,30 @@ const parserCorpus = [
 ];
 
 describe('sanitizeMermaidCode', () => {
+  it('escapes a prose semicolon in a sequence message instead of starting another statement', async () => {
+    const source = 'sequenceDiagram\nM->>SG: Retain journal record; no deletion authority\nR->>R: Consult durable identity state';
+    const normalized = sanitizeMermaidCode(source);
+    expect(normalized).toContain('Retain journal record#59; no deletion authority');
+    await expect(mermaid.parse(normalized)).resolves.toMatchObject({ diagramType: 'sequence' });
+    expect(sanitizeMermaidCode(normalized)).toBe(normalized);
+  });
+
+  it('preserves inline sequence statements and already encoded label entities', async () => {
+    const source = 'sequenceDiagram\nA->>B: first; B->>A: second\nA->>B: keep#59; preserve #amp; copy';
+    const normalized = sanitizeMermaidCode(source);
+    expect(normalized).toContain('first; B->>A: second');
+    expect(normalized).toContain('keep#59; preserve #amp; copy');
+    await expect(mermaid.parse(normalized)).resolves.toMatchObject({ diagramType: 'sequence' });
+  });
+
+  it('renders escaped line breaks in sequence text without rewriting identifiers or TeX escapes', () => {
+    const normalized = sanitizeMermaidCode('sequenceDiagram\nS-->>G: 커밋 ACK\\ngatewayId, bootEpoch\nA->>B: $$\\nu$$\nA->>B: literal \\\\n');
+    expect(normalized).toContain('커밋 ACK<br/>gatewayId, bootEpoch');
+    expect(normalized).toContain('$$\\nu$$');
+    expect(normalized).toContain('literal \\\\n');
+    expect(sanitizeMermaidCode(normalized)).toBe(normalized);
+  });
+
   it('preserves sequence alt/else/end and terminates the source', () => {
     const sanitized = sanitizeMermaidCode(onlineSequence);
     expect(sanitized).toContain('\n    end\n    F->>C');

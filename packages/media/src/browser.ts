@@ -145,35 +145,7 @@ export function extractInlineSvg(input: {
   }
 }
 
-export const SVG_FORBIDDEN_TAGS = ['script', 'foreignObject', 'iframe', 'object', 'embed'] as const;
-
-export const SVG_FORBIDDEN_ATTRIBUTES = [
-  'onload',
-  'onerror',
-  'onclick',
-  'onmouseover',
-  'onfocus',
-] as const;
-
-export const SVG_PURIFY_CONFIG = {
-  USE_PROFILES: { svg: true, svgFilters: true },
-  FORBID_TAGS: [...SVG_FORBIDDEN_TAGS],
-  FORBID_ATTR: [...SVG_FORBIDDEN_ATTRIBUTES],
-};
-
-export function sanitizeSvgMarkup(svg: string): string | null {
-  const trimmed = svg.trim().replace(/^\uFEFF/, '');
-  if (!trimmed || !/^(?:<\?xml[\s\S]*?\?>\s*)?<svg\b/i.test(trimmed)) return null;
-  if (/<!doctype\b/i.test(trimmed)) return null;
-
-  const sanitized = trimmed
-    .replace(/<(script|foreignObject|iframe|object|embed)\b[\s\S]*?<\/\1\s*>/gi, '')
-    .replace(/<(script|foreignObject|iframe|object|embed)\b[^>]*\/\s*>/gi, '')
-    .replace(/\son[a-z0-9_-]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
-    .replace(/\s(?:xlink:href|href)\s*=\s*(["'])\s*(?:javascript:|data:text\/html)[\s\S]*?\1/gi, '')
-    .replace(/\s(?:xlink:href|href)\s*=\s*(?:javascript:|data:text\/html)[^\s>]*/gi, '');
-  return /<(script|foreignObject|iframe|object|embed)\b/i.test(sanitized) ? null : sanitized;
-}
+export { SVG_FORBIDDEN_TAGS, SVG_FORBIDDEN_ATTRIBUTES, SVG_PURIFY_CONFIG, sanitizeSvgMarkup } from './svg-sanitize';
 
 export {
   detectMermaidDiagramType,
@@ -192,3 +164,5 @@ export { requestSvgRender, SvgRenderRequestError } from './svg-render-client';
 export type { SvgRenderRequest, SvgRenderResponse } from './svg-render-client';
 export { requestKrokiSvg } from './kroki-render-client';
 export type { KrokiSvgRequest } from './kroki-render-client';
+
+export { withMermaidMonochromeTheme } from './mermaid/monochrome';
