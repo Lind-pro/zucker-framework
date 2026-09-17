@@ -142,6 +142,32 @@ export class BatchCreditLedger<Tx, Source extends string = string> {
     return { transactionId: transaction.id, consumptionId: consumption.id, consumedSource };
   }
 
+  /** Revoke only unspent, unexpired lots selected by the caller, on the caller's transaction. */
+  async revokeUnused(tx: Tx, input: {
+    accountId: string;
+    lotIds: readonly string[];
+    transactionData: Record<string, unknown>;
+  }): Promise<number> {
+    if (!input.lotIds.length) return 0;
+    await this.options.lockAccount(tx, input.accountId);
+    const models = this.options.models(tx);
+    const account = this.account(input.accountId);
+    const lots = await models.lots.findMany({ where: {
+      ...account, id: { in: [...input.lotIds] }, isExpired: false, remainingAmount: { gt: 0 },
+    } });
+    const amount = lots.reduce((sum, lot) => sum + lot.remainingAmount, 0);
+    if (!amount) return 0;
+    for (const lot of lots) {
+      await models.lots.update({ where: { id: lot.id }, data: { remainingAmount: 0, isExpired: true } });
+    }
+    const balance = await models.balances.update({ where: account, data: { balance: { decrement: amount } } });
+    await models.transactions.create({ data: { ...input.transactionData, ...account,
+      amount: -amount, balanceBefore: balance.balance + amount, balanceAfter: balance.balance,
+      [this.options.transactionLotsField]: lots.map(lot => lot.id),
+    } });
+    return amount;
+  }
+
   async expire(transactionData: Record<string, unknown>, now = new Date()): Promise<number> {
     const expired = { isExpired: false, remainingAmount: { gt: 0 }, expiresAt: { lt: now } };
     const candidates = await this.options.scanLots().findMany({ where: expired });

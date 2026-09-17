@@ -7,3 +7,11 @@ The framework's generic `PaymentProvider` contract remains unchanged. Consumers 
 `PayPalPaymentTransport({clientId, clientSecret, mode, fetcher?, logger?})` owns SDK connection setup and exposes the existing typed `orders` controller. It also provides `verifyWebhookSignature` and `refundCapture` with OAuth client-credentials transport. Amounts are supplied as already-formatted provider request fields; the transport does not inspect orders, select full/partial refunds, convert currency, capture approved orders automatically or mutate business state. Signature verification fails closed on missing headers, unsuccessful HTTP responses and parsing/network errors. No new retry or token-cache policy is introduced.
 
 Stripe 22.6.1 and PayPal Server SDK 2.5.0 are the current development versions. SDKs are optional peers loaded only when their specific client is created, so unrelated payment consumers do not load either SDK. The package requires validation of its source test contracts and a new immutable release before these exports are consumed from a registry. Ordinary tests use mock PayPal fetches and local Stripe signature fixtures; they do not call providers.
+
+PayPal refunds preserve `PENDING` on successful HTTP responses; non-2xx responses throw.
+`refundCapture(captureId, request, requestId?)` accepts a caller-owned, persisted idempotency key.
+`decodePayPalMoneyReturnedEvent` decodes verified `PAYMENT.CAPTURE.REFUNDED` and `REVERSED` notifications to `returned` with
+capture/order identity, amount, currency and status. Refund `links[rel=up]` identifiers are parsed
+without fetching external URLs. Reversals use a namespaced capture identity, never a fabricated refund ID.
+
+The original `decodePayPalWebhookEvent` capture-event union remains unchanged for existing consumers.

@@ -6,7 +6,7 @@ import {
   type InjectionToken,
   type Provider,
 } from '@nestjs/common';
-import { PaymentService } from './payment.service';
+import { PaymentProviderRegistry } from './contract/registry';
 import { OrderService, type Order } from './order.service';
 import { ORDER_PERSISTENCE, type OrderPersistence } from './order-persistence';
 import {
@@ -14,13 +14,13 @@ import {
   RECOVERY_ATTEMPT_STORE,
   type RecoveryAttemptStore,
 } from './recovery.service';
-import type { PaymentProvider } from './payment.interface';
+import type { PaymentProviderAdapter } from './contract/payment-contract';
 
 export const PAYMENT_PROVIDERS = 'PAYMENT_PROVIDERS';
 const PAYMENT_OPTIONS = Symbol('PAYMENT_OPTIONS');
 
 export interface PaymentModuleOptions {
-  providers?: PaymentProvider[];
+  providers?: PaymentProviderAdapter[];
   orderPersistence: OrderPersistence<Order>;
   /** Required when using payment recovery mail; no process-memory default. */
   recoveryAttempts?: RecoveryAttemptStore;
@@ -47,20 +47,17 @@ function configuredProviders(): Provider[] {
       useFactory: (options: PaymentModuleOptions) => options.recoveryAttempts ?? null,
     },
     {
-      provide: PaymentService,
+      provide: PaymentProviderRegistry,
       inject: [PAYMENT_OPTIONS],
-      useFactory: (options: PaymentModuleOptions) => {
-        const service = new PaymentService();
-        for (const provider of options.providers ?? []) service.register(provider);
-        return service;
-      },
+      useFactory: (options: PaymentModuleOptions) =>
+        new PaymentProviderRegistry(options.providers ?? []),
     },
     OrderService,
     PaymentRecoveryService,
     {
       provide: PAYMENT_PROVIDERS,
-      inject: [PaymentService],
-      useFactory: (service: PaymentService) => service.listProviders(),
+      inject: [PaymentProviderRegistry],
+      useFactory: (registry: PaymentProviderRegistry) => registry.list(),
     },
   ];
 }
@@ -73,7 +70,7 @@ export class ZuckerPaymentModule {
       module: ZuckerPaymentModule,
       global: true,
       providers: [{ provide: PAYMENT_OPTIONS, useValue: options }, ...configuredProviders()],
-      exports: [PaymentService, OrderService, PaymentRecoveryService],
+      exports: [PaymentProviderRegistry, OrderService, PaymentRecoveryService],
     };
   }
   static forRootAsync(options: PaymentModuleAsyncOptions): DynamicModule {
@@ -85,7 +82,7 @@ export class ZuckerPaymentModule {
         { provide: PAYMENT_OPTIONS, useFactory: options.useFactory, inject: options.inject ?? [] },
         ...configuredProviders(),
       ],
-      exports: [PaymentService, OrderService, PaymentRecoveryService],
+      exports: [PaymentProviderRegistry, OrderService, PaymentRecoveryService],
     };
   }
 }

@@ -7,7 +7,7 @@ import {
   observeStripePaymentIntent,
   retrieveStripePaymentIntent,
 } from './stripe';
-import { PayPalPaymentTransport, observePayPalOrder, decodePayPalWebhookEvent } from './paypal';
+import { PayPalPaymentTransport, observePayPalOrder, decodePayPalWebhookEvent, decodePayPalMoneyReturnedEvent } from './paypal';
 
 describe('hosted payment provider observations', () => {
   it('forwards the PayPal create request without constructing product fields or retrying', async () => {
@@ -188,4 +188,28 @@ describe('hosted payment provider observations', () => {
     ).toThrow('resource ID');
     expect(decodePayPalWebhookEvent('{"event_type":"UNHANDLED"}').kind).toBe('unknown');
   });
+});
+
+describe('PayPal money-returned event contracts', () => {
+  it('resolves a standard v2 Refund resource through its capture up link', () => {
+    const event = decodePayPalMoneyReturnedEvent(JSON.stringify({ event_type: 'PAYMENT.CAPTURE.REFUNDED', resource: {
+      id: 'refund', status: 'COMPLETED', amount: { value: '10.99', currency_code: 'USD' },
+      links: [{ rel: 'self', href: 'https://api-m.paypal.com/v2/payments/refunds/refund' }, { rel: 'up', href: 'https://api-m.paypal.com/v2/payments/captures/CAPTURE123' }],
+    } }));
+    expect(event).toMatchObject({ kind: 'capture-refunded', returned: { id: 'refund', captureId: 'CAPTURE123', amount: '10.99', currency: 'USD', status: 'COMPLETED' } });
+  });
+  it('uses the capture resource itself for reversals', () => {
+    expect(decodePayPalMoneyReturnedEvent(JSON.stringify({ event_type: 'PAYMENT.CAPTURE.REVERSED', resource: {
+      id: 'CAPTURE123', amount: { value: '10.99', currency_code: 'USD' },
+    } }))).toMatchObject({ kind: 'capture-reversed', returned: { id: 'reversal:CAPTURE123', captureId: 'CAPTURE123', status: 'COMPLETED' } });
+  });
+  it('does not trust an arbitrary up URL or a missing amount', () => {
+    const resource = { id: 'refund', status: 'COMPLETED', amount: { value: '10.99', currency_code: 'USD' }, links: [{ rel: 'up', href: 'https://evil.example/v2/payments/captures/CAPTURE123' }] };
+    expect(() => decodePayPalMoneyReturnedEvent(JSON.stringify({ event_type: 'PAYMENT.CAPTURE.REFUNDED', resource }))).toThrow('identity');
+    expect(() => decodePayPalMoneyReturnedEvent(JSON.stringify({ event_type: 'PAYMENT.CAPTURE.REFUNDED', resource: { ...resource, amount: null } }))).toThrow('Invalid');
+  });
+});
+
+it('keeps refund events unknown to the legacy capture decoder', () => {
+  expect(decodePayPalWebhookEvent(JSON.stringify({ event_type: 'PAYMENT.CAPTURE.REFUNDED' }))).toMatchObject({ kind: 'unknown' });
 });

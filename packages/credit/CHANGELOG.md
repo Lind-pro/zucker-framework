@@ -1,5 +1,10 @@
 # @zucker-framework/credit
 
+## 1.0.3
+
+- Add `revokeUnused`: transaction-bound revocation of selected unused credit lots using the existing account lock and journal, for refunds that must take back unspent credits without touching consumed ones.
+
+
 ## 1.0.2
 
 ### Patch Changes

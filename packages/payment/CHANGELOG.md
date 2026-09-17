@@ -1,5 +1,12 @@
 # @zucker-framework/payment
 
+## 1.0.3
+
+- Add `PaymentProviderAdapter`, the neutral `SettlementState` model with `reconcile()`, decimal-string `Money` helpers (`toMinorUnits` / `fromMinorUnits`, zero-decimal currencies), `PaymentNextAction`, `createPayPalAdapter` / `createStripeAdapter`, the `checkPaymentAdapterContract` suite and `createFakeAdapter`. Webhook input is raw bytes plus all request headers; authorization and capture are separate steps; `retrieve` is read-only.
+- Decode PayPal v2 refund capture links and reversal identities, reject failed refund HTTP responses while preserving pending refunds, and accept a stable refund request identifier. `PayPalCaptureRefundRequest.amount` is optional (omit for a full refund). `createStripeCheckoutSession` accepts `Stripe.RequestOptions` for idempotency keys.
+- Remove the legacy `PaymentProvider` / `PaymentService` / `PaymentIntent` / `CreatePaymentParams` / `PaymentResult` / `RefundResult` / `WebhookEvent` / `PaymentStatus` / `Subscription` / `SubscriptionPlan` / `SubscriptionProvider` exports. They had no implementation inside the framework and no consumer since publication; `ZuckerPaymentModule`'s `providers` option now takes `PaymentProviderAdapter`. Published as a scoped patch because no released consumer references the removed names.
+
+
 ## 1.0.2
 
 ### Patch Changes

@@ -377,3 +377,11 @@ an already published package and never deletes durable task records.
 ## Prepared CNIPA rendering release
 
 The prepared rendering release selects only media 1.0.4. Logging remains 1.0.3 and all other npm packages retain their current versions. The new version and changelog are applied directly for this scoped exception; the fixed-group configuration remains unchanged. CI still validates the whole repository, and only media enters the publication bundle. The maintainer explicitly authorized this scoped 1.0.4 patch release for the CNIPA rollout. Python reaction changes are consumed as an immutable source archive in the CNIPA image, without a PyPI publication.
+
+The scoped payment/credit release publishes `payment@1.0.3` and `credit@1.0.3` only;
+media stays 1.0.4, logging 1.0.3 and every other package 1.0.2. Both manifests and
+changelogs are versioned directly, the fixed-group configuration is unchanged, and
+`publish.yml` supplies `release_packages` for these two packages. The removed legacy
+payment exports had no implementation or consumer, which is why the maintainer
+selected a patch instead of the fixed-group major. Both packages continue to depend
+on `core@1.0.2` (credit also on `crud@1.0.2`).

@@ -13,7 +13,8 @@ export interface RecoveryEmailParams {
   userName: string;
   orderId: string;
   orderNumber?: string;
-  amount: number;
+  /** 十进制字符串，与 Order.amount / Money.amount 同一表示 */
+  amount: string;
   currency: string;
   errorReason: string;
   retryUrl: string;
@@ -182,10 +183,11 @@ export class PaymentRecoveryService {
   }
 
   /**
-   * 重试失败订单 — 将 failed → created 并重新发起支付
+   * 重试失败订单 — 将 failed → created 并重新发起支付。
+   * 幂等键由调用方给出且必须与上次不同，否则渠道会原样返回那笔已失败的支付。
    */
-  retryOrder(orderId: string): Promise<Order> {
-    return this.orderService.retryOrder(orderId);
+  retryOrder(orderId: string, idempotencyKey: string): Promise<Order> {
+    return this.orderService.retryOrder(orderId, idempotencyKey);
   }
 
   getRecoveryAttempts(orderId: string): Promise<{ count: number; lastAt: Date } | undefined> {

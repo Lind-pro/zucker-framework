@@ -85,3 +85,18 @@ describe('transaction-bound credit lots', () => {
       transactionData: {}, consumptionData: {} })).rejects.toThrow('allocation write failed');
   });
 });
+
+it('revokes only selected owned unused lots, journals once, and never creates consumption allocations', async () => {
+  const f = fixture();
+  f.models.lots.findMany.mockResolvedValueOnce([{ id: 'lot', source: 'issued', sourceId: 'purchase', remainingAmount: 3, expiresAt: null }]).mockResolvedValueOnce([]);
+  f.models.balances.update.mockResolvedValue({ balance: 7 });
+  const request = { accountId: 'a', lotIds: ['lot'], transactionData: { type: 'revoke' } };
+  expect(await f.ledger.revokeUnused(f.tx, request)).toBe(3);
+  expect(await f.ledger.revokeUnused(f.tx, request)).toBe(0);
+  expect(f.models.lots.findMany).toHaveBeenCalledWith({ where: { owner: 'a', id: { in: ['lot'] }, isExpired: false, remainingAmount: { gt: 0 } } });
+  expect(f.lockAccount.mock.invocationCallOrder[0]).toBeLessThan(f.models.lots.findMany.mock.invocationCallOrder[0]);
+  expect(f.models.lots.update).toHaveBeenCalledWith({ where: { id: 'lot' }, data: { remainingAmount: 0, isExpired: true } });
+  expect(f.models.transactions.create).toHaveBeenCalledTimes(1);
+  expect(f.models.transactions.create).toHaveBeenCalledWith({ data: { type: 'revoke', owner: 'a', amount: -3, balanceBefore: 10, balanceAfter: 7, lotIds: ['lot'] } });
+  expect(f.models.allocations.createMany).not.toHaveBeenCalled();
+});

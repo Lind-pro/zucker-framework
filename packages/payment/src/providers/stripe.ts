@@ -55,8 +55,15 @@ export function observeStripeCheckoutSession(
 export async function createStripeCheckoutSession(
   client: Pick<Stripe, 'checkout'>,
   params: Stripe.Checkout.SessionCreateParams,
+  /** 传入 idempotencyKey 后，重试同一请求不会产生第二个 Session */
+  options?: Stripe.RequestOptions,
 ): Promise<StripeCheckoutObservation> {
-  return observeStripeCheckoutSession(await client.checkout.sessions.create(params));
+  // 未传 options 时保持单参调用，不把 undefined 当作第二个实参转发给 SDK
+  return observeStripeCheckoutSession(
+    options
+      ? await client.checkout.sessions.create(params, options)
+      : await client.checkout.sessions.create(params),
+  );
 }
 
 export async function retrieveStripeCheckoutSession(

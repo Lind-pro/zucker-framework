@@ -13,7 +13,12 @@ export interface PayPalPaymentTransportOptions {
 }
 
 export interface PayPalCaptureRefundRequest {
-  amount: { value: string; currency_code: string };
+  /**
+   * 省略表示全额退款——PayPal 的 refund 接口本就允许不传 amount。
+   * 原先声明为必填，导致调用方为了"全额退"必须自己算出金额再传回去，
+   * 一旦本地金额与供应商记录有出入就会退错数额。
+   */
+  amount?: { value: string; currency_code: string };
   note_to_payer?: string;
 }
 
@@ -69,6 +74,31 @@ export type PayPalWebhookObservation =
     }
   | { raw: Record<string, unknown>; type: string; kind: 'unknown' };
 
+export interface PayPalMoneyReturnedObservation {
+  id: string;
+  captureId?: string;
+  orderId?: string;
+  amount: string;
+  currency: string;
+  status: 'PENDING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+}
+
+/** Extract identifiers only; never fetch a provider-supplied HATEOAS URL. */
+function captureLinkId(resource: Record<string, unknown>): string | undefined {
+  if (!Array.isArray(resource.links)) return undefined;
+  for (const value of resource.links) {
+    const link = asRecord(value);
+    if (link?.rel !== 'up' || typeof link.href !== 'string') continue;
+    try {
+      const url = new URL(link.href);
+      if (url.protocol !== 'https:' || !/^api(?:-m)?(?:\.sandbox)?\.paypal\.com$/.test(url.hostname)) continue;
+      const match = /^\/v2\/payments\/captures\/([A-Za-z0-9_-]+)$/.exec(url.pathname);
+      if (match) return match[1];
+    } catch { /* Invalid links cannot establish payment identity. */ }
+  }
+  return undefined;
+}
+
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -102,6 +132,40 @@ export function decodePayPalWebhookEvent(payload: string): PayPalWebhookObservat
       failureReason: typeof reason === 'string' ? reason : undefined,
     },
   };
+}
+
+/** Additive decoder: the original capture-event discriminated union stays compatible. */
+export function decodePayPalMoneyReturnedEvent(payload: string): {
+  raw: Record<string, unknown>; type: string;
+  kind: 'capture-refunded' | 'capture-reversed'; returned: PayPalMoneyReturnedObservation;
+} | null {
+  const raw = asRecord(JSON.parse(payload));
+  if (!raw || typeof raw.event_type !== 'string') throw new Error('Invalid PayPal webhook event');
+  const type = raw.event_type;
+  if (type === 'PAYMENT.CAPTURE.REFUNDED' || type === 'PAYMENT.CAPTURE.REVERSED') {
+    const resource = asRecord(raw.resource);
+    const amount = asRecord(resource?.amount);
+    const related = asRecord(asRecord(resource?.supplementary_data)?.related_ids);
+    const reversal = type === 'PAYMENT.CAPTURE.REVERSED';
+    if (!resource || typeof resource.id !== 'string' || !resource.id ||
+        typeof amount?.value !== 'string' || !/^\d+(?:\.\d{1,2})?$/.test(amount.value) ||
+        typeof amount.currency_code !== 'string' || !/^[A-Z]{3}$/.test(amount.currency_code)) {
+      throw new Error('Invalid PayPal money-returned event');
+    }
+    const status = reversal ? 'COMPLETED' : resource.status;
+    if (status !== 'PENDING' && status !== 'COMPLETED' && status !== 'FAILED' && status !== 'CANCELLED') {
+      throw new Error('Unknown PayPal refund status');
+    }
+    const captureId = reversal ? resource.id :
+      typeof related?.capture_id === 'string' ? related.capture_id : captureLinkId(resource);
+    const orderId = typeof related?.order_id === 'string' ? related.order_id : undefined;
+    if (!captureId && !orderId) throw new Error('PayPal refund event has no capture or order identity');
+    return { raw, type, kind: reversal ? 'capture-reversed' : 'capture-refunded', returned: {
+      id: reversal ? `reversal:${resource.id}` : resource.id,
+      captureId, orderId, amount: amount.value, currency: amount.currency_code, status,
+    } };
+  }
+  return null;
 }
 
 /** SDK order transport plus the OAuth-backed REST endpoints absent from the current SDK integration. */
@@ -210,18 +274,21 @@ export class PayPalPaymentTransport {
   async refundCapture(
     captureId: string,
     request: PayPalCaptureRefundRequest,
+    requestId?: string,
   ): Promise<PayPalCaptureRefundResponse> {
     const accessToken = await this.getAccessToken();
     const response = await this.fetcher(
       `${this.baseUrl}/v2/payments/captures/${encodeURIComponent(captureId)}/refund`,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}`,
+          ...(requestId ? { 'PayPal-Request-Id': requestId } : {}),
+        },
         body: JSON.stringify(request),
       },
     );
     const result = (await response.json()) as PayPalCaptureRefundResponse;
-    if (!response.ok && result.status === 'COMPLETED')
+    if (!response.ok)
       throw new Error(`PayPal refund request failed (${response.status})`);
     return result;
   }

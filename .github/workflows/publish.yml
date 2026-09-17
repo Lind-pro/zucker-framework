@@ -33,8 +33,9 @@ jobs:
     if: github.event_name == 'push'
     uses: ./.github/workflows/ci.yml
     with:
-      # Scoped rendering release; unchanged packages retain their published versions.
-      release_packages: '@zucker-framework/media'
+      # Scoped payment/credit release for the CNIPA multi-provider payment rollout;
+      # unchanged packages retain their published versions.
+      release_packages: '@zucker-framework/payment,@zucker-framework/credit'
 
   prepare:
     name: Prepare the exact CI-verified bundle

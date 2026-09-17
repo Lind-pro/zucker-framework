@@ -111,3 +111,18 @@ describe('PayPal payment transport', () => {
     expect(fetcher).toHaveBeenCalledOnce();
   });
 });
+
+it('rejects every unsuccessful refund HTTP response without requiring a provider status', async () => {
+  const fetcher = vi.fn().mockResolvedValueOnce(json({ access_token: 'test' }))
+    .mockResolvedValueOnce(json({ name: 'INTERNAL_SERVER_ERROR' }, 500));
+  const transport = new PayPalPaymentTransport({ clientId: 'test', clientSecret: 'test', mode: 'sandbox', fetcher });
+  await expect(transport.refundCapture('capture', { amount: { value: '5.00', currency_code: 'USD' } })).rejects.toThrow('500');
+});
+
+it('preserves accepted pending refunds and a caller-owned request id', async () => {
+  const fetcher = vi.fn().mockResolvedValueOnce(json({ access_token: 'test' }))
+    .mockResolvedValueOnce(json({ id: 'refund', status: 'PENDING' }, 201));
+  const transport = new PayPalPaymentTransport({ clientId: 'test', clientSecret: 'test', mode: 'sandbox', fetcher });
+  await expect(transport.refundCapture('capture', { amount: { value: '5.00', currency_code: 'USD' } }, 'refund-request-1')).resolves.toMatchObject({ id: 'refund', status: 'PENDING' });
+  expect(fetcher.mock.calls[1][1].headers['PayPal-Request-Id']).toBe('refund-request-1');
+});
