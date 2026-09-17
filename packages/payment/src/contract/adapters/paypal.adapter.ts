@@ -1,10 +1,21 @@
-import type { Order as PayPalOrder } from "@paypal/paypal-server-sdk";
-import {
+import type {
   CheckoutPaymentIntent,
+  Order as PayPalOrder,
   OrderApplicationContextShippingPreference,
   OrderApplicationContextUserAction,
 } from "@paypal/paypal-server-sdk";
 import type { PayPalPaymentTransport } from "../../providers/paypal";
+
+/*
+ * The PayPal SDK is an optional peer that PayPalPaymentTransport loads on use;
+ * the package entry must not import it at module scope (CI rejects a bundle whose
+ * entry imports an optional runtime dependency). These enum members are plain
+ * string constants, so the literal values are pinned here and typed against the
+ * SDK's enums so a future SDK rename still fails type-checking.
+ */
+const CAPTURE_INTENT = "CAPTURE" as CheckoutPaymentIntent;
+const PAY_NOW = "PAY_NOW" as OrderApplicationContextUserAction;
+const NO_SHIPPING = "NO_SHIPPING" as OrderApplicationContextShippingPreference;
 import type {
   CreatePaymentInput,
   PaymentProviderAdapter,
@@ -93,7 +104,7 @@ export function createPayPalAdapter(
     async createPayment(input: CreatePaymentInput): Promise<PaymentSession> {
       const payment = await transport.createOrder({
         body: {
-          intent: CheckoutPaymentIntent.Capture,
+          intent: CAPTURE_INTENT,
           purchaseUnits: [
             {
               referenceId: input.reference,
@@ -108,9 +119,9 @@ export function createPayPalAdapter(
           applicationContext: {
             returnUrl: input.returnUrl,
             cancelUrl: input.cancelUrl,
-            userAction: OrderApplicationContextUserAction.PayNow,
+            userAction: PAY_NOW,
             shippingPreference:
-              OrderApplicationContextShippingPreference.NoShipping,
+              NO_SHIPPING,
             brandName: options.brandName,
           },
         },
