@@ -48,10 +48,19 @@ second SDK merely because a consumer uses the reliability wrapper.
 ## Release prerequisites
 
 1. The worktree is clean and the source commit is available from a protected remote.
-2. The main-branch push pipeline in `publish.yml` has completed both reusable CI
-   jobs for that exact commit: `CI / Build & Lint` and `CI / Durable Runtime Contracts`.
-   Skipped jobs, PR runs and other commits do not satisfy this requirement. The
-   publisher validates job completion through GitHub’s API for the current attempt.
+2. The main-branch push pipeline in `publish.yml` has completed the reusable CI
+   job for that exact commit: `CI / Build & Verify` (clean build, artifact
+   verification, bundle upload). Skipped jobs, PR runs and other commits do not
+   satisfy this requirement. The publisher validates job completion through
+   GitHub’s API for the current attempt.
+   Unit tests, lint and the PostgreSQL/Redis durable-runtime contracts are **not**
+   part of the main-branch pipeline. They run locally in `.githooks/pre-push`
+   before any push to `main` (build, legal/content checks, `pnpm test`, `pnpm lint`,
+   `verify-nas-integration.mjs` against the designated NAS, and the same
+   `verify-package-artifacts` check CI performs) and are repeated on pull requests
+   by `pr-checks.yml`. The hook refuses the push when any check fails or when the
+   NAS configuration file is missing; `ZUCKER_SKIP_PREPUSH=1` is permitted only
+   for commits that change no package bytes, and must be noted in the commit.
 3. The npm account has permission to publish to the `zucker-framework` organization. The
    current target is public packages at `https://registry.npmjs.org/`, retaining
    `@zucker-framework/*`. Owning a GitHub namespace does not establish npm scope permission.
@@ -70,12 +79,15 @@ imports and dependency names must use the new scope together.
 
 ## CI-produced bundle and local review
 
-The production release bundle is built and tested once by CI. Its `Build & Lint`
+The production release bundle is built and verified once by CI. Its `Build & Verify`
 job retains the verified tarballs and consumer report under
 `zucker-framework-ci-<run-id>-<attempt>`. The preparation and publication workflows
 download these artifacts; neither rebuilds the framework or repacks the packages.
 The existing CI-only PostgreSQL/Redis services remain isolated from application
-databases. Local adapter checks continue to use the designated NAS.
+databases and are used only by `pr-checks.yml`. Before a `main` push the same
+contract suites run against the designated NAS through the pre-push hook
+(`scripts/verify-nas-integration.mjs`, private `--env-file` under
+`~/.config/zucker-framework/nas.env` or `ZUCKER_NAS_ENV_FILE`).
 
 The following commands remain useful for local review:
 

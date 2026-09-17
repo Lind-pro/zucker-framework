@@ -7,6 +7,7 @@
   "license": "Apache-2.0",
   "author": "Lind",
   "scripts": {
+    "prepare": "git config core.hooksPath .githooks 2>/dev/null || true",
     "dev": "turbo run dev --filter='@zucker-framework/template-*'",
     "dev:server": "pnpm --filter @zucker-framework/template-server dev",
     "dev:admin": "pnpm --filter @zucker-framework/template-admin dev",

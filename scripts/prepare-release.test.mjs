@@ -62,10 +62,10 @@ test('fails closed for skipped CI contracts, expired artifacts and wrong source 
   const f = fixture();
   try {
     const output = join(f.directory, 'output');
-    f.github.data.jobs[1].conclusion = 'skipped'; f.github.save();
+    f.github.data.jobs.at(-1).conclusion = 'skipped'; f.github.save();
     assert.match(f.run('download-ci', '--output', output).stderr, /Required CI job/);
     assert(!existsSync(output));
-    f.github.data.jobs[1].conclusion = 'success';
+    f.github.data.jobs.at(-1).conclusion = 'success';
     f.github.data.ciArtifacts[0].expired = true; f.github.save();
     assert.match(f.run('download-ci', '--output', output).stderr, /missing or expired/);
     f.github.data.ciArtifacts[0].expired = false;

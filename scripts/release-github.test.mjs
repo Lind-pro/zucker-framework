@@ -19,11 +19,14 @@ test('requires the exact commit, repository, main branch and CI workflow', () =>
 
 test('refuses skipped, failed, missing or ambiguous required jobs', () => {
   assertRequiredJobs(jobs);
+  const last = jobs.length - 1;
   for (const conclusion of ['skipped', 'failure', 'cancelled']) {
-    assert.throws(() => assertRequiredJobs([jobs[0], { ...jobs[1], conclusion }]), /Required CI job/);
+    assert.throws(() => assertRequiredJobs([...jobs.slice(0, last), { ...jobs[last], conclusion }]), /Required CI job/);
   }
-  assert.throws(() => assertRequiredJobs([jobs[0]]), /Required CI job/);
+  assert.throws(() => assertRequiredJobs(jobs.slice(0, last)), /Required CI job/);
   assert.throws(() => assertRequiredJobs([...jobs, jobs[0]]), /Required CI job/);
+  // 非必需 job（PR 专属的测试/契约）被跳过或不存在都不影响发布凭证
+  assertRequiredJobs([...jobs, { name: 'Test & Lint', status: 'completed', conclusion: 'skipped' }]);
 });
 
 test('uses the latest CI run and current attempt rather than any historical success', () => {
@@ -51,7 +54,7 @@ test('only the current push pipeline can use completed checks while the workflow
     { GITHUB_EVENT_NAME: 'pull_request' }, { GITHUB_WORKFLOW_REF: 'foreign/workflow' },
   ]) assert.throws(() => assertAutomaticRun(run, commit, { ...automaticEnvironment, ...change }), /did not succeed/);
   assert.throws(() => assertAutomaticRun({ ...run, event: 'workflow_run' }, commit, automaticEnvironment), /did not succeed/);
-  automaticJobs[1].conclusion = 'skipped';
+  automaticJobs[automaticJobs.length - 1].conclusion = 'skipped';
   assert.throws(() => verifyReleaseCI(commit, api, automaticEnvironment), /Required CI job/);
 });
 

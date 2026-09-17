@@ -90,8 +90,10 @@ interruption, Worker `SIGKILL` lease recovery, and late-result fencing. The next
 increment must still add full Redis/PostgreSQL container outage during Outbox
 dispatch, repeated process-kill stress, and rolling-version Worker tests.
 
-The repository includes environment-gated PostgreSQL and Redis contract tests. CI
-runs both against isolated service containers. Local execution uses:
+The repository includes environment-gated PostgreSQL and Redis contract tests. PR
+CI (`pr-checks.yml`) runs both against isolated service containers; before a
+`main` push the pre-push hook runs them against the designated NAS via
+`scripts/verify-nas-integration.mjs`. Direct local execution uses:
 
 ```bash
 TEST_DATABASE_URL=postgresql://... \

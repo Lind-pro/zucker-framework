@@ -5,7 +5,7 @@
   "automaticWorkflow": "publish.yml",
   "automaticCIPrefix": "CI / ",
   "automaticPrepareJob": "Prepare the exact CI-verified bundle",
-  "requiredJobs": ["Build & Lint", "Durable Runtime Contracts"],
+  "requiredJobs": ["Build & Verify"],
   "prepareWorkflow": "release.yml",
   "ciArtifactPrefix": "zucker-framework-ci",
   "releaseArtifactPrefix": "zucker-framework-release",

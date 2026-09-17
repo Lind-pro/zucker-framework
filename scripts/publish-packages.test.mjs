@@ -191,7 +191,7 @@ test('fails before npm for unapproved bytes, failed CI or unavailable OIDC ident
     assert.match(f.rawRun(['--publish']).stderr, /approved --manifest-sha256/);
     assert.match(f.run(['--publish', '--manifest-sha256', '0'.repeat(64)]).stderr, /approved --manifest-sha256/);
     assert.match(f.run(['--publish', '--auth', 'oidc'], { GITHUB_ACTIONS: '', ACTIONS_ID_TOKEN_REQUEST_URL: '' }).stderr, /OIDC publishing requires/);
-    f.github.data.jobs[1].conclusion = 'failure'; f.github.save();
+    f.github.data.jobs.at(-1).conclusion = 'failure'; f.github.save();
     assert.match(f.run(['--publish']).stderr, /Required CI job/);
     assert.equal(existsSync(f.log), false);
   } finally { rmSync(f.directory, { recursive: true, force: true }); }
