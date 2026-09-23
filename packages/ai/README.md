@@ -31,3 +31,23 @@ The new execution source and independent mocked regression tests are present. Ve
 `collectLangChainText` also accepts `{ model, messages, trim: false }` for complete LangChain histories (including image message blocks). This preserves whitespace and returns the last usage-bearing chunk as `usage`; it does not add usage chunks together or extract non-string answer blocks. The prompt-based signature still trims text. An omitted idle timeout adds no deadline; callers with an existing budget continue passing it explicitly.
 
 `collectGraphUpdates` consumes a graph's update iterator, awaits each node notification and optionally accumulates replacement fields from an initial state. It has no LangGraph runtime dependency and neither constructs nor retries a graph. The consumer passes its existing graph stream (including signal/configurable/metadata), retains topology and progress policy, and reads checkpoint/reducer state from its graph after completion. Iterator errors and notification failures propagate and close iteration. Multiple node updates in one event are all delivered.
+
+### Provider model discovery (experimental)
+
+`listProviderModels({ provider, apiKey, baseUrl?, proxyHost?, proxyPort? })` returns
+`{ id, name }[]` from an account-visible provider catalogue. OpenAI, DeepSeek and
+Custom use the OpenAI-compatible `/models` protocol; Claude uses Anthropic model
+pagination; Gemini uses its native list API (or OpenAI compatibility when the
+configured base ends in `/openai`). A custom provider requires an explicit base.
+The request uses a 20-second overall deadline, bounded response size/pagination,
+and never follows credential-bearing redirects. No inference is performed.
+
+`AIModelCatalogService.getAvailableModels(id)` uses its configured database and
+secret decryptor and returns only catalogue entries. Consumers own authorization,
+provider selection, and any restrictions on allowed destinations. In particular,
+never forward a hidden saved credential to an unconfirmed endpoint override.
+Lists do not establish pricing, task suitability, or inference permissions.
+
+A second consumer can use this API for a document summarization console with its
+own database adapter and encryption, without importing product schemas or routes.
+These new exports are experimental until their catalogue contract stabilizes.

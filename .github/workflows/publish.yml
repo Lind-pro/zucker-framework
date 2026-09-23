@@ -33,9 +33,9 @@ jobs:
     if: github.event_name == 'push'
     uses: ./.github/workflows/ci.yml
     with:
-      # Scoped payment/credit release for the CNIPA multi-provider payment rollout;
+      # Scoped AI discovery release; admin adopts the same AI catalogue service;
       # unchanged packages retain their published versions.
-      release_packages: '@zucker-framework/payment,@zucker-framework/credit'
+      release_packages: '@zucker-framework/ai,@zucker-framework/admin'
 
   prepare:
     name: Prepare the exact CI-verified bundle

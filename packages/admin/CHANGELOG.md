@@ -1,5 +1,11 @@
 # @zucker-framework/admin
 
+## 1.0.3
+
+### Patch Changes
+
+- Adopt @zucker-framework/ai@1.0.3 so generated administrative controllers and consumer providers use the same AIModelCatalogService injection token. No route contract changes.
+
 ## 1.0.2
 
 ### Patch Changes

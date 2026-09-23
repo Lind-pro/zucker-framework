@@ -1,3 +1,4 @@
+import { listProviderModels } from './provider-models';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import type { DatabaseAdapter, ModelOperations } from '@zucker-framework/core';
 
@@ -7,6 +8,9 @@ export interface AIModelRecord extends Record<string, unknown> {
   provider: string;
   modelId: string;
   apiKey: string;
+  baseUrl?: string | null;
+  proxyHost?: string | null;
+  proxyPort?: number | null;
   isEnabled: boolean;
   isDefault: boolean;
   supportsThinking?: boolean;
@@ -234,6 +238,17 @@ export class AIModelCatalogService {
     });
     if (!model) throw new NotFoundException('没有可用的 AI 模型配置');
     return this.present(model);
+  }
+  /** @experimental Discover names without exposing the persisted credential. */
+  async getAvailableModels(id: string) {
+    const model = await this.required(id);
+    return listProviderModels({
+      provider: model.provider,
+      apiKey: this.options.decryptSecret(model.apiKey),
+      baseUrl: typeof model.baseUrl === 'string' ? model.baseUrl : undefined,
+      proxyHost: typeof model.proxyHost === 'string' ? model.proxyHost : undefined,
+      proxyPort: typeof model.proxyPort === 'number' ? model.proxyPort : undefined,
+    });
   }
   async testModelConnection(id: string) {
     const model = await this.required(id);

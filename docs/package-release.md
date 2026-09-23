@@ -397,3 +397,16 @@ changelogs are versioned directly, the fixed-group configuration is unchanged, a
 payment exports had no implementation or consumer, which is why the maintainer
 selected a patch instead of the fixed-group major. Both packages continue to depend
 on `core@1.0.2` (credit also on `crud@1.0.2`).
+
+## Scoped provider model discovery release
+
+The maintainer authorized publication of the provider model discovery batch only:
+`ai@1.0.3` and `admin@1.0.3`. Their manifests and changelogs are versioned directly
+for this scoped exception; the fixed-group configuration remains unchanged. The
+reviewed `publish.yml` selects these two packages. Admin's `workspace:*` AI
+dependency packs as `1.0.3`, preserving a single AIModelCatalogService identity
+with consumers. Other packages retain their current versions and are CI
+verification inputs only. Consumers must adopt compatible AI and Admin versions
+together; publication does not itself upgrade or deploy any consumer.
+
+For this batch the maintainer explicitly selected a patch-only version increment, including the new experimental AI exports.

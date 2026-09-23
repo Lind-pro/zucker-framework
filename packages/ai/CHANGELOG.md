@@ -1,5 +1,11 @@
 # @zucker-framework/ai
 
+## 1.0.3
+
+### Patch Changes
+
+- Add experimental provider model discovery for OpenAI-compatible, Anthropic and Gemini catalogues, including configured proxies, bounded pagination and credential-safe failures. Expose saved-credential discovery through AIModelCatalogService without returning secrets.
+
 ## 1.0.2
 
 ### Patch Changes

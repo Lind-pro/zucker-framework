@@ -1,7 +1,7 @@
 {
   "name": "@zucker-framework/admin",
-  "version": "1.0.2",
-  "description": "Zucker Admin — pluggable management REST API module for NestJS",
+  "version": "1.0.3",
+  "description": "Zucker Admin \u2014 pluggable management REST API module for NestJS",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",

@@ -1,3 +1,4 @@
+import * as discovery from './provider-models';
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
 import type { DatabaseAdapter, ModelOperations } from '@zucker-framework/core';
@@ -120,4 +121,21 @@ describe('model catalog credential and default contracts', () => {
     await expect(service.updateModel('old', { id: 'different' })).rejects.toThrow();
     expect(await service.testModelConnection('old')).toMatchObject({ success: false });
   });
+});
+
+it('discovers with decrypted stored credentials without disclosing them in the result', async () => {
+  const { service } = harness();
+  const spy = vi
+    .spyOn(discovery, 'listProviderModels')
+    .mockResolvedValue([{ id: 'new-id', name: 'New' }]);
+  try {
+    expect(await service.getAvailableModels('old')).toEqual([{ id: 'new-id', name: 'New' }]);
+    expect(spy).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'Example', apiKey: 'old-key-secret' }),
+    );
+    await expect(service.getAvailableModels('missing')).rejects.toThrow('不存在');
+    expect(spy).toHaveBeenCalledTimes(1);
+  } finally {
+    spy.mockRestore();
+  }
 });
