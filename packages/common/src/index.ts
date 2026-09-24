@@ -36,5 +36,6 @@ export {
   type RepairedJsonLogger,
 } from './utils/parse-repaired-json-response';
 export { extractJsonCandidate } from './utils/extract-json-candidate';
+export { parseJsonWithArrayRecovery } from './utils/parse-json-array-recovery';
 export { TrimString } from './decorators/trim-string.decorator';
 export { DateTransformPipe, type DateTransformOptions } from './pipes/date-transform.pipe';

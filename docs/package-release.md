@@ -410,3 +410,20 @@ verification inputs only. Consumers must adopt compatible AI and Admin versions
 together; publication does not itself upgrade or deploy any consumer.
 
 For this batch the maintainer explicitly selected a patch-only version increment, including the new experimental AI exports.
+
+## Scoped conservative JSON recovery release
+
+The maintainer requested the smallest version increment for the reviewed JSON
+array recovery addition. Publish only `common@1.0.3`, applying its manifest and
+changelog directly and consuming the pending changeset for this scoped patch
+exception. The fixed-group configuration is unchanged; `publish.yml` selects
+only Common while CI verifies all package artifacts. Existing parsing/repair
+exports remain compatible, and schema validation and partial-result acceptance
+remain consumer policy.
+
+Previously published AI and Admin packages retain their exact Common dependency
+versions. Consumers adopting `common@1.0.3` alongside those packages must align
+their transitive Common resolution as well (for example, with a package-manager
+override) and verify one Common/Nest provider and request-context instance. This
+release does not upgrade or deploy those consumers. The release consumer smoke
+checks exercise the new recovery API through both ESM and CommonJS exports.

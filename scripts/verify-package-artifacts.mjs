@@ -185,7 +185,9 @@ import { PiiFilter } from '@zucker-framework/logging';
 import { PostgresCreditOperationCoordinator } from '@zucker-framework/credit';
 import { FeatureFlagEvaluator } from '@zucker-framework/feature-flags';
 import { DurableNotificationWorker } from '@zucker-framework/notification';
+import { parseJsonWithArrayRecovery } from '@zucker-framework/common';
 
+if (JSON.stringify(parseJsonWithArrayRecovery('{"items":[{"id":"complete"},', 'items')) !== '{"items":[{"id":"complete"}]}') throw new Error('common JSON array recovery ESM contract failed');
 if (!TASK_STATUSES.includes('QUEUED')) throw new Error('task ESM export missing');
 if (typeof DurableWorkerRuntime !== 'function') throw new Error('durable worker runtime ESM export missing');
 if (typeof PostgresTaskSummaryReader !== 'function') throw new Error('task summary reader ESM export missing');
@@ -218,7 +220,9 @@ const logging = require('@zucker-framework/logging');
 const credit = require('@zucker-framework/credit');
 const featureFlags = require('@zucker-framework/feature-flags');
 const notification = require('@zucker-framework/notification');
+const common = require('@zucker-framework/common');
 
+if (JSON.stringify(common.parseJsonWithArrayRecovery('{"items":[{"id":"complete"},', 'items')) !== '{"items":[{"id":"complete"}]}') throw new Error('common JSON array recovery CJS contract failed');
 if (!task.TASK_STATUSES.includes('QUEUED')) throw new Error('task CJS export missing');
 if (typeof task.DurableWorkerRuntime !== 'function') throw new Error('durable worker runtime CJS export missing');
 if (typeof task.PostgresTaskSummaryReader !== 'function') throw new Error('task summary reader CJS export missing');

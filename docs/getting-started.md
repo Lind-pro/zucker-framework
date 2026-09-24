@@ -1,358 +1,90 @@
-# 快速开始
+# 基于 Framework 创建新项目
 
-本指南帮助你从零创建一个基于 zucker-framework 的全栈项目。
+本指南用于创建独立的业务应用。AI 开工前先读 [项目初始化技能](../.agents/skills/framework-project-bootstrap/SKILL.md) 和 [能力归属约束](architecture.md#新增能力的归属与接入)。新项目使用 Framework 的公开能力，业务代码和项目自己的约束属于新仓库。
 
-## 前置要求
+## 1. 确定最小项目范围
 
-- **Node.js** 20+
-- **pnpm** 9+
-- **PostgreSQL** 15+
-- **Redis**（可选，用于缓存和分布式锁）
+从用户请求确认项目目录、用途、首个业务流程，以及需要 Server、Admin、Web 中的哪些部分。只需要后端就先建一个应用；确实需要多个应用时再使用 apps/packages 工作区，不默认复制完整框架或已有业务项目。
 
-## 创建新项目
+涉及持久化时确认本项目的开发数据库及其他必要依赖。缺少这些信息时可先完成不依赖它们的骨架与配置说明，但不能借用其他产品的数据库、账号、密钥、付费服务或生产环境。
 
-### 1. 从模板复制
+工具版本从 manifest 读取：本仓库当前使用 pnpm `11.25.0`，要求 Node.js `>=22.22.0`，CI 使用 Node.js `24.14.1`。新项目选择与所用包兼容的版本，并写入自己的 `packageManager`/`engines`。不要沿用旧文档的 Node 20、pnpm 9 或旧 Nest/Prisma 示例。
 
-```bash
-# 克隆框架仓库
-git clone https://github.com/your-org/zucker-framework.git
+## 2. 选择真实可用的初始化入口
 
-# 复制 server 模板到你的项目
-cp -r zucker-framework/templates/server my-project
-cd my-project
+### 独立 Server 骨架
+
+在目标项目的父目录执行，`my-app` 换成实际项目名：
+
+```sh
+pnpm dlx @zucker-framework/cli@1.0.2 init my-app --template server
+cd my-app
 ```
 
-### 2. 安装依赖
+`1.0.2` 是当前已发布的 CLI 示例版本；后续先核对发布信息再选定明确版本，不使用 `latest`。当前安装版 CLI 自带最小 Server 骨架，不要求相邻 Framework 源码。
 
-在 `package.json` 中添加 @zucker-framework 依赖：
+该骨架包含 package.json、TypeScript/Nest 配置、基础模块装配和私密本地 JWT 密钥。默认端口是 `4200`，API 前缀是 `/api`；它还没有业务模型或完整登录/权限产品。默认 `InMemoryAdapter` 只用于演示，不能据此宣称账户、订单或任务能持久保存。不要在日志中输出生成的密钥。
 
-```json
-{
-  "dependencies": {
-    "@zucker-framework/core": "latest",
-    "@zucker-framework/common": "latest",
-    "@zucker-framework/event": "latest",
-    "@zucker-framework/crud": "latest",
-    "@zucker-framework/auth": "latest",
-    "@zucker-framework/logging": "latest",
-    "@zucker-framework/config": "latest",
-    "@zucker-framework/cache": "latest",
-    "@nestjs/common": "^10.0.0",
-    "@nestjs/core": "^10.0.0",
-    "@nestjs/event-emitter": "^2.0.0",
-    "@prisma/client": "^5.0.0",
-    "eventemitter2": "^6.4.0"
-  }
-}
-```
+初始化后先完成下节的项目约束和配置核对，再安装依赖、启动：
 
-```bash
+```sh
 pnpm install
-```
-
-### 3. 配置数据库
-
-创建 `prisma/schema.prisma`：
-
-```prisma
-generator client {
-  provider = "prisma-client-js"
-}
-
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
-
-// 业务模型示例
-model Article {
-  id        String   @id @default(cuid())
-  title     String
-  content   String?
-  status    String   @default("draft")
-  userId    String?
-  creatorId String?
-  modifierId String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-```
-
-创建 `.env` 文件：
-
-```env
-DATABASE_URL="postgresql://user:password@localhost:5432/mydb"
-JWT_SECRET="your-jwt-secret"
-```
-
-初始化数据库：
-
-```bash
-npx prisma migrate dev --name init
-npx prisma generate
-```
-
-### 4. 配置 AppModule
-
-模板中的 `app.module.ts` 已包含标准配置：
-
-```typescript
-import { Module } from '@nestjs/common';
-import { EventEmitterModule } from '@nestjs/event-emitter';
-import { ZuckerEventModule } from '@zucker-framework/event';
-import { ZuckerCommonModule } from '@zucker-framework/common';
-import { ZuckerCrudModule, PrismaAdapter } from '@zucker-framework/crud';
-import { ZuckerAuthModule } from '@zucker-framework/auth';
-import { ZuckerLoggingModule } from '@zucker-framework/logging';
-import { ZuckerConfigModule } from '@zucker-framework/config';
-import { ZuckerCacheModule } from '@zucker-framework/cache';
-
-@Module({
-  imports: [
-    // Layer 1: 基础
-    EventEmitterModule.forRoot(),
-    ZuckerEventModule.forRoot(),
-    ZuckerCommonModule,
-
-    // Layer 2: 框架核心
-    ZuckerCrudModule.forRoot({ adapterClass: PrismaAdapter }),
-    ZuckerAuthModule.forRoot({ jwtSecret: process.env.JWT_SECRET || 'change-me' }),
-    ZuckerLoggingModule.forRoot(),
-
-    // Layer 3: 基础设施
-    ZuckerConfigModule.forRoot(),
-    ZuckerCacheModule.forRoot({ provider: 'memory' }),
-
-    // 业务模块在此添加
-    // ArticleModule,
-  ],
-})
-export class AppModule {}
-```
-
-## 创建第一个业务模块：Article CRUD
-
-### 1. 创建 ArticleService
-
-```typescript
-// src/article/article.service.ts
-import { Injectable } from '@nestjs/common';
-import { BaseService } from '@zucker-framework/crud';
-
-interface Article {
-  id: string;
-  title: string;
-  content: string | null;
-  status: string;
-  userId: string | null;
-  creatorId: string | null;
-  modifierId: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-@Injectable()
-export class ArticleService extends BaseService<Article> {
-  constructor(
-    @Inject(DATABASE_ADAPTER) db: DatabaseAdapter,
-    dynamicQuery: DynamicQueryService,
-  ) {
-    super(db, dynamicQuery, 'article');
-  }
-
-  // 扩展业务方法
-  async publish(id: string): Promise<Article> {
-    return this.update(id, { status: 'published' } as Partial<Article>);
-  }
-}
-```
-
-BaseService 自动提供以下方法：
-- `create(data)` — 创建记录（自动触发实体事件）
-- `update(id, data)` — 更新记录
-- `delete(id)` — 删除记录
-- `findOne(id)` — 查询单条
-- `findAll(query)` — 分页查询（支持动态过滤、排序）
-- `saveOrUpdate(data)` — 有 id 则更新，无则创建
-- `createMany(data[])` — 批量创建
-- `softDelete(id)` / `restore(id)` — 软删除/恢复
-- `transaction(fn)` — 事务操作
-
-### 2. 创建 ArticleController
-
-```typescript
-// src/article/article.controller.ts
-import { Controller, Post, Param } from '@nestjs/common';
-import { BaseController } from '@zucker-framework/crud';
-import { Permissions } from '@zucker-framework/auth';
-import { AccessLogger } from '@zucker-framework/logging';
-import { ArticleService } from './article.service';
-
-// 实体类（用于 Swagger 文档）
-class Article {
-  id: string;
-  title: string;
-  content: string | null;
-  status: string;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-@Controller('articles')
-export class ArticleController extends BaseController(Article) {
-  constructor(private readonly articleService: ArticleService) {
-    super(articleService);
-  }
-
-  // 自动继承的标准 CRUD 端点：
-  // POST   /articles          (create)
-  // GET    /articles           (findAll - 分页)
-  // GET    /articles/:id       (findOne)
-  // PATCH  /articles/save      (saveOrUpdate)
-  // PATCH  /articles/:id       (update)
-  // DELETE /articles/:id       (delete)
-  // POST   /articles/batch     (createMany)
-  // PUT    /articles/batch     (updateMany)
-  // DELETE /articles/batch     (deleteMany)
-
-  // 扩展业务端点
-  @Post(':id/publish')
-  @Permissions('article:publish')
-  @AccessLogger('发布文章')
-  async publish(@Param('id') id: string) {
-    return this.articleService.publish(id);
-  }
-}
-```
-
-### 3. 创建 ArticleModule
-
-```typescript
-// src/article/article.module.ts
-import { Module } from '@nestjs/common';
-import { ArticleService } from './article.service';
-import { ArticleController } from './article.controller';
-
-@Module({
-  controllers: [ArticleController],
-  providers: [ArticleService],
-  exports: [ArticleService],
-})
-export class ArticleModule {}
-```
-
-### 4. 注册到 AppModule
-
-```typescript
-// app.module.ts
-import { ArticleModule } from './article/article.module';
-
-@Module({
-  imports: [
-    // ... 框架模块
-    ArticleModule,
-  ],
-})
-export class AppModule {}
-```
-
-### 5. 运行和测试
-
-```bash
-# 启动服务
 pnpm dev
-
-# 测试 API
-# 创建文章
-curl -X POST http://localhost:3000/articles \
-  -H "Content-Type: application/json" \
-  -d '{"title": "Hello World", "content": "这是第一篇文章"}'
-
-# 查询列表（支持动态过滤）
-curl "http://localhost:3000/articles?page=1&pageSize=10"
-
-# 带过滤条件查询
-curl "http://localhost:3000/articles?filters=%7B%22title%24like%22%3A%22Hello%22%7D"
-
-# 查询单条
-curl http://localhost:3000/articles/{id}
-
-# 更新
-curl -X PATCH http://localhost:3000/articles/{id} \
-  -H "Content-Type: application/json" \
-  -d '{"title": "Updated Title"}'
-
-# 删除
-curl -X DELETE http://localhost:3000/articles/{id}
 ```
 
-## 前端集成
+保留 lockfile；后续 CI 使用 `pnpm install --frozen-lockfile`。一次成功启动只证明骨架可运行，不代替首个业务流程验收。
 
-### Admin 后台（Ant Design）
+### Admin / Web / 完整 Server 模板
 
-从 `templates/admin/` 复制，安装前端包：
+当前安装版 CLI 的 `--template admin`、`--template web` 需要 Framework checkout 中的模板；不要把这两个选项描述成已经发布的独立生成器。仓库模板分别位于 `templates/admin`、`templates/web`、`templates/server`。
 
-```json
-{
-  "dependencies": {
-    "@zucker-framework/fe-http-client": "latest",
-    "@zucker-framework/fe-storage": "latest",
-    "@zucker-framework/fe-auth": "latest",
-    "@zucker-framework/fe-permission": "latest",
-    "antd": "^5.0.0",
-    "react": "^19.0.0"
-  }
-}
+已有对应开发构建的 checkout 时，在目标父目录调用其 CLI，例如：
+
+```sh
+node /path/to/zucker-framework/packages/cli/dist/index.js init my-admin --template admin
 ```
 
-使用 HTTP 客户端调用 API：
+若 CLI 产物缺失，先按 Framework 本地工作流准备该工具；不要默认构建所有模板。CLI 会将复制模板中的 `workspace:*` 改为 catalog 中的确切版本，但仍须检查配置中的仓库相对路径和运行前置条件。
 
-```typescript
-import { httpClient, get, post } from '@zucker-framework/fe-http-client';
+当前 Admin 模板的 `vite.config.ts` 将 `@zucker-framework/fe-form` 指向框架源码。外部新项目要移除该源码别名，使用公开包；检查所有 `../../packages`、tsconfig extends、构建脚本和资源路径，不把本机目录关系带入新项目。不要只做 `cp -r` 后就声称项目已独立。
 
-// 响应自动解包，直接返回业务数据
-const articles = await get<PaginatedResult<Article>>('/articles');
-const article = await post<Article>('/articles', { title: 'New Article' });
-```
+模板自身开发入口当前使用 Server `4200`、Admin `4201`、Web `4202`；新项目的端口、API 地址及回调由新项目明确配置，以实际脚本和启动输出为准。
 
-使用认证状态管理：
+## 3. 让新项目有自己的 AI 入口
 
-```typescript
-import { useAuthStore } from '@zucker-framework/fe-auth';
+**Framework 的根 AGENTS.md 不会自动成为外部项目的约束。当前 CLI 1.0.2 也不会生成这些文件，初始化 AI 必须补齐。**
 
-const { user, login, logout } = useAuthStore();
-```
+- 将 [消费者 AGENTS 模板](templates/consumer-AGENTS.md) 按实际项目调整后放入新项目根目录 `AGENTS.md`。它规定“先查 Framework，再判断机制与业务归属”，并且不依赖相邻源码目录。
+- 需要兼容 Claude 时，在支持符号链接的环境中创建 `CLAUDE.md -> AGENTS.md`，避免维护两套规则。已有用户约束要保留并合并；不要覆盖。
+- 写一份简短 README，说明产品用途、实际目录、采用的 Framework 包和版本、可执行的开发/检查命令、本项目开发依赖与当前验收状态。小项目不需要另外创建空的架构层或大量文档。
+- 不复制 Framework 的维护者 AGENTS.md，也不复制 CNIPA 的环境、套餐、专利规则或执行器部署约束到新项目。
 
-使用权限控制：
+例如，新应用可以把业务代码共置在 `src/modules/<feature>`，基础设施接入放 `src/infrastructure`；有前端时按功能组织。目录按实际规模选择，模板中的通用边界必须落实到当前项目的真实路径和命令。
 
-```typescript
-import { usePermission } from '@zucker-framework/fe-permission';
+## 4. 按需选择 Framework 能力
 
-const { hasPermission } = usePermission();
+使用 [能力导航](../.agents/skills/framework-development/references/package-map.md) 查找候选包，然后核对公开 exports、类型、peerDependencies、相关测试及消费者所用版本。不要通过复制库实现来绕过接口或版本缺口。
 
-// 检查权限
-if (hasPermission('article:add')) {
-  // 显示创建按钮
-}
-```
+- 新项目只安装实际使用的能力。Framework 依赖固定到已发布版本，不使用 `latest`、默认跨仓 `workspace:*`、内部源码路径或移动分支作为正式输入。
+- CLI catalog 是生成时的版本基线，不保证包含之后的修复。当前 media/logging 的 `1.0.3` 是兼容补丁；采用它们时也要按 [发布说明](package-release.md) 检查间接依赖，避免同时加载两个日志/Nest/SDK 实例。
+- `zucker add` 当前会执行未指定版本的安装并打印示例配置；需要参考时用 `--dry-run`，实际依赖和配置仍由核对后的公开契约决定。
+- HTTP/SSE、认证状态、通用持久化、存储、日志和渲染复用 Framework；产品准入、所有权策略、模型字段、业务流程、Prompt、价格与 UI 由应用持有。
+- 全局基础设施只装配一次。浏览器使用浏览器安全的公开入口；服务器能力和原生 SDK 不进入客户端包。
 
-### Web 前台（Next.js）
+源码联调是可选开发方式，必须与默认 npm 模式区分。新增通用能力需要修改 Framework 时，先完成授权范围内的实现和验证，再按对应制品发布/固定归档方式接入应用，不能悄悄保留双实现。
 
-从 `templates/web/` 复制，支持 i18n + SEO：
+## 5. 实现并验收第一个业务流程
 
-```json
-{
-  "dependencies": {
-    "@zucker-framework/fe-http-client": "latest",
-    "@zucker-framework/fe-storage": "latest",
-    "@zucker-framework/fe-analytics": "latest",
-    "next": "^15.0.0",
-    "next-intl": "^3.0.0"
-  }
-}
-```
+先选一个真实的小流程，例如“保存一条属于当前用户的业务记录并重新读取”，而非一次安装所有模块：
 
-## 下一步
+1. 定义应用自己的模型、DTO 和业务规则；核对 CRUD/认证公开契约是否合适，特殊业务端点无需强行继承全部 CRUD。
+2. 需要持久化时，按实际 adapter/port 绑定本项目的数据源和事务。不要从旧指南复制 Prisma 5 schema 或默认 JWT secret；以所选版本的配置方式为准。
+3. 验证正常请求、输入错误、所有权拒绝，以及数据是否按约定保存。测试内存演示只能标为演示通过。
+4. 前端验证实际 API 路径、登录/刷新/退出（若使用）和首个页面流程，检查浏览器错误及服务端结果。
+5. 按应用脚本执行相关测试和类型/lint 检查。没有测试脚本时应明确说明并补上首个行为验证，不能写一个空 test 命令冒充验收。
 
-- 阅读 [模块扩展指南](./extending-modules.md) 了解如何添加更多业务功能
-- 阅读 [API 参考](./api-reference.md) 查看每个包的完整接口
+`zucker doctor` 仅提供初步静态提示，不是验收门禁；当前 1.0.2 会展示环境变量值的前缀，不应带真实凭据自动运行。发布、镜像与生产部署是后续单独阶段，不因初始化成功自动执行。
+
+## 交付给后续 AI 的信息
+
+最终说明项目位置、已有功能、Framework 复用点及版本、AI 入口、启动/检查方法和明确的缺口。后续 AI 从新项目自身的 AGENTS.md 与 README 继续工作，无需知道框架仓库在上一台机器上的绝对路径。

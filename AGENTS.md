@@ -16,7 +16,18 @@ This file is shared with CLAUDE.md. Repository skills are in .agents/skills; leg
 
 Use the [local workflow](docs/runbooks/agent-development-workflow.md) for check selection. Report the result, evidence, unverified paths and migration/rollback impact concisely. Model/reasoning settings belong to the host and the user's selection, not a hard-coded repository default.
 
+## Creating a new application
+
+For a new product/application based on Framework, first read the [project bootstrap skill](.agents/skills/framework-project-bootstrap/SKILL.md) and [getting started](docs/getting-started.md). Create an independent consumer with its own `AGENTS.md` from the consumer template; do not copy this Framework-maintainer policy or another product's environment. The current released CLI scaffolds code but does not install the application's AI instructions. A request for guidance alone does not authorize creating a real project.
+
 ## Framework boundaries
+
+Before adding a capability, public API, package or changing ownership, read [capability ownership](docs/architecture.md#新增能力的归属与接入) and the [Framework development skill](.agents/skills/framework-development/SKILL.md). Search existing exports and consumers before implementation, even when the request comes from a specific product. Reuse this reading within the task; ordinary wording/style fixes do not need an architecture exercise.
+
+- Briefly identify the generic mechanism, the existing package/API evidence and the policy that remains in the consumer. Prefer extending an existing package. A new abstraction/package needs an actual contract and reuse or reliability/security reason; do not use `shared`/`utils` as a default owner.
+- Framework must not import a consumer repository, its generated database client, domain schema, prompts, task names, prices or deployment settings. Expose neutral ports/configuration where consumer-specific data is needed. Templates remain examples of consumption, not a route for pulling product implementation into libraries.
+- Preserve the consumer's persistence, transactions, ownership and failure guarantees. Separate browser-safe exports from Node/native SDK entrypoints, and retain a single compatible runtime/peer instance. Removing safeguards or copying a product implementation into a generic-looking file is not a completed extraction.
+- Record the public export, affected consumers, replacement/removal and verification in the result. If integration needs an unreleased artifact, report that gap and complete authorized local work; do not create a second implementation or treat a source link as a published dependency. This check does not add routine approval steps or authorize publication.
 
 - packages/* contains reusable libraries; templates/* contains consumers. Consumer code imports documented @zucker-framework/* exports, never packages/*/src internals. Match manifests, public exports and current tests before using signatures from documentation.
 - Keep product names, schemas, prompts, tenant policies, provider credentials and environment-specific deployment choices out of library contracts. A second consumer or a concrete reliability/security requirement should justify extraction; shared-looking code alone is insufficient.

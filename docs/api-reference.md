@@ -110,7 +110,13 @@ class RequestLoggerMiddleware // 请求日志中间件
 class TrimStringPipe          // 字符串自动 trim
 
 class ZuckerCommonModule      // 模块（自动注册以上组件）
+
+// 1.0.3 新增导出：完整对象直通，截断时仅保留指定顶层数组的完整对象条目。
+// 返回 null 表示无法安全恢复；不补造字段，不代替业务 schema 校验。
+function parseJsonWithArrayRecovery(raw: string, arrayKey: string): Record<string, unknown> | null;
 ```
+
+完整恢复契约与示例见 [Common JSON recovery](../packages/common/README.md#conservative-json-array-recovery)。
 
 ---
 

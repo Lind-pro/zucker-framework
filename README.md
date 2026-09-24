@@ -6,8 +6,8 @@
 
 ## 特性亮点
 
-- **6 层架构** -- 从基础类型到模板应用，层级清晰，禁止反向依赖
-- **45+ 个包** -- 覆盖 CRUD、认证、缓存、队列、AI、IoT、支付等完整业务场景
+- **分层架构** -- 从基础类型到模板应用，层级清晰，禁止反向依赖
+- **模块化公共包** -- 覆盖 CRUD、认证、缓存、队列、AI、IoT、支付等完整业务场景
 - **3 套模板** -- Server (NestJS API)、Admin (React + Ant Design)、Web (Next.js)
 - **统一事件总线** -- 本地 + 集群广播，支持 wildcard 订阅和操作 Hook
 - **弹性容错** -- 断路器、自动重试、错误分类、优雅停机
@@ -19,25 +19,27 @@
 
 | 类别 | 技术 |
 |------|------|
-| 运行时 | Node.js 20+ |
-| 后端 | NestJS 11 + Prisma 6 |
+| 运行时 | Node.js >=22.22.0，CI 使用 24.14.1 |
+| 后端 | NestJS 12 + Prisma 7 |
 | 前端 (Admin) | React 19 + Ant Design 5 |
-| 前端 (Web) | Next.js 15 |
+| 前端 (Web) | Next.js 16 |
 | 类型验证 | Zod v4 |
 | 构建 | tsup + Turborepo |
 | 测试 | Vitest + Playwright |
-| 包管理 | pnpm 9 (workspace protocol) |
+| 包管理 | pnpm 11.25.0；外部应用默认使用正式 npm 包 |
 
 ## 快速开始
 
+创建独立业务项目先读 [新项目指南](docs/getting-started.md)；让 AI 初始化时使用 [framework-project-bootstrap](.agents/skills/framework-project-bootstrap/SKILL.md)。下面的源码构建命令用于开发 Framework 本身。
+
 ### 前置要求
 
-- Node.js 20+
-- pnpm 9+
+- Node.js >=22.22.0（推荐与 CI 一致的 24.14.1）
+- pnpm 11.25.0
 - PostgreSQL 15+ (可选，开发环境可用 InMemoryAdapter)
 - Redis (可选，用于缓存和分布式锁)
 
-### 安装与构建
+### 开发 Framework 本身
 
 ```bash
 git clone <repo-url> zucker-framework
@@ -51,34 +53,13 @@ pnpm test
 
 ```bash
 pnpm dev:server   # 启动后端 API (端口 4200)
-pnpm dev:admin    # 启动管理后台 (端口 3100)
-pnpm dev:web      # 启动 Web 前台
+pnpm dev:admin    # 启动管理后台 (端口 4201)
+pnpm dev:web      # 启动 Web 前台 (端口 4202)
 ```
 
-### 创建业务模块
+### 让 AI 创建业务项目
 
-```typescript
-// Service -- 继承 BaseService 获得完整 CRUD
-@Injectable()
-export class ArticleService extends BaseService<Article> {
-  constructor(
-    @Inject(DATABASE_ADAPTER) db: DatabaseAdapter,
-    dynamicQuery: DynamicQueryService,
-  ) {
-    super(db, dynamicQuery, 'article');
-  }
-}
-
-// Controller -- 继承 BaseController 获得 10 个标准端点
-@Controller('articles')
-export class ArticleController extends BaseController(Article) {
-  constructor(private readonly articleService: ArticleService) {
-    super(articleService);
-  }
-}
-```
-
-详见 [快速开始指南](docs/getting-started.md)。
+[初始化技能](.agents/skills/framework-project-bootstrap/SKILL.md)规定能力选择、项目边界、固定依赖和首个流程验收，并要求把[消费者约束模板](docs/templates/consumer-AGENTS.md)落实为新项目自己的 AGENTS.md。当前 CLI 不会自动写入这些约束。具体入口及模板限制见[新项目指南](docs/getting-started.md)。
 
 ## 包目录
 
@@ -160,7 +141,7 @@ export class ArticleController extends BaseController(Article) {
 
 | 包 | 说明 |
 |----|------|
-| `@zucker-framework/cli` | 脚手架 (init)、诊断 (doctor)、模块管理 (add/list/info) |
+| `@zucker-framework/cli` | 脚手架 (init)、诊断 (doctor)、模块接入提示 (add) |
 
 ## 模板应用
 
@@ -175,7 +156,8 @@ export class ArticleController extends BaseController(Article) {
 | 文档 | 说明 |
 |------|------|
 | [架构设计](docs/architecture.md) | 分层架构、设计模式、安全架构 |
-| [快速开始](docs/getting-started.md) | 从零创建项目完整指南 |
+| [快速开始](docs/getting-started.md) | AI/开发者创建独立项目、选择能力与验收 |
+| [消费者 AI 约束模板](docs/templates/consumer-AGENTS.md) | 新项目 AGENTS.md 的起点 |
 | [API 参考](docs/api-reference.md) | 各包导出的核心接口、类和函数 |
 | [模块扩展](docs/extending-modules.md) | 如何添加更多业务功能 |
 | [新模块指南](docs/new-modules-guide.md) | 新增模块使用示例 |
@@ -184,7 +166,7 @@ export class ArticleController extends BaseController(Article) {
 
 ```
 zucker-framework/
-├── packages/          # 45 个框架包
+├── packages/          # 框架公共包
 │   ├── core/          # L1 基础
 │   ├── common/        # L1 请求上下文
 │   ├── crud/          # L2 CRUD 核心
@@ -208,23 +190,22 @@ pnpm build             # 构建所有包
 pnpm test              # 运行所有测试
 pnpm lint              # 代码检查
 pnpm dev:server        # 启动后端 (端口 4200)
-pnpm dev:admin         # 启动管理后台 (端口 3100)
-pnpm dev:web           # 启动 Web 前台
+pnpm dev:admin         # 启动管理后台 (端口 4201)
+pnpm dev:web           # 启动 Web 前台 (端口 4202)
 pnpm clean             # 清理构建产物
 ```
 
 ## 在外部项目中使用
 
-通过 `pnpm-workspace.yaml` 引用框架目录：
+默认选择明确发布的 npm 版本，保留应用自己的 lockfile。例如从目标父目录创建最小 Server：
 
-```yaml
-packages:
-  - 'apps/*'
-  - 'packages/*'
-  - '../zucker-framework/packages/*'
+```sh
+pnpm dlx @zucker-framework/cli@1.0.2 init my-app --template server
 ```
 
-所有 `@zucker-framework/*` 包即可通过 `workspace:*` 协议引用。
+然后按[新项目指南](docs/getting-started.md)补齐本项目的 AI 约束、开发配置和首个业务流程。Admin/Web 的完整模板目前需要 Framework checkout；复制后须处理源码别名等仓库相对配置。
+
+跨仓 workspace 只用于明确的源码联调。新项目的正常安装与正式构建不依赖相邻 Framework 目录。
 
 ## License
 

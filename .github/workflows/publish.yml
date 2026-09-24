@@ -33,9 +33,8 @@ jobs:
     if: github.event_name == 'push'
     uses: ./.github/workflows/ci.yml
     with:
-      # Scoped AI discovery release; admin adopts the same AI catalogue service;
-      # unchanged packages retain their published versions.
-      release_packages: '@zucker-framework/ai,@zucker-framework/admin'
+      # Scoped common patch release for conservative JSON array recovery.
+      release_packages: '@zucker-framework/common'
 
   prepare:
     name: Prepare the exact CI-verified bundle

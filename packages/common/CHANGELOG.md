@@ -1,5 +1,12 @@
 # @zucker-framework/common
 
+## 1.0.3
+
+### Patch Changes
+
+- Add `parseJsonWithArrayRecovery(raw, arrayKey)` to retain complete object entries from a truncated top-level JSON array without completing partial values. Preserve preceding fields, reject malformed or ambiguous recovery input, and leave existing JSON parsing and repair APIs unchanged. Consumers retain schema validation and partial-result policy.
+- Publish this additive API as a scoped patch at the maintainer's explicit request.
+
 ## 1.0.2
 
 ### Patch Changes
