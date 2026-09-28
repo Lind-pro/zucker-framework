@@ -198,6 +198,13 @@ release catalog during its normal build. The dry-run checksum check catches stal
 versions or artifacts before any package upload. A synchronized version does not
 make npm's sequential package uploads atomic.
 
+After uploads, immutable version metadata and distribution tags are verified
+independently. npm may expose the new version while `latest` still selects the
+previous release. The verifier polls missing or nonmatching tags for up to five
+minutes using fresh read requests, then fails if the exact expected tag is still
+absent. It never rewrites tags or retries an upload to resolve propagation.
+Malformed metadata and immutable checksum/identity conflicts fail immediately.
+
 A push with no changed package bytes skips all uploads. Changing package bytes
 without increasing that package's version fails preparation rather than overwriting
 an existing version. There is no automatic version increase for a documentation

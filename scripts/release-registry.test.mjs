@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { createServer } from 'node:http';
 import { createRegistryReader } from './release-registry.mjs';
 
 const name = '@zucker-framework/core', version = '1.0.0', shasum = 'a'.repeat(40);
@@ -62,11 +63,10 @@ test('the index fallback retains identity and checksum checks and rejects malfor
   assert.equal(await indexReader({ name, versions: {} }).version(name, version), undefined);
 });
 
-test('never retries checksum, identity or tag conflicts as propagation delays', async () => {
+test('never retries checksum or identity conflicts as propagation delays', async () => {
   const sleep = async () => assert.fail('A real conflict must not be hidden by retrying');
   const reader = createRegistryReader('https://registry.npmjs.org/', { request: async () => response(metadata), sleep });
   await assert.rejects(reader.verifyVersion(name, version, 'b'.repeat(40)), /checksum verification failed/);
-  await assert.rejects(reader.verifyTag(name, '1.1.0', 'latest'), /tag verification failed/);
   const invalid = createRegistryReader('https://registry.npmjs.org/', { request: async () => response({ ...metadata, name: '@other/core' }), sleep });
   await assert.rejects(invalid.version(name, version), /Unexpected registry version metadata/);
 });
@@ -97,4 +97,47 @@ test('accepts a published version that remains in npm processing for over a minu
   assert.equal(calls, 10);
   assert.equal(notices, 9);
   assert(elapsed > 60000 && elapsed < 300000);
+});
+
+
+test('waits for an old or missing dist-tag through real HTTP without writing to the registry', async () => {
+  const methods = [], waits = [];
+  const tags = [{ latest: '0.9.0' }, {}, { latest: '0.9.0' }, { latest: version }];
+  const server = createServer((req, res) => {
+    methods.push(req.method);
+    assert.equal(new URL(req.url, 'http://localhost').pathname, '/-/package/@zucker-framework%2Fcore/dist-tags');
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify(tags.shift()));
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const reader = createRegistryReader(`http://127.0.0.1:${server.address().port}`, { sleep: async ms => { waits.push(ms); } });
+    await reader.verifyTag(name, version, 'latest');
+    assert.deepEqual(methods, ['GET', 'GET', 'GET', 'GET']);
+    assert.deepEqual(waits, [1000, 2000, 4000]);
+  } finally {
+    server.closeAllConnections();
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
+test('a permanently different dist-tag fails after the bounded propagation window', async () => {
+  let calls = 0, elapsed = 0;
+  const reader = createRegistryReader('https://registry.npmjs.org/', {
+    request: async () => { calls++; return response({ latest: '9.0.0' }); },
+    sleep: async ms => { elapsed += ms; },
+  });
+  await assert.rejects(reader.verifyTag(name, version, 'latest'), /did not expose @zucker-framework\/core@latest=1.0.0/);
+  assert.equal(calls, 24);
+  assert.equal(elapsed, 300000);
+});
+
+test('malformed dist-tag metadata is an error, not propagation delay', async () => {
+  for (const invalid of [null, [], { latest: 123 }]) {
+    const reader = createRegistryReader('https://registry.npmjs.org/', {
+      request: async () => response(invalid),
+      sleep: async () => assert.fail('Malformed metadata must fail immediately'),
+    });
+    await assert.rejects(reader.verifyTag(name, version, 'latest'), /Unexpected registry tag metadata/);
+  }
 });

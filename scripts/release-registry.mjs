@@ -72,10 +72,18 @@ export function createRegistryReader(registry, { request = globalThis.fetch, sle
       if (metadata.dist.shasum !== expectedSha1) throw new Error(`Registry checksum verification failed after publishing ${name}@${expectedVersion}`);
     },
     async verifyTag(name, expectedVersion, tag) {
-      const metadata = await afterPublish(() => document(name, undefined, true), `${name} tags`);
-      if (metadata?.[tag] !== expectedVersion) {
-        throw new Error(`Registry tag verification failed: ${name}@${tag} does not select ${expectedVersion}`);
-      }
+      // Version documents and dist-tags propagate independently. A readable tag
+      // document can still contain the previous release; only the expected tag
+      // value completes verification. This never changes tags or retries uploads.
+      await afterPublish(async () => {
+        const tags = await document(name, undefined, true);
+        if (tags === undefined) return undefined;
+        if (!tags || typeof tags !== 'object' || Array.isArray(tags)
+          || Object.values(tags).some(value => typeof value !== 'string')) {
+          throw new Error(`Unexpected registry tag metadata for ${name}`);
+        }
+        return tags[tag] === expectedVersion ? tags : undefined;
+      }, `${name}@${tag}=${expectedVersion}`);
     },
   };
 }

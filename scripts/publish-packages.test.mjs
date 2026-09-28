@@ -68,6 +68,11 @@ console.log(values[args[1]]);
   const networkLog = join(f.directory, 'registry-requests.jsonl');
   const preload = join(f.directory, 'registry-fetch.mjs');
   writeFileSync(preload, `import fs from 'node:fs';
+import timers from 'node:timers/promises';
+import { syncBuiltinESMExports } from 'node:module';
+// Fake only this fixture subprocess's propagation clock; production waits stay bounded.
+timers.setTimeout = async () => {};
+syncBuiltinESMExports();
 globalThis.fetch = async (url) => {
   const parsed = new URL(url);
   if (parsed.hostname !== 'registry.npmjs.org' || !parsed.searchParams.has('release_check')) throw new Error('Unexpected registry request');
@@ -212,7 +217,7 @@ test('resumes identical published versions and verifies the final tag for the wh
     assert.equal(f.run(['--dry-run'], environment).status, 0);
     const afterDryRun = readFileSync(f.log, 'utf8').trim().split('\n').map(JSON.parse);
     assert.equal(afterDryRun.filter(args => args[0] === 'publish').length, 1);
-    assert.match(f.run(['--publish', '--auth', 'session'], { ...environment, ZUCKER_TEST_TAG_VERSION: '0.9.0' }).stderr, /Registry tag verification failed/);
+    assert.match(f.run(['--publish', '--auth', 'session'], { ...environment, ZUCKER_TEST_TAG_VERSION: '0.9.0' }).stderr, /did not expose @zucker-framework\/publish-fixture@latest=1.0.0/);
     assert.match(f.run(['--publish', '--auth', 'session'], { ...environment, ZUCKER_TEST_DIGEST: 'b'.repeat(40) }).stderr, /Immutable version conflict/);
     assert.equal(readFileSync(f.log, 'utf8').trim().split('\n').map(JSON.parse).filter(args => args[0] === 'publish').length, 1);
   } finally { rmSync(f.directory, { recursive: true, force: true }); }
