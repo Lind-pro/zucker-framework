@@ -110,7 +110,7 @@ class UserController {
   @Delete(':id')
   @Permissions(['users:delete'])
   async remove(@Param('id') id: string) {
-    const deleted = await this.userService.deleteUser(id);
+    const deleted = await this.userService.deleteUser(id, ['userRoles', 'userPermissions', 'dimensionUsers']);
     if (!deleted) throw new NotFoundException(`User "${id}" not found`);
     return { deleted: true };
   }

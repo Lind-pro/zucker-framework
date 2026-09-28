@@ -61,3 +61,7 @@ Signing/loading completes before compare-and-swap so failed issuers do not consu
 `PermissionService.importPermissions` uses native atomic upsert or an explicit `persist` callback and supports row mapping while preserving item-level partial success. It invalidates its cache after the batch. Unsupported native upsert produces an item failure, never a find-then-create fallback. The success message is now the single synchronization message; callers needing existing wording configure `successMessage`.
 
 Validation on 2026-09-11: all 24 auth unit-test files (178 tests) passed, including verification codes, tickets, binding, permission imports and module composition. The affected permission/API-key tests were rerun after type fixes (28 passed), and the package no-emit typecheck passed. This does not verify the consumer PostgreSQL/Redis transaction contracts or browser flows. No schema migration or release is included.
+
+### Account deletion schema contract
+
+`UserService.deleteUser(userId, relatedModels)` requires the consumer to list the adapter models whose `userId` records must be removed (for example `['userRoles', 'userPermissions']`). Pass `[]` only when no related cleanup is required. All cleanup and account deletion use one transaction; failures propagate and no success event is published. The previous one-argument contract is removed; no optional-table guessing or compatibility fallback remains.

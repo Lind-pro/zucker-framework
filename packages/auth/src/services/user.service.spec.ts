@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { InMemoryAdapter } from '@zucker-framework/crud';
-import { NotFoundException } from '@zucker-framework/core';
+import { NotFoundException, ValidationException } from '@zucker-framework/core';
 import { UserService } from './user.service';
 import { ScryptEncoder } from '../password/scrypt-encoder';
 import { AUTH_EVENT_TOPICS } from '../events/auth-events';
@@ -84,4 +84,45 @@ describe('UserService credential and binding contracts', () => {
     await expect(f.service.setUserRoles(f.user.id, ['reader'])).rejects.toBe(failure);
     expect(f.bus.publish).not.toHaveBeenCalled();
   });
+  it('deletes only explicitly selected relations and publishes after success', async () => {
+    const f = await fixture();
+    await f.db.model('userRoles').create({ data: { userId: f.user.id, roleId: 'reader' } });
+    await f.db.model('customGrants').create({ data: { userId: f.user.id } });
+    const model = f.db.model.bind(f.db);
+    vi.spyOn(f.db, 'model').mockImplementation(name => {
+      if (name === 'dimensionUsers') throw new Error('No dimension schema');
+      return model(name);
+    });
+    expect(await f.service.deleteUser(f.user.id, ['userRoles', 'customGrants'])).toBe(true);
+    expect(await f.service.findById(f.user.id)).toBeNull();
+    expect(await model('userRoles').count()).toBe(0);
+    expect(await model('customGrants').count()).toBe(0);
+    expect(f.bus.publish).toHaveBeenCalledWith(AUTH_EVENT_TOPICS.USER_DELETED, expect.objectContaining({ userId: f.user.id }));
+  });
+
+  it('propagates failed relation cleanup without deleting the account or emitting success', async () => {
+    const f = await fixture();
+    const failure = new Error('synthetic grant cleanup failure');
+    const transaction = f.db.$transaction.bind(f.db);
+    vi.spyOn(f.db, '$transaction').mockImplementation(work => transaction(tx => {
+      const model = tx.model.bind(tx);
+      vi.spyOn(tx, 'model').mockImplementation(name => {
+        const delegate = model(name);
+        if (name === 'userPermissions') vi.spyOn(delegate, 'deleteMany').mockRejectedValueOnce(failure);
+        return delegate;
+      });
+      return work(tx);
+    }));
+    await expect(f.service.deleteUser(f.user.id, ['userPermissions'])).rejects.toBe(failure);
+    expect(await f.service.findById(f.user.id)).not.toBeNull();
+    expect(f.bus.publish).not.toHaveBeenCalled();
+  });
+
+  it('requires an explicit related-model contract before any account mutation', async () => {
+    const f = await fixture();
+    await expect(f.service.deleteUser(f.user.id, undefined as unknown as string[])).rejects.toBeInstanceOf(ValidationException);
+    expect(await f.service.findById(f.user.id)).not.toBeNull();
+    expect(f.bus.publish).not.toHaveBeenCalled();
+  });
+
 });

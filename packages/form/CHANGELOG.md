@@ -1,5 +1,12 @@
 # @zucker-framework/form
 
+## 1.0.6
+
+### Patch Changes
+
+- @zucker-framework/core@1.0.6
+  - @zucker-framework/crud@1.0.6
+
 ## 1.0.5
 
 ### Patch Changes

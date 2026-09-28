@@ -396,16 +396,21 @@ export class UserService {
   /**
    * Delete a user.
    *
+   * - Cleans only explicitly configured models with a userId field, on the same transaction.
+   * - Any cleanup failure aborts deletion; no assumed tables or swallowed persistence errors.
    * - Publishes UserDeletedEvent
    */
-  async deleteUser(userId: string): Promise<boolean> {
+  async deleteUser(userId: string, relatedModels: readonly string[]): Promise<boolean> {
+    if (!Array.isArray(relatedModels) || relatedModels.some(model => typeof model !== 'string' || !model.trim() || model === 'users')) {
+      throw new ValidationException({ relatedModels: ['Explicit related model names are required'] });
+    }
     const user = await this.findById(userId);
     if (!user) return false;
 
     await this.db.$transaction(async (tx) => {
-      await tx.model('userRoles').deleteMany({ where: { userId } }).catch(() => {});
-      await tx.model('userPermissions').deleteMany({ where: { userId } }).catch(() => {});
-      await tx.model('dimensionUsers').deleteMany({ where: { userId } }).catch(() => {});
+      for (const model of new Set(relatedModels)) {
+        await tx.model(model).deleteMany({ where: { userId } });
+      }
       await tx.model('users').delete({ where: { id: userId } });
     });
 

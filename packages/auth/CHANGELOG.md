@@ -1,5 +1,14 @@
 # @zucker-framework/auth
 
+## 1.0.6
+
+### Patch Changes
+
+- Require explicit related model names in UserService.deleteUser. Delete related userId records and the account on one transaction, propagating cleanup failures. Removes hard-coded optional tables and swallowed database errors; callers must supply their schema binding.
+- @zucker-framework/cache@1.0.6
+  - @zucker-framework/core@1.0.6
+  - @zucker-framework/crud@1.0.6
+
 ## 1.0.5
 
 ### Patch Changes

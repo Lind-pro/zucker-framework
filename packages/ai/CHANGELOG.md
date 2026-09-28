@@ -1,5 +1,13 @@
 # @zucker-framework/ai
 
+## 1.0.6
+
+### Patch Changes
+
+- @zucker-framework/ai-access@1.0.6
+  - @zucker-framework/common@1.0.6
+  - @zucker-framework/core@1.0.6
+
 ## 1.0.5
 
 ### Patch Changes

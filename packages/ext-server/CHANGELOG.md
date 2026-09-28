@@ -1,5 +1,7 @@
 # @zucker-framework/ext-server
 
+## 1.0.6
+
 ## 1.0.5
 
 ## 1.0.2
