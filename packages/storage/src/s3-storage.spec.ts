@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import { Readable } from 'node:stream';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { S3Storage } from './s3-storage';
 
@@ -169,7 +170,7 @@ describe('S3Storage', () => {
   // ---- download ----
 
   it('should download a file from S3', async () => {
-    const mockBody = Buffer.from('file content');
+    const mockBody = Readable.from([Buffer.from('file content')]);
     mockSend.mockResolvedValueOnce({
       Body: mockBody,
       ContentLength: 12,
@@ -178,6 +179,11 @@ describe('S3Storage', () => {
     const { stream, size } = await storage.download('doc.txt');
     expect(size).toBe(12);
     expect(stream).toBe(mockBody);
+  });
+
+  it('rejects a non-stream response instead of casting it to a filesystem stream', async () => {
+    mockSend.mockResolvedValueOnce({ Body: Buffer.from('not a stream') });
+    await expect(storage.download('doc.txt')).rejects.toThrow('Node readable stream');
   });
 
   it('should throw when download body is empty', async () => {

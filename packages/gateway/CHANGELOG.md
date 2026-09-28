@@ -1,5 +1,15 @@
 # @zucker-framework/gateway
 
+## 1.0.5
+
+### Patch Changes
+
+- Updated dependencies
+  - @zucker-framework/core@1.0.5
+  - @zucker-framework/event@1.0.5
+  - @zucker-framework/network@1.0.5
+  - @zucker-framework/things@1.0.5
+
 ## 1.0.2
 
 ### Patch Changes

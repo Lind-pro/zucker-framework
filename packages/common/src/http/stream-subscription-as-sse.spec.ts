@@ -60,7 +60,7 @@ describe('streamSubscriptionAsSSE', () => {
     const source = new Subject<Payload>();
     const backgroundEvent = vi.fn();
     const background = source.subscribe(backgroundEvent);
-    await streamSubscriptionAsSSE(res as unknown as Response, {
+    await streamSubscriptionAsSSE<Payload>(res as unknown as Response, {
       source,
       snapshot: () => ({ version: 1 }),
       isTerminal: (value) => !!value.terminal,
@@ -82,7 +82,7 @@ describe('streamSubscriptionAsSSE', () => {
   it('allows a same-version terminal according to consumer policy', async () => {
     const res = response();
     const source = new Subject<Payload>();
-    await streamSubscriptionAsSSE(res as unknown as Response, {
+    await streamSubscriptionAsSSE<Payload>(res as unknown as Response, {
       source,
       snapshot: () => ({ version: 1 }),
       isTerminal: (value) => !!value.terminal,
@@ -103,7 +103,7 @@ describe('streamSubscriptionAsSSE', () => {
     const res = response();
     const source = new Subject<Payload>();
     const onError = vi.fn();
-    await streamSubscriptionAsSSE(res as unknown as Response, {
+    await streamSubscriptionAsSSE<Payload>(res as unknown as Response, {
       source,
       snapshot: () => ({ version: 1 }),
       isTerminal: () => false,

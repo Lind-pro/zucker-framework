@@ -29,7 +29,7 @@ describe('hostOf', () => {
 });
 
 describe('normalizeUrls', () => {
-  it('keeps only http(s), strips hash, dedupes, caps at 500', () => {
+  it('keeps only http(s), preserves hash routes, dedupes, caps at 500', () => {
     const input = [
       'https://a.com/x#frag',
       'https://a.com/x',
@@ -39,7 +39,7 @@ describe('normalizeUrls', () => {
       42,
       null,
     ];
-    expect(normalizeUrls(input)).toEqual(['https://a.com/x', 'https://b.com/']);
+    expect(normalizeUrls(input)).toEqual(['https://a.com/x#frag', 'https://a.com/x', 'https://b.com/']);
     const many = Array.from({ length: 600 }, (_, i) => `https://x.com/${i}`);
     expect(normalizeUrls(many)).toHaveLength(500);
   });

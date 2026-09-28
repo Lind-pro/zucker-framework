@@ -167,6 +167,7 @@ export {
   type MergeImageManifestOptions,
 } from './image-manifest';
 export { ConcurrencyBulkhead } from './concurrency-bulkhead';
+export { shuffle } from './shuffle';
 export { ZonedTime } from './zoned-time';
 export {
   createCancellationScope,

@@ -1,6 +1,6 @@
 {
   "name": "@zucker-framework/media",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -74,6 +74,7 @@
     "mermaid": "11.17.2",
     "@rdkit/rdkit": "2025.3.4-1.0.0",
     "vega": "^6.4.0",
-    "vega-lite": "^6.4.3"
+    "vega-lite": "^6.4.3",
+    "@types/node": "20.19.43"
   }
 }

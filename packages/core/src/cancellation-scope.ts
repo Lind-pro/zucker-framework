@@ -6,6 +6,8 @@ export interface CancellationScope {
 export interface CancellationScopeOptions {
   parent?: AbortSignal;
   timeoutMs?: number;
+  /** Set false so the deadline does not keep a Node.js process alive. */
+  ref?: boolean;
   abortReason?: (reason: unknown) => unknown;
   timeoutReason?: (timeoutMs: number) => unknown;
 }
@@ -30,6 +32,9 @@ export function createCancellationScope(options: CancellationScopeOptions = {}):
               new Error(`Operation timed out after ${timeoutMs}ms`),
           );
         }, timeoutMs);
+  if (options.ref === false && timer && typeof timer === 'object' && 'unref' in timer) {
+    timer.unref();
+  }
   return {
     controller,
     signal: controller.signal,

@@ -1,5 +1,5 @@
 import type { AIModelConfig, AIScenario } from '../ai-provider.interface';
-import type { AIConfigSource, AIConfigSourceOptions } from '../config-source';
+import type { AIConfigSource, AIConfigSourceOptions, ScenarioConfigOptions } from '../config-source';
 
 export interface StaticAIConfigSourceOptions extends AIConfigSourceOptions {
   scenarios?: Record<string, AIModelConfig>;
@@ -20,8 +20,9 @@ export class StaticAIConfigSource implements AIConfigSource {
     this.defaultConfig = options.defaultConfig;
   }
 
-  async getScenarioConfig(scenario: string): Promise<AIModelConfig | null> {
-    return this.scenarios[scenario] ?? this.defaultConfig ?? null;
+  async getScenarioConfig(scenario: string, options: ScenarioConfigOptions = {}): Promise<AIModelConfig | null> {
+    const explicit = Object.hasOwn(this.scenarios, scenario) ? this.scenarios[scenario] : undefined;
+    return explicit ?? (options.allowDefault === false ? null : this.defaultConfig ?? null);
   }
 
   async getScenarios(): Promise<AIScenario[]> {

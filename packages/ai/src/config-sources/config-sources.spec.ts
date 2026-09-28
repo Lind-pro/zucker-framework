@@ -130,10 +130,19 @@ describe('AI configuration sources', () => {
 
     await expect(source.getScenarioConfig('source-file')).resolves.toMatchObject({
       modelId: 'deepseek-chat',
+      modelRecordId: 'model-1',
       providerId: 'deepseek',
       baseURL: 'https://example.test/v1',
     });
     expect(db.model).toHaveBeenCalledWith('modelRegistry');
+    const service = new AIConfigService(undefined, [source]);
+    service.setApiKeyDecryptor(() => 'decrypted-fixture');
+    const first = await service.getScenarioConfig('source-file');
+    const cached = await service.getScenarioConfig('source-file');
+    expect(first).toMatchObject({ modelRecordId: 'model-1', apiKey: 'decrypted-fixture' });
+    expect(cached.modelRecordId).toBe('model-1');
+    findFirst.mockResolvedValue({ id: 'model-2', modelId: 'deepseek-chat', provider: 'OpenAI', apiKey: 'other', isEnabled: true });
+    expect(await service.getScenarioConfig('second-source')).toMatchObject({ modelRecordId: 'model-2', modelId: first.modelId });
   });
 
   it('loads and unwraps remote API configuration with dynamic headers', async () => {

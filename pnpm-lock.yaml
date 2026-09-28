@@ -717,6 +717,9 @@ importers:
       '@rdkit/rdkit':
         specifier: 2025.3.4-1.0.0
         version: 2025.3.4-1.0.0
+      '@types/node':
+        specifier: 20.19.43
+        version: 20.19.43
       mermaid:
         specifier: 11.17.2
         version: 11.17.2

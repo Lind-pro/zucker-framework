@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { DefaultEntityFactory } from './entity-factory';
 
 describe('DefaultEntityFactory', () => {
@@ -39,7 +39,7 @@ describe('DefaultEntityFactory', () => {
   });
 
   it('should apply defaults', () => {
-    const factory = new DefaultEntityFactory({
+    const factory = new DefaultEntityFactory<{ status: string; role: string; name?: string }>({
       defaults: { status: 'active', role: 'user' },
     });
     const entity = factory.create({ name: 'Alice' });

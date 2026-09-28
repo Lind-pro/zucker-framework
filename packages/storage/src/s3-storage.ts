@@ -9,7 +9,7 @@ import {
   CopyObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { ReadStream } from 'fs';
+import { Readable } from 'node:stream';
 import { FileManager, UploadOptions, UploadResult, FileInfo } from './storage.interface';
 
 export type S3ObjectAclMode = 'object-acl' | 'none';
@@ -97,7 +97,7 @@ export class S3Storage implements FileManager, OnModuleDestroy {
   }
 
   async uploadStream(
-    stream: ReadStream,
+    stream: Readable,
     key: string,
     options?: UploadOptions,
   ): Promise<UploadResult> {
@@ -108,7 +108,7 @@ export class S3Storage implements FileManager, OnModuleDestroy {
     return this.upload(Buffer.concat(chunks), key, options);
   }
 
-  async download(key: string): Promise<{ stream: ReadStream; size: number }> {
+  async download(key: string): Promise<{ stream: Readable; size: number }> {
     const response = await this.client.send(
       new GetObjectCommand({
         Bucket: this.bucket,
@@ -119,9 +119,12 @@ export class S3Storage implements FileManager, OnModuleDestroy {
     if (!response.Body) {
       throw new Error('Stored object response had no body');
     }
+    if (!(response.Body instanceof Readable)) {
+      throw new Error('Stored object response must be a Node readable stream');
+    }
 
     return {
-      stream: response.Body as unknown as ReadStream,
+      stream: response.Body,
       size: response.ContentLength ?? 0,
     };
   }

@@ -6,7 +6,7 @@ import {
   ValidationException,
 } from '@zucker-framework/core';
 import type { AIModelConfig, AIScenario } from './ai-provider.interface';
-import { AI_CONFIG_SOURCES, type AIConfigSource } from './config-source';
+import { AI_CONFIG_SOURCES, type AIConfigSource, type ScenarioConfigOptions } from './config-source';
 import { DatabaseAIConfigSource } from './config-sources/database-config.source';
 
 const MAX_CACHE_SIZE = 200;
@@ -62,17 +62,18 @@ export class AIConfigService {
     return this.sources;
   }
 
-  async getScenarioConfig(scenario: string): Promise<AIModelConfig> {
+  async getScenarioConfig(scenario: string, options: ScenarioConfigOptions = {}): Promise<AIModelConfig> {
     if (!scenario || typeof scenario !== 'string') {
       throw new ValidationException({ scenario: ['场景名称不能为空'] }, '场景名称不能为空');
     }
-    const cached = this.cache.get(scenario);
+    const cacheKey = JSON.stringify([scenario, options.allowDefault !== false]);
+    const cached = this.cache.get(cacheKey);
     if (cached && Date.now() - cached.cachedAt < this.cacheTtl) return cached.config;
 
     for (const source of this.sources) {
       let config: AIModelConfig | null;
       try {
-        config = await source.getScenarioConfig(scenario);
+        config = await source.getScenarioConfig(scenario, options);
       } catch (error) {
         if (source.failureMode === 'throw') throw error;
         this.logger.warn(
@@ -82,7 +83,7 @@ export class AIConfigService {
       }
       if (!config) continue;
       const resolved = await this.decryptConfig(config);
-      this.setCache(scenario, resolved);
+      this.setCache(cacheKey, resolved);
       this.logger.log(
         `AI 配置已加载 [${scenario}] source=${source.id}: ${resolved.providerId ?? 'unknown'} - ${resolved.modelId}`,
       );
@@ -122,7 +123,8 @@ export class AIConfigService {
   }
 
   invalidateScenario(scenario: string): void {
-    this.cache.delete(scenario);
+    this.cache.delete(JSON.stringify([scenario, true]));
+    this.cache.delete(JSON.stringify([scenario, false]));
   }
 
   private async decryptConfig(config: AIModelConfig): Promise<AIModelConfig> {

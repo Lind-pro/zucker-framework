@@ -1,4 +1,4 @@
-import type { ReadStream } from 'fs';
+import type { Readable } from 'node:stream';
 
 export interface UploadOptions {
   contentType?: string;
@@ -19,6 +19,10 @@ export interface UploadResult {
 
 export interface FileInfo {
   key: string;
+  /** Available when the provider exposes filesystem entries (e.g. WebDAV). */
+  type?: 'file' | 'directory';
+  filename?: string;
+  basename?: string;
   size: number;
   lastModified: Date;
   contentType?: string;
@@ -237,8 +241,8 @@ export interface FileManager {
   readonly providerType: StorageProviderType;
   isConfigured(): boolean;
   upload(buffer: Buffer, key: string, options?: UploadOptions): Promise<UploadResult>;
-  uploadStream(stream: ReadStream, key: string, options?: UploadOptions): Promise<UploadResult>;
-  download(key: string): Promise<{ stream: ReadStream; size: number }>;
+  uploadStream(stream: Readable, key: string, options?: UploadOptions): Promise<UploadResult>;
+  download(key: string): Promise<{ stream: Readable; size: number }>;
   delete(key: string): Promise<void>;
   exists(key: string): Promise<boolean>;
   getPublicUrl(key: string): Promise<string>;
@@ -258,7 +262,7 @@ export interface FileManager {
    * @param key 存储键
    * @param position 起始偏移量（字节）
    */
-  downloadRange?(key: string, position: number, length?: number): Promise<{ stream: ReadStream; size: number }>;
+  downloadRange?(key: string, position: number, length?: number): Promise<{ stream: Readable; size: number }>;
 
   /**
    * 复制文件

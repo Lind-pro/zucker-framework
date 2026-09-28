@@ -28,7 +28,8 @@ export function getLangChainProviderDefaults(provider: string): LangChainProvide
     case 'gemini':
       return {
         protocol: 'openai-compatible',
-        baseURL: 'https://generativelanguage.googleapis.com/v1beta',
+        // Explicit compatibility endpoint, not the native Gemini API.
+        baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai',
         structuredOutputMethod: 'jsonMode',
       };
     default:
@@ -48,31 +49,36 @@ export interface LangChainChatModelOptions {
   baseURL?: string;
   timeoutMs?: number;
   proxyUrl?: string;
-  thinking?: { enabled: boolean; reasoningEffort?: string };
+  thinking?: { enabled: boolean; reasoningEffort?: string; budgetTokens?: number };
+  /** SDK v7 uses fetch, not the removed httpAgent option. */
+  fetch?: typeof fetch;
 }
 
-async function proxyAgent(url?: string) {
-  if (!url) return undefined;
-  const { HttpsProxyAgent } = await import('https-proxy-agent');
-  return new HttpsProxyAgent(url);
+function validateTransport(options: { proxyUrl?: string; fetch?: typeof fetch }): void {
+  if (options.proxyUrl && !options.fetch) throw new Error('proxyUrl requires an explicit proxy-aware fetch transport');
 }
 
 /** SDK construction only: no model discovery, database, default route or prompts. */
 export async function createLangChainChatModel(
   options: LangChainChatModelOptions,
 ): Promise<BaseChatModel> {
+  validateTransport(options);
   if (options.protocol === 'anthropic') {
+    if (options.thinking?.enabled && options.thinking.budgetTokens === undefined) throw new Error('Anthropic thinking requires budgetTokens');
     const { ChatAnthropic } = await import('@langchain/anthropic');
     return new ChatAnthropic({
       anthropicApiKey: options.apiKey,
       model: options.model,
-      temperature: options.temperature,
+      temperature: options.thinking?.enabled ? undefined : options.temperature,
       maxTokens: options.maxTokens,
       maxRetries: options.maxRetries,
+      clientOptions: { baseURL: options.baseURL, timeout: options.timeoutMs, maxRetries: 0, fetch: options.fetch },
+      ...(options.thinking ? { thinking: options.thinking.enabled
+        ? { type: 'enabled' as const, budget_tokens: options.thinking.budgetTokens! }
+        : { type: 'disabled' as const } } : {}),
     });
   }
   const { ChatOpenAI } = await import('@langchain/openai');
-  const httpAgent = await proxyAgent(options.proxyUrl);
   return new ChatOpenAI({
     apiKey: options.apiKey,
     model: options.model,
@@ -83,14 +89,17 @@ export async function createLangChainChatModel(
     configuration: {
       baseURL: options.baseURL,
       timeout: options.timeoutMs,
-      ...(httpAgent ? { httpAgent } : {}),
+      maxRetries: 0,
+      fetch: options.fetch,
     },
     ...(options.thinking
       ? {
           modelKwargs: {
             thinking: options.thinking.enabled
-              ? { type: 'enabled', reasoning_effort: options.thinking.reasoningEffort }
+              ? { type: 'enabled' }
               : { type: 'disabled' },
+            ...(options.thinking.enabled && options.thinking.reasoningEffort
+              ? { reasoning_effort: options.thinking.reasoningEffort } : {}),
           },
         }
       : {}),
@@ -99,6 +108,9 @@ export async function createLangChainChatModel(
 
 export interface LangChainEmbeddingOptions {
   apiKey: string;
+  /** Defaults to zero so AICallWrapper can own retries. */
+  maxRetries?: number;
+  fetch?: typeof fetch;
   model: string;
   dimensions?: number;
   baseURL?: string;
@@ -110,15 +122,17 @@ export async function createLangChainEmbeddingModel(
   options: LangChainEmbeddingOptions,
 ): Promise<OpenAIEmbeddings> {
   const { OpenAIEmbeddings: Embeddings } = await import('@langchain/openai');
-  const httpAgent = await proxyAgent(options.proxyUrl);
+  validateTransport(options);
   return new Embeddings({
+    maxRetries: options.maxRetries ?? 0,
     apiKey: options.apiKey,
     model: options.model,
     ...(options.dimensions ? { dimensions: options.dimensions } : {}),
     configuration: {
       baseURL: options.baseURL,
       timeout: options.timeoutMs,
-      ...(httpAgent ? { httpAgent } : {}),
+      maxRetries: 0,
+      fetch: options.fetch,
     },
   });
 }

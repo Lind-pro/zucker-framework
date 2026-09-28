@@ -9,10 +9,12 @@ export interface BullMqQueueProviderOptions {
   prefix?: string;
   defaultJobName?: string;
   queueFactory?: QueueFactory;
+  onError?: (queueName: string, error: Error) => void;
 }
 
 export class BullMqQueueProvider implements QueueProvider {
   private readonly queues = new Map<string, Queue>();
+  private closing?: Promise<void>;
   private readonly defaultJobName: string;
   private readonly queueFactory: QueueFactory;
 
@@ -30,6 +32,18 @@ export class BullMqQueueProvider implements QueueProvider {
       this.toBullMqOptions(options),
     );
     return this.toJob(job);
+  }
+
+  /** Preserve BullMQ native bulk submission semantics rather than looping add(). */
+  async addBulk<T>(queueName: string, entries: readonly { data: T; options?: JobOptions }[]): Promise<Job<T>[]> {
+    for (const entry of entries) this.assertValidJobId(entry.options?.jobId);
+    if (entries.length === 0) return [];
+    const jobs = await this.getQueue(queueName).addBulk(entries.map(({ data, options }) => ({
+      name: options?.name ?? this.defaultJobName,
+      data,
+      opts: this.toBullMqOptions(options),
+    })));
+    return Promise.all(jobs.map(job => this.toJob(job as BullMqJob<T>)));
   }
 
   async ensure<T>(
@@ -106,19 +120,28 @@ export class BullMqQueueProvider implements QueueProvider {
     await this.getQueue(queueName).resume();
   }
 
+  /** Native count keys for existing BullMQ monitoring contracts. Unlike
+   * getStats(), this does not merge prioritized/legacy-paused into waiting. */
+  async getJobCounts(queueName: string): Promise<Record<string, number>> {
+    return this.getQueue(queueName).getJobCounts();
+  }
+
   async getStats(queueName: string): Promise<QueueStats> {
-    const pausedStateForStats = 'paused' as 'wait';
-    const counts = await this.getQueue(queueName).getJobCounts(
+    const queue = this.getQueue(queueName);
+    const counts = await queue.getJobCounts(
       'wait',
       'active',
       'completed',
       'failed',
       'delayed',
       'prioritized',
-      pausedStateForStats,
     );
+    // BullMQ 6 no longer accepts paused in getJobCounts. Read legacy v5 data
+    // without moving/resuming it; upgrading a transport must not mutate jobs.
+    const client = await queue.backend.client;
+    const paused = await client.llen(queue.toKey('paused'));
     return {
-      waiting: (counts.wait ?? 0) + (counts.prioritized ?? 0) + (counts.paused ?? 0),
+      waiting: (counts.wait ?? 0) + (counts.prioritized ?? 0) + paused,
       active: counts.active ?? 0,
       completed: counts.completed ?? 0,
       failed: counts.failed ?? 0,
@@ -126,14 +149,20 @@ export class BullMqQueueProvider implements QueueProvider {
     };
   }
 
-  async waitUntilReady(): Promise<void> {
+  async waitUntilReady(queueNames: readonly string[] = []): Promise<void> {
+    for (const name of queueNames) this.getQueue(name);
     await Promise.all([...this.queues.values()].map((queue) => queue.waitUntilReady()));
   }
 
-  async close(): Promise<void> {
+  close(): Promise<void> {
+    if (this.closing) return this.closing;
     const queues = [...this.queues.values()];
     this.queues.clear();
-    await Promise.all(queues.map((queue) => queue.close()));
+    this.closing = Promise.allSettled(queues.map(async (queue) => queue.close())).then((results) => {
+      const failures = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
+      if (failures.length) throw new AggregateError(failures.map(result => result.reason), 'Queue shutdown failed');
+    });
+    return this.closing;
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -141,12 +170,14 @@ export class BullMqQueueProvider implements QueueProvider {
   }
 
   private getQueue(name: string): Queue {
+    if (this.closing) throw new Error('Queue provider is closing');
     const existing = this.queues.get(name);
     if (existing) return existing;
     const queue = this.queueFactory(name, {
       connection: this.options.connection,
       prefix: this.options.prefix,
     });
+    if (this.options.onError) queue.on('error', (error) => this.options.onError!(name, error));
     this.queues.set(name, queue);
     return queue;
   }

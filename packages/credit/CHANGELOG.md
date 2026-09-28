@@ -1,9 +1,16 @@
 # @zucker-framework/credit
 
+## 1.0.5
+
+### Patch Changes
+
+- Add transaction-bound durable quota reservation transitions with stable-id conflict checking, idempotent confirmation/release, captured-policy charging, and expiry. Consumers supply persistence/locking ports and entitlement policy; no schema or product configuration is installed automatically.
+- Updated dependencies
+  - @zucker-framework/core@1.0.5
+
 ## 1.0.3
 
 - Add `revokeUnused`: transaction-bound revocation of selected unused credit lots using the existing account lock and journal, for refunds that must take back unspent credits without touching consumed ones.
-
 
 ## 1.0.2
 

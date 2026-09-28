@@ -1,5 +1,23 @@
 # Authentication
 
+## User lifecycle and role bindings
+
+`UserService.saveUser` remains insert-or-update. Use `updateUser(id, changes)` for
+partial updates that must reject a missing account instead of inserting it.
+Updates preserve omitted fields and the caller's DTO. Repeating the current
+plaintext password preserves its stored hash; new passwords are encoded and
+password change events are redacted. Empty/omitted update passwords keep the
+existing credential. Creation still applies the configured username/password
+validators and defaults to the existing password encoder unless explicitly set.
+
+`setUserRoles(userId, roleIds, { bindingData })` replaces deduplicated bindings in
+one `DatabaseAdapter.$transaction` and emits authorization invalidation after
+success. The optional mapping supplies consumer-owned relation fields such as
+primary keys; it cannot override the user/role identifiers. Table mapping,
+authorization to assign roles, and transaction isolation remain explicit
+consumer responsibilities. A transaction failure propagates and does not emit
+success. In-memory tests do not establish PostgreSQL concurrent-writer isolation.
+
 ## Existing scrypt password hashes
 
 `ScryptEncoder` implements the standard `PasswordEncoder` contract (`encode`, `matches`) with Node's asynchronous scrypt and constant-time comparison. It stores `saltHex:derivedKeyHex` using 16 random salt bytes and a 64-byte derived key. For compatibility, the stored salt's hex text is passed to scrypt as the salt. Verification rejects malformed or trailing data. Choose this encoder explicitly for consumers with that stored format; existing encoder defaults are unchanged.
@@ -12,9 +30,21 @@ Register `RefreshTokenCookie` directly with `RefreshTokenCookieOptions`. The sha
 
 Extend `JwtStrategyBase<Claims>` for custom asynchronous identity validation; it retains Passport JWT extraction, signature and expiration handling. The existing concrete `JwtStrategy` still performs its synchronous default mapping. Consumers no longer need to cast a strategy constructor to hide a return-type mismatch.
 
+## Refresh pairs without a new session table
+
+`RefreshTokenService<Identity>` owns pair issuance and rotation through explicit `verify`, `loadIdentity`, `issue` and `RefreshTokenStore` ports. Configure positive integer `accessTtlSeconds` and `refreshTtlSeconds`; the issuer receives both lifetimes and must enforce them. The verifier must validate signature, allowed algorithm, expiration and refresh token type, then return `{ subject, jti }`. Identity/permissions reload on every refresh. Product eligibility, wire fields, JWT claims, error/status mapping and authenticated logout routing stay in the consumer.
+
+`CacheRefreshTokenStore` preserves existing string JTI values and accepts a `key(subject)` function. Its cache port uses **milliseconds** (adapt second-based cache facades explicitly). All login, rotation and revocation writes must use the same store/lock. `RefreshTokenLock.runExclusive` must serialize across the cache's entire sharing scope; `InProcessRefreshTokenLock` is only suitable for process-local memory and must be shared across service instances. For Redis/multi-process deployments supply a truly atomic store/CAS or a distributed lock with equivalent failure guarantees; do not combine a local mutex with shared storage, or a silently degraded cache. No default persistence replacement is installed.
+
+The default cache-miss policy rejects. Explicit `cacheMissPolicy: 'recover'` permits migration from stateless/evicted legacy JTI entries, atomically admitting at most one refresh while the key remains present. It necessarily allows old JWT recovery after cache loss/restart; use durable authoritative storage if that is unacceptable. Revocation writes a denial tombstone for the full refresh lifetime instead of deleting the key. Configure that lifetime at least as long as any accepted existing refresh JWT's remaining validity. A new authenticated login replaces the tombstone. Revocation must receive an authenticated subject, never unverified body/JWT data.
+
+Signing/loading completes before compare-and-swap so failed issuers do not consume the old JTI. Concurrent losers never receive their prepared tokens; issuers must not publish tokens externally. Store/identity/signing errors propagate (no anonymous or memory fallback). Cache commit uncertainty fails closed; a committed rotation whose response was lost requires reauthentication. `revoke` invalidates refresh credentials only; access-token revocation is a separate `TokenService` policy. Cache eviction is not a durable logout guarantee in recovery mode.
+
+`TokenService` now retains no-cache revocation tombstones independently of session removal until `blacklistTtlMs`; stateless JWTs can be revoked without prior `signIn`. Choose a TTL covering remaining access-token validity. This fallback is still process-local and does not survive restart. Both strict optional and required JWT guards reject ambiguous/trailing Authorization fields before Passport and blacklist lookups can disagree.
+
 ## OAuth and login policy
 
-`OAuthStateService` binds signed state to a random HttpOnly browser nonce; cookie attributes, signing/verification and localized errors are explicit configuration. Malformed cookies/payloads fail as state errors. `createOAuthStateGuard(strategy)` wires that mechanism to Passport. `OptionalJwtAuthGuard` permits anonymous access and consumes invalid JWT authentication outcomes; `createLocalAuthGuard(message)` retains explicit failure wording.
+`OAuthStateService` binds signed state to a random HttpOnly browser nonce; cookie attributes, signing/verification and localized errors are explicit configuration. Malformed cookies/payloads fail as state errors. `createOAuthStateGuard(strategy)` wires that mechanism to Passport. `OptionalJwtAuthGuard` permits anonymous access and by default consumes invalid JWT outcomes. Bind `OPTIONAL_JWT_AUTH_OPTIONS` to `{ invalidTokenPolicy: 'reject' }` when absent credentials may be anonymous but supplied malformed/invalid credentials must fail. `createLocalAuthGuard(message)` retains explicit failure wording; its object form `{ message, errorPolicy: 'preserve' }` preserves strategy/infrastructure errors while missing users still receive 401. Defaults remain backward compatible.
 
 `LoginAuditService` writes successful login history and counters in one supplied database transaction; failures write only history. Models, user-agent length and best-effort failure reporting are options. `parseUserAgent` accepts labels separately from device parsing. `PermissionsGuardOptions` can deny authorization failures and select a safe diagnostic identity without mutating the request. Register configured guards once.
 

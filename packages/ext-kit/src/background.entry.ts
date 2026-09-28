@@ -2,4 +2,12 @@
 // 调 ZuckerExt.init({...}) 完成全部基建装配，业务只提供 capture 实现。
 import { initExtension } from './engine';
 
-(globalThis as Record<string, unknown>).ZuckerExt = { init: initExtension };
+import { CAPTURE_LIMITS, captureFits, assertCaptureFits, captureBudget, readDevicePixelRatio } from './capture-budget';
+import { hidePageCaptureDecorations, showPageCaptureDecorations } from './session';
+
+(globalThis as Record<string, unknown>).ZuckerExt = {
+  init: initExtension,
+  limits: CAPTURE_LIMITS,
+  pageDecorations: { hide: hidePageCaptureDecorations, show: showPageCaptureDecorations },
+  captureFits, assertCaptureFits, captureBudget, readDevicePixelRatio,
+};

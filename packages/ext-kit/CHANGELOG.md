@@ -1,5 +1,17 @@
 # @zucker-framework/ext-kit
 
+## 1.0.5
+
+### Patch Changes
+
+- Replace the old extension engine with the recoverable v2 lifecycle: cancellation-independent cleanup, confirmed/deadlined downloads and leased offscreen URLs, durable download/usage checkpoints, session-owned tabs, reversible scroll expansion with virtual-list rejection/watchdog recovery, and draft-preserving popup polling.
+
+  Breaking configuration: licensing now uses explicit request/normalization ports and cache/grace/timeout/retry policy, freeDailyLimit is explicit, and remote deactivate replaces local clear/isPro. Preserve existing namespaces and use getStatus/getEntitlement. URL normalization now retains hash routes. Add public downloader/scroll/budget APIs and the standalone scroll-capture browser asset.
+
+  This changeset records intent only. No version, lockfile, published package or production consumer was changed; release owners must account for the repository fixed-group policy and validate immutable browser assets before upgrading consumers.
+
+- Expose native BullMQ count keys for compatible monitoring adapters; wait for all producer/worker closes before reporting aggregated shutdown failures, including synchronous throws. Keep document ZIP CRC validation compatible with Node 20 rather than introducing a Node 22-only default-entry import. Add explicit extension lifecycle and browser regression commands. These changes are unreleased; they do not authorize consumer source links or package publication.
+
 ## 1.0.2
 
 ### Patch Changes

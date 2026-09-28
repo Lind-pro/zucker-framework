@@ -1,15 +1,24 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ReadStream } from 'fs';
 import * as path from 'path';
-import { Readable } from 'stream';
+import { Readable, Transform, addAbortSignal } from 'node:stream';
+import { pipeline, finished } from 'node:stream/promises';
 import type { WebDAVClient, FileStat } from 'webdav';
 import { FileManager, UploadOptions, UploadResult, FileInfo } from './storage.interface';
+
+export interface WebDavEntry extends FileInfo {
+  type: 'file' | 'directory';
+  filename: string;
+  basename: string;
+  lastmod: string;
+}
 
 export interface WebDavStorageOptions {
   /** WebDAV 服务地址，如 https://nextcloud.example.com/remote.php/dav/files/user */
   url: string;
-  username: string;
-  password: string;
+  username?: string;
+  password?: string;
+  /** Explicit opt-in for endpoints/consumer policies allowing missing credentials. Default false. */
+  allowAnonymous?: boolean;
   /** 公开访问 URL 前缀（可选） */
   publicUrl?: string;
   /** 基础路径前缀（可选，默认 '/'） */
@@ -28,7 +37,7 @@ export class WebDavStorage implements FileManager {
   private readonly options: WebDavStorageOptions;
 
   constructor(options: WebDavStorageOptions) {
-    if (!options.url || !options.username || !options.password) {
+    if (!options.url || (!options.allowAnonymous && (!options.username || !options.password))) {
       throw new Error('WebDAV url, username and password are required');
     }
     this.options = options;
@@ -61,7 +70,7 @@ export class WebDavStorage implements FileManager {
     // 确保父目录存在
     const parentDir = remotePath.substring(0, remotePath.lastIndexOf('/'));
     if (parentDir && parentDir !== '/') {
-      await this.ensureDirectory(parentDir);
+      await this.ensureRemoteDirectory(parentDir);
     }
 
     await client.putFileContents(remotePath, buffer, {
@@ -78,29 +87,60 @@ export class WebDavStorage implements FileManager {
   }
 
   async uploadStream(
-    stream: ReadStream,
+    stream: Readable,
     key: string,
-    options?: UploadOptions,
+    options?: UploadOptions & { signal?: AbortSignal },
   ): Promise<UploadResult> {
-    const chunks: Buffer[] = [];
-    for await (const chunk of stream) {
-      chunks.push(Buffer.from(chunk));
+    const controller = new AbortController();
+    const abort = () => controller.abort(options?.signal?.reason);
+    options?.signal?.addEventListener('abort', abort, { once: true });
+    if (options?.signal?.aborted) abort();
+    let size = 0;
+    const counter = new Transform({ transform(chunk: Buffer, _encoding, callback) {
+      size += chunk.length;
+      callback(null, chunk);
+    } });
+    let transfer: Promise<unknown> | undefined;
+    let pumping: Promise<void> | undefined;
+    const sourceError = (error: Error) => controller.abort(error);
+    stream.on('error', sourceError);
+    addAbortSignal(controller.signal, stream);
+    try {
+      controller.signal.throwIfAborted();
+      const client = await this.getClient();
+      const remotePath = this.resolvePath(key);
+      await this.ensureRemoteDirectory(path.posix.dirname(remotePath), controller.signal);
+      controller.signal.throwIfAborted();
+      transfer = client.putFileContents(remotePath, counter, {
+        overwrite: true, contentLength: false, signal: controller.signal,
+        headers: options?.contentType ? { 'Content-Type': options.contentType } : undefined,
+      });
+      pumping = pipeline(stream, counter, { signal: controller.signal });
+      await Promise.all([transfer, pumping]);
+      return { key, url: this.buildUrl(key), size };
+    } catch (error) {
+      controller.abort(error);
+      stream.destroy(error instanceof Error ? error : new Error('Storage upload failed'));
+      counter.destroy();
+      // Wait for asynchronous destroy/error delivery before removing our source observer.
+      await Promise.allSettled([transfer, pumping, finished(stream, { cleanup: true })]);
+      throw error;
+    } finally {
+      options?.signal?.removeEventListener('abort', abort);
+      stream.off('error', sourceError);
     }
-    return this.upload(Buffer.concat(chunks), key, options);
   }
 
-  async download(key: string): Promise<{ stream: ReadStream; size: number }> {
+  async download(key: string, options?: { signal?: AbortSignal }): Promise<{ stream: Readable; size: number }> {
+    options?.signal?.throwIfAborted();
     const client = await this.getClient();
     const remotePath = this.resolvePath(key);
-    const stat = (await client.stat(remotePath)) as FileStat;
-    const buffer = (await client.getFileContents(remotePath)) as Buffer;
-
-    const readable = Readable.from(buffer);
-
-    return {
-      stream: readable as unknown as ReadStream,
-      size: stat.size ?? buffer.length,
-    };
+    const stat = (await client.stat(remotePath, ...(options?.signal ? [{ signal: options.signal }] : []))) as FileStat;
+    if (stat.type !== 'file') throw new Error('Remote path is not a file');
+    options?.signal?.throwIfAborted();
+    const stream = client.createReadStream(remotePath, ...(options?.signal ? [{ signal: options.signal }] : []));
+    if (options?.signal) addAbortSignal(options.signal, stream);
+    return { stream, size: stat.size };
   }
 
   async delete(key: string): Promise<void> {
@@ -130,24 +170,28 @@ export class WebDavStorage implements FileManager {
     return this.getPublicUrl(key);
   }
 
-  async list(prefix: string): Promise<FileInfo[]> {
+  async list(prefix: string, options: { deep?: boolean; includeDirectories?: boolean; missing?: 'empty' | 'throw' } = {}): Promise<WebDavEntry[]> {
     const client = await this.getClient();
     const remotePath = this.resolvePath(prefix);
 
     try {
-      const items = (await client.getDirectoryContents(remotePath, { deep: true })) as FileStat[];
+      const items = (await client.getDirectoryContents(remotePath, { deep: options.deep ?? true })) as FileStat[];
 
       return items
-        .filter((item: FileStat) => item.type === 'file')
+        .filter((item: FileStat) => item.type === 'file' || options.includeDirectories)
         .map((item: FileStat) => ({
           key: this.stripBasePath(item.filename),
+          type: item.type,
+          filename: item.filename,
+          basename: item.basename,
+          lastmod: item.lastmod,
           size: item.size ?? 0,
           lastModified: new Date(item.lastmod ?? Date.now()),
           contentType: item.mime,
         }));
     } catch (error: unknown) {
       const err = error as { status?: number };
-      if (err.status === 404) return [];
+      if (err.status === 404 && options.missing !== 'throw') return [];
       throw error;
     }
   }
@@ -196,7 +240,14 @@ export class WebDavStorage implements FileManager {
   /**
    * 递归创建目录
    */
-  private async ensureDirectory(dirPath: string): Promise<void> {
+  /** Accepts a storage key, with the same traversal protection as upload. */
+  async ensureDirectory(key: string): Promise<void> {
+    return this.ensureRemoteDirectory(this.resolvePath(key));
+  }
+
+  private async ensureRemoteDirectory(dirPath: string, signal?: AbortSignal): Promise<void> {
+    // Cancellable requests must not inherit another request's directory operation/signal.
+    if (signal) return this.createDirectoryIfMissing(dirPath, signal);
     const inflight = this.directoryPromises.get(dirPath);
     if (inflight) return inflight;
 
@@ -211,19 +262,21 @@ export class WebDavStorage implements FileManager {
     }
   }
 
-  private async createDirectoryIfMissing(dirPath: string): Promise<void> {
+  private async createDirectoryIfMissing(dirPath: string, signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted();
     const client = await this.getClient();
-    if (await client.exists(dirPath)) return;
+    if (await client.exists(dirPath, ...(signal ? [{ signal }] : []))) return;
 
     const parent = dirPath.substring(0, dirPath.lastIndexOf('/'));
     if (parent && parent !== '/') {
-      await this.ensureDirectory(parent);
+      await this.ensureRemoteDirectory(parent, signal);
     }
     try {
-      await client.createDirectory(dirPath);
+      signal?.throwIfAborted();
+      await client.createDirectory(dirPath, ...(signal ? [{ signal }] : []));
     } catch (error: unknown) {
       const status = (error as { status?: number }).status;
-      if ([405, 409].includes(status ?? 0) && (await client.exists(dirPath))) return;
+      if ([405, 409].includes(status ?? 0) && (await client.exists(dirPath, ...(signal ? [{ signal }] : [])))) return;
       throw error;
     }
   }

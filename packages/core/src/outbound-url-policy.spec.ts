@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assertAllowedOutboundUrl, OutboundUrlRejectedError } from './outbound-url-policy';
+import { assertAllowedOutboundUrl, type OutboundUrlRejectedError } from './outbound-url-policy';
 
 describe('assertAllowedOutboundUrl', () => {
   const policy = { allowedHosts: ['hooks.example.com'] } as const;
@@ -17,7 +17,7 @@ describe('assertAllowedOutboundUrl', () => {
     ['https://localhost/events', 'local-host-not-allowed'],
     ['https://127.0.0.1/events', 'ip-literal-not-allowed'],
     ['https://hooks.example.com:8443/events', 'port-not-allowed'],
-  ])('rejects %s', (input, reason) => {
+  ] as const)('rejects %s', (input, reason) => {
     expect(() => assertAllowedOutboundUrl(input, policy)).toThrowError(
       expect.objectContaining<Partial<OutboundUrlRejectedError>>({ reason }),
     );

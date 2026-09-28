@@ -38,6 +38,8 @@ export class TokenService {
   /** 内存中的 token 会话映射（兜底存储） */
   private readonly tokens = new Map<string, TokenInfo>();
   private readonly userTokens = new Map<string, Set<string>>();
+  // Independent from sessions: signOut removes sessions, not revocation evidence.
+  private readonly revokedTokens = new Map<string, number>();
 
   private maxActiveSessions = 0;
   private blacklistTtlMs = 7 * 24 * 60 * 60 * 1000; // 7 天
@@ -161,6 +163,9 @@ export class TokenService {
         true,
         this.blacklistTtlMs,
       );
+    } else {
+      this.pruneRevocations();
+      this.revokedTokens.set(token, Date.now() + this.blacklistTtlMs);
     }
 
     await this.signOut(token);
@@ -205,9 +210,8 @@ export class TokenService {
     if (this.cache) {
       return this.cache.has(`${BLACKLIST_PREFIX}${token}`);
     }
-    // 无缓存时检查内存状态
-    const info = this.tokens.get(token);
-    return info?.state === TokenState.DENY;
+    this.pruneRevocations();
+    return this.revokedTokens.has(token) || this.tokens.get(token)?.state === TokenState.DENY;
   }
 
   /**
@@ -339,6 +343,13 @@ export class TokenService {
 
   async totalTokens(): Promise<number> {
     return this.tokens.size;
+  }
+
+  private pruneRevocations(): void {
+    const now = Date.now();
+    for (const [token, expiresAt] of this.revokedTokens) {
+      if (expiresAt <= now) this.revokedTokens.delete(token);
+    }
   }
 
   private async publishEvent(topic: string, payload: unknown): Promise<void> {

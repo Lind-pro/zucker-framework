@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { list2tree, expandTree2List, ShortCodePathStrategy } from './tree-utils';
 
+interface TestNode { id: string; parentId?: string | null; name: string; children?: TestNode[] }
+interface CustomNode { uid: string; pid: string | null; name: string; kids?: CustomNode[] }
+
 describe('list2tree', () => {
   it('should convert flat list to tree', () => {
     const list = [
@@ -10,12 +13,12 @@ describe('list2tree', () => {
       { id: '4', parentId: '2', name: 'Grandchild' },
     ];
 
-    const tree = list2tree(list);
+    const tree = list2tree<TestNode>(list);
     expect(tree).toHaveLength(1);
     expect(tree[0].name).toBe('Root');
     expect(tree[0].children).toHaveLength(2);
-    expect(tree[0].children[0].children).toHaveLength(1);
-    expect(tree[0].children[0].children[0].name).toBe('Grandchild');
+    expect(tree[0].children?.[0].children).toHaveLength(1);
+    expect(tree[0].children?.[0].children?.[0].name).toBe('Grandchild');
   });
 
   it('should handle empty list', () => {
@@ -27,7 +30,7 @@ describe('list2tree', () => {
       { id: '1', parentId: null, name: 'A' },
       { id: '2', parentId: null, name: 'B' },
     ];
-    const tree = list2tree(list);
+    const tree = list2tree<TestNode>(list);
     expect(tree).toHaveLength(2);
   });
 
@@ -35,7 +38,7 @@ describe('list2tree', () => {
     const list = [
       { id: '1', parentId: 'nonexistent', name: 'Orphan' },
     ];
-    const tree = list2tree(list);
+    const tree = list2tree<TestNode>(list);
     expect(tree).toHaveLength(1);
   });
 
@@ -43,7 +46,7 @@ describe('list2tree', () => {
     const list = [
       { id: '1', parentId: null, name: 'Leaf' },
     ];
-    const tree = list2tree(list);
+    const tree = list2tree<TestNode>(list);
     expect(tree[0].children).toBeUndefined();
   });
 
@@ -52,7 +55,7 @@ describe('list2tree', () => {
       { uid: '1', pid: null, name: 'Root' },
       { uid: '2', pid: '1', name: 'Child' },
     ];
-    const tree = list2tree(list, {
+    const tree = list2tree<CustomNode>(list, {
       idField: 'uid',
       parentIdField: 'pid',
       childrenField: 'kids',
@@ -66,7 +69,7 @@ describe('list2tree', () => {
       { id: '1', name: 'Root' },  // no parentId
       { id: '2', parentId: '1', name: 'Child' },
     ];
-    const tree = list2tree(list);
+    const tree = list2tree<TestNode>(list);
     expect(tree).toHaveLength(1);
     expect(tree[0].children).toHaveLength(1);
   });

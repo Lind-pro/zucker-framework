@@ -16,7 +16,11 @@ const createBullJob = (overrides: Record<string, unknown> = {}) => ({
 });
 
 const createQueue = () => ({
+  on: vi.fn(),
+  backend: { client: Promise.resolve({ llen: vi.fn().mockResolvedValue(1) }) },
+  toKey: vi.fn((key: string) => `queue:${key}`),
   add: vi.fn(),
+  addBulk: vi.fn(),
   upsertJobScheduler: vi.fn(),
   getJob: vi.fn(),
   pause: vi.fn().mockResolvedValue(undefined),
@@ -35,6 +39,33 @@ const createQueue = () => ({
 });
 
 describe('BullMqQueueProvider', () => {
+  it('preserves native count keys for backend-specific monitoring consumers', async () => {
+    const queue = createQueue();
+    const counts = { waiting: 1, prioritized: 2, 'waiting-children': 3 };
+    queue.getJobCounts.mockResolvedValue(counts);
+    const provider = new BullMqQueueProvider({ connection: {}, queueFactory: () => queue as unknown as Queue });
+    expect(await provider.getJobCounts('synthetic')).toEqual(counts);
+    expect(queue.getJobCounts).toHaveBeenCalledWith();
+    await provider.close();
+  });
+
+  it('waits for all producers to close even when one close throws synchronously', async () => {
+    const queues = [createQueue(), createQueue()];
+    const failure = new Error('synthetic close failure');
+    queues[0].close.mockImplementation(() => { throw failure; });
+    let finish!: () => void;
+    queues[1].close.mockReturnValue(new Promise<void>(resolve => { finish = resolve; }));
+    let index = 0;
+    const provider = new BullMqQueueProvider({ connection: {}, queueFactory: () => queues[index++] as unknown as Queue });
+    await provider.waitUntilReady(['first', 'second']);
+    let settled = false;
+    const closing = provider.close().catch(error => { settled = true; return error; });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(settled).toBe(false);
+    finish();
+    expect(await closing).toMatchObject({ errors: [failure] });
+    expect(queues[1].close).toHaveBeenCalledOnce();
+  });
   it('maps queue options and uses a stable job id for transport deduplication', async () => {
     const bullJob = createBullJob();
     const queue = createQueue();
@@ -77,6 +108,20 @@ describe('BullMqQueueProvider', () => {
       },
     );
     expect(job).toMatchObject({ id: 'job-1', status: 'waiting', attempts: 1, progress: 25 });
+  });
+
+  it('validates all bulk IDs before enqueueing and uses native bulk submission', async () => {
+    const queue = createQueue();
+    const queueFactory = vi.fn(() => queue as unknown as Queue);
+    const provider = new BullMqQueueProvider({ connection: { host: 'redis' }, queueFactory });
+    await expect(provider.addBulk('batch', [{ data: {}, options: { jobId: 'ok' } }, { data: {}, options: { jobId: 'bad:id' } }])).rejects.toThrow('colon');
+    expect(queueFactory).not.toHaveBeenCalled();
+    expect(await provider.addBulk('batch', [])).toEqual([]);
+    expect(queueFactory).not.toHaveBeenCalled();
+    queue.addBulk.mockResolvedValue([createBullJob()]);
+    expect(await provider.addBulk('batch', [{ data: { taskId: 'task-1' }, options: { name: 'crawl', attempts: 3 } }])).toHaveLength(1);
+    expect(queue.addBulk).toHaveBeenCalledWith([{ name: 'crawl', data: { taskId: 'task-1' }, opts: expect.objectContaining({ attempts: 3 }) }]);
+    expect(queue.add).not.toHaveBeenCalled();
   });
 
   it('maps delayed jobs and rejects negative delay', async () => {
@@ -171,6 +216,35 @@ describe('BullMqQueueProvider', () => {
       failed: 5,
       delayed: 6,
     });
+  });
+
+  it('prewarms named producers and reports connection failures without publishing a job', async () => {
+    const queue = createQueue();
+    const onError = vi.fn();
+    const provider = new BullMqQueueProvider({ connection: { host: 'redis' }, onError,
+      queueFactory: () => queue as unknown as Queue });
+    await provider.waitUntilReady(['outbox']);
+    expect(queue.waitUntilReady).toHaveBeenCalledOnce();
+    expect(queue.add).not.toHaveBeenCalled();
+    const error = new Error('synthetic unavailable');
+    queue.on.mock.calls.find(([name]) => name === 'error')![1](error);
+    expect(onError).toHaveBeenCalledWith('outbox', error);
+    await provider.getStats('outbox');
+    expect(queue.getJobCounts.mock.calls[0]).not.toContain('paused');
+    expect((await queue.backend.client).llen).toHaveBeenCalledWith('queue:paused');
+  });
+
+  it('shares a pending close promise and cannot reopen a producer during drain', async () => {
+    const queue = createQueue();
+    let finish!: () => void;
+    queue.close.mockReturnValue(new Promise<void>(resolve => { finish = resolve; }));
+    const provider = new BullMqQueueProvider({ connection: { host: 'redis' }, queueFactory: () => queue as unknown as Queue });
+    await provider.waitUntilReady(['queue']);
+    const first = provider.close();
+    expect(provider.close()).toBe(first);
+    await expect(provider.add('queue', {})).rejects.toThrow('closing');
+    finish(); await first;
+    expect(queue.close).toHaveBeenCalledOnce();
   });
 
   it('closes every lazily-created queue exactly once', async () => {

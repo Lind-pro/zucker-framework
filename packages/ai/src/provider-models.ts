@@ -1,4 +1,4 @@
-import { request as httpRequest, type RequestOptions } from 'node:http';
+import { Agent, request as httpRequest, type RequestOptions } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 
 /** @experimental Account-visible provider catalogue; never a pricing or capability guarantee. */
@@ -54,7 +54,10 @@ async function readPage(
     )
       throw new Error('Invalid proxy configuration');
     const { HttpsProxyAgent } = await import('https-proxy-agent');
-    agent = new HttpsProxyAgent(`http://${connection.proxyHost}:${connection.proxyPort}`);
+    const proxyAgent = new HttpsProxyAgent(`http://${connection.proxyHost}:${connection.proxyPort}`);
+    // Narrow against this runtime's Agent rather than casting across optional SDK Node type versions.
+    if (!(proxyAgent instanceof Agent)) throw new Error('Proxy transport must be a Node HTTP Agent');
+    agent = proxyAgent;
   } else if (connection.proxyPort) throw new Error('Proxy host is required');
   return new Promise((resolve, reject) => {
     // Native requests intentionally do not follow redirects with credentials.

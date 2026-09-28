@@ -1,5 +1,12 @@
 # @zucker-framework/fe-auth
 
+## 1.0.5
+
+### Patch Changes
+
+- Updated dependencies
+  - @zucker-framework/fe-storage@1.0.5
+
 ## 1.0.2
 
 ### Patch Changes

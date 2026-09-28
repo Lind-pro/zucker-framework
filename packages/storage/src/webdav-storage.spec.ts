@@ -1,10 +1,12 @@
 import { Logger } from '@nestjs/common';
+import { Readable, PassThrough } from 'node:stream';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { WebDavStorage } from './webdav-storage';
 
 // Mock webdav module
 const mockPutFileContents = vi.fn();
 const mockGetFileContents = vi.fn();
+const mockCreateReadStream = vi.fn();
 const mockStat = vi.fn();
 const mockDeleteFile = vi.fn();
 const mockExists = vi.fn();
@@ -17,6 +19,7 @@ vi.mock('webdav', () => ({
   createClient: vi.fn(() => ({
     putFileContents: mockPutFileContents,
     getFileContents: mockGetFileContents,
+    createReadStream: mockCreateReadStream,
     stat: mockStat,
     deleteFile: mockDeleteFile,
     exists: mockExists,
@@ -57,6 +60,11 @@ describe('WebDavStorage', () => {
     expect(() => new WebDavStorage({ ...defaultOptions, password: '' })).toThrow(
       'WebDAV url, username and password are required',
     );
+  });
+
+  it('only allows missing credentials under explicit anonymous policy', () => {
+    expect(() => new WebDavStorage({ url: 'https://dav.invalid', allowAnonymous: true })).not.toThrow();
+    expect(() => new WebDavStorage({ url: '', allowAnonymous: true })).toThrow('required');
   });
 
   it('does not disclose the endpoint or credentials in lifecycle logs', () => {
@@ -116,11 +124,96 @@ describe('WebDavStorage', () => {
 
   it('should download a file', async () => {
     const content = Buffer.from('file data');
-    mockStat.mockResolvedValueOnce({ size: content.length });
-    mockGetFileContents.mockResolvedValueOnce(content);
+    mockStat.mockResolvedValueOnce({ type: 'file', size: content.length });
+    mockCreateReadStream.mockReturnValueOnce(Readable.from([content]));
 
     const { size } = await storage.download('doc.txt');
     expect(size).toBe(9);
+  });
+
+  it('streams uploads without collecting the body and destroys the source on remote failure', async () => {
+    mockExists.mockResolvedValue(true);
+    const source = new PassThrough();
+    let received = '';
+    mockPutFileContents.mockImplementationOnce(async (_path, stream) => {
+      for await (const chunk of stream) received += chunk.toString();
+      return true;
+    });
+    const uploading = storage.uploadStream(source, 'stream.txt');
+    source.write('one');
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(received).toBe('one'); // Remote receives bytes before EOF.
+    source.end('two');
+    await expect(uploading).resolves.toMatchObject({ size: 6 });
+    const failedSource = new PassThrough();
+    mockPutFileContents.mockRejectedValueOnce(new Error('remote failed'));
+    await expect(storage.uploadStream(failedSource, 'failed')).rejects.toThrow('remote failed');
+    expect(failedSource.destroyed).toBe(true);
+  });
+
+  it('cancels active upload and download streams and rejects directory downloads', async () => {
+    mockExists.mockResolvedValue(true);
+    mockPutFileContents.mockImplementationOnce(async (_path, stream) => {
+      for await (const _chunk of stream) { /* consume synthetic stream */ }
+      return true;
+    });
+    const controller = new AbortController();
+    const source = new PassThrough();
+    const uploading = storage.uploadStream(source, 'cancel', { signal: controller.signal });
+    const rejected = expect(uploading).rejects.toThrow();
+    await new Promise((resolve) => setImmediate(resolve));
+    controller.abort(new Error('cancel'));
+    await rejected;
+    expect(source.destroyed).toBe(true);
+    mockStat.mockResolvedValueOnce({ type: 'directory' });
+    await expect(storage.download('dir')).rejects.toThrow('not a file');
+    const downloadController = new AbortController();
+    const remote = new PassThrough();
+    remote.on('error', () => {});
+    mockStat.mockResolvedValueOnce({ type: 'file', size: 10 });
+    mockCreateReadStream.mockReturnValueOnce(remote);
+    const result = await storage.download('file', { signal: downloadController.signal });
+    expect(result.stream).toBe(remote);
+    downloadController.abort();
+    expect(remote.destroyed).toBe(true);
+    expect(mockGetFileContents).not.toHaveBeenCalled();
+  });
+
+  it('destroys uploads for pre-abort, source failure and directory setup failure', async () => {
+    const controller = new AbortController(); controller.abort(new Error('already stopped'));
+    const before = new PassThrough();
+    await expect(storage.uploadStream(before, 'a', { signal: controller.signal })).rejects.toThrow('already stopped');
+    expect(before.destroyed).toBe(true);
+    mockExists.mockRejectedValueOnce(new Error('directory offline'));
+    const setup = new PassThrough();
+    await expect(storage.uploadStream(setup, 'a')).rejects.toThrow('directory offline');
+    expect(setup.destroyed).toBe(true);
+    mockExists.mockResolvedValue(true);
+    mockPutFileContents.mockImplementationOnce(async (_path, stream) => {
+      for await (const _chunk of stream) { /* drain */ }
+      return true;
+    });
+    const source = new PassThrough();
+    const uploading = storage.uploadStream(source, 'a');
+    const rejected = expect(uploading).rejects.toThrow();
+    await new Promise((resolve) => setImmediate(resolve));
+    source.destroy(new Error('source failed'));
+    await rejected;
+    expect(source.destroyed).toBe(true);
+  });
+
+  it('supports shallow directory entries, strict missing and public directory creation', async () => {
+    mockGetDirectoryContents.mockResolvedValueOnce([{ type: 'directory', filename: '/files/a/child', basename: 'child', size: 0 }]);
+    expect(await storage.list('a', { deep: false, includeDirectories: true })).toEqual([
+      expect.objectContaining({ key: 'a/child', type: 'directory', basename: 'child' }),
+    ]);
+    expect(mockGetDirectoryContents).toHaveBeenCalledWith('/files/a', { deep: false });
+    mockGetDirectoryContents.mockRejectedValueOnce({ status: 404 });
+    await expect(storage.list('missing', { missing: 'throw' })).rejects.toMatchObject({ status: 404 });
+    mockExists.mockResolvedValue(true);
+    await storage.ensureDirectory('safe');
+    expect(mockExists).toHaveBeenCalledWith('/files/safe');
+    await expect(storage.ensureDirectory('../outside')).rejects.toThrow('Path traversal');
   });
 
   // ---- delete ----
@@ -285,18 +378,14 @@ describe('WebDavStorage', () => {
 
   // ---- uploadStream ----
 
-  it('should upload from stream by collecting chunks', async () => {
-    mockPutFileContents.mockResolvedValueOnce(undefined);
+  it('uploads a Node readable and reports counted bytes', async () => {
+    mockPutFileContents.mockImplementationOnce(async (_path, stream) => {
+      for await (const _chunk of stream) { /* drain */ }
+      return true;
+    });
     mockExists.mockResolvedValue(true);
-
-    const chunks = [Buffer.from('ab'), Buffer.from('cd')];
-    const mockStream = {
-      async *[Symbol.asyncIterator]() {
-        for (const c of chunks) yield c;
-      },
-    };
-
-    const result = await storage.uploadStream(mockStream as any, 'stream.txt');
+    const stream = Readable.from([Buffer.from('ab'), Buffer.from('cd')]);
+    const result = await storage.uploadStream(stream, 'stream.txt');
     expect(result.size).toBe(4);
   });
 });

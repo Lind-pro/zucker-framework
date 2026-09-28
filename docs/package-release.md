@@ -31,9 +31,13 @@ explicit publication selection when preparing their reviewed version changes.
 when adopting the fix, so Nest providers and controllers share one logging
 instance. Consumers must verify that override instead of loading both versions.
 
-For subsequent releases, record patch for compatible fixes, minor for compatible
-new features, and major for breaking public API changes. Changesets applies the
-highest required bump to every member, preserving one shared version. The initial
+Maintainer directive (2026-09-28): Framework releases increment the patch component
+only. Record patch changesets for this release group, including necessary public
+contract corrections. Remove superseded APIs/implementations and migrate all
+consumers; do not introduce compatibility shims or parallel legacy implementations.
+The patch number does not promise API compatibility: document changed contracts
+explicitly and verify consumers against the actual immutable release.
+Changesets keeps the fixed group on one shared patch version. The initial
 alignment to `1.0.2` is an explicit maintainer-selected exception: it includes
 breaking auth and payment changes. Read the [1.0.2 migration notes](package-release-1.0.2.md)
 and package changelogs before upgrading; this release's patch number does not imply

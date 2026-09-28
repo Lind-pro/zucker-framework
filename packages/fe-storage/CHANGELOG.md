@@ -1,5 +1,13 @@
 # @zucker-framework/fe-storage
 
+## 1.0.5
+
+### Patch Changes
+
+- Preserve HTTP transport evidence and decode bounded binary JSON errors, clear stale login-page identity, honor explicit raw JSON responses, and keep stream/refresh cancellation separate from authentication failures. Cancel SSE readers on consumer failures and apply normal status handling to refreshed streams.
+
+  Add SSR-safe browser-readable cookie helpers with explicit consumer lifetime/scope policy, encoded values, and validated cookie names and attributes.
+
 ## 1.0.2
 
 ### Patch Changes

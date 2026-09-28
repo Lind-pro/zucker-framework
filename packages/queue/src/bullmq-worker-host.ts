@@ -6,6 +6,8 @@ export interface QueueWorkerJob<TData> {
   name: string;
   data: TData;
   attempt: number;
+  /** Configured retry budget, including this attempt. */
+  maxAttempts: number;
   updateProgress(progress: JobProgress): Promise<void>;
   log(message: string): Promise<number>;
 }
@@ -17,6 +19,7 @@ export interface QueueWorkerDefinition<TData = unknown, TResult = unknown> {
   handler: QueueJobHandler<TData, TResult>;
   concurrency?: number;
   lockDurationMs?: number;
+  stalledIntervalMs?: number;
   autorun?: boolean;
 }
 
@@ -42,6 +45,7 @@ export interface QueueWorkerHealth {
 export class BullMqWorkerHost {
   private readonly workers = new Map<string, Worker>();
   private readonly readyQueues = new Set<string>();
+  private closing?: Promise<void>;
   private readonly workerFactory: WorkerFactory;
 
   constructor(private readonly options: BullMqWorkerHostOptions) {
@@ -51,12 +55,16 @@ export class BullMqWorkerHost {
   }
 
   register<TData, TResult>(definition: QueueWorkerDefinition<TData, TResult>): void {
+    if (this.closing) throw new Error('Worker host is closing');
     if (this.workers.has(definition.queueName)) {
       throw new Error(`Worker already registered for queue: ${definition.queueName}`);
     }
-    if ((definition.concurrency ?? 1) < 1) throw new RangeError('concurrency must be at least 1');
-    if ((definition.lockDurationMs ?? 30_000) < 1) {
-      throw new RangeError('lockDurationMs must be at least 1');
+    for (const [name, value] of Object.entries({
+      concurrency: definition.concurrency ?? 1,
+      lockDurationMs: definition.lockDurationMs ?? 30_000,
+      stalledIntervalMs: definition.stalledIntervalMs ?? 30_000,
+    })) {
+      if (!Number.isSafeInteger(value) || value < 1) throw new RangeError(`${name} must be a positive safe integer`);
     }
 
     const worker = this.workerFactory(
@@ -67,6 +75,7 @@ export class BullMqWorkerHost {
           name: job.name,
           data: job.data as TData,
           attempt: job.attemptsMade + 1,
+          maxAttempts: job.opts?.attempts ?? 1,
           updateProgress: (progress) => job.updateProgress(progress),
           log: (message) => job.log(message),
         }),
@@ -76,9 +85,10 @@ export class BullMqWorkerHost {
         concurrency: definition.concurrency ?? 1,
         lockDuration: definition.lockDurationMs ?? 30_000,
         autorun: definition.autorun ?? true,
+        ...(definition.stalledIntervalMs === undefined ? {} : { stalledInterval: definition.stalledIntervalMs }),
       },
     );
-    worker.on('ready', () => this.readyQueues.add(definition.queueName));
+    worker.on('ready', () => { if (!this.closing) this.readyQueues.add(definition.queueName); });
     worker.on('error', (error) => {
       this.readyQueues.delete(definition.queueName);
       this.options.onError?.(definition.queueName, error);
@@ -160,11 +170,16 @@ export class BullMqWorkerHost {
     await Promise.all([...this.workers.values()].map((worker) => worker.resume()));
   }
 
-  async close(force = false): Promise<void> {
+  close(force = false): Promise<void> {
+    if (this.closing) return this.closing;
     const workers = [...this.workers.values()];
     this.workers.clear();
     this.readyQueues.clear();
-    await Promise.all(workers.map((worker) => worker.close(force)));
+    this.closing = Promise.allSettled(workers.map(async (worker) => worker.close(force))).then((results) => {
+      const failures = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
+      if (failures.length) throw new AggregateError(failures.map(result => result.reason), 'Worker shutdown failed');
+    });
+    return this.closing;
   }
 
   async onModuleDestroy(): Promise<void> {

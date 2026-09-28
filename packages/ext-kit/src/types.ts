@@ -1,73 +1,144 @@
 export type Settings = Record<string, unknown>;
-
+/** Structural browser ports keep public declarations independent of @types/chrome. */
+export interface BrowserTab {
+  id?: number;
+  url?: string;
+  pendingUrl?: string;
+  windowId: number;
+  title?: string;
+  width?: number;
+  height?: number;
+  active: boolean;
+}
+export interface DownloadRecord {
+  id: number;
+  url: string;
+  finalUrl?: string;
+  filename: string;
+  state: 'in_progress' | 'interrupted' | 'complete';
+  error?: string;
+  byExtensionId?: string;
+}
 export interface CaptureContext {
-  /** batch = 后台批量新开 tab；quick = 用户当前浏览的 tab（不得改视口、需还原页面状态） */
   mode: 'batch' | 'quick';
   tabId: number;
   url: string;
   options: Settings;
-  /** chrome.debugger sendCommand（已 attach） */
+  /** Capture commands reject on cancellation. */
   send(method: string, params?: Record<string, unknown>): Promise<Record<string, unknown>>;
+  /** Restoration MUST remain usable after Stop/abort. */
+  cleanup(method: string, params?: Record<string, unknown>): Promise<Record<string, unknown>>;
 }
-
 export interface CaptureOutput {
   base64: string;
   mime: string;
-  /** 文件扩展名，不含点："png" | "jpg" | "pdf" … */
   extension: string;
-  /** 非致命告警（如超高截断），展示在结果列表 */
   warning?: string;
 }
-
-export interface LicensingConfig {
-  apiBase: string;
-  purchaseUrl: string;
+export interface Entitlement {
+  expiresAt: string;
+  [key: string]: unknown;
 }
-
-/** 措辞（capture/convert 等动词差异）；不配则用 capture 系默认值 */
+export interface LicenseReply {
+  accepted: boolean;
+  /** Authoritative server rejection, NOT a proxy/network error. */
+  denied?: boolean;
+  entitlement?: unknown;
+  token?: string;
+  deactivated?: boolean;
+}
+export interface LicensingConfig {
+  purchaseUrl?: string;
+  cacheTtlMs: number;
+  offlineGraceMs: number;
+  requestTimeoutMs: number;
+  retryDelayMs: number;
+  /** Consumer owns transport, endpoints, code normalization and envelope validation. */
+  request(operation: 'activate' | 'me' | 'deactivate', input: {
+    code?: string; deviceId?: string; brand?: string; token?: string;
+  }, signal: AbortSignal): Promise<LicenseReply>;
+  /** Validate the consumer's actual grant/plan. The kit additionally checks expiry. */
+  normalizeEntitlement(value: unknown): Entitlement | null;
+}
+export interface LicenseStatus {
+  state: 'free' | 'checking' | 'pro' | 'invalid' | 'unavailable';
+  entitlement?: Entitlement;
+  message?: string;
+  refreshing?: boolean;
+}
+export interface LicenseStatusOptions { cachedOnly?: boolean; force?: boolean }
+export interface Licensing {
+  activate(code: string): Promise<Entitlement>;
+  getEntitlement(options?: LicenseStatusOptions): Promise<Entitlement | null>;
+  getStatus(options?: LicenseStatusOptions): Promise<LicenseStatus>;
+  /** Releases the device remotely before deleting local identity. */
+  deactivate(): Promise<void>;
+  purchaseUrl?: string;
+}
+export interface DownloadOptions {
+  deadlineMs?: number;
+  /** Must exceed deadlineMs; offscreen reclaims URLs if the worker disappears. */
+  blobLeaseMs?: number;
+  pollMs?: number;
+  offscreenUrl?: string;
+}
+export interface DownloadCheckpoint { downloadId?: number; downloadUrl?: string }
+export interface Downloader {
+  downloadViaBlob(base64: string, mime: string, filename: string, options?: {
+    signal?: AbortSignal;
+    onPrepared?(url: string): Promise<void>;
+    onCreated?(id: number): Promise<void>;
+  }): Promise<number>;
+  recover(item: DownloadCheckpoint, signal?: AbortSignal): Promise<DownloadRecord>;
+}
+export interface ScrollCapture {
+  prepare(ctx: CaptureContext, waitForContent?: () => Promise<void>): Promise<void>;
+  restore(ctx: CaptureContext): Promise<void>;
+}
 export interface ExtTexts {
   alreadyRunning: string;
   cannotQuick: string;
   challengeBeforeQuick: (challenge: string) => string;
   quickFolder: string;
 }
-
 export interface ExtKitConfig {
-  /** 消费项目提供的存储 key 命名空间；已发布产品应保持原值，以兼容既有安装 */
+  /** Keep existing storage namespace and message prefix on upgrades. */
   product: string;
-  /** 品牌名：下载文件夹前缀、设备名 */
   brand: string;
-  /** 消费项目提供的消息类型前缀，用于构造 START 等消息类型 */
   messagePrefix: string;
-  freeDailyLimit?: number;
+  freeDailyLimit: number;
   badgeColor: string;
   defaultSettings: Settings;
   licensing: LicensingConfig;
+  downloads?: DownloadOptions;
+  sameHostGapMs?: number;
   texts?: Partial<ExtTexts>;
-  /** 仅批量模式、autoScroll 之前调用（如固定视口宽度）；quick 模式不调用（不能动用户的 tab） */
+  /** PDF/image settings validation and migration belong to the consumer. */
+  normalizeSettings?(defaults: Settings, input?: unknown): Settings;
+  migrateSettings?(saved: unknown): Settings;
+  captureScope?(options: Settings): 'full' | 'viewport';
+  scrollCapture?: ScrollCapture;
   beforeScroll?(ctx: CaptureContext): Promise<void>;
-  /** 核心业务：页面已加载、已过验证、已滚动揭示，产出要下载的数据 */
+  beforeQuick?(ctx: CaptureContext, tab: BrowserTab): Promise<void>;
+  afterQuick?(ctx: CaptureContext): Promise<void>;
+  captureQuick?(input: { tab: BrowserTab; options: Settings; signal: AbortSignal }): Promise<CaptureOutput | null | undefined>;
   capture(ctx: CaptureContext): Promise<CaptureOutput>;
 }
-
 export interface PopupTexts {
   startNone: string;
   startSome: (n: number) => string;
   quickIng: string;
   quickFailed: string;
 }
-
 export interface PopupConfig {
   messagePrefix: string;
-  /** 消费项目提供的 URL 队列存储 key；已发布产品应保持原值 */
   queueKey: string;
-  /** 快速处理当前页的消息类型后缀：CAPTURE_CURRENT / CONVERT_CURRENT */
+  settingsKey?: string;
   quickType: string;
-  /** 快速按钮的元素 id，默认 "captureCurrent"，可由消费项目覆盖 */
   quickButtonId?: string;
   texts: PopupTexts;
-  collectSettings(): Settings;
-  collectQuickSettings(): Settings;
-  /** 快速处理成功后的状态栏文案 */
+  onSettingsLoaded?(): void;
+  collectSettings(): Settings | Promise<Settings>;
+  collectQuickSettings(): Settings | Promise<Settings>;
   quickResult(result: { fileName: string; warning?: string }): string;
 }

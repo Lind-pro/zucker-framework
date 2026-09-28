@@ -20,6 +20,8 @@ export { SystemVersion, Version, FrameworkVersion } from './system-version';
 export type { Dependency } from './system-version';
 export { GracefulShutdownManager, type ShutdownCallback } from './graceful-shutdown';
 export { pLimit } from './utils/p-limit';
+export { boundedMemoryStorage, decodeMultipartFilename } from './http/bounded-memory-storage';
+export type { BoundedMemoryStorageOptions, MemoryUploadFile } from './http/bounded-memory-storage';
 export { parseJsonResponse } from './utils/parse-json-response';
 export { buildAttachmentDisposition } from './utils/content-disposition';
 

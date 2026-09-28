@@ -12,4 +12,5 @@ const shared = {
 
 await build({ ...shared, entryPoints: ['src/background.entry.ts'], outfile: 'dist/ext-kit.js' });
 await build({ ...shared, entryPoints: ['src/popup.entry.ts'], outfile: 'dist/ext-kit-popup.js' });
-console.log('vendored built: dist/ext-kit.js, dist/ext-kit-popup.js');
+await build({ ...shared, entryPoints: ['src/scroll-capture.entry.ts'], outfile: 'dist/scroll-capture.js' });
+console.log('vendored built: dist/ext-kit.js, dist/ext-kit-popup.js, dist/scroll-capture.js');

@@ -1,5 +1,20 @@
 # @zucker-framework/ai
 
+## 1.0.5
+
+### Patch Changes
+
+- Add strict scenario resolution across configuration sources and isolated caches, preserve resolved model record identity, and expose a provider-neutral native text chat/stream/embedding port with actual OpenAI, Anthropic and Gemini SDK adapters. Disable SDK retry multiplication, retain abort/usage semantics, and reject unsupported proxy/reasoning combinations explicitly.
+
+  Correct LangChain Gemini compatibility endpoint and Anthropic transport/thinking configuration. Proxy transport now requires explicit proxy-aware fetch (SDK v7 no longer supports httpAgent). Embedding outer retries default to zero.
+
+  Snapshot and serialize persisted usage flushes to avoid lost new records or duplicate concurrent flushes. Failed persistence restores aggregates and now rejects; callers must observe failures and schedule retries. Ambiguous partial writes still require an idempotent consumer persister. Missing model IDs are observably skipped, including mixed batches.
+
+- Updated dependencies
+  - @zucker-framework/core@1.0.5
+  - @zucker-framework/common@1.0.5
+  - @zucker-framework/ai-access@1.0.5
+
 ## 1.0.3
 
 ### Patch Changes

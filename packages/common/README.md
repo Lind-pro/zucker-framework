@@ -1,5 +1,13 @@
 # Common
 
+## Bounded IO lifecycle additions (unreleased)
+
+`pLimit(items, concurrency, fn, { drainOnError: true })` stops scheduling after the first observed failure, waits for all already-started workers, then rejects with that first failure (including non-Error reasons). It does not cancel active operations. Existing `rejectOnError: true` without drain remains fail-fast; concurrency must be a positive integer.
+
+`createClientDisconnectAbort(req, res, { reason: () => error })` handles an already-aborted request or destroyed response immediately, preserves normal `writableEnded` completion, and removes its event listeners on `dispose`. Compose with core's cancellation scope for timeout/ref policy.
+
+`boundedMemoryStorage({ maxBytes, createLimitError, decodeFilename })` is structurally compatible with Multer's `StorageEngine` without a Multer runtime dependency. Default total **file bytes per request** is 200 MiB. It preserves UTF-8 multipart Chinese filenames, bounds aggregate retained file buffers, drains rejected streams, reports abort/early-close/limit/errors once, and deletes buffers on `_removeFile`. Text fields, file count, per-file limits and request/body timeouts must still be configured on the host multipart parser. `createLimitError` owns user-facing language; default is HTTP 413. `_removeFile` does not reset the request's cumulative budget. `decodeMultipartFilename` is also exported for parser integration.
+
 ## HTTP error policy
 
 `HttpExceptionFilter` accepts optional `HttpExceptionFilterOptions`. `formatResponse(normalized, context)` customizes the response envelope after Framework status/message/retry-header normalization. Context includes the original exception, request and classification (`http`, `business`, `validation`, `unknown`). `onServerError(context)` can report 5xx errors; a reporting exception cannot replace the HTTP response. Without options, the existing Framework envelope and behavior are unchanged. Configure product disclosure/messages as a policy object rather than wrapping Nest request/response objects.

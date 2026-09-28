@@ -1,18 +1,23 @@
 # @zucker-framework/media
 
+## 1.0.5
+
+### Patch Changes
+
+- Add server-side BrowserPool lifecycle orchestration with shared launch, isolated contexts, launch retry, disconnect recovery and draining shutdown. Add SDK-neutral DocumentTextExtractor ports with mixed PDF/OCR extraction, cancellation-aware execFile cleanup and explicit page/pixel/ZIP limits. Keep browser exports free of Node/native dependencies and consumer policy explicit.
+- Expose native BullMQ count keys for compatible monitoring adapters; wait for all producer/worker closes before reporting aggregated shutdown failures, including synchronous throws. Keep document ZIP CRC validation compatible with Node 20 rather than introducing a Node 22-only default-entry import. Add explicit extension lifecycle and browser regression commands. These changes are unreleased; they do not authorize consumer source links or package publication.
+
 ## 1.0.4
 
 - Add opt-in monochrome Mermaid and RDKit rendering while preserving diagram content.
 - Preserve visible SVG text bounds and improve sequence label wrapping for document export.
 - Accept only the standard SVG 1.1 DTD preamble without resolving external declarations; continue rejecting arbitrary DTDs and entities.
 
-
 ## 1.0.3
 
 ### Patch Changes
 
 - Provide a browser export condition containing image, SVG and Mermaid helpers without Node RDKit/Vega renderers. Preserve the Node rendering API.
-
 
 ## 1.0.2
 

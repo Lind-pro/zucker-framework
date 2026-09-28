@@ -34,6 +34,14 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       return true;
     }
 
+    // Passport may accept trailing header fields, while blacklist lookup uses the
+    // whole credential. Reject ambiguous headers before those two paths diverge.
+    const authorization = context.switchToHttp().getRequest().headers?.authorization;
+    if (authorization !== undefined &&
+        (typeof authorization !== 'string' || !/^Bearer\s+\S+$/i.test(authorization))) {
+      throw new UnauthorizedException('Invalid authorization header');
+    }
+
     // Execute JWT validation first, then check blacklist and build Authentication
     const parentResult = super.canActivate(context);
 

@@ -1,6 +1,6 @@
 // __EXT_BRAND__ 业务层：批处理/节流/挑战接力/下载/授权等基建全部由 lib/ext-kit.js 提供
 // （产物来自 zucker-framework packages/ext-kit，用 `zucker ext sync` 更新）。
-importScripts("lib/ext-kit.js");
+importScripts("lib/ext-kit.js", "lib/scroll-capture.js");
 
 const MAX_CAPTURE_HEIGHT = 16000;
 
@@ -17,10 +17,46 @@ ZuckerExt.init({
     delayMs: 1500
   },
   licensing: {
-    // 由消费项目替换为自己的授权服务和购买页面。
-    apiBase: "https://api.example.invalid",
-    purchaseUrl: "https://example.invalid/__EXT_SLUG__"
+    // The template owns endpoint, envelope, entitlement and timing policy.
+    purchaseUrl: "https://example.invalid/__EXT_SLUG__",
+    cacheTtlMs: 12 * 60 * 60 * 1000,
+    offlineGraceMs: 72 * 60 * 60 * 1000,
+    requestTimeoutMs: 5000,
+    retryDelayMs: 60 * 1000,
+    normalizeEntitlement(value) {
+      return value && value.active !== false && value.plan === "pro"
+        && typeof value.expiresAt === "string" ? value : null;
+    },
+    async request(operation, input, signal) {
+      const activating = operation === "activate";
+      const response = await fetch(`https://api.example.invalid/extension/licenses/${operation}`, {
+        method: operation === "me" ? "GET" : "POST",
+        signal,
+        headers: activating
+          ? { "Content-Type": "application/json" }
+          : { Authorization: `Bearer ${input.token}` },
+        ...(activating ? { body: JSON.stringify({
+          code: String(input.code || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, ""),
+          deviceId: input.deviceId,
+          deviceName: `${input.brand} · Chrome`,
+        }) } : {}),
+      });
+      const payload = await response.json().catch(() => null);
+      const data = payload?.result ?? payload;
+      // A proxy HTML 403 is not an authoritative license rejection.
+      const denied = [401, 403].includes(response.status)
+        && (payload?.status === response.status || payload?.statusCode === response.status)
+        && typeof payload?.message === "string";
+      return {
+        accepted: response.ok && data != null,
+        denied,
+        token: data?.token,
+        entitlement: activating ? data?.entitlement : data,
+        deactivated: data?.deactivated === true,
+      };
+    }
   },
+  scrollCapture: ZuckerScrollCapture,
   // 批量模式先固定视口宽度以保证一致排版（quick 模式不动用户的 tab，不会调用）
   async beforeScroll(ctx) {
     await ctx.send("Emulation.setDeviceMetricsOverride", {

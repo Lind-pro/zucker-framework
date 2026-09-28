@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'node:crypto';
 import { ReadStream, createReadStream } from 'fs';
+import type { Readable } from 'node:stream';
 import {
   FileManager,
   UploadOptions,
@@ -45,7 +46,7 @@ export class LocalFileStorage implements FileManager {
     };
   }
 
-  async uploadStream(stream: ReadStream, key: string, options?: UploadOptions): Promise<UploadResult> {
+  async uploadStream(stream: Readable, key: string, options?: UploadOptions): Promise<UploadResult> {
     const chunks: Buffer[] = [];
     for await (const chunk of stream) {
       chunks.push(Buffer.from(chunk));

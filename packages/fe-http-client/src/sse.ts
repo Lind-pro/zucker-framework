@@ -110,6 +110,11 @@ export async function readSseStream(response: Response, options: SseStreamOption
         return;
       }
     }
+  } catch (error) {
+    // A parser/consumer failure must not leave the upstream connection running.
+    // Cancellation failure cannot replace the original application error.
+    await reader.cancel(error).catch(() => {});
+    throw error;
   } finally {
     if (idleTimer) clearInterval(idleTimer);
     reader.releaseLock();

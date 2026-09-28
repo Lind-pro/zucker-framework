@@ -1,4 +1,5 @@
 import axios from 'axios';
+import type { Mock } from 'vitest';
 import { HttpClient } from './http-client';
 
 // Mock axios
@@ -32,13 +33,13 @@ function getAxiosMock() {
 }
 
 describe('HttpClient', () => {
-  let getToken: ReturnType<typeof vi.fn>;
-  let getRefreshToken: ReturnType<typeof vi.fn>;
-  let setToken: ReturnType<typeof vi.fn>;
-  let setRefreshToken: ReturnType<typeof vi.fn>;
-  let clearAuth: ReturnType<typeof vi.fn>;
-  let onUnauthorized: ReturnType<typeof vi.fn>;
-  let refreshTokenFn: ReturnType<typeof vi.fn>;
+  let getToken: Mock<() => string | null>;
+  let getRefreshToken: Mock<() => string | null>;
+  let setToken: Mock<(token: string) => void>;
+  let setRefreshToken: Mock<(token: string) => void>;
+  let clearAuth: Mock<() => void>;
+  let onUnauthorized: Mock<() => void>;
+  let refreshTokenFn: Mock<(token: string) => Promise<{ access_token: string; refresh_token: string }>>;
 
   beforeEach(() => {
     vi.clearAllMocks();

@@ -1,6 +1,6 @@
 import { BusinessException, type DatabaseAdapter } from '@zucker-framework/core';
 import type { AIModelConfig, AIScenario } from '../ai-provider.interface';
-import type { AIConfigSource, AIConfigSourceOptions } from '../config-source';
+import type { AIConfigSource, AIConfigSourceOptions, ScenarioConfigOptions } from '../config-source';
 
 interface AIModelRecord {
   id: string;
@@ -39,13 +39,13 @@ export class DatabaseAIConfigSource implements AIConfigSource {
     this.modelName = options.modelName ?? 'aiModels';
   }
 
-  async getScenarioConfig(scenario: string): Promise<AIModelConfig | null> {
+  async getScenarioConfig(scenario: string, options: ScenarioConfigOptions = {}): Promise<AIModelConfig | null> {
     try {
       const operations = this.db.model(this.modelName);
       let model = operations.findFirst
         ? await operations.findFirst({ where: { isEnabled: true, scenarios: { has: scenario } } })
         : null;
-      if (!model && operations.findFirst) {
+      if (!model && options.allowDefault !== false && operations.findFirst) {
         model = await operations.findFirst({ where: { isEnabled: true, isDefault: true } });
       }
       return model ? this.toConfig(model as AIModelRecord) : null;
@@ -83,6 +83,7 @@ export class DatabaseAIConfigSource implements AIConfigSource {
       apiKey: model.apiKey,
       baseURL: model.baseUrl || undefined,
       modelId: model.modelId,
+      modelRecordId: model.id,
       temperature: model.temperature ?? 0.7,
       maxTokens: model.maxTokens ?? 4096,
       topP: model.topP,

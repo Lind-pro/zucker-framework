@@ -35,6 +35,11 @@ export interface UserEntity {
   [key: string]: unknown;
 }
 
+export interface UserRoleBindingOptions {
+  /** Consumer-owned fields, such as the existing relation's primary key. */
+  bindingData?: (userId: string, roleId: string) => Record<string, unknown>;
+}
+
 import { DATABASE_ADAPTER } from '@zucker-framework/crud';
 const PASSWORD_ENCODER = Symbol('PASSWORD_ENCODER');
 const TOPIC_EVENT_BUS = 'TOPIC_EVENT_BUS';
@@ -134,6 +139,31 @@ export class UserService {
     return this.addUser(userEntity);
   }
 
+  /** Update only an existing account; missing accounts must not become inserts. */
+  async updateUser(id: string, changes: Partial<UserEntity>): Promise<UserEntity> {
+    const existing = await this.findById(id);
+    if (!existing) throw new NotFoundException('User not found');
+    return this.doUpdate(existing, changes);
+  }
+
+  /** Replace role bindings on one adapter transaction, then invalidate authorization. */
+  async setUserRoles(userId: string, roleIds: string[], options: UserRoleBindingOptions = {}): Promise<void> {
+    if (typeof userId !== 'string' || !userId.trim() || !Array.isArray(roleIds) || roleIds.some(id => typeof id !== 'string' || !id.trim())) {
+      throw new ValidationException({ roleIds: ['User and role identifiers must be non-empty strings'] });
+    }
+    await this.db.$transaction(async tx => {
+      const user = await tx.model('users').findUnique({ where: { id: userId } });
+      if (!user) throw new NotFoundException('User not found');
+      await tx.model('userRoles').deleteMany({ where: { userId } });
+      for (const roleId of new Set(roleIds)) {
+        await tx.model('userRoles').create({
+          data: { ...options.bindingData?.(userId, roleId), userId, roleId },
+        });
+      }
+    });
+    await this.publishEvent(AUTH_EVENT_TOPICS.CLEAR_AUTH_CACHE, createClearAuthCacheEvent(userId, 'user_roles_changed'));
+  }
+
   /**
    * Add a new user.
    *
@@ -199,8 +229,10 @@ export class UserService {
    */
   private async doUpdate(
     old: UserEntity,
-    newer: Partial<UserEntity>,
+    input: Partial<UserEntity>,
   ): Promise<UserEntity> {
+    // Never mutate the caller's DTO or write undefined fields back to storage.
+    const newer = Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)) as Partial<UserEntity>;
     const changes: FieldChange[] = [];
     let passwordChanged = false;
 
@@ -211,12 +243,15 @@ export class UserService {
         throw new ValidationException({ password: [passwordResult.errors.join(', ')] }, 'Invalid password');
       }
 
-      const matches = old.password ? await this.passwordEncoder.matches(newer.password!, old.password) : false;
+      const matches = old.password ? await this.passwordEncoder.matches(newer.password, old.password) : false;
       passwordChanged = !matches;
 
       if (passwordChanged) {
         newer.password = await this.passwordEncoder.encode(newer.password);
         changes.push({ field: 'password', oldValue: '***', newValue: '***' });
+      } else {
+        // A matching plaintext password is not a replacement for its stored hash.
+        delete newer.password;
       }
     } else {
       // Don't update password if not provided

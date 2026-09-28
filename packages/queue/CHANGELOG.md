@@ -1,5 +1,12 @@
 # @zucker-framework/queue
 
+## 1.0.5
+
+### Patch Changes
+
+- Expose native BullMQ count keys for compatible monitoring adapters; wait for all producer/worker closes before reporting aggregated shutdown failures, including synchronous throws. Keep document ZIP CRC validation compatible with Node 20 rather than introducing a Node 22-only default-entry import. Add explicit extension lifecycle and browser regression commands. These changes are unreleased; they do not authorize consumer source links or package publication.
+- Expose producer prewarming/error callbacks and worker retry budgets/stalled interval; avoid removed BullMQ 6 paused-count argument while reading legacy paused counts without mutation. Validate worker options before opening connections. Harden persistent log pagination, date ranges and bounded CSV queries before storage access.
+
 ## 1.0.2
 
 ### Patch Changes

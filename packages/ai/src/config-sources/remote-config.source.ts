@@ -1,5 +1,5 @@
 import type { AIModelConfig, AIScenario } from '../ai-provider.interface';
-import type { AIConfigSource, AIConfigSourceOptions } from '../config-source';
+import type { AIConfigSource, AIConfigSourceOptions, ScenarioConfigOptions } from '../config-source';
 
 export interface RemoteAIConfigSourceOptions extends AIConfigSourceOptions {
   baseUrl: string;
@@ -9,11 +9,14 @@ export interface RemoteAIConfigSourceOptions extends AIConfigSourceOptions {
   transform?: (
     payload: unknown,
     scenario: string,
+    options: ScenarioConfigOptions,
   ) => AIModelConfig | null | Promise<AIModelConfig | null>;
   scenariosPath?: string;
 }
 
 interface RemoteConfigShape {
+  scenario?: string;
+  modelRecordId?: string;
   apiKey?: string;
   baseURL?: string;
   baseUrl?: string;
@@ -59,17 +62,29 @@ export class RemoteAIConfigSource implements AIConfigSource {
     this.scenariosPath = options.scenariosPath;
   }
 
-  async getScenarioConfig(scenario: string): Promise<AIModelConfig | null> {
-    const payload = await this.request(`${this.baseUrl}/${encodeURIComponent(scenario)}`);
+  async getScenarioConfig(scenario: string, options: ScenarioConfigOptions = {}): Promise<AIModelConfig | null> {
+    const suffix = options.allowDefault === false ? '?allowDefault=false' : '';
+    const payload = await this.request(`${this.baseUrl}/${encodeURIComponent(scenario)}${suffix}`);
     if (payload === null) return null;
-    if (this.transform) return this.transform(payload, scenario);
-    const config = unwrapPayload(payload) as RemoteConfigShape;
+    const data = unwrapPayload(payload);
+    // Fail closed against older remote servers that silently return their default.
+    // Transforms receive options but cannot bypass explicit scenario provenance.
+    if (!isRecord(data) || (options.allowDefault === false && data.scenario !== scenario)) return null;
+    if (this.transform) return this.transform(payload, scenario, options);
+    const config = data as RemoteConfigShape;
     const modelId = config.modelId ?? config.model;
-    if (!modelId) return null;
+    if (typeof modelId !== 'string' || !modelId.trim()) return null;
+    for (const key of ['apiKey', 'baseURL', 'baseUrl', 'providerId', 'provider', 'modelRecordId', 'proxyUrl']) {
+      if (data[key] !== undefined && typeof data[key] !== 'string') throw new TypeError(`Invalid remote AI config field: ${key}`);
+    }
+    for (const key of ['temperature', 'maxTokens', 'topP', 'timeoutMs']) {
+      if (data[key] !== undefined && (typeof data[key] !== 'number' || !Number.isFinite(data[key]))) throw new TypeError(`Invalid remote AI config field: ${key}`);
+    }
     return {
       apiKey: config.apiKey ?? '',
       baseURL: config.baseURL ?? config.baseUrl,
       modelId,
+      modelRecordId: config.modelRecordId,
       providerId: (config.providerId ?? config.provider)?.toLowerCase(),
       temperature: config.temperature,
       maxTokens: config.maxTokens,

@@ -1,6 +1,6 @@
 {
   "name": "@zucker-framework/ext-kit",
-  "version": "1.0.2",
+  "version": "1.0.5",
   "description": "Browser extension infrastructure kit — batch engine, capture session, licensing, popup driver. Vendored into extensions as ext-kit.js / ext-kit-popup.js.",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -30,6 +30,8 @@
     "build": "tsup && node build-vendored.mjs",
     "clean": "rm -rf dist",
     "lint": "eslint src/",
+    "test:unit": "node --test test/engine.test.cjs test/licensing.test.cjs test/lifecycle.test.cjs && vitest run --root ../.. packages/ext-kit/src/naming.spec.ts",
+    "test:browser": "node --test test/browser.test.cjs",
     "prepack": "node ../../scripts/prepare-package-legal.mjs"
   },
   "devDependencies": {

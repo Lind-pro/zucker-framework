@@ -152,6 +152,9 @@ export class HttpClient {
           this.config.setToken(token);
         }
 
+        // Explicit opt-out is needed by consumers of third-party JSON schemas.
+        if ((response.config as RequestConfig | undefined)?._rawResponse) return response;
+
         // 处理文件流数据
         if (response.data instanceof ArrayBuffer || response.data instanceof Blob) {
           return response;
@@ -196,11 +199,9 @@ export class HttpClient {
         if (axios.isCancel(error)) return Promise.reject(error);
         if (error.response) {
           const { status, config: originalRequest } = error.response;
-          const data =
-            error.response.data && typeof error.response.data === 'object'
-              ? (error.response.data as Record<string, unknown>)
-              : {};
-          const errorMsg = (data?.message as string) || `请求失败 (${status})`;
+          const data = await readErrorData(error.response.data);
+          const message = data?.message;
+          const errorMsg = typeof message === 'string' ? message : Array.isArray(message) ? message.join('；') : `请求失败 (${status})`;
           // 后端结构化错误 { message, code, details } —— 把 code/details 拍平到
           // error 对象上，业务层可以 (err as { code?: string }).code === 'XXX'
           // 来路由不同 UX（如 EMAIL_ALREADY_REGISTERED 跳登录）
@@ -211,6 +212,13 @@ export class HttpClient {
               : undefined;
           const attachStatus = (err: Error, extra?: Record<string, unknown>) =>
             Object.assign(err, {
+              // Preserve transport evidence, including Blob/ArrayBuffer bodies that
+              // callers may decode using their own domain error schema.
+              cause: error,
+              response: error.response,
+              request: error.request,
+              config: error.config,
+              code: error.code,
               status,
               _httpStatus: status,
               ...(errorCode ? { code: errorCode } : {}),
@@ -242,12 +250,16 @@ export class HttpClient {
               try {
                 const failedAccessToken = this.readBearerToken(originalRequest.headers);
                 const tokens = await this.refreshAccessToken(refreshFn, failedAccessToken);
+                if (originalRequest.signal?.aborted) throw new axios.CanceledError();
                 this.config.setToken(tokens.access_token);
                 originalRequest.headers = originalRequest.headers || {};
                 originalRequest.headers['Authorization'] = `Bearer ${tokens.access_token}`;
                 (originalRequest as any)._isRetry = true;
                 return this.api.request(originalRequest);
-              } catch {
+              } catch (refreshError) {
+                if (originalRequest.signal?.aborted || axios.isCancel(refreshError)) {
+                  throw new axios.CanceledError();
+                }
                 this.config.clearAuth();
                 const isLoginPage =
                   typeof window !== 'undefined' &&
@@ -265,8 +277,8 @@ export class HttpClient {
               typeof window !== 'undefined' &&
               (window.location.pathname === '/login' ||
                 window.location.pathname.endsWith('/login'));
+            this.config.clearAuth();
             if (!isLoginPage) {
-              this.config.clearAuth();
               this.config.onUnauthorized();
             }
             return Promise.reject(attachStatus(new Error(errorMsg), { _authHandled: true }));
@@ -384,7 +396,7 @@ export class HttpClient {
       method: 'GET',
     },
   ): Promise<T> {
-    const { errorHandler, _hideError, _rawResponse, ...axiosOptions } = options;
+    const { errorHandler, _hideError, ...axiosOptions } = options;
 
     try {
       // 响应拦截器已完成数据解包：
@@ -666,7 +678,7 @@ export class HttpClient {
     }
 
     try {
-      const response = await fetch(url, {
+      let response = await fetch(url, {
         method,
         headers: requestHeaders,
         body: requestBody,
@@ -683,38 +695,36 @@ export class HttpClient {
         // 尝试刷新 token
         if (refreshFn) {
           try {
-            const tokens = await this.refreshAccessToken(refreshFn, token ?? undefined);
+            const tokens = await awaitWithSignal(this.refreshAccessToken(refreshFn, token ?? undefined), signal);
+            externalSignal?.throwIfAborted();
             this.config.setToken(tokens.access_token);
 
-            // 重试请求
             requestHeaders['Authorization'] = `Bearer ${tokens.access_token}`;
-            const retryResponse = await fetch(url, {
-              method,
-              headers: requestHeaders,
-              body: requestBody,
-              credentials: this.config.withCredentials ? 'include' : 'same-origin',
-            });
 
-            if (retryResponse.status === 401) {
-              this.config.clearAuth();
-              this.config.onUnauthorized();
-              throw Object.assign(new Error('认证失败'), { _authHandled: true });
-            }
-
-            return retryResponse;
           } catch (error) {
+            if (externalSignal?.aborted) throw externalSignal.reason ?? error;
             // 如果已经处理过（例如 retryResponse.status === 401 的 throw 被捕获），直接向上抛出避免重复处理
             if ((error as { _authHandled?: boolean })._authHandled) throw error;
             this.config.clearAuth();
             this.config.onUnauthorized();
             throw Object.assign(new Error('认证失败'), { _authHandled: true });
           }
+          // Transport/permission failures after refresh are not failed authentication.
+          response = await fetch(url, {
+            method, headers: requestHeaders, body: requestBody, signal,
+            credentials: this.config.withCredentials ? 'include' : 'same-origin',
+          });
+          if (response.status === 401) {
+            this.config.clearAuth();
+            this.config.onUnauthorized();
+            throw Object.assign(new Error('认证失败'), { _authHandled: true });
+          }
+        } else {
+          // 没有刷新 token 的能力，直接处理 401
+          this.config.clearAuth();
+          this.config.onUnauthorized();
+          throw Object.assign(new Error('未授权，请先登录'), { _authHandled: true });
         }
-
-        // 没有刷新 token 的能力，直接处理 401
-        this.config.clearAuth();
-        this.config.onUnauthorized();
-        throw Object.assign(new Error('未授权，请先登录'), { _authHandled: true });
       }
 
       // 处理 403 禁止访问
@@ -740,6 +750,9 @@ export class HttpClient {
     } catch (error) {
       if (timeoutId) clearTimeout(timeoutId);
 
+      // Caller cancellation is not a timeout or lost authentication, including
+      // aborts while awaiting a shared refresh. Never show a global failure toast.
+      if (externalSignal?.aborted) throw externalSignal.reason ?? error;
       if (error instanceof Error) {
         if (error.name === 'AbortError') {
           const timeoutError = new Error('请求超时');
@@ -764,6 +777,39 @@ export class HttpClient {
   getAxiosInstance(): AxiosInstance {
     return this.api;
   }
+}
+
+/** Decode bounded JSON error bodies without changing the original transport evidence. */
+async function readErrorData(body: unknown): Promise<Record<string, unknown>> {
+  const maxBytes = 1024 * 1024;
+  try {
+    if (typeof Blob !== 'undefined' && body instanceof Blob) {
+      if (body.size > maxBytes) return {};
+      body = JSON.parse(await body.text());
+    } else if (body instanceof ArrayBuffer) {
+      if (body.byteLength > maxBytes) return {};
+      body = JSON.parse(new TextDecoder().decode(body));
+    }
+    return body && typeof body === 'object' && !Array.isArray(body)
+      ? body as Record<string, unknown> : {};
+  } catch {
+    // Non-JSON files and unsupported encodings still retain response.data.
+    return {};
+  }
+}
+
+/** Stop waiting without cancelling a shared refresh needed by other requests. */
+function awaitWithSignal<T>(pending: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return pending;
+  return new Promise<T>((resolve, reject) => {
+    const aborted = () => {
+      signal.removeEventListener('abort', aborted);
+      reject(signal.reason ?? new DOMException('Aborted', 'AbortError'));
+    };
+    signal.addEventListener('abort', aborted, { once: true });
+    if (signal.aborted) aborted();
+    pending.then(resolve, reject).finally(() => signal.removeEventListener('abort', aborted));
+  });
 }
 
 export function createHttpClient(config: HttpClientConfig = {}): HttpClient {

@@ -120,6 +120,18 @@ abstract class PersistentLogService<T extends LogRecord> {
   }
 
   protected where(params: LogQuery): Record<string, unknown> {
+    for (const field of ['startDate', 'endDate'] as const) {
+      const value = params[field];
+      if (value !== undefined && (!(value instanceof Date) || !Number.isFinite(value.getTime()))) {
+        throw new RangeError(`${field} must be a valid Date`);
+      }
+    }
+    if (params.startDate && params.endDate && params.startDate > params.endDate) {
+      throw new RangeError('startDate must not exceed endDate');
+    }
+    if (params.status !== undefined && !['SUCCESS', 'FAILED', 'PENDING'].includes(params.status)) {
+      throw new RangeError('Invalid operation log status');
+    }
     const source = params as unknown as Record<string, unknown>;
     const where: Record<string, unknown> = {};
     for (const field of this.filters) if (source[field]) where[field] = source[field];
@@ -133,8 +145,9 @@ abstract class PersistentLogService<T extends LogRecord> {
   }
 
   async findAll(params: LogQuery) {
-    const page = params.page || 1;
-    const pageSize = Math.min(params.pageSize || 20, 100);
+    const page = this.positiveInteger(params.page ?? 1, 'page');
+    const pageSize = Math.min(this.positiveInteger(params.pageSize ?? 20, 'pageSize'), 100);
+    if (!Number.isSafeInteger((page - 1) * pageSize)) throw new RangeError('Pagination offset exceeds safe integer range');
     const where = this.where(params);
     const [data, total] = await Promise.all([
       this.model.findMany({
@@ -183,11 +196,18 @@ abstract class PersistentLogService<T extends LogRecord> {
     return Math.round((result._avg as Record<string, number | null>)[field] || 0);
   }
 
+  private positiveInteger(value: number, field: string): number {
+    if (!Number.isSafeInteger(value) || value < 1) throw new RangeError(`${field} must be a positive safe integer`);
+    return value;
+  }
+
   protected async csv(params: LogQuery & { limit?: number }, columns: Array<[keyof T, string]>) {
+    const limit = this.positiveInteger(params.limit ?? 10000, 'limit');
+    if (limit > 10000) throw new RangeError('limit must not exceed 10000');
     const logs = await this.model.findMany({
       where: this.where(params),
       orderBy: { [this.timeField]: 'desc' },
-      take: params.limit || 10000,
+      take: limit,
     });
     const field = (value: unknown) => {
       if (value === null || value === undefined) return '';

@@ -16,11 +16,15 @@ export async function pLimit<T, R>(
   items: T[],
   concurrency: number,
   fn: (item: T, index: number) => Promise<R>,
-  options: { rejectOnError?: boolean } = {},
+  options: { rejectOnError?: boolean; /** Stop scheduling and await active workers before rejecting. */ drainOnError?: boolean } = {},
 ): Promise<R[]> {
+  if (!Number.isInteger(concurrency) || concurrency < 1) {
+    throw new RangeError('concurrency must be a positive integer');
+  }
   const results: R[] = new Array(items.length);
   let index = 0;
   let failed = false;
+  let firstError: unknown;
 
   async function worker(): Promise<void> {
     while (index < items.length && !failed) {
@@ -28,9 +32,11 @@ export async function pLimit<T, R>(
       try {
         results[current] = await fn(items[current], current);
       } catch (error) {
-        if (options.rejectOnError) {
+        if (options.rejectOnError || options.drainOnError) {
+          if (!failed) firstError = error;
           failed = true;
-          throw error;
+          if (!options.drainOnError) throw error;
+          return;
         }
         results[current] = error as R;
       }
@@ -39,5 +45,6 @@ export async function pLimit<T, R>(
 
   const workers = Array.from({ length: Math.min(concurrency, items.length) }, () => worker());
   await Promise.all(workers);
+  if (failed) throw firstError;
   return results;
 }

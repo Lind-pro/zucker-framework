@@ -1,0 +1,87 @@
+import { describe, it, expect, vi } from 'vitest';
+import { InMemoryAdapter } from '@zucker-framework/crud';
+import { NotFoundException } from '@zucker-framework/core';
+import { UserService } from './user.service';
+import { ScryptEncoder } from '../password/scrypt-encoder';
+import { AUTH_EVENT_TOPICS } from '../events/auth-events';
+
+async function fixture() {
+  const db = new InMemoryAdapter();
+  const encoder = new ScryptEncoder();
+  const bus = { publish: vi.fn().mockResolvedValue(undefined) };
+  const service = new UserService(db, encoder, bus);
+  const user = await service.addUser({ username: 'fixture', name: 'Fixture', typeId: 'user', password: 'SyntheticOnly9Password' });
+  bus.publish.mockClear();
+  return { db, encoder, bus, service, user };
+}
+
+describe('UserService credential and binding contracts', () => {
+  it('keeps the existing encoded password when the same plaintext is resubmitted', async () => {
+    const f = await fixture();
+    const input = Object.freeze({ id: f.user.id, username: f.user.username, password: 'SyntheticOnly9Password', name: 'Changed' });
+    const saved = await f.service.saveUser(input);
+    expect(saved.password).toBe(f.user.password);
+    expect(saved.name).toBe('Changed');
+    expect((await f.service.findById(f.user.id))?.password).toBe(f.user.password);
+    expect(f.bus.publish).toHaveBeenCalledWith(AUTH_EVENT_TOPICS.USER_MODIFIED, expect.objectContaining({ passwordChanged: false }));
+    expect(JSON.stringify(f.bus.publish.mock.calls)).not.toContain(input.password);
+  });
+
+  it('encodes a different password without mutating the caller or exposing credentials in events', async () => {
+    const f = await fixture();
+    const changes = Object.freeze({ password: 'AnotherSynthetic8Password' });
+    const saved = await f.service.updateUser(f.user.id, changes);
+    expect(saved.password).not.toBe(changes.password);
+    expect(await f.encoder.matches(changes.password, saved.password!)).toBe(true);
+    expect(await f.encoder.matches('SyntheticOnly9Password', saved.password!)).toBe(false);
+    expect(f.bus.publish).toHaveBeenCalledWith(AUTH_EVENT_TOPICS.USER_MODIFIED, expect.objectContaining({ passwordChanged: true }));
+    expect(JSON.stringify(f.bus.publish.mock.calls)).not.toContain(changes.password);
+  });
+
+  it.each([undefined, ''])('preserves credentials for partial update with password %s', async password => {
+    const f = await fixture();
+    const saved = await f.service.updateUser(f.user.id, Object.freeze({ name: 'New name', password, username: undefined }));
+    expect(saved.password).toBe(f.user.password);
+    expect(saved.username).toBe('fixture');
+    expect(saved.name).toBe('New name');
+  });
+
+  it('rejects invalid passwords and absent users without writing or emitting mutation events', async () => {
+    const f = await fixture();
+    await expect(f.service.updateUser(f.user.id, { password: 'x' })).rejects.toThrow();
+    await expect(f.service.updateUser('absent', { name: 'New' })).rejects.toBeInstanceOf(NotFoundException);
+    expect(await f.service.findById('absent')).toBeNull();
+    expect((await f.service.findById(f.user.id))?.password).toBe(f.user.password);
+    expect(f.bus.publish).not.toHaveBeenCalled();
+  });
+
+  it('deduplicates and replaces role bindings while retaining caller-owned primary key mapping', async () => {
+    const f = await fixture();
+    await f.db.model('userRoles').create({ data: { userId: f.user.id, roleId: 'old' } });
+    await f.service.setUserRoles(f.user.id, ['reader', 'reader', 'editor'], {
+      bindingData: (userId, roleId) => ({ id: `${userId}_${roleId}` }),
+    });
+    expect(await f.db.model('userRoles').findMany({ where: { userId: f.user.id } })).toEqual([
+      { id: `${f.user.id}_reader`, userId: f.user.id, roleId: 'reader' },
+      { id: `${f.user.id}_editor`, userId: f.user.id, roleId: 'editor' },
+    ]);
+    expect(f.bus.publish).toHaveBeenCalledWith(AUTH_EVENT_TOPICS.CLEAR_AUTH_CACHE, expect.objectContaining({ userId: f.user.id }));
+    await f.service.setUserRoles(f.user.id, []);
+    expect(await f.db.model('userRoles').findMany({ where: { userId: f.user.id } })).toEqual([]);
+  });
+
+  it('rejects malformed role identifiers and absent accounts', async () => {
+    const f = await fixture();
+    await expect(f.service.setUserRoles(f.user.id, [''])).rejects.toThrow();
+    await expect(f.service.setUserRoles('absent', ['reader'])).rejects.toBeInstanceOf(NotFoundException);
+    expect(f.bus.publish).not.toHaveBeenCalled();
+  });
+
+  it('propagates a failed binding transaction without publishing authorization success', async () => {
+    const f = await fixture();
+    const failure = new Error('synthetic transaction failure');
+    vi.spyOn(f.db, '$transaction').mockRejectedValueOnce(failure);
+    await expect(f.service.setUserRoles(f.user.id, ['reader'])).rejects.toBe(failure);
+    expect(f.bus.publish).not.toHaveBeenCalled();
+  });
+});

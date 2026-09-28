@@ -1,11 +1,18 @@
 # @zucker-framework/logging
 
+## 1.0.5
+
+### Patch Changes
+
+- Expose producer prewarming/error callbacks and worker retry budgets/stalled interval; avoid removed BullMQ 6 paused-count argument while reading legacy paused counts without mutation. Validate worker options before opening connections. Harden persistent log pagination, date ranges and bounded CSV queries before storage access.
+- Updated dependencies
+  - @zucker-framework/core@1.0.5
+
 ## 1.0.3
 
 ### Patch Changes
 
 - Preserve the original HTTP exception when ValidationPipe messages contain objects. Record only the exception summary instead of throwing during log redaction or serializing submitted values.
-
 
 ## 1.0.2
 

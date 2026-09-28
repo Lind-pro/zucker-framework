@@ -137,7 +137,7 @@ export { ThirdPartyAccountService } from './services/third-party-account.service
 export type { ThirdPartyProfile } from './services/third-party-account.service';
 export { DepartmentDimensionProvider } from './services/department-dimension.provider';
 export { UserService, PASSWORD_ENCODER } from './services/user.service';
-export type { UserEntity } from './services/user.service';
+export type { UserEntity, UserRoleBindingOptions } from './services/user.service';
 export {
   RoleService,
   ROLE_EVENT_TOPICS,
@@ -277,6 +277,9 @@ export type { AllowPermissionConfig } from './handlers/user-allow-permission.han
 export { ZuckerAuthModule } from './auth.module';
 export type { ZuckerAuthModuleAsyncOptions, ZuckerAuthModuleOptionsFactory } from './auth.module';
 
+export { RefreshTokenService, RefreshTokenError, CacheRefreshTokenStore, InProcessRefreshTokenLock } from './session/refresh-token.service';
+export type { RefreshTokenClaims, RefreshTokenPair, RefreshTokenOptions, RefreshTokenStore, RefreshTokenCache, RefreshTokenLock } from './session/refresh-token.service';
+
 // Durable sessions and HttpOnly refresh-cookie transport
 export { PersistentSessionService } from './session/persistent-session.service';
 export type {
@@ -308,9 +311,9 @@ export {
 export { LoginAuditService, type LoginAuditData, type LoginAuditOptions } from './login-audit';
 export { parseUserAgent, type ParsedUserAgent, type UserAgentLabels } from './user-agent';
 
-export { OptionalJwtAuthGuard } from './guards/optional-jwt-auth.guard';
+export { OptionalJwtAuthGuard, OPTIONAL_JWT_AUTH_OPTIONS, type OptionalJwtAuthOptions } from './guards/optional-jwt-auth.guard';
 export { createOAuthStateGuard } from './guards/oauth-state.guard';
-export { createLocalAuthGuard } from './guards/local-auth.guard';
+export { createLocalAuthGuard, type LocalAuthGuardOptions } from './guards/local-auth.guard';
 export {
   ApiKeyService,
   type ApiKeyRecord,

@@ -24,7 +24,7 @@ describe('application system logging', () => {
   it('awaits persistence and serializes cyclic metadata/bigints without recursive logging', async () => {
     let complete!: () => void;
     const create = vi.fn(
-      () =>
+      (_input: { data: { metadata: Record<string, unknown> } }) =>
         new Promise<void>((resolve) => {
           complete = resolve;
         }),

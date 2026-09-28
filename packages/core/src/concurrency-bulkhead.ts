@@ -10,12 +10,37 @@ export class ConcurrencyBulkhead {
   private readonly waiters: BulkheadWaiter[] = [];
 
   constructor(
-    private readonly maxConcurrency: number,
+    private maxConcurrency: number,
     private readonly maxQueueSize: number,
     private readonly queueTimeoutMs: number,
     private readonly createUnavailableError: () => Error = () =>
       new Error('Concurrency capacity exhausted'),
-  ) {}
+  ) {
+    if (!Number.isInteger(maxConcurrency) || maxConcurrency < 1 ||
+        !Number.isInteger(maxQueueSize) || maxQueueSize < 0 ||
+        !Number.isFinite(queueTimeoutMs) || queueTimeoutMs < 0) {
+      throw new RangeError('Invalid concurrency bulkhead limits');
+    }
+  }
+
+  /** Change admission capacity without revoking active leases; FIFO waiters retain priority. */
+  setConcurrency(limit: number): void {
+    if (!Number.isInteger(limit) || limit < 1) throw new RangeError('Invalid concurrency limit');
+    this.maxConcurrency = limit;
+    while (this.active < limit && this.waiters.length > 0) {
+      const waiter = this.waiters.shift()!;
+      if (waiter.timer) clearTimeout(waiter.timer);
+      this.active += 1;
+      waiter.resolve(this.createRelease());
+    }
+  }
+
+  /** Immediate admission for Observable/subscription lifecycles; release is idempotent. */
+  tryAcquire(): (() => void) | undefined {
+    if (this.active >= this.maxConcurrency || this.waiters.length > 0) return undefined;
+    this.active += 1;
+    return this.createRelease();
+  }
 
   async run<T>(operation: () => Promise<T>): Promise<T> {
     const release = await this.acquire();
@@ -26,7 +51,8 @@ export class ConcurrencyBulkhead {
     }
   }
 
-  private acquire(): Promise<() => void> {
+  /** FIFO queued admission. The caller must release the returned lease in finally/teardown. */
+  acquire(): Promise<() => void> {
     if (this.active < this.maxConcurrency) {
       this.active += 1;
       return Promise.resolve(this.createRelease());
@@ -59,6 +85,11 @@ export class ConcurrencyBulkhead {
       }
       released = true;
 
+      // A reduced limit does not revoke leases or hand a released slot to a waiter too early.
+      if (this.active > this.maxConcurrency) {
+        this.active -= 1;
+        return;
+      }
       const waiter = this.waiters.shift();
       if (!waiter) {
         this.active -= 1;

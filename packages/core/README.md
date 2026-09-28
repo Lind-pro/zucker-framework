@@ -14,6 +14,12 @@ Set `legacyCbc: { salt }` only for historical `ivHex:ciphertextHex` data using a
 
 `createCancellationScope({ parent, timeoutMs, abortReason, timeoutReason })` returns a controller, signal and disposer. `waitForSignal` releases its listener on either outcome and consumes late failures. `withStreamIdleTimeout` bounds each pending chunk, invokes the configured abort callback and finalizes abandoned iterators without waiting forever. `ConcurrencyBulkhead` bounds admitted and queued calls with a configurable rejection error. `ZonedTime` receives an explicit timezone; it never selects an application timezone itself.
 
+## IO lifecycle additions (unreleased)
+
+- `createCancellationScope({ timeoutMs, ref: false })` unrefs its Node deadline; default remains referenced. Dispose on every completion path. Parent cancellation/reason mapping and timeout policy remain explicit.
+- `ConcurrencyBulkhead.tryAcquire()` synchronously returns an idempotent release callback or `undefined`. It never jumps queued callers. `acquire()` is now public for FIFO asynchronous admission; callers own finally/Observable teardown. `setConcurrency(limit)` changes admission capacity without evicting active leases and admits queued callers in FIFO order when capacity increases. Invalid capacities are rejected.
+- `shuffle(readonlyItems, rng = Math.random)` returns a new Fisher–Yates permutation without mutating inputs; injected RNG values must be finite and in `[0, 1)`.
+
 ## Browser-safe shared mechanics
 
 `@zucker-framework/core/privacy` exports `redactFields` without Node dependencies; `@zucker-framework/core/user-agent` exports `inspectUserAgent` using the existing UA parser. Frontend entry points import these subpaths rather than the Node-oriented root. UI labels and version display remain consumer policy. `safeHtmlLinkHref` provides runtime-template protocol filtering and HTML attribute escaping; it does not authorize outbound network access.

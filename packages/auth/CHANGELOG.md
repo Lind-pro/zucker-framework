@@ -1,5 +1,19 @@
 # @zucker-framework/auth
 
+## 1.0.5
+
+### Patch Changes
+
+- Add product-neutral refresh-pair issuer, verifier, identity-loader and atomic store ports, with a legacy string-JTI cache adapter, explicit missing-key policy, and refresh revocation tombstones. Provide an explicitly process-local lock for process-local caches without installing a persistence fallback.
+
+  Retain TokenService revocation evidence after no-cache session removal and reject ambiguous JWT authorization headers before Passport/blacklist credential parsing can diverge. Preserve optional/local guard compatibility defaults and support explicit strict credential/error policies.
+
+- Prevent same-password updates from persisting plaintext, preserve caller DTOs and omitted fields, and add an update-only user operation plus transactional role-binding replacement with consumer field mapping. Password encoders and account policy remain explicitly configurable.
+- Updated dependencies
+  - @zucker-framework/core@1.0.5
+  - @zucker-framework/cache@1.0.5
+  - @zucker-framework/crud@1.0.5
+
 ## 1.0.2
 
 ### Patch Changes

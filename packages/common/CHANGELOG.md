@@ -1,5 +1,16 @@
 # @zucker-framework/common
 
+## 1.0.5
+
+### Patch Changes
+
+- Add cancellation deadline ref control, public synchronous/FIFO concurrency leases, non-mutating injectable-RNG shuffle, drain-on-error task mapping, immediate/configurable HTTP disconnect cancellation, and request-aggregate bounded Multer-compatible memory storage.
+
+  Make WebDAV uploads/downloads truly streaming with cancellation/error teardown, directory stat rejection, shallow directory-inclusive listing, public ensureDirectory and explicit anonymous configuration policy. Correct FileManager's download stream type from fs.ReadStream to Node Readable (a breaking public type correction); upload accepts Readable. Hosts retain paths, ownership and disk recovery policy. Local/S3 buffering behavior is unchanged.
+
+- Updated dependencies
+  - @zucker-framework/core@1.0.5
+
 ## 1.0.3
 
 ### Patch Changes

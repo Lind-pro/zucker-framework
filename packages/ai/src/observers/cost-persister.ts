@@ -13,13 +13,14 @@ import { CostTracker, type CostRecord } from '../cost-tracker';
 export interface CostPersister {
   /**
    * 把当前聚合周期的统计写入外部存储。
-   * 框架在 `PersistedCostTracker.flush()` 时调用。失败应该 throw（框架会 log 但不停 flush）。
+   * 框架在 `PersistedCostTracker.flush()` 时调用。失败应该 throw；框架保留统计并向调用方抛出，由调用方安排重试。
    */
   persist(records: AggregatedCostRecord[], period: AggregationPeriod): Promise<void>;
 }
 
 export interface AggregatedCostRecord {
   modelId: string;
+  provider?: string;
   /** 业务侧的 ai_model 表主键（来自 metadata.modelRecordId）*/
   modelRecordId?: string;
   scenario?: string;
@@ -75,7 +76,8 @@ export interface PersistedCostTrackerOptions {
 @Injectable()
 export class PersistedCostTracker extends CostTracker {
   private readonly _logger = new Logger(PersistedCostTracker.name);
-  private readonly aggregated = new Map<string, MutableAggregate>();
+  private aggregated = new Map<string, MutableAggregate>();
+  private flushing?: Promise<void>;
   private periodStart = new Date();
   private sessionWarned = false;
   private sessionTotalCost = 0;
@@ -101,19 +103,30 @@ export class PersistedCostTracker extends CostTracker {
   }
 
   /** 把当前聚合周期 flush 到外部存储。业务侧通常用 @Cron 驱动 */
-  async flush(): Promise<void> {
+  flush(): Promise<void> {
+    if (this.flushing) return this.flushing;
+    this.flushing = this.flushSnapshot().finally(() => { this.flushing = undefined; });
+    return this.flushing;
+  }
+
+  private async flushSnapshot(): Promise<void> {
     if (this.aggregated.size === 0) return;
+    const snapshot = this.aggregated;
+    this.aggregated = new Map();
+    const periodStart = this.periodStart;
     const periodEnd = new Date();
+    this.periodStart = periodEnd;
     const records: AggregatedCostRecord[] = [];
     const skipped: string[] = [];
 
-    for (const [key, agg] of this.aggregated.entries()) {
+    for (const [key, agg] of snapshot.entries()) {
       if (this.options.skipMissingModelRecordId && !agg.modelRecordId) {
         skipped.push(key);
         continue;
       }
       records.push({
         modelId: agg.modelId,
+        provider: agg.provider,
         modelRecordId: agg.modelRecordId,
         scenario: agg.scenario,
         requestCount: agg.requestCount,
@@ -131,27 +144,34 @@ export class PersistedCostTracker extends CostTracker {
       });
     }
 
-    skipped.forEach((k) => this.aggregated.delete(k));
-
-    if (records.length === 0) {
-      if (skipped.length > 0) {
-        this._logger.warn(
-          `跳过 ${skipped.length} 条 AI 模型统计记录：缺少 modelRecordId`,
-        );
-      }
-      this.periodStart = periodEnd;
-      return;
-    }
+    skipped.forEach((k) => snapshot.delete(k));
+    if (skipped.length > 0) this._logger.warn(`跳过 ${skipped.length} 条 AI 模型统计记录：缺少 modelRecordId`);
+    if (records.length === 0) return;
 
     try {
-      await this.persister.persist(records, { start: this.periodStart, end: periodEnd });
+      await this.persister.persist(records, { start: periodStart, end: periodEnd });
       this._logger.log(
         `已刷新 ${records.length} 条 AI 使用统计 (会话总: $${this.sessionTotalCost.toFixed(4)})`,
       );
-      this.aggregated.clear();
-      this.periodStart = periodEnd;
     } catch (e) {
-      this._logger.error('刷新 AI 模型使用统计失败:', e);
+      // Restore only the failed snapshot; calls arriving during persistence must not be lost.
+      for (const [key, previous] of snapshot) {
+        const current = this.aggregated.get(key);
+        if (current) {
+          previous.requestCount += current.requestCount;
+          previous.successCount += current.successCount;
+          previous.failureCount += current.failureCount;
+          previous.inputTokens += current.inputTokens;
+          previous.outputTokens += current.outputTokens;
+          previous.totalTokens += current.totalTokens;
+          previous.totalCost += current.totalCost;
+          previous.responseTimes.push(...current.responseTimes);
+        }
+        this.aggregated.set(key, previous);
+      }
+      this.periodStart = periodStart;
+      this._logger.error('刷新 AI 模型使用统计失败；保留统计等待重试');
+      throw e;
     }
   }
 
@@ -161,11 +181,12 @@ export class PersistedCostTracker extends CostTracker {
   }
 
   private aggregate(entry: CostRecord & { modelRecordId?: string; success?: boolean }): void {
-    const key = aggKey(entry.model, entry.scenario, entry.modelRecordId);
+    const key = JSON.stringify([entry.provider, entry.model, entry.scenario ?? null, entry.modelRecordId ?? null]);
     let agg = this.aggregated.get(key);
     if (!agg) {
       agg = {
         modelId: entry.model,
+        provider: entry.provider,
         modelRecordId: entry.modelRecordId,
         scenario: entry.scenario,
         requestCount: 0,
@@ -207,6 +228,7 @@ export class PersistedCostTracker extends CostTracker {
 
 interface MutableAggregate {
   modelId: string;
+  provider?: string;
   modelRecordId?: string;
   scenario?: string;
   requestCount: number;
@@ -217,8 +239,4 @@ interface MutableAggregate {
   totalTokens: number;
   totalCost: number;
   responseTimes: number[];
-}
-
-function aggKey(modelId: string, scenario?: string, modelRecordId?: string): string {
-  return `${modelRecordId ?? modelId}:${scenario ?? 'default'}`;
 }

@@ -19,6 +19,24 @@ const createWorker = (running = true) => {
 };
 
 describe('BullMqWorkerHost', () => {
+  it('does not finish failed shutdown until every other worker has drained', async () => {
+    const workers = [createWorker(), createWorker()];
+    const failure = new Error('synthetic close failure');
+    workers[0].close.mockImplementation(() => { throw failure; });
+    let finish!: () => void;
+    workers[1].close.mockReturnValue(new Promise<void>(resolve => { finish = resolve; }));
+    let index = 0;
+    const host = new BullMqWorkerHost({ connection: {}, workerFactory: () => workers[index++] as unknown as Worker });
+    for (const queueName of ['first', 'second']) host.register({ queueName, handler: async () => undefined });
+    let settled = false;
+    const closing = host.close().catch(error => { settled = true; return error; });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(settled).toBe(false);
+    expect(host.health().ready).toBe(false);
+    finish();
+    expect(await closing).toMatchObject({ errors: [failure] });
+    expect(workers[1].close).toHaveBeenCalledWith(false);
+  });
   it('registers a handler with explicit concurrency and maps the job context', async () => {
     const worker = createWorker();
     let processor: ((job: Job) => Promise<unknown>) | undefined;
@@ -37,12 +55,13 @@ describe('BullMqWorkerHost', () => {
       queueName: 'ai-image',
       concurrency: 2,
       lockDurationMs: 60_000,
+      stalledIntervalMs: 500,
       handler,
     });
     expect(workerFactory).toHaveBeenCalledWith(
       'ai-image',
       expect.any(Function),
-      expect.objectContaining({ concurrency: 2, lockDuration: 60_000, prefix: 'zucker' }),
+      expect.objectContaining({ concurrency: 2, lockDuration: 60_000, stalledInterval: 500, prefix: 'zucker' }),
     );
 
     const job = {
@@ -50,6 +69,7 @@ describe('BullMqWorkerHost', () => {
       name: 'DRAWING_GENERATION',
       data: { taskId: 'task-1' },
       attemptsMade: 1,
+      opts: { attempts: 3 },
       updateProgress: vi.fn().mockResolvedValue(undefined),
       log: vi.fn().mockResolvedValue(1),
     } as unknown as Job;
@@ -58,9 +78,19 @@ describe('BullMqWorkerHost', () => {
       expect.objectContaining({
         id: 'job-1',
         attempt: 2,
+        maxAttempts: 3,
         data: { taskId: 'task-1' },
       }),
     );
+  });
+
+  it.each([0, -1, NaN, Infinity, 1.5])('rejects invalid worker settings: %s', (value) => {
+    const workerFactory = vi.fn();
+    const host = new BullMqWorkerHost({ connection: { host: 'redis' }, workerFactory });
+    for (const key of ['concurrency', 'lockDurationMs', 'stalledIntervalMs']) {
+      expect(() => host.register({ queueName: 'queue', handler: async () => {}, [key]: value })).toThrow(RangeError);
+    }
+    expect(workerFactory).not.toHaveBeenCalled();
   });
 
   it('rejects duplicate queue registration', () => {
@@ -123,6 +153,19 @@ describe('BullMqWorkerHost', () => {
       expect(worker.resume).toHaveBeenCalledTimes(1);
       expect(worker.close).toHaveBeenCalledWith(false);
     }
+  });
+
+  it('shares the drain promise across concurrent shutdown and rejects new workers', async () => {
+    let finish!: () => void;
+    const worker = createWorker();
+    worker.close.mockReturnValue(new Promise<void>(resolve => { finish = resolve; }));
+    const host = new BullMqWorkerHost({ connection: { host: 'redis' }, workerFactory: () => worker as unknown as Worker });
+    host.register({ queueName: 'queue', handler: async () => {} });
+    const first = host.close();
+    expect(host.close()).toBe(first);
+    expect(() => host.register({ queueName: 'next', handler: async () => {} })).toThrow('closing');
+    expect(worker.close).toHaveBeenCalledOnce();
+    finish(); await first;
   });
 
   it('reports readiness only while every registered worker is connected and running', async () => {

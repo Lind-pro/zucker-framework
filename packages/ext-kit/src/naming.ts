@@ -16,7 +16,7 @@ export function hostOf(url: string): string {
 export function normalizeUrls(urls: unknown[]): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
-  for (const raw of urls || []) {
+  for (const raw of Array.isArray(urls) ? urls : []) {
     const value = String(raw || '').trim();
     if (!/^https?:\/\//i.test(value)) {
       continue;
@@ -24,7 +24,7 @@ export function normalizeUrls(urls: unknown[]): string[] {
     let key = value;
     try {
       const parsed = new URL(value);
-      parsed.hash = '';
+      // Fragments may identify distinct application routes; never silently merge them.
       key = parsed.toString();
     } catch {
       continue;

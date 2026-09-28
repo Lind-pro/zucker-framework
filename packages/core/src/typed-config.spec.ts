@@ -39,7 +39,7 @@ describe('defineConfig', () => {
 
 describe('mergeConfigs', () => {
   it('should merge flat objects', () => {
-    const result = mergeConfigs(
+    const result = mergeConfigs<Record<string, unknown>>(
       { a: 1, b: 2 },
       { b: 3, c: 4 },
     );
@@ -47,7 +47,7 @@ describe('mergeConfigs', () => {
   });
 
   it('should deep merge nested objects', () => {
-    const result = mergeConfigs(
+    const result = mergeConfigs<Record<string, unknown>>(
       { db: { host: 'localhost', port: 5432 } },
       { db: { port: 3306 } },
     );
@@ -55,7 +55,7 @@ describe('mergeConfigs', () => {
   });
 
   it('should handle undefined layers', () => {
-    const result = mergeConfigs(
+    const result = mergeConfigs<Record<string, unknown>>(
       { a: 1 },
       undefined,
       { b: 2 },
@@ -64,7 +64,7 @@ describe('mergeConfigs', () => {
   });
 
   it('should not deep-merge arrays (replace)', () => {
-    const result = mergeConfigs(
+    const result = mergeConfigs<Record<string, unknown>>(
       { tags: ['a', 'b'] },
       { tags: ['c'] },
     );
@@ -72,7 +72,7 @@ describe('mergeConfigs', () => {
   });
 
   it('should support 3+ layers (priority: last wins)', () => {
-    const result = mergeConfigs(
+    const result = mergeConfigs<Record<string, unknown>>(
       { env: 'dev', port: 3000 },
       { port: 4000 },
       { port: 5000, env: 'prod' },

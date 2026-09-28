@@ -6,6 +6,10 @@ export type {
   TokenUsage,
 } from './ai-provider.interface';
 export { AIErrorType } from './ai-provider.interface';
+export * from './native-port';
+export { NativeAIContractError } from './native-errors';
+export { createNativeAIModel, openAINativeModel, anthropicNativeModel, geminiNativeModel } from './native-providers';
+export type { NativeTransportOptions } from './native-providers';
 export {
   AICallAbortedError,
   AICallTimeoutError,
@@ -37,6 +41,7 @@ export type {
   AIConfigSource,
   AIConfigSourceFailureMode,
   AIConfigSourceOptions,
+  ScenarioConfigOptions,
 } from './config-source';
 export * from './config-sources';
 export { AICallWrapper } from './call-wrapper';

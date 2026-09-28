@@ -8,6 +8,8 @@ export interface AIModelConfig {
   apiKey: string;
   baseURL?: string;
   modelId: string;
+  /** Stable configuration-store identity for usage attribution; not the provider model name. */
+  modelRecordId?: string;
   temperature?: number;
   maxTokens?: number;
   /** Top-p (nucleus) sampling parameter */

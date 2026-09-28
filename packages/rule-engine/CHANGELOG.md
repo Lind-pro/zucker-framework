@@ -1,5 +1,14 @@
 # @zucker-framework/rule-engine
 
+## 1.0.5
+
+### Patch Changes
+
+- Updated dependencies
+  - @zucker-framework/core@1.0.5
+  - @zucker-framework/event@1.0.5
+  - @zucker-framework/script@1.0.5
+
 ## 1.0.2
 
 ### Patch Changes

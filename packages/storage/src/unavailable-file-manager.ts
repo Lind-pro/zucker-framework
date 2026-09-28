@@ -1,4 +1,4 @@
-import type { ReadStream } from 'node:fs';
+import type { Readable } from 'node:stream';
 import type { FileInfo, FileManager, StorageProviderType, UploadOptions, UploadResult } from './storage.interface';
 
 /** Disabled storage preserves startup availability while all data operations remain explicit. */
@@ -18,14 +18,14 @@ export class UnavailableFileManager implements FileManager {
   }
 
   uploadStream(
-    _stream: ReadStream,
+    _stream: Readable,
     _key: string,
     _options?: UploadOptions,
   ): Promise<UploadResult> {
     return Promise.reject(this.unavailable());
   }
 
-  download(_key: string): Promise<{ stream: ReadStream; size: number }> {
+  download(_key: string): Promise<{ stream: Readable; size: number }> {
     return Promise.reject(this.unavailable());
   }
 

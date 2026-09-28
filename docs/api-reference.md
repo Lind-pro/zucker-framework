@@ -2,6 +2,28 @@
 
 按包分组列出 zucker-framework 各包导出的核心接口、类和函数。
 
+## 待发布的生命周期与迁移契约
+
+以下为本地源码新增/修复，**不是当前 registry 版本承诺**。消费前核对新不可变正式制品的 exports/types；禁止以相邻源码、patch 或 file/link 代替正式依赖。版本由 Changesets 与发布者核定（storage/ext-kit 含破坏性变化，当前 fixed group 可能扩大版本集合），本表不授权发布。
+
+| 包 / 当前核对正式版 | 新契约与边界 | 详细说明 |
+| --- | --- | --- |
+| core / 1.0.2 | `createCancellationScope({ref:false})`；`ConcurrencyBulkhead.tryAcquire/acquire/setConcurrency` 幂等 lease 与 FIFO；`shuffle(items,rng?)` 非原地随机 | [core](../packages/core/README.md) |
+| common / 1.0.3 | `pLimit(...,{drainOnError:true})` 首错停止调度且等在途任务；disconnect 的 reason/已关闭检测；`boundedMemoryStorage` 请求聚合字节、一次 callback、drain、中文文件名解码 | [common](../packages/common/README.md) |
+| auth / 1.0.2 | `RefreshTokenService/CacheRefreshTokenStore/InProcessRefreshTokenLock` + verify/issue/identity/CAS ports；显式 recover 与 tombstone；无cache撤销、严格Bearer；optional reject/local preserve options | [auth](../packages/auth/README.md) |
+| ai / 1.0.3 | `modelRecordId`；全source `allowDefault:false`/独立cache；`NativeAIClient/NativeAIModel` + OpenAI/Anthropic/Gemini ports；single-flight费用flush失败恢复并reject；LangChain transport/retry修复 | [ai](../packages/ai/README.md) |
+| storage / 1.0.2 | WebDAV `uploadStream/download` 真流与signal；`ensureDirectory`、浅层含目录/strict missing list；显式匿名策略；FileManager stream 修正为 Node Readable（公开类型变化） | [storage](../packages/storage/README.md) |
+| media / 1.0.4 | `BrowserPool`共享launch/独立context/drain；`DocumentTextExtractor/executeDocumentCommand/validateDocumentZip`，SDK-neutral ports、ZIP/pixel/page边界；Node入口与browser入口隔离 | [media](../packages/media/README.md) |
+| queue / 1.0.2 | named预热/onError/native `addBulk/getJobCounts`；worker `maxAttempts/stalledIntervalMs`；Bull6统计只读兼容旧paused；全部资源drain后聚合close错误 | [queue](../packages/queue/README.md) |
+| logging / 1.0.3 | PersistentLogService日期/分页/offset/status/CSV limit在adapter前校验；HTTP错误政策归消费者 | [logging](../packages/logging/README.md) |
+| fe-http-client / 1.0.2 | bounded二进制JSON错误/transport证据；login401清身份；shared refresh取消不误撤销；SSE reader清理；已有`_rawResponse`实际生效 | [HTTP](../packages/fe-http-client/README.md) |
+| fe-storage / 1.0.2 | `setCookie/getCookie/removeCookie/CookieOptions`：SSR安全，显式scope/expiry，不持有产品key和寿命 | [storage](../packages/fe-storage/README.md) |
+| ext-kit / 1.0.2 | cleanup/download completion/checkpoint、session/offscreen lease、scroll watchdog、popup恢复；licensing request/normalize/timeout政策端口（配置破坏性变化）；正式资产必须与声明一起交付 | [ext-kit](../packages/ext-kit/README.md) |
+
+`rate-limiter@1.0.2` 的 `ZuckerRateLimiterModule.forRoot({globalGuard:false,limiters})` 与 `RateLimiterService.consume(name,key)` 已正式可用，无需等上述发布。内存/Redis、配额、HTTP错误映射与根模块唯一注册由消费者明确选择。
+
+源码单测/合成HTTP不证明持久存储、Redis版本迁移、真实provider或发布制品兼容；这些边界须单独验收。结构型端口不能用于将既有持久化降级为内存。
+
 ---
 
 ## @zucker-framework/core

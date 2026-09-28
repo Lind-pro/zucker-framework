@@ -1,5 +1,5 @@
 import type { AIModelConfig } from '../ai-provider.interface';
-import type { AIConfigSource, AIConfigSourceOptions } from '../config-source';
+import type { AIConfigSource, AIConfigSourceOptions, ScenarioConfigOptions } from '../config-source';
 
 export type EnvironmentValues = Readonly<Record<string, string | undefined>>;
 
@@ -35,11 +35,15 @@ export class EnvironmentAIConfigSource implements AIConfigSource {
     this.prefix = (options.prefix ?? 'AI').replace(/_+$/g, '');
   }
 
-  async getScenarioConfig(scenario: string): Promise<AIModelConfig | null> {
+  async getScenarioConfig(scenario: string, options: ScenarioConfigOptions = {}): Promise<AIModelConfig | null> {
     const scopedPrefix = `${this.prefix}_${scenarioKey(scenario)}_`;
+    // Shared credentials may be inherited, but strict lookup requires a scoped model.
+    if (options.allowDefault === false &&
+        !this.env[`${scopedPrefix}MODEL_ID`] && !this.env[`${scopedPrefix}MODEL`]) return null;
     const read = (name: string): string | undefined =>
       this.env[`${scopedPrefix}${name}`] ?? this.env[`${this.prefix}_${name}`];
-    const modelId = read('MODEL_ID') ?? read('MODEL');
+    const modelId = this.env[`${scopedPrefix}MODEL_ID`] ?? this.env[`${scopedPrefix}MODEL`] ??
+      this.env[`${this.prefix}_MODEL_ID`] ?? this.env[`${this.prefix}_MODEL`];
     if (!modelId) return null;
     return {
       apiKey: read('API_KEY') ?? '',

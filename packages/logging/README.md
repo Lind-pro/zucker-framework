@@ -17,6 +17,10 @@ Persistent logging uses the host's configured `DATABASE_ADAPTER` from `@zucker-f
 
 The shared HTTP interceptor persists both record kinds when persistence is enabled. It retains the application's original response/error if a log writer fails, and preserves structured HTTP error messages. `retainClientIp` is an explicit host privacy decision for authorized audit queries and is off by default. Product-specific sensitive fields belong in the host's `pii` configuration. Set `correlationId: false` only when the host already establishes the same shared correlation context.
 
+## Read query boundaries
+
+Persistent services reject invalid/non-finite dates, reversed date ranges, invalid operation status, non-positive/fractional/unsafe pagination and overflowing offsets before calling storage. Defaults remain page 1 / size 20; valid page sizes retain the 100-row cap. CSV `limit` defaults to 10000 and must be a positive integer no larger than 10000. Invalid input raises `RangeError`; HTTP consumers should validate their public DTO aliases and map errors to their own response contract. These source hardening changes need a new formal release; existing consumers can apply DTO boundaries without importing unpublished APIs.
+
 ## System logs and operational metrics
 
 `ApplicationLogger` implements Nest logging with independent per-injection contexts, redacted metadata and routine startup output at debug level. Register a single `WinstonLogSink` provider and transient `ApplicationLogger` providers that share it. The sink owns console/optional rotating-file destinations, an optional `DatabaseLogTransport`, and shutdown draining. Supply log level, file directory/retention and the existing database adapter explicitly. The database transport is best effort; it awaits each write before completing the stream callback and reports its own failures directly to redacted stderr to avoid recursive logging.
