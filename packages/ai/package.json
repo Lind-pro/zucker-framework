@@ -15,7 +15,7 @@
     "jsonrepair": "^3.15.0"
   },
   "scripts": {
-    "build": "tsup src/index.ts src/langchain.ts --format cjs,esm --dts --external @langchain/core --external @google/genai --external openai --external @langchain/openai --external @langchain/anthropic --external https-proxy-agent --external zod --external @zucker-framework/common",
+    "build": "tsup src/index.ts src/langchain.ts src/native.ts --format cjs,esm --dts --external @langchain/core --external @google/genai --external openai --external @langchain/openai --external @langchain/anthropic --external https-proxy-agent --external zod --external @zucker-framework/common",
     "clean": "rm -rf dist",
     "lint": "eslint src/",
     "prepack": "node ../../scripts/prepare-package-legal.mjs"
@@ -110,6 +110,16 @@
       "require": {
         "types": "./dist/langchain.d.ts",
         "default": "./dist/langchain.js"
+      }
+    },
+    "./native": {
+      "import": {
+        "types": "./dist/native.d.mts",
+        "default": "./dist/native.mjs"
+      },
+      "require": {
+        "types": "./dist/native.d.ts",
+        "default": "./dist/native.js"
       }
     }
   }

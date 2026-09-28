@@ -8,8 +8,6 @@ export type {
 export { AIErrorType } from './ai-provider.interface';
 export * from './native-port';
 export { NativeAIContractError } from './native-errors';
-export { createNativeAIModel, openAINativeModel, anthropicNativeModel, geminiNativeModel } from './native-providers';
-export type { NativeTransportOptions } from './native-providers';
 export {
   AICallAbortedError,
   AICallTimeoutError,
