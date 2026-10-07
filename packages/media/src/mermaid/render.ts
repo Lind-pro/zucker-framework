@@ -4,6 +4,7 @@ import { prepareStateLayout } from './state-layout';
 import { prepareSequenceLayout } from './sequence-layout';
 import { sanitizeSvgMarkup } from '../svg-sanitize';
 import { measureSvgTextBounds } from '../svg-text-bounds';
+import { normalizeMermaidSvgText } from './svg-text';
 
 export type MermaidRenderProfile = 'responsive' | 'export';
 
@@ -213,6 +214,6 @@ export function renderMermaidSvg(
         }
       }
     }
-    return { svg: includeVisibleBounds(svg), normalizedSource };
+    return { svg: includeVisibleBounds(normalizeMermaidSvgText(svg)), normalizedSource };
   });
 }

@@ -42,4 +42,15 @@ describe('requestKrokiSvg', () => {
       }),
     ).rejects.toBe(error);
   });
+
+  it('normalizes only Mermaid SVG text, preserving other renderers and request source', async () => {
+    const svg = '<svg><text>clip&amp;#40;x&amp;#41; &amp;#38; x &amp;#60; 2</text></svg>';
+    const source = 'flowchart TD\nA["clip#40;x#41; #38; x #60; 2"]';
+    const fetcher = vi.fn(async () => new Response(svg));
+    const result = await requestKrokiSvg({ url: 'http://render.test/mermaid/svg?theme=plain', source, fetcher });
+    const parsed = new DOMParser().parseFromString(result.svg, 'image/svg+xml');
+    expect(parsed.querySelector('text')?.textContent).toBe('clip(x) & x < 2');
+    expect(fetcher).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ body: source }));
+    expect((await requestKrokiSvg({ url: 'http://render.test/graphviz/svg', source, fetcher })).svg).toBe(svg);
+  });
 });

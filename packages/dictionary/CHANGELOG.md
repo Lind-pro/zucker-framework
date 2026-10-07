@@ -1,5 +1,12 @@
 # @zucker-framework/dictionary
 
+## 1.0.7
+
+### Patch Changes
+
+- @zucker-framework/core@1.0.7
+  - @zucker-framework/crud@1.0.7
+
 ## 1.0.6
 
 ### Patch Changes

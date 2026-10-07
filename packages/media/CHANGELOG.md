@@ -1,5 +1,13 @@
 # @zucker-framework/media
 
+## 1.0.7
+
+### Patch Changes
+
+- Restore double-escaped numeric references in Mermaid SVG text, including references split across adjacent tspans. Keep restored markup inert as text, leave attributes and styles untouched, and preserve SVG sanitization and XML code-point validation. Apply the same normalization to browser rendering and Mermaid responses from Kroki.
+
+  Remove trailing monochrome style semicolons that Mermaid incorrectly interprets as part of a color entity. Public rendering APIs remain unchanged.
+
 ## 1.0.6
 
 ## 1.0.5

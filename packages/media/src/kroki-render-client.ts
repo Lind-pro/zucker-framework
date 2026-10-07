@@ -1,4 +1,5 @@
 import { SvgRenderRequestError } from './svg-render-client';
+import { normalizeMermaidSvgText } from './mermaid/svg-text';
 
 export interface KrokiSvgRequest {
   url: string;
@@ -30,5 +31,8 @@ export async function requestKrokiSvg({
   const durationMs = Date.now() - startedAt;
   const svg = await response.text();
   if (!response.ok) throw new SvgRenderRequestError('http', svg.substring(0, 300), response.status);
-  return { svg, durationMs };
+  return {
+    svg: /(?:^|\/)mermaid\/svg(?:[?#]|$)/i.test(url) ? normalizeMermaidSvgText(svg) : svg,
+    durationMs,
+  };
 }

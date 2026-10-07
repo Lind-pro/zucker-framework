@@ -49,6 +49,8 @@ export function withMermaidMonochromeTheme(source: string): string {
     .replace(/^([ \t]*(?:style|classDef|linkStyle)\b[^\n]*)/gm, line =>
       line.replace(/\b(fill|stroke|color|background-color)\s*:\s*(rgba?\([^)]*\)|[^,;\n]+)/gi,
         (_, property: string, value: string) => `${property}:${/^(none|transparent)\s*$/i.test(value) ? value : /^(fill|background-color)$/i.test(property) ? '#ffffff' : '#000000'}`))
+    // Mermaid's entity pass treats a trailing #000000; as an entity.
+    .replace(/^([ \t]*(?:style|classDef|linkStyle)\b[^\n]*?);[ \t]*$/gm, '$1')
     .replace(/^(\s*rect\s+)(?:rgba?\([^)]*\)|#[\da-f]+)\s*$/gmi, '$1rgb(255,255,255)');
   const config = {
     theme: 'base', themeVariables: MERMAID_MONOCHROME_THEME,

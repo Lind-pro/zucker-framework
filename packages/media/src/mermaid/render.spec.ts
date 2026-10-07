@@ -45,6 +45,16 @@ describe('renderMermaidSvg', () => {
     );
   });
 
+  it('restores Mermaid numeric escapes in visible SVG labels', async () => {
+    mermaidMocks.render.mockResolvedValueOnce({
+      svg: '<svg xmlns="http://www.w3.org/2000/svg"><text><tspan>clip&amp;#40;x&amp;#41; &amp;#38; x &amp;#60; 2</tspan></text></svg>',
+    });
+    const result = await renderMermaidSvg('flowchart TD\nA["clip#40;x#41; #38; x #60; 2"]');
+    const parsed = new DOMParser().parseFromString(result.svg, 'image/svg+xml');
+    expect(parsed.querySelector('text')?.textContent).toBe('clip(x) & x < 2');
+    expect(parsed.querySelector('script')).toBeNull();
+  });
+
   it('includes text beyond Mermaid viewBox without changing paths and cleans its measurement container', async () => {
     const previous = Object.getOwnPropertyDescriptor(SVGSVGElement.prototype, 'getScreenCTM');
     Object.defineProperty(SVGSVGElement.prototype, 'getScreenCTM', { configurable: true, value: () => ({ inverse: () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }) }) });
