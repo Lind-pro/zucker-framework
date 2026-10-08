@@ -190,4 +190,48 @@ describe('OpenAICodexCliSubscriptionProvider', () => {
       await rm(directory, { recursive: true, force: true });
     }
   });
+
+  it.each([
+    { name: '重连后正常完成', events: [
+      { type: 'error', message: 'Reconnecting... 2/5 (workspace routing discovery timed out)' },
+      { type: 'item.completed', item: { type: 'agent_message', text: 'final' } },
+      { type: 'turn.completed', usage: { input_tokens: 7, output_tokens: 3 } },
+    ], errorCode: null },
+    { name: '重连后最终失败', events: [
+      { type: 'error', message: 'Reconnecting... 2/5 (workspace routing discovery timed out)' },
+      { type: 'turn.failed', error: { message: 'upstream unavailable' } },
+      { type: 'item.completed', item: { type: 'agent_message', text: 'must not pass' } },
+      { type: 'turn.completed', usage: { input_tokens: 7, output_tokens: 3 } },
+    ], errorCode: 'EXECUTION_FAILED' },
+    { name: '只有重连提示和未完成消息', events: [
+      { type: 'error', message: 'Reconnecting... 2/5 (workspace routing discovery timed out)' },
+      { type: 'item.completed', item: { type: 'agent_message', text: 'partial' } },
+    ], errorCode: 'EXECUTION_FAILED' },
+    { name: '没有完成用量', events: [
+      { type: 'item.completed', item: { type: 'agent_message', text: 'partial' } },
+    ], errorCode: 'INVALID_OUTPUT' },
+    ...[{}, { input_tokens: 7 }, { input_tokens: 7, output_tokens: -1 }, { input_tokens: 7.5, output_tokens: 3 }, { input_tokens: Number.MAX_SAFE_INTEGER, output_tokens: 3 }].map(usage => ({
+      name: `无效用量 ${JSON.stringify(usage)}`, events: [
+        { type: 'item.completed', item: { type: 'agent_message', text: 'final' } },
+        { type: 'turn.completed', usage },
+      ], errorCode: 'INVALID_OUTPUT',
+    })),
+  ])('严格依据最终事件结算：$name', async ({ events, errorCode }) => {
+    const directory = await mkdtemp(join(tmpdir(), 'zucker-codex-cli-test-'));
+    const executable = join(directory, 'fake-codex');
+    await writeFile(executable, [
+      '#!/usr/bin/env node',
+      'process.stdin.resume();',
+      `const events = ${JSON.stringify(events)};`,
+      "process.stdin.on('end', () => events.forEach(event => process.stdout.write(JSON.stringify(event) + '\\n')));",
+    ].join('\n'), { mode: 0o700 });
+    try {
+      const provider = new OpenAICodexCliSubscriptionProvider({ executable, codexHome: directory, workingDirectory: directory, environment: { PATH: process.env.PATH } });
+      const client = await provider.createModel({ modelId: 'gpt-5.6-luna' });
+      if (errorCode) await expect(client.complete({ input: 'test' })).rejects.toMatchObject({ code: errorCode });
+      else await expect(client.complete({ input: 'test' })).resolves.toMatchObject({ content: 'final', finishReason: 'completed', tokenUsage: { input: 7, output: 3, total: 10 } });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
 });

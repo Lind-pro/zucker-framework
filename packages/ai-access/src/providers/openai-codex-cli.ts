@@ -320,7 +320,8 @@ async function runCodexCliCommand(command: CodexCliCommand): Promise<AIAccessRes
     let stdoutBuffer = '';
     let responseId: string | undefined;
     let content = '';
-    let usage = { input: 0, output: 0, total: 0 };
+    let usage: AIAccessResult['tokenUsage'];
+    let reconnectError: CodexCliSubscriptionError | undefined;
     let streamError: CodexCliSubscriptionError | undefined;
 
     const terminate = () => {
@@ -377,11 +378,16 @@ async function runCodexCliCommand(command: CodexCliCommand): Promise<AIAccessRes
       } else if (type === 'turn.completed' && isRecord(event.usage)) {
         const inputTokens = nonNegativeNumber(event.usage.input_tokens);
         const outputTokens = nonNegativeNumber(event.usage.output_tokens);
-        usage = { input: inputTokens, output: outputTokens, total: inputTokens + outputTokens };
+        if (inputTokens === undefined || outputTokens === undefined || !Number.isSafeInteger(inputTokens + outputTokens)) {
+          streamError = new CodexCliSubscriptionError('INVALID_OUTPUT', 'Codex CLI 完成事件的用量无效。');
+        } else usage = { input: inputTokens, output: outputTokens, total: inputTokens + outputTokens };
       } else if (type === 'turn.failed') {
         streamError = classifyEventFailure(event);
       } else if (type === 'error') {
-        streamError = classifyEventFailure(event);
+        // The CLI emits reconnect progress as error events before the turn's
+        // final outcome. Keep its diagnostic without discarding later output.
+        if (/^Reconnecting\.\.\.\s+\d+\/\d+(?:\s+\(.*\))?$/.test(extractEventErrorMessage(event))) reconnectError = classifyEventFailure(event);
+        else streamError = classifyEventFailure(event);
       }
     };
 
@@ -418,7 +424,11 @@ async function runCodexCliCommand(command: CodexCliCommand): Promise<AIAccessRes
         return;
       }
       if (code !== 0) {
-        fail(classifyProcessFailure(stderr));
+        fail(reconnectError ?? classifyProcessFailure(stderr));
+        return;
+      }
+      if (!usage) {
+        fail(reconnectError ?? new CodexCliSubscriptionError('INVALID_OUTPUT', 'Codex CLI 未返回完成事件及实际用量。'));
         return;
       }
       if (!content.trim()) {
@@ -640,8 +650,8 @@ function sanitizeDiagnostic(value: string): string {
     .slice(0, 500);
 }
 
-function nonNegativeNumber(value: unknown): number {
-  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
+function nonNegativeNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
 }
 
 function stringValue(value: unknown): string | undefined {
