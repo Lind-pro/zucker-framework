@@ -62,10 +62,7 @@ describe('OpenAI Codex access provider', () => {
     );
     const manager = new CodexSubscriptionCredentialManager({ store, fetcher, now: () => now });
 
-    const [first, second] = await Promise.all([
-      manager.getCredentials(),
-      manager.getCredentials(),
-    ]);
+    const [first, second] = await Promise.all([manager.getCredentials(), manager.getCredentials()]);
 
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(first.refreshToken).toBe('refresh-2');
@@ -132,16 +129,28 @@ describe('OpenAI Codex access provider', () => {
       },
     ];
     const sse = `${events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join('')}data: [DONE]\n\n`;
-    const fetcher = vi.fn().mockResolvedValue(
-      new Response(sse, { status: 200, headers: { 'Content-Type': 'text/event-stream' } }),
-    );
+    const fetcher = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(sse, { status: 200, headers: { 'Content-Type': 'text/event-stream' } }),
+      );
     const provider = new OpenAICodexSubscriptionProvider({ store, fetcher });
     const client = await provider.createModel({ modelId: 'gpt-5.6-luna' });
 
-    await expect(client.complete({ input: '验证', textVerbosity: 'high' })).resolves.toMatchObject({
+    const deltas: string[] = [];
+    await expect(
+      client.complete({
+        input: '验证',
+        textVerbosity: 'high',
+        onTextDelta: async (delta) => {
+          deltas.push(delta);
+        },
+      }),
+    ).resolves.toMatchObject({
       content: 'public final\nclass',
       tokenUsage: { total: 6 },
     });
+    expect(deltas).toEqual(['public', ' ', 'final', '\n', 'class']);
     const [url, init] = fetcher.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('https://chatgpt.com/backend-api/codex/responses');
     expect(new Headers(init.headers).get('chatgpt-account-id')).toBe('acct-1');
@@ -159,4 +168,76 @@ describe('OpenAI Codex access provider', () => {
     expect(plugin.authMethods.map((method) => method.id)).toEqual(['device-code']);
     expect(plugin.runtime.complete).toBeTypeOf('function');
   });
+
+  it.each([
+    ['truncated stream', []],
+    ['incomplete response', [{ type: 'response.incomplete', response: { status: 'incomplete' } }]],
+    ['missing usage', [{ type: 'response.completed', response: { status: 'completed' } }]],
+  ])('rejects %s instead of reporting a successful answer', async (_label, terminal) => {
+    const store = new InMemoryCredentialProfileStore();
+    await store.save(profile());
+    const events = [{ type: 'response.output_text.delta', delta: 'partial answer' }, ...terminal];
+    const sse = `${events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join('')}data: [DONE]\n\n`;
+    const fetcher = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(sse, { status: 200, headers: { 'Content-Type': 'text/event-stream' } }),
+      );
+    const provider = new OpenAICodexSubscriptionProvider({ store, fetcher });
+    const client = await provider.createModel({ modelId: 'synthetic' });
+    const deltas: string[] = [];
+    await expect(
+      client.complete({
+        input: 'synthetic',
+        onTextDelta: (delta) => {
+          deltas.push(delta);
+        },
+      }),
+    ).rejects.toBeInstanceOf(Error);
+    expect(deltas).toEqual(['partial answer']);
+  });
+
+  it.each(['failure', 'cancellation'] as const)(
+    'stops the actual SDK stream on delta consumer %s',
+    async (outcome) => {
+      const store = new InMemoryCredentialProfileStore();
+      await store.save(profile());
+      const events = [
+        { type: 'response.output_text.delta', delta: 'first' },
+        { type: 'response.output_text.delta', delta: ' second' },
+        {
+          type: 'response.completed',
+          response: {
+            status: 'completed',
+            usage: { input_tokens: 4, output_tokens: 2, total_tokens: 6 },
+          },
+        },
+      ];
+      const sse = `${events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join('')}data: [DONE]\n\n`;
+      const fetcher = vi
+        .fn()
+        .mockResolvedValue(
+          new Response(sse, { status: 200, headers: { 'Content-Type': 'text/event-stream' } }),
+        );
+      const provider = new OpenAICodexSubscriptionProvider({ store, fetcher });
+      const client = await provider.createModel({ modelId: 'synthetic' });
+      const controller = new AbortController();
+      const failure = new Error('synthetic stop');
+      const deltas: string[] = [];
+      await expect(
+        client.complete({
+          input: 'synthetic',
+          signal: controller.signal,
+          onTextDelta: (delta) => {
+            deltas.push(delta);
+            if (outcome === 'failure') throw failure;
+            controller.abort(failure);
+          },
+        }),
+      ).rejects.toBe(failure);
+      expect(deltas).toEqual(['first']);
+      const [, init] = fetcher.mock.calls[0] as [string, RequestInit];
+      expect(init.signal?.aborted).toBe(true);
+    },
+  );
 });

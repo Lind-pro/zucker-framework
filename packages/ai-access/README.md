@@ -18,4 +18,10 @@ const result = await session.complete(request, {
 
 `configuredClient`, `request` and the observation callbacks above are supplied by the application. Observer failures propagate; an observer must not report a provider outcome that it did not observe. Output-schema parsing and postprocessing are separate AI package capabilities.
 
+## Live answer text
+
+Pass `request.onTextDelta` to receive answer text as it arrives. The callback may be asynchronous: calls are ordered and awaited, and a callback failure stops the attempt. Reasoning is excluded. Success still requires a completed provider response and actual usage; an emitted paragraph is not a completed call.
+
+The Codex CLI adapter uses the official `app-server` stdio protocol for these requests because `exec --json` exposes completed messages rather than text deltas. It starts one ephemeral thread, retains the existing CLI-owned authentication directory, disables configured external capabilities and hooks, and denies tools/approval requests. The executable must support `app-server`; an exec-only socket proxy is not a streaming executable. Calls without `onTextDelta` retain the existing `exec` path. No completed-answer playback or silent streaming fallback is provided.
+
 The new client-session implementation and independent mocked tests have been written. Verification and package publication were not run during this source refactor.

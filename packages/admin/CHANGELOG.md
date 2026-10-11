@@ -1,5 +1,22 @@
 # @zucker-framework/admin
 
+## 1.0.8
+
+### Patch Changes
+
+- Updated dependencies
+  - @zucker-framework/ai@1.0.8
+  - @zucker-framework/auth@1.0.8
+  - @zucker-framework/common@1.0.8
+  - @zucker-framework/config@1.0.8
+  - @zucker-framework/core@1.0.8
+  - @zucker-framework/credit@1.0.8
+  - @zucker-framework/crud@1.0.8
+  - @zucker-framework/dictionary@1.0.8
+  - @zucker-framework/form@1.0.8
+  - @zucker-framework/logging@1.0.8
+  - @zucker-framework/notification@1.0.8
+
 ## 1.0.7
 
 ### Patch Changes

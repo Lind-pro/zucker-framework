@@ -104,6 +104,8 @@ export interface AIAccessRequest {
   outputSchema?: unknown;
   sessionId?: string;
   signal?: AbortSignal;
+  /** Ordered answer deltas, excluding reasoning. Awaited; failures stop the attempt. */
+  onTextDelta?: (delta: string) => void | Promise<void>;
 }
 
 export interface AIAccessResult {

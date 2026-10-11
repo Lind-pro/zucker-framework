@@ -485,7 +485,9 @@ export class OpenAICodexSubscriptionClient {
     private readonly defaultModel: string,
   ) {}
 
-  async complete(request: Omit<AIAccessRequest, 'model'> & { model?: string }): Promise<AIAccessResult> {
+  async complete(
+    request: Omit<AIAccessRequest, 'model'> & { model?: string },
+  ): Promise<AIAccessResult> {
     const headers = request.sessionId
       ? { session_id: request.sessionId, 'x-client-request-id': request.sessionId }
       : undefined;
@@ -493,9 +495,7 @@ export class OpenAICodexSubscriptionClient {
       {
         model: request.model ?? this.defaultModel,
         instructions: request.instructions?.trim() || '你是一个专业、准确的AI助手。',
-        input: [
-          { role: 'user', content: [{ type: 'input_text', text: request.input }] },
-        ],
+        input: [{ role: 'user', content: [{ type: 'input_text', text: request.input }] }],
         store: false,
         stream: true,
         text: { verbosity: request.textVerbosity ?? 'low' },
@@ -505,16 +505,40 @@ export class OpenAICodexSubscriptionClient {
       },
       { signal: request.signal, headers },
     );
-    if (!isAsyncIterable(stream)) return responseResult(stream);
+    if (!isAsyncIterable(stream)) {
+      if (request.onTextDelta) throw new Error('Provider did not return a text stream.');
+      return responseResult(stream);
+    }
     let content = '';
     let completed: Record<string, unknown> = {};
     for await (const event of stream) {
+      request.signal?.throwIfAborted();
       if (!isRecord(event)) continue;
       const type = stringValue(event, 'type');
-      if (type === 'response.output_text.delta') content += rawStringValue(event, 'delta') ?? '';
-      else if (type === 'response.completed' && isRecord(event.response)) completed = event.response;
+      if (type === 'response.output_text.delta') {
+        const delta = rawStringValue(event, 'delta') ?? '';
+        content += delta;
+        if (delta) await request.onTextDelta?.(delta);
+        request.signal?.throwIfAborted();
+      } else if (type === 'response.completed' && isRecord(event.response))
+        completed = event.response;
       else if (type === 'response.failed' || type === 'error') throw responseError(event);
+      else if (type === 'response.incomplete') throw new Error('Codex Responses did not complete.');
     }
+    request.signal?.throwIfAborted();
+    if (completed.status !== 'completed')
+      throw new Error('Codex Responses stream ended before a completed response.');
+    const usage = isRecord(completed.usage) ? completed.usage : {};
+    if (
+      !Number.isSafeInteger(usage.input_tokens) ||
+      Number(usage.input_tokens) < 0 ||
+      !Number.isSafeInteger(usage.output_tokens) ||
+      Number(usage.output_tokens) < 0 ||
+      !Number.isSafeInteger(Number(usage.input_tokens) + Number(usage.output_tokens)) ||
+      (usage.total_tokens !== undefined &&
+        (!Number.isSafeInteger(usage.total_tokens) || Number(usage.total_tokens) < 0))
+    )
+      throw new Error('Codex Responses did not return valid token usage.');
     const result = responseResult(completed);
     return { ...result, content: content || result.content };
   }

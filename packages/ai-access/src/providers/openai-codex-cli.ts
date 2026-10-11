@@ -8,6 +8,7 @@ import {
   type AIAccessRequest,
   type AIAccessResult,
 } from '../contracts';
+import { runCodexAppServer } from './openai-codex-app-server';
 
 const DEFAULT_TIMEOUT_MS = 15 * 60_000;
 const STDERR_LIMIT = 8_192;
@@ -192,6 +193,39 @@ export class OpenAICodexCliSubscriptionClient {
     const input = request.input.trim();
     if (!input) {
       throw new CodexCliSubscriptionError('NOT_CONFIGURED', 'Codex 订阅调用输入不能为空。');
+    }
+
+    // exec --json only emits completed messages. Use the official app-server
+    // delta protocol for live text; never replay a completed answer as a stream.
+    if (request.onTextDelta) {
+      let outputSchema = request.outputSchema;
+      let instructions = request.instructions;
+      if (outputSchema !== undefined) {
+        assertJsonSchema(outputSchema);
+        const unsupportedKeywords = findUnsupportedSchemaKeywords(outputSchema);
+        if (unsupportedKeywords.length) {
+          if (this.options.unsupportedSchemaPolicy === 'error') {
+            throw new CodexCliSubscriptionError(
+              'NOT_CONFIGURED',
+              `Codex outputSchema 包含不支持的关键字：${unsupportedKeywords.join(', ')}。`,
+            );
+          }
+          try {
+            this.options.onSchemaFallback?.({ unsupportedKeywords });
+          } catch {
+            // Diagnostic observers must never change provider behavior.
+          }
+          instructions = buildJsonPrompt(instructions, '', outputSchema);
+          outputSchema = undefined;
+        } else outputSchema = normalizeStrictOutputSchema(outputSchema);
+      }
+      return runCodexAppServer({
+        executable: this.options.executable,
+        cwd: this.options.workingDirectory,
+        env: { ...this.options.environment, CODEX_HOME: this.options.codexHome },
+        timeoutMs: this.options.timeoutMs,
+        request: { ...request, model, input, instructions, outputSchema },
+      });
     }
 
     let schemaDirectory: string | undefined;

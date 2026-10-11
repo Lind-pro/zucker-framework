@@ -2,6 +2,29 @@ import { describe, expect, it, vi } from 'vitest';
 import { collectGraphUpdates } from './graph-update-execution';
 
 describe('collectGraphUpdates', () => {
+  it('delivers the exact completed-node payload before later graph work or checkpoint publication', async () => {
+    const first = { abstract: 'completed abstract', timings: { abstract: 12 } };
+    const second = { specification: 'completed specification' };
+    const received: Array<[string, unknown]> = [];
+    async function* updates() {
+      yield { abstract: first };
+      expect(received).toEqual([['abstract', first]]);
+      yield { specification: second };
+    }
+    await collectGraphUpdates<{ abstract: string; specification: string; timings: { abstract: number } }>(updates(), {
+      onNodeComplete: async (node, update) => { received.push([node, update]); },
+    });
+    expect(received).toEqual([['abstract', first], ['specification', second]]);
+    expect(received[0][1]).toBe(first);
+  });
+
+  it('keeps legacy single-argument callbacks and handles empty node updates', async () => {
+    const legacy = vi.fn(async (_node: string) => {});
+    async function* updates() { yield { completed: null }; }
+    expect(await collectGraphUpdates(updates(), { onNodeComplete: legacy })).toEqual({});
+    expect(legacy).toHaveBeenCalledWith('completed', undefined);
+  });
+
   it('consumes every node in an update and awaits progress before advancing', async () => {
     const order: string[] = [];
     async function* updates() {

@@ -1,6 +1,7 @@
 export interface GraphUpdateOptions<TState extends object> {
   initialState?: Partial<TState>;
-  onNodeComplete?: (node: string) => void | Promise<void>;
+  /** The current node payload is available even before a durable checkpoint becomes readable. */
+  onNodeComplete?: (node: string, update?: Partial<TState>) => void | Promise<void>;
 }
 
 /**
@@ -15,8 +16,10 @@ export async function collectGraphUpdates<TState extends object>(
   let state: Partial<TState> = { ...options.initialState };
   for await (const event of updates) {
     for (const [node, update] of Object.entries(event)) {
-      if (update && typeof update === 'object') state = { ...state, ...update };
-      await options.onNodeComplete?.(node);
+      const nodeUpdate = update && typeof update === 'object' && !Array.isArray(update)
+        ? update as Partial<TState> : undefined;
+      if (nodeUpdate) state = { ...state, ...nodeUpdate };
+      await options.onNodeComplete?.(node, nodeUpdate);
     }
   }
   return state;

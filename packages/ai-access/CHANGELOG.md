@@ -1,5 +1,16 @@
 # @zucker-framework/ai-access
 
+## 1.0.8
+
+### Patch Changes
+
+- Reject truncated or incomplete native Responses streams and missing usage. Propagate answer callback failures and cancellation to the SDK request.
+
+- 3aed934: Preserve the final output and actual usage when Codex CLI recovers after a reconnect progress event. Reject missing or invalid completion usage, and retain terminal turn failures.
+- Expose awaited answer-only onTextDelta callbacks on LangChain collection and AI access requests. Codex CLI streaming uses an isolated ephemeral app-server turn with real answer deltas, cancellation, failure propagation, and completed-usage validation; non-streaming exec calls retain their existing behavior.
+
+  Pass each graph node's current update as an optional second onNodeComplete argument. Consumers can publish completed-node results immediately without depending on durable checkpoint write visibility; existing one-argument callbacks remain compatible.
+
 ## 1.0.7
 
 ## 1.0.6

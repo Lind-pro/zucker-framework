@@ -1,5 +1,21 @@
 # @zucker-framework/ai
 
+## 1.0.8
+
+### Patch Changes
+
+- Preserve cancellation requested by the final streamed-answer callback instead of returning a completed result.
+
+- Expose awaited answer-only onTextDelta callbacks on LangChain collection and AI access requests. Codex CLI streaming uses an isolated ephemeral app-server turn with real answer deltas, cancellation, failure propagation, and completed-usage validation; non-streaming exec calls retain their existing behavior.
+
+  Pass each graph node's current update as an optional second onNodeComplete argument. Consumers can publish completed-node results immediately without depending on durable checkpoint write visibility; existing one-argument callbacks remain compatible.
+
+- Updated dependencies [3aed934]
+- Updated dependencies
+  - @zucker-framework/ai-access@1.0.8
+  - @zucker-framework/common@1.0.8
+  - @zucker-framework/core@1.0.8
+
 ## 1.0.7
 
 ### Patch Changes

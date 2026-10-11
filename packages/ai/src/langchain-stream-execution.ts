@@ -32,7 +32,7 @@ export interface LangChainStreamOptions {
 
 async function consumeStream<T>(
   open: (signal: AbortSignal) => Promise<AsyncIterable<T>>,
-  consume: (chunk: T) => void,
+  consume: (chunk: T) => void | Promise<void>,
   options: LangChainStreamOptions,
 ): Promise<LangChainStreamStats> {
   const startedAt = Date.now();
@@ -49,10 +49,16 @@ async function consumeStream<T>(
               options.idleError ?? ((ms) => new StreamIdleTimeoutError(`Stream idle for ${ms}ms`)),
           });
     for await (const chunk of stream) {
-      consume(chunk);
+      controller.signal.throwIfAborted();
       chunkCount++;
       if (chunkCount === 1) options.onFirstChunk?.(Date.now() - startedAt);
+      await consume(chunk);
+      controller.signal.throwIfAborted();
     }
+    controller.signal.throwIfAborted();
+  } catch (error) {
+    controller.abort();
+    throw error;
   } finally {
     dispose();
   }
@@ -64,6 +70,8 @@ async function consumeStream<T>(
 export interface LangChainTextResult extends LangChainStreamStats {
   text: string;
   reasoningCharCount: number;
+  /** Last explicit provider finish reason from streamed message metadata, independent of callbacks. */
+  finishReason?: string;
   /** Last usage-bearing chunk, preserving the model adapter's aggregation semantics. */
   usage?: UsageMetadata;
 }
@@ -72,12 +80,16 @@ export interface LangChainInvocationOptions extends LangChainStreamOptions {
   systemPrompt: string;
   userPrompt: string;
   callbacks?: BaseCallbackHandler[];
+  /** Answer text only, in stream order. Awaited; consumer failures abort the call. */
+  onTextDelta?: (delta: string) => void | Promise<void>;
 }
 
 export interface LangChainMessageInvocationOptions extends LangChainStreamOptions {
   model: BaseChatModel;
   messages: Parameters<BaseChatModel['stream']>[0];
   callbacks?: BaseCallbackHandler[];
+  /** Answer text only, in stream order. Awaited; consumer failures abort the call. */
+  onTextDelta?: (delta: string) => void | Promise<void>;
   /** Defaults to true for compatibility with the prompt-based collector. */
   trim?: boolean;
 }
@@ -89,6 +101,7 @@ export async function collectLangChainText(
   const chunks: string[] = [];
   let reasoningCharCount = 0;
   let usage: UsageMetadata | undefined;
+  let finishReason: string | undefined;
   const stats = await consumeStream(
     (signal) =>
       options.model.stream(
@@ -97,9 +110,29 @@ export async function collectLangChainText(
           : [new SystemMessage(options.systemPrompt), new HumanMessage(options.userPrompt)],
         { signal, callbacks: options.callbacks },
       ),
-    (chunk) => {
-      if (typeof chunk.content === 'string' && chunk.content) chunks.push(chunk.content);
+    async (chunk) => {
+      const text =
+        typeof chunk.content === 'string'
+          ? chunk.content
+          : Array.isArray(chunk.content)
+            ? chunk.content
+                .flatMap((block) =>
+                  typeof block === 'object' &&
+                  block !== null &&
+                  block.type === 'text' &&
+                  typeof block.text === 'string'
+                    ? [block.text]
+                    : [],
+                )
+                .join('')
+            : '';
+      if (text) {
+        chunks.push(text);
+        await options.onTextDelta?.(text);
+      }
       if (chunk.usage_metadata) usage = chunk.usage_metadata;
+      const reason = chunk.response_metadata?.finish_reason ?? chunk.response_metadata?.stop_reason;
+      if (typeof reason === 'string') finishReason = reason;
       const reasoning = chunk.additional_kwargs?.reasoning_content;
       if (typeof reasoning === 'string') reasoningCharCount += reasoning.length;
     },
@@ -110,6 +143,7 @@ export async function collectLangChainText(
     ...stats,
     text: 'trim' in options && options.trim === false ? text : text.trim(),
     reasoningCharCount,
+    ...(finishReason !== undefined ? { finishReason } : {}),
     ...(usage ? { usage } : {}),
   };
 }

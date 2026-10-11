@@ -30,7 +30,7 @@ Text collection separates reasoning from answer text and provides chunk/timing h
 
 The new execution source and independent mocked regression tests are present. Verification, lockfile synchronization and registry publication remain separate pending steps; no test or paid provider call was run for this source refactor.
 
-`collectLangChainText` also accepts `{ model, messages, trim: false }` for complete LangChain histories (including image message blocks). This preserves whitespace and returns the last usage-bearing chunk as `usage`; it does not add usage chunks together or extract non-string answer blocks. The prompt-based signature still trims text. An omitted idle timeout adds no deadline; callers with an existing budget continue passing it explicitly.
+`collectLangChainText` also accepts `{ model, messages, trim: false }` for complete LangChain histories (including image message blocks). This preserves whitespace and returns the last usage-bearing chunk as `usage`; it does not add usage chunks together. String content and text content blocks contribute answer text; other blocks are excluded. The prompt-based signature still trims text. An omitted idle timeout adds no deadline; callers with an existing budget continue passing it explicitly.
 
 `collectGraphUpdates` consumes a graph's update iterator, awaits each node notification and optionally accumulates replacement fields from an initial state. It has no LangGraph runtime dependency and neither constructs nor retries a graph. The consumer passes its existing graph stream (including signal/configurable/metadata), retains topology and progress policy, and reads checkpoint/reducer state from its graph after completion. Iterator errors and notification failures propagate and close iteration. Multiple node updates in one event are all delivered.
 
@@ -71,3 +71,11 @@ These new exports are experimental until their catalogue contract stabilizes.
 ## Native SDK adapter entry
 
 Import the provider-neutral `NativeAIClient` and port types from `@zucker-framework/ai`. The root declaration graph does not require optional Anthropic/Gemini SDK types. Import SDK-specific factories (`createNativeAIModel`, `openAINativeModel`, `anthropicNativeModel`, `geminiNativeModel`) and `NativeTransportOptions` from `@zucker-framework/ai/native`; this opt-in entry requires the declared OpenAI, Anthropic and Google GenAI peers. No root compatibility re-export is provided. Actual SDK requests are still created only when the selected provider is invoked.
+
+### Incremental LangChain answer text
+
+`collectLangChainText({ ..., onTextDelta })` delivers each non-empty answer delta before collection completes. Both string content and text content blocks are supported; reasoning and non-text blocks are excluded. Async callbacks are awaited in order. A callback failure propagates and aborts the provider stream, allowing the consumer to enforce durable-write failure semantics without copying the stream collector.
+
+The returned `finishReason` is the last explicit `finish_reason` or `stop_reason` from streamed message metadata. It remains absent when the provider did not supply one. Consumers that require completion must check this value; background logging observers are not an authoritative completion signal.
+
+`collectGraphUpdates` invokes `onNodeComplete(node, update)` with the actual node update before reading the next graph event. Use this payload for immediate progress; checkpoint storage may not yet expose it. The collector does not interpret graph reducers or take over checkpoint persistence. The second argument is optional for empty updates, and existing callbacks accepting only `node` continue to work.
