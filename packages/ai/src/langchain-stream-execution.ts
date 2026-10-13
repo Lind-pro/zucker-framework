@@ -85,7 +85,7 @@ export interface LangChainInvocationOptions extends LangChainStreamOptions {
 }
 
 export interface LangChainMessageInvocationOptions extends LangChainStreamOptions {
-  model: BaseChatModel;
+  model: Pick<BaseChatModel, 'stream'>;
   messages: Parameters<BaseChatModel['stream']>[0];
   callbacks?: BaseCallbackHandler[];
   /** Answer text only, in stream order. Awaited; consumer failures abort the call. */
