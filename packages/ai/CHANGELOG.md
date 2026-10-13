@@ -1,5 +1,13 @@
 # @zucker-framework/ai
 
+## 1.0.9
+
+### Patch Changes
+
+- Add optional source-image editing through `ImageProvider.editImage` and export `ImageProviderSource`. OpenAI sends ordered PNG, JPEG or WebP uploads through the SDK multipart edit endpoint, preserves the configured model ID, and rejects invalid sources before dispatch. Unsupported or failed edits never fall back to text-only generation.
+
+- Expose `supportsSingleAttempt`, `maxRetries: 0`, and typed `ImageProviderUsage`. The OpenAI image adapter disables SDK retries on request and preserves cancellation, request metadata, and reported token categories for both generation and editing. Gemini behavior is unchanged in this scoped release.
+
 ## 1.0.8
 
 ### Patch Changes

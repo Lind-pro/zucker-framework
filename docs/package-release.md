@@ -438,3 +438,40 @@ their transitive Common resolution as well (for example, with a package-manager
 override) and verify one Common/Nest provider and request-context instance. This
 release does not upgrade or deploy those consumers. The release consumer smoke
 checks exercise the new recovery API through both ESM and CommonJS exports.
+
+## Scoped encoded-image editing release
+
+The maintainer authorized the related image fix for CNIPA after acceptance. This
+preparation selects only `ai@1.0.9`, applying its manifest and changelog directly
+and consuming the encoded-image editing changeset for this scoped patch exception.
+The 51-package fixed-group configuration remains unchanged. `publish.yml` selects
+AI only for the single main push whose previous tip is
+`ab7f1bb0283d496ec11bf356921c60e53e4b54f6` and whose head commit message is exactly
+`fix(ai): prepare scoped image editing and single-attempt patch 1.0.9`. This binds
+the exception to this reviewed release's one non-force advancement. All other
+pushes pass an empty `release_packages` value to reusable CI, restoring its normal
+fixed-group selection automatically; no later manual reset is required. If main
+advances independently, stop and review this exception against the new baseline
+before pushing. Other package versions stay at `1.0.8` and remain verification
+inputs only. No workflow identity, OIDC permission, environment protection, or
+publication check is changed.
+
+The empty selector cannot publish this scoped patch: packing unchanged
+`admin@1.0.8` would change its AI dependency to `1.0.9`, and `cli@1.0.8` would carry
+a changed scaffold catalogue. The publisher skips existing versions only when
+their complete archive SHA-1 matches the registry and rejects a different checksum
+before any upload. Unselected archives are verified and removed from the bundle.
+
+The release adds the optional `ImageProvider.editImage` and encoded source/usage
+contracts, and OpenAI's single-attempt generation/edit implementation. Gemini's
+independent pending changes are excluded; its provider does not advertise
+`supportsSingleAttempt` in this artifact, so consumers requiring that capability
+must reject a Gemini route. The ordinary SDK retry defaults remain when the caller
+omits `maxRetries: 0`.
+
+AI keeps its current sibling dependencies at `1.0.8` when packed. A consumer using
+`admin@1.0.8` must align its transitive AI dependency to exactly `1.0.9` when adopting
+this fix and verify one AI/Nest provider instance. Publication does not update or
+deploy a consumer. Acceptance must complete before pushing the package commit to
+`main`, because the existing main-push workflow automatically publishes its exact
+CI-produced immutable bundle through the trusted `npm-publish` OIDC path.
