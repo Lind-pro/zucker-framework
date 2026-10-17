@@ -130,3 +130,6 @@ export type { CrudEntity } from './crud-entity';
 export type { BaseControllerOptions, BaseControllerRouteOptions, BaseControllerMethod } from './base.controller';
 
 export { QueryParamDto } from './query/query-param.dto';
+
+export { resolvePageTotal } from './pagination';
+export { withActiveRecordWhere } from './services/active-record-where';

@@ -139,3 +139,18 @@ export function calculateTotalPages(total: number, pageSize: number): number {
   if (pageSize <= 0) return 0;
   return Math.ceil(total / pageSize);
 }
+
+/** Resolve a SELECT-first page total. The caller owns ordering and snapshot isolation. */
+export async function resolvePageTotal(
+  rowCount: number,
+  pagination: { skip: number; take: number },
+  count: () => Promise<number>,
+): Promise<number> {
+  const { skip, take } = pagination;
+  if (!Number.isSafeInteger(skip) || skip < 0 || !Number.isSafeInteger(take) || take < 1 ||
+      !Number.isSafeInteger(rowCount) || rowCount < 0 || rowCount > take || !Number.isSafeInteger(skip + rowCount)) {
+    throw new RangeError('Invalid page bounds');
+  }
+  // An empty later page does not establish how many rows precede its offset.
+  return rowCount < take && (skip === 0 || rowCount > 0) ? skip + rowCount : count();
+}

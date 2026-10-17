@@ -228,3 +228,26 @@ describe('DynamicQueryService', () => {
     });
   });
 });
+
+
+describe('SELECT-first total inference', () => {
+  it.each([
+    [1, 0, 0, false], [1, 2, 2, false], [2, 2, 5, false],
+    [2, 0, 99, true], [1, 3, 99, true],
+  ])('page %i with %i rows returns total %i', async (page, length, total, counted) => {
+    const ops = { findMany: vi.fn().mockResolvedValue(Array.from({ length }, (_, id) => ({ id }))),
+      count: vi.fn().mockResolvedValue(99) };
+    const service = new DynamicQueryService({ model: () => ops } as never, createParamService());
+    const result = await service.findMany('items', { page, pageSize: 3, inferTotal: true, orderBy: 'id asc' });
+    expect(result.total).toBe(total);
+    expect(ops.count).toHaveBeenCalledTimes(counted ? 1 : 0);
+  });
+
+  it.each([{ total: 8 }, { parallelPager: true }, {}])('preserves explicit total and parallel behavior %j', async extra => {
+    const ops = { findMany: vi.fn().mockResolvedValue([]), count: vi.fn().mockResolvedValue(9) };
+    const service = new DynamicQueryService({ model: () => ops } as never, createParamService());
+    const result = await service.findMany('items', { page: 1, pageSize: 3, inferTotal: true, ...extra });
+    expect(result.total).toBe('total' in extra ? 8 : 'parallelPager' in extra ? 9 : 0);
+    expect(ops.count).toHaveBeenCalledTimes('parallelPager' in extra ? 1 : 0);
+  });
+});

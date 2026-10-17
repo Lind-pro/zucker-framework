@@ -32,12 +32,12 @@ jobs:
     name: CI
     if: github.event_name == 'push'
     uses: ./.github/workflows/ci.yml
-    # One approved AI 1.0.9 push from this exact baseline; future pushes use the fixed group.
+    # One approved CRUD 1.0.9 push from this exact baseline; future pushes use the fixed group.
     with:
       release_packages: >-
-        ${{ github.event.before == 'ab7f1bb0283d496ec11bf356921c60e53e4b54f6' &&
-            github.event.head_commit.message == 'fix(ai): prepare scoped image editing and single-attempt patch 1.0.9' &&
-            '@zucker-framework/ai' || '' }}
+        ${{ github.event.before == '6676f71f2207ebac18a1a3d433b60414d42bd834' &&
+            github.event.head_commit.message == 'feat(crud): publish query totals and soft-delete isolation 1.0.9' &&
+            '@zucker-framework/crud' || '' }}
 
   prepare:
     name: Prepare the exact CI-verified bundle

@@ -475,3 +475,23 @@ this fix and verify one AI/Nest provider instance. Publication does not update o
 deploy a consumer. Acceptance must complete before pushing the package commit to
 `main`, because the existing main-push workflow automatically publishes its exact
 CI-produced immutable bundle through the trusted `npm-publish` OIDC path.
+
+
+## Scoped CRUD query and soft-delete release
+
+The maintainer authorized committing and publishing this reviewed CRUD batch only.
+Publish `crud@1.0.9`, applying its manifest and changelog directly for this scoped
+exception. The pending CRUD changeset is consumed by this direct version change;
+the fixed group is unchanged and unrelated AI workspace changes are excluded.
+The workflow selects CRUD only for the main push from `6676f71f2207ebac18a1a3d433b60414d42bd834`
+with head message `feat(crud): publish query totals and soft-delete isolation 1.0.9`.
+Every other push restores the default complete-group selection. CI still verifies
+all packages; only CRUD is sealed and uploaded for publication. No OIDC identity,
+permission, environment protection or archive verification is bypassed.
+
+CRUD packs against core/cache/event 1.0.8. Consumers must align their compatible
+peer instances and verify the immutable artifact before adoption. The new
+`resolvePageTotal` and `withActiveRecordWhere` exports support custom transactional
+queries and consumer-owned retention extensions. See the CRUD README for the
+SELECT-first consistency limits, lifecycle write restrictions and root-only
+scope of SoftDeleteService. Publication alone does not deploy CNIPA or migrate data.

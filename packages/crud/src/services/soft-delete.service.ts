@@ -8,6 +8,7 @@ import {
 } from '@zucker-framework/event';
 import { BaseService } from '../base.service';
 import { DynamicQueryService, type DynamicQueryParam } from '../dynamic-query.service';
+import { activeAdapter } from './soft-delete-adapter';
 import { DATABASE_ADAPTER } from '../crud.module';
 
 /** 支持软删除的实体接口 */
@@ -30,18 +31,20 @@ export interface SoftDeleteQueryOptions {
 @Injectable()
 export abstract class SoftDeleteService<T extends SoftDeletableEntity> extends BaseService<T> {
   constructor(
-    @Inject(DATABASE_ADAPTER) db: DatabaseAdapter,
+    @Inject(DATABASE_ADAPTER) private readonly unscopedDb: DatabaseAdapter,
     dynamicQuery: DynamicQueryService,
     modelName: string,
     @Optional() @Inject(TOPIC_EVENT_BUS) eventBus?: TopicEventBus,
     options?: { defaultOrderField?: string },
   ) {
-    super(db, dynamicQuery, modelName, eventBus, options);
+    super(activeAdapter(unscopedDb, modelName), dynamicQuery, modelName, eventBus, options);
   }
+
+  protected override get requiredQueryWhere(): Record<string, unknown> { return { deletedAt: null }; }
 
   /** 查询单条记录（自动排除已删除） */
   override async findOne(id: string, options?: SoftDeleteQueryOptions): Promise<T> {
-    const entity = await this.db.model(this.modelName).findUnique({
+    const entity = await this.unscopedDb.model(this.modelName).findUnique({
       where: { id },
     });
 
@@ -59,9 +62,8 @@ export abstract class SoftDeleteService<T extends SoftDeletableEntity> extends B
 
   /** 分页查询（自动排除已删除） */
   override async findAll(query: DynamicQueryParam, options?: SoftDeleteQueryOptions) {
-    // 在 filters 中注入软删除条件
-    const enhancedQuery = this.injectSoftDeleteFilter(query, options);
-    return super.findAll(enhancedQuery);
+    return this.dynamicQuery.findMany<T>(this.modelName, query, this.defaultOrderField,
+      undefined, undefined, options?.includeDeleted ? undefined : this.requiredQueryWhere);
   }
 
   /**
@@ -70,11 +72,12 @@ export abstract class SoftDeleteService<T extends SoftDeletableEntity> extends B
    */
   override async delete(id: string): Promise<T> {
     const entity = await this.findOne(id);
+    await this.emitEvent(EntityEventType.DELETE, EntityEventPhase.PREPARE, entity);
     // BEFORE 阶段：监听器可 cancel() 取消删除操作
     await this.emitEventWithCancelCheck(EntityEventType.DELETE, entity);
 
-    const result = await this.db.model(this.modelName).update({
-      where: { id },
+    const result = await this.unscopedDb.model(this.modelName).update({
+      where: { id, deletedAt: null },
       data: { deletedAt: new Date() },
     }) as T;
 
@@ -85,8 +88,8 @@ export abstract class SoftDeleteService<T extends SoftDeletableEntity> extends B
   /** 批量软删除 */
   override async deleteMany(where: Record<string, unknown>, options?: SoftDeleteQueryOptions): Promise<{ count: number }> {
     const softDeleteFilter = options?.includeDeleted ? {} : { deletedAt: null };
-    return this.db.model(this.modelName).updateMany({
-      where: { ...where, ...softDeleteFilter },
+    return this.unscopedDb.model(this.modelName).updateMany({
+      where: { AND: [where, softDeleteFilter] },
       data: { deletedAt: new Date() },
     });
   }
@@ -94,7 +97,7 @@ export abstract class SoftDeleteService<T extends SoftDeletableEntity> extends B
   /** 恢复已删除记录 */
   override async restore(id: string): Promise<T> {
     // 临时包含已删除记录来查找
-    const entity = await this.db.model(this.modelName).findUnique({
+    const entity = await this.unscopedDb.model(this.modelName).findUnique({
       where: { id },
     });
 
@@ -102,8 +105,8 @@ export abstract class SoftDeleteService<T extends SoftDeletableEntity> extends B
       throw new NotFoundException(`${this.modelName} with ID "${id}" not found`);
     }
 
-    return this.db.model(this.modelName).update({
-      where: { id },
+    return this.unscopedDb.model(this.modelName).update({
+      where: { id, deletedAt: (entity as SoftDeletableEntity).deletedAt ?? null },
       data: { deletedAt: null },
     }) as Promise<T>;
   }
@@ -123,28 +126,13 @@ export abstract class SoftDeleteService<T extends SoftDeletableEntity> extends B
    * 物理删除（真正从数据库删除）
    */
   async forceDelete(id: string): Promise<T> {
-    return super.delete(id);
+    const entity = await this.findOne(id, { includeDeleted: true });
+    await this.emitEvent(EntityEventType.DELETE, EntityEventPhase.PREPARE, entity);
+    await this.emitEventWithCancelCheck(EntityEventType.DELETE, entity);
+    const result = await this.unscopedDb.model(this.modelName).delete({ where: { id } }) as T;
+    await this.emitEvent(EntityEventType.DELETE, EntityEventPhase.AFTER, result);
+    return result;
   }
 
-  /** 在查询参数中注入软删除过滤条件 */
-  private injectSoftDeleteFilter(query: DynamicQueryParam, options?: SoftDeleteQueryOptions): DynamicQueryParam {
-    if (options?.includeDeleted) return query;
-
-    // 将 deletedAt$isNull 注入到 filters 中
-    let filters: Record<string, unknown> = {};
-    if (query.filters) {
-      try {
-        filters = JSON.parse(query.filters);
-      } catch {
-        filters = {};
-      }
-    }
-
-    filters['deletedAt$isNull'] = true;
-
-    return {
-      ...query,
-      filters: JSON.stringify(filters),
-    };
-  }
+  override async softDelete(id: string): Promise<T> { return this.delete(id); }
 }

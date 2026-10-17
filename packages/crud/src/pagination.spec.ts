@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
+  resolvePageTotal,
   calculateTotalPages,
   toPaginatedResult,
   rePaging,
@@ -117,4 +118,18 @@ describe('isPaged', () => {
   it('should return false for empty param', () => {
     expect(isPaged({})).toBe(false);
   });
+});
+
+describe('resolvePageTotal', () => {
+  it.each([[0, 0, 3, 0, false], [2, 0, 3, 2, false], [2, 3, 3, 5, false],
+    [0, 6, 3, 99, true], [3, 0, 3, 99, true]])(
+    'resolves %i rows at offset %i', async (rows, skip, take, total, counted) => {
+      const count = vi.fn().mockResolvedValue(99);
+      expect(await resolvePageTotal(rows, { skip, take }, count)).toBe(total);
+      expect(count).toHaveBeenCalledTimes(counted ? 1 : 0);
+    });
+  it.each([{ skip: -1, take: 3 }, { skip: 0, take: 0 }, { skip: Infinity, take: 3 }])(
+    'rejects invalid bounds %j', async pagination => {
+      await expect(resolvePageTotal(0, pagination, async () => 0)).rejects.toThrow(RangeError);
+    });
 });
