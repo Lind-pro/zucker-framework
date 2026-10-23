@@ -23,6 +23,12 @@ import {
 import { getCorrelationId } from './correlation-id';
 import { PiiFilter } from './pii-filter';
 import { AccessLogService, OperationLogService } from './persistent-logs';
+import {
+  HTTP_ACCESS_CAPTURED,
+  HTTP_COMPLETION_OBSERVATION,
+  HTTP_COMPLETION_RESPONSE,
+  type ObservedHttpRequest,
+} from './http-request-observation.middleware';
 
 export const ACCESS_LOG_BUS = Symbol('ACCESS_LOG_BUS');
 export const ACCESS_LOG_CAPTURE_OPTIONS = Symbol('ACCESS_LOG_CAPTURE_OPTIONS');
@@ -36,7 +42,7 @@ export interface AccessLogBus {
 }
 
 /** HTTP 请求的最小类型约束（避免 any） */
-interface HttpRequest {
+interface HttpRequest extends ObservedHttpRequest {
   user?: { id?: string; username?: string; email?: string };
   method: string;
   url: string;
@@ -97,7 +103,7 @@ export class AccessLoggerInterceptor implements NestInterceptor {
       return next.handle();
     }
 
-    const request = context.switchToHttp().getRequest();
+    const request = context.switchToHttp().getRequest<HttpRequest>();
     const startTime = Date.now();
 
     const userId = request.user?.id;
@@ -180,62 +186,75 @@ export class AccessLoggerInterceptor implements NestInterceptor {
     };
     this.eventEmitter?.emit(ACCESS_LOG_BEFORE_EVENT, beforePayload);
 
+    let lastResult: unknown;
     return next.handle().pipe(
-      tap((result) => {
-        const duration = Date.now() - startTime;
-        const logResult =
-          loggerOptions.logResult === true ? this.simplifyResult(result) : undefined;
-        const targetId = this.extractTargetId(request, result);
+      tap({
+        next: (result) => {
+          lastResult = result;
+        },
+        complete: () => {
+          const result = lastResult;
+          const duration = Date.now() - startTime;
+          const logResult =
+            loggerOptions.logResult === true ? this.simplifyResult(result) : undefined;
+          const targetId = this.extractTargetId(request, result);
 
-        const response = context.switchToHttp().getResponse();
-        const statusCode = response?.statusCode ?? 200;
+          const response = context.switchToHttp().getResponse();
+          const statusCode = response?.statusCode ?? 200;
 
-        const accessPayload: AccessLogPayload = {
-          id: logId,
-          action,
-          describe,
-          module,
-          target,
-          userId,
-          username,
-          requestUrl,
-          method,
-          ip,
-          userAgent,
-          httpHeaders,
-          context: logContext,
-          requestTime: new Date(startTime),
-          responseTime: duration,
-          parameters,
-          result: logResult,
-          correlationId,
-          statusCode,
-        };
+          const accessPayload: AccessLogPayload = {
+            id: logId,
+            action,
+            describe,
+            module,
+            target,
+            userId,
+            username,
+            requestUrl,
+            method,
+            ip,
+            userAgent,
+            httpHeaders,
+            context: logContext,
+            requestTime: new Date(startTime),
+            responseTime: duration,
+            parameters,
+            result: logResult,
+            correlationId,
+            statusCode,
+            exception: statusCode >= 400 ? `HTTP ${statusCode}` : undefined,
+          };
 
-        const operationPayload: OperationLogPayload = {
-          module,
-          action,
-          status: 'SUCCESS',
-          userId,
-          targetId,
-          targetType: loggerOptions.targetType,
-          method,
-          path: requestUrl,
-          ipAddress: ip,
-          userAgent,
-          duration,
-          requestData: parameters,
-          responseData: logResult,
-          correlationId,
-        };
+          const operationPayload: OperationLogPayload = {
+            module,
+            action,
+            status: statusCode >= 400 ? 'FAILED' : 'SUCCESS',
+            userId,
+            targetId,
+            targetType: loggerOptions.targetType,
+            method,
+            path: requestUrl,
+            ipAddress: ip,
+            userAgent,
+            duration,
+            requestData: parameters,
+            responseData: logResult,
+            correlationId,
+          };
 
-        this.eventEmitter?.emit(ACCESS_LOG_EVENT, accessPayload);
-        this.eventEmitter?.emit(OPERATION_LOG_EVENT, operationPayload);
-        this.bus?.publish('system/access-log', accessPayload);
-        void Promise.allSettled([
-          this.accessLogs?.log(accessPayload),
-          this.operationLogs?.log(operationPayload),
-        ]);
+          const accessLogs = request[HTTP_ACCESS_CAPTURED] ? undefined : this.accessLogs;
+          if (accessLogs) request[HTTP_ACCESS_CAPTURED] = true;
+          this.eventEmitter?.emit(ACCESS_LOG_EVENT, accessPayload);
+          this.eventEmitter?.emit(OPERATION_LOG_EVENT, operationPayload);
+          this.bus?.publish('system/access-log', accessPayload);
+          void Promise.allSettled([
+            accessLogs?.log({ ...accessPayload, requestId: correlationId }, {
+              completionObservation: request[HTTP_COMPLETION_OBSERVATION],
+              completionResponse: request[HTTP_COMPLETION_RESPONSE],
+            }),
+            this.operationLogs?.log(operationPayload),
+          ]);
+        },
       }),
       catchError((error) => {
         const duration = Date.now() - startTime;
@@ -288,11 +307,16 @@ export class AccessLoggerInterceptor implements NestInterceptor {
           },
         };
 
+        const accessLogs = request[HTTP_ACCESS_CAPTURED] ? undefined : this.accessLogs;
+        if (accessLogs) request[HTTP_ACCESS_CAPTURED] = true;
         this.eventEmitter?.emit(ACCESS_LOG_EVENT, accessPayload);
         this.eventEmitter?.emit(OPERATION_LOG_EVENT, operationPayload);
         this.bus?.publish('system/access-log', accessPayload);
         void Promise.allSettled([
-          this.accessLogs?.log(accessPayload),
+          accessLogs?.log({ ...accessPayload, requestId: correlationId }, {
+            completionObservation: request[HTTP_COMPLETION_OBSERVATION],
+            completionResponse: request[HTTP_COMPLETION_RESPONSE],
+          }),
           this.operationLogs?.log(operationPayload),
         ]);
 

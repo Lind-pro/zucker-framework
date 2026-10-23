@@ -32,12 +32,12 @@ jobs:
     name: CI
     if: github.event_name == 'push'
     uses: ./.github/workflows/ci.yml
-    # One approved CRUD 1.0.9 push from this exact baseline; future pushes use the fixed group.
+    # One approved logging 1.0.9 push from this exact baseline; future pushes use the fixed group.
     with:
       release_packages: >-
-        ${{ github.event.before == '6676f71f2207ebac18a1a3d433b60414d42bd834' &&
-            github.event.head_commit.message == 'feat(crud): publish query totals and soft-delete isolation 1.0.9' &&
-            '@zucker-framework/crud' || '' }}
+        ${{ github.event.before == 'b26ceb5e85263df233876d942dd55c6c62405a9c' &&
+            github.event.head_commit.message == 'feat(logging): publish aggregate-aware capture policies 1.0.9' &&
+            '@zucker-framework/logging' || '' }}
 
   prepare:
     name: Prepare the exact CI-verified bundle

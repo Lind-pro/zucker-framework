@@ -23,6 +23,9 @@ export interface AccessLogData {
   parameters?: Record<string, unknown>;
   result?: unknown;
   exception?: string;
+  /** Policy input only; omitted from the legacy persistence projection. */
+  statusCode?: number;
+  requestId?: string;
 }
 
 export interface LogOperationData {
@@ -64,6 +67,28 @@ export interface LogQuery {
 export interface PersistentLogOptions {
   accessModel?: string;
   operationModel?: string;
+  /** Return false to omit a detail record. Exceptions/non-booleans retain it. */
+  accessShouldPersist?: (
+    input: Readonly<AccessLogData>,
+    context: Readonly<AccessLogPersistenceContext>,
+  ) => boolean | Promise<boolean>;
+  /** Direct business writes and HTTP captures share the same consumer policy. */
+  operationShouldPersist?: (input: Readonly<LogOperationData>) => boolean | Promise<boolean>;
+}
+
+export interface AccessLogPersistenceContext {
+  /** True only when the completion observer acknowledged durable unsampled statistics. */
+  completionObserved: boolean;
+}
+export interface AccessLogWriteContext {
+  completionObservation?: Promise<boolean>;
+  completionResponse?: Promise<AccessLogCompletionResponse>;
+}
+export interface AccessLogCompletionResponse {
+  statusCode: number;
+  responseTime: number;
+  requestTime: Date;
+  requestId?: string;
 }
 export const PERSISTENT_LOG_OPTIONS = Symbol('PERSISTENT_LOG_OPTIONS');
 
@@ -242,6 +267,7 @@ abstract class PersistentLogService<T extends LogRecord> {
 @Injectable()
 export class AccessLogService extends PersistentLogService<StoredAccessLog> {
   private readonly operationModel: string;
+  private readonly shouldPersist?: PersistentLogOptions['accessShouldPersist'];
   constructor(
     @Inject(DATABASE_ADAPTER) private readonly db: DatabaseAdapter,
     @Optional() sanitizer?: LogSanitizer,
@@ -255,9 +281,31 @@ export class AccessLogService extends PersistentLogService<StoredAccessLog> {
       sanitizer,
     );
     this.operationModel = options.operationModel ?? 'operationLogs';
+    this.shouldPersist = options.accessShouldPersist;
   }
 
-  async log(input: AccessLogData): Promise<void> {
+  async log(input: AccessLogData, context: AccessLogWriteContext = {}): Promise<void> {
+    if (context.completionResponse) {
+      try {
+        const completed = await context.completionResponse;
+        input = {
+          ...input,
+          ...completed,
+          exception: input.exception || (completed.statusCode >= 400 ? `HTTP ${completed.statusCode}` : undefined),
+        };
+      } catch {
+        // A missing final snapshot cannot erase the known handler failure/detail.
+      }
+    }
+    if (this.shouldPersist) {
+      let completionObserved = false;
+      try {
+        completionObserved = (await context.completionObservation) === true;
+        if (await this.shouldPersist(input, { completionObserved }) === false) return;
+      } catch {
+        // Policy/observation failures keep the detail; logging must not reject business work.
+      }
+    }
     await this.write(() => ({
       action: input.action,
       describe: input.describe,
@@ -384,6 +432,7 @@ export class AccessLogService extends PersistentLogService<StoredAccessLog> {
 
 @Injectable()
 export class OperationLogService extends PersistentLogService<StoredOperationLog> {
+  private readonly shouldPersist?: PersistentLogOptions['operationShouldPersist'];
   constructor(
     @Inject(DATABASE_ADAPTER) db: DatabaseAdapter,
     @Optional() sanitizer?: LogSanitizer,
@@ -396,9 +445,17 @@ export class OperationLogService extends PersistentLogService<StoredOperationLog
       ['module', 'action', 'userId', 'status'],
       sanitizer,
     );
+    this.shouldPersist = options.operationShouldPersist;
   }
 
   async log(input: LogOperationData): Promise<void> {
+    if (this.shouldPersist) {
+      try {
+        if (await this.shouldPersist(input) === false) return;
+      } catch {
+        // Invalid policy is conservatively treated as retain.
+      }
+    }
     await this.write(() => ({
       module: input.module,
       action: input.action,

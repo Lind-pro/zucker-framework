@@ -7,6 +7,7 @@ import { AccessLoggerInterceptor } from './access-logger.interceptor';
 import { ACCESS_LOGGER_KEY } from './access-logger.decorator';
 import { ACCESS_LOG_EVENT, OPERATION_LOG_EVENT } from './events';
 import { PiiFilter } from './pii-filter';
+import { HTTP_COMPLETION_OBSERVATION, HTTP_ACCESS_CAPTURED } from './http-request-observation.middleware';
 import type { AccessLogService, OperationLogService } from './persistent-logs';
 
 function setup() {
@@ -70,6 +71,7 @@ describe('persistent HTTP audit capture', () => {
         },
         result: { id: 'r1', privateDocument: '[REDACTED]' },
       }),
+      { completionObservation: undefined, completionResponse: undefined },
     );
     expect(operation.log).toHaveBeenCalledWith(
       expect.objectContaining({ targetId: 'r1', status: 'SUCCESS' }),
@@ -87,6 +89,7 @@ describe('persistent HTTP audit capture', () => {
     ).rejects.toBe(failure);
     expect(access.log).toHaveBeenCalledWith(
       expect.objectContaining({ exception: '[INVALID_RECORD] Invalid input', statusCode: 400 }),
+      { completionObservation: undefined, completionResponse: undefined },
     );
     expect(operation.log).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'FAILED', errorMessage: '[INVALID_RECORD] Invalid input' }),
@@ -113,9 +116,25 @@ describe('persistent HTTP audit capture', () => {
     ).rejects.toBe(failure);
     expect(access.log).toHaveBeenCalledWith(
       expect.objectContaining({ exception: 'Bad Request Exception', statusCode: 400 }),
+      { completionObservation: undefined, completionResponse: undefined },
     );
     expect(operation.log).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'FAILED', errorMessage: 'Bad Request Exception' }),
     );
+  });
+
+  it('captures a streaming action once and forwards the final HTTP observation acknowledgement', async () => {
+    const { interceptor, context, access, operation, events } = setup();
+    const request = context.switchToHttp().getRequest();
+    request[HTTP_COMPLETION_OBSERVATION] = Promise.resolve(true);
+    await lastValueFrom(interceptor.intercept(context, { handle: () => of({ chunk: 1 }, { chunk: 2 }) }));
+    expect(access.log).toHaveBeenCalledOnce();
+    expect(operation.log).toHaveBeenCalledOnce();
+    expect(events.access).toHaveBeenCalledOnce();
+    expect(request[HTTP_ACCESS_CAPTURED]).toBe(true);
+    expect(access.log).toHaveBeenCalledWith(expect.objectContaining({ result: { chunk: 2 } }), {
+      completionObservation: request[HTTP_COMPLETION_OBSERVATION],
+      completionResponse: undefined,
+    });
   });
 });

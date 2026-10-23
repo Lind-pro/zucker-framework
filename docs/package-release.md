@@ -495,3 +495,9 @@ peer instances and verify the immutable artifact before adoption. The new
 queries and consumer-owned retention extensions. See the CRUD README for the
 SELECT-first consistency limits, lifecycle write restrictions and root-only
 scope of SoftDeleteService. Publication alone does not deploy CNIPA or migrate data.
+
+## Scoped logging observability release
+
+The maintainer authorized publishing `logging@1.0.9` and updating the CNIPA consumer. This scoped exception versions only logging directly and leaves the fixed group configuration intact. Its one-push selector binds the exact reviewed baseline and release commit message; CI verifies all packages but seals and publishes only logging. Core stays at its already released `1.0.8`. The package adds opt-in HTTP completion observations and persistence policies, without requiring new log-table columns. Consumer aggregate schema, retention and sampling policy remain application-owned. Existing configurations retain their behavior. This authorization does not deploy CNIPA production.
+
+The fresh pnpm consumer pins Nest common/core/platform-express to the template lockfile-tested versions. The platform adapter imports Core internals; allowing the scaffold range to select platform-express 12.2 while Core remains 12.0.1 fails startup before any application module runs. The consumer check still compiles and starts the generated server and verifies HTTP behavior.

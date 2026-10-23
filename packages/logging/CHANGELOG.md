@@ -1,5 +1,12 @@
 # @zucker-framework/logging
 
+## 1.0.9
+
+### Patch Changes
+
+- Add optional HTTP completion observations and access/business persistence policies. Observe completed, rejected and aborted requests once, including streaming responses.
+- Wait for bounded aggregate acknowledgement before access sampling; retain final HTTP failures and slow responses, and prevent duplicate rejection details. Existing configurations and persisted log schemas remain compatible.
+
 ## 1.0.8
 
 ### Patch Changes
