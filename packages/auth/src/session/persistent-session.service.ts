@@ -77,6 +77,19 @@ export class PersistentSessionService<T extends PersistentSession = PersistentSe
     return this.model().findUnique({ where: { refreshJti } });
   }
 
+  getSessionById(sessionId: string): Promise<T | null> {
+    return this.model().findUnique({ where: { id: sessionId } });
+  }
+
+  /** Initialize token transport for an already-created session; a revoked session cannot be revived. */
+  async replaceRefreshJti(sessionId: string, refreshJti: string): Promise<boolean> {
+    const changed = await this.model().updateMany({
+      where: { id: sessionId, revokedAt: null, expiresAt: { gt: new Date() } },
+      data: { refreshJti },
+    });
+    return changed.count === 1;
+  }
+
   async getSessionByRefreshJtiOrId(idOrJti: string): Promise<T | null> {
     const sessions = await this.model().findMany({
       where: { OR: [{ id: idOrJti }, { refreshJti: idOrJti }] },

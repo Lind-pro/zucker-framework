@@ -1,5 +1,14 @@
 # @zucker-framework/notification
 
+## 1.0.10
+
+### Patch Changes
+
+- Add optional host interruption to durable task attempts, preserving abandoned leases for recovery while draining in-flight heartbeats. Add a neutral PostgreSQL durable notification repository and schema with atomic enqueue, claims, lease fencing and expired-attempt recovery.
+- Updated dependencies
+  - @zucker-framework/queue@1.0.10
+  - @zucker-framework/core@1.0.10
+
 ## 1.0.8
 
 ### Patch Changes

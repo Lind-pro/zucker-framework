@@ -16,6 +16,10 @@ export interface OAuthCodeExchangeOptions {
   code: string;
   clientId: string;
   clientSecret: string;
+  redirectUri?: string;
+  codeVerifier?: string;
+  /** Fetch authoritative GitHub email evidence even when public email is present. */
+  includeEmailVerification?: boolean;
   signal?: AbortSignal;
   fetcher?: typeof fetch;
   /** Localized presentation belongs to the consumer; failures contain no tokens/body. */
@@ -27,6 +31,8 @@ export interface GoogleOAuthCodeExchangeOptions extends OAuthCodeExchangeOptions
 }
 
 export interface GoogleOAuthCodeProfile {
+  idToken?: string;
+  emailVerified?: boolean;
   provider: 'google';
   id: string;
   email: string;
@@ -39,6 +45,7 @@ export interface GoogleOAuthCodeProfile {
 }
 
 export interface GitHubOAuthCodeProfile {
+  emailVerified?: boolean;
   provider: 'github';
   id: string;
   email: string | null;
@@ -108,6 +115,7 @@ export async function exchangeGoogleOAuthCode(
           client_secret: options.clientSecret,
           redirect_uri: options.redirectUri,
           grant_type: 'authorization_code',
+          ...(options.codeVerifier ? { code_verifier: options.codeVerifier } : {}),
         }),
       },
       options,
@@ -133,6 +141,8 @@ export async function exchangeGoogleOAuthCode(
   if (!user || !id || !email) throw failure(options, 'google', 'profile');
   return {
     provider: 'google',
+    ...(text(tokenData?.id_token) ? { idToken: text(tokenData?.id_token) } : {}),
+    ...(typeof user.verified_email === 'boolean' ? { emailVerified: user.verified_email } : {}),
     id,
     email,
     displayName: text(user.name) ?? '',
@@ -161,6 +171,8 @@ export async function exchangeGitHubOAuthCode(
           client_id: options.clientId,
           client_secret: options.clientSecret,
           code: options.code,
+          ...(options.redirectUri ? { redirect_uri: options.redirectUri } : {}),
+          ...(options.codeVerifier ? { code_verifier: options.codeVerifier } : {}),
         }),
       },
       options,
@@ -184,7 +196,8 @@ export async function exchangeGitHubOAuthCode(
   const username = text(user?.login);
   if (!user || !id || !username) throw failure(options, 'github', 'profile');
   let email = text(user.email) || null;
-  if (!email) {
+  let emailVerified: boolean | undefined;
+  if (!email || options.includeEmailVerification) {
     const emails = await requestJson(
       'https://api.github.com/user/emails',
       { headers },
@@ -193,11 +206,17 @@ export async function exchangeGitHubOAuthCode(
       'emails',
     );
     if (!Array.isArray(emails)) throw failure(options, 'github', 'emails');
-    const primary = emails.map(record).find((entry) => entry?.primary === true);
-    email = text(primary?.email) || null;
+    const entries = emails.map(record);
+    const primary = entries.find((entry) => entry?.primary === true);
+    if (options.includeEmailVerification) {
+      const verified = entries.find(entry => entry?.primary === true && entry.verified === true) ?? entries.find(entry => entry?.verified === true);
+      email = text(verified?.email) || text(primary?.email) || email;
+      emailVerified = Boolean(email && entries.some(entry => entry?.email === email && entry.verified === true));
+    } else email = text(primary?.email) || null;
   }
   return {
     provider: 'github',
+    ...(emailVerified !== undefined ? { emailVerified } : {}),
     id,
     email,
     displayName: text(user.name) || username,

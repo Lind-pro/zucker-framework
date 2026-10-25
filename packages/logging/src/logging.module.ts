@@ -104,7 +104,8 @@ export class ZuckerLoggingModule implements NestModule {
         { provide: LogSanitizer, useFactory: () => new LogSanitizer(options.pii) },
         {
           provide: ACCESS_LOG_CAPTURE_OPTIONS,
-          useValue: { retainClientIp: options.retainClientIp },
+          useValue: { retainClientIp: options.retainClientIp,
+            captureParameters: options.captureParameters, captureResults: options.captureResults },
         },
         ...(options.persistence
           ? [

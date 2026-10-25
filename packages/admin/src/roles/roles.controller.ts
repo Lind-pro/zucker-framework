@@ -22,9 +22,12 @@ import {
   HttpStatus,
   UseGuards,
   Logger,
+  Req,
+  BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { NotFoundException } from '@zucker-framework/core';
-import { JwtAuthGuard, PermissionsGuard, Permissions, RoleHierarchyService, type RoleEntity } from '@zucker-framework/auth';
+import { JwtAuthGuard, PermissionsGuard, Permissions, PermissionService, RoleHierarchyService, type RoleEntity } from '@zucker-framework/auth';
 import { DATABASE_ADAPTER } from '@zucker-framework/crud';
 import type { DatabaseAdapter } from '@zucker-framework/core';
 
@@ -59,13 +62,14 @@ interface CreateRoleDto {
 
 @Controller('roles')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
-@Permissions()
+@Permissions('roles:query')
 export class RolesController {
   private readonly logger = new Logger(RolesController.name);
 
   constructor(
     private readonly roleHierarchyService: RoleHierarchyService,
     @Inject(DATABASE_ADAPTER) private readonly db: DatabaseAdapter,
+    private readonly permissionService: PermissionService,
   ) {}
 
   /**
@@ -123,18 +127,22 @@ export class RolesController {
    */
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  async create(@Body() body: CreateRoleDto): Promise<RoleWithPermissions> {
+  @Permissions('roles:add')
+  async create(@Body() body: CreateRoleDto, @Req() request: { user: { id: string } }): Promise<RoleWithPermissions> {
+    this.validateWriteFields(body);
+    await this.requireAuthorization(request.user.id,
+      !!body.permissionIds?.length || body.parentId != null || body.name === 'superadmin');
     const { permissionIds = [], ...roleData } = body;
 
-    const created = (await this.db.model('roles').create({ data: roleData })) as RoleEntity;
-
-    // Sync role-permission links
-    if (permissionIds.length > 0) {
-      await this.syncRolePermissions(created.id, permissionIds);
-    }
+    const created = await this.db.$transaction(async (tx) => {
+      const role = (await tx.model('roles').create({ data: roleData })) as RoleEntity;
+      if (permissionIds.length > 0) await this.syncRolePermissions(tx, role.id, permissionIds);
+      return role;
+    });
 
     // Invalidate role hierarchy cache
     this.roleHierarchyService.invalidateCache();
+    this.permissionService.invalidatePermissionCache();
 
     return { ...created, permissionIds };
   }
@@ -143,38 +151,35 @@ export class RolesController {
    * PUT /roles/:id — 更新角色（含 permissionIds 同步）
    */
   @Put(':id')
+  @Permissions('roles:update')
   async update(
     @Param('id') id: string,
     @Body() body: Partial<CreateRoleDto>,
+    @Req() request: { user: { id: string } },
   ): Promise<RoleWithPermissions> {
-    const existing = (await this.db.model('roles').findUnique({ where: { id } })) as RoleEntity | null;
-    if (!existing) {
-      throw new NotFoundException(`Role ${id} not found`);
-    }
-
+    this.validateWriteFields(body);
     const { permissionIds, ...updateData } = body;
-
-    // Update role fields
-    await this.db.model('roles').update({ where: { id }, data: updateData });
-
-    // Sync permissions if provided
-    let finalPermissionIds: string[];
-    if (permissionIds !== undefined) {
-      await this.syncRolePermissions(id, permissionIds);
-      finalPermissionIds = permissionIds;
-    } else {
-      const links = (await this.db.model('rolePermissions').findMany({
-        where: { roleId: id },
-        select: { permissionId: true },
+    const result = await this.db.$transaction(async (tx) => {
+      const existing = await this.lockRole(tx, id);
+      // Sensitive comparisons must use the state observed after the parent row lock.
+      await this.requireAuthorization(request.user.id, permissionIds !== undefined
+        || body.parentId !== undefined || (body.name !== undefined && body.name !== existing.name));
+      const updated = (await tx.model('roles').update({ where: { id }, data: updateData })) as RoleEntity;
+      if (permissionIds !== undefined) {
+        await this.syncRolePermissions(tx, id, permissionIds);
+        return { ...updated, permissionIds };
+      }
+      const links = (await tx.model('rolePermissions').findMany({
+        where: { roleId: id }, select: { permissionId: true },
       })) as Array<{ permissionId: string }>;
-      finalPermissionIds = links.map((l) => l.permissionId);
-    }
+      return { ...updated, permissionIds: links.map(link => link.permissionId) };
+    });
 
     // Invalidate caches
     this.roleHierarchyService.invalidateCache();
+    this.permissionService.invalidatePermissionCache();
 
-    const updated = { ...existing, ...updateData, id };
-    return { ...updated, permissionIds: finalPermissionIds };
+    return result;
   }
 
   /**
@@ -182,36 +187,55 @@ export class RolesController {
    */
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @Permissions('roles:delete')
   async remove(@Param('id') id: string): Promise<void> {
-    const existing = (await this.db.model('roles').findUnique({ where: { id } })) as RoleEntity | null;
-    if (!existing) {
-      throw new NotFoundException(`Role ${id} not found`);
-    }
-
     // 事务保障：删除关联数据和角色本身
     await this.db.$transaction(async (tx) => {
+      await this.lockRole(tx, id);
       await tx.model('rolePermissions').deleteMany({ where: { roleId: id } });
       await tx.model('userRoles').deleteMany({ where: { roleId: id } });
       await tx.model('roles').delete({ where: { id } });
     });
 
     this.roleHierarchyService.invalidateCache();
+    this.permissionService.invalidatePermissionCache();
   }
 
-  /**
-   * Replace all permission links for a role.
-   */
-  private async syncRolePermissions(roleId: string, permissionIds: string[]): Promise<void> {
-    await this.db.$transaction(async (tx) => {
-      // Delete existing links
-      await tx.model('rolePermissions').deleteMany({ where: { roleId } });
-
-      // Batch insert new links
-      for (const permissionId of permissionIds) {
-        await tx.model('rolePermissions').create({
-          data: { roleId, permissionId },
-        });
+  /** Relationship payloads must not bypass the explicit permission assignment path. */
+  private validateWriteFields(body: Partial<CreateRoleDto>): void {
+    if (!body || typeof body !== 'object' || Array.isArray(body)) throw new BadRequestException('Invalid role fields');
+    const textFields = ['name', 'code', 'description', 'parentId', 'groupId', 'creatorId'];
+    for (const [key, value] of Object.entries(body)) {
+      if (key === 'permissionIds') {
+        if (!Array.isArray(value) || value.some(id => typeof id !== 'string' || !id.trim())) throw new BadRequestException('Invalid permission identifiers');
+      } else if (key === 'status') {
+        if (typeof value !== 'boolean') throw new BadRequestException('Invalid role status');
+      } else if (!textFields.includes(key) || (value !== null && typeof value !== 'string')) {
+        throw new BadRequestException('Invalid role fields');
       }
-    });
+    }
+  }
+
+  private async requireAuthorization(userId: string, changesAuthorization: boolean): Promise<void> {
+    if (changesAuthorization && !await this.permissionService.hasPermission(userId, ['roles:authorize'])) {
+      throw new ForbiddenException('Role authorization permission is required');
+    }
+  }
+
+  private async lockRole(tx: DatabaseAdapter, id: string): Promise<RoleEntity> {
+    // Lock the parent even when no permission links exist. Role operations never lock users.
+    const locked = await tx.model('roles').updateMany({ where: { id }, data: { id } });
+    if (!locked.count) throw new NotFoundException(`Role ${id} not found`);
+    const role = await tx.model('roles').findUnique({ where: { id } }) as RoleEntity | null;
+    if (!role) throw new NotFoundException(`Role ${id} not found`);
+    return role;
+  }
+
+  /** Replace permission links inside the caller's role mutation transaction. */
+  private async syncRolePermissions(tx: DatabaseAdapter, roleId: string, permissionIds: string[]): Promise<void> {
+    await tx.model('rolePermissions').deleteMany({ where: { roleId } });
+    for (const permissionId of permissionIds) {
+      await tx.model('rolePermissions').create({ data: { roleId, permissionId } });
+    }
   }
 }

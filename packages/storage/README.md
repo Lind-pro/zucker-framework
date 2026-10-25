@@ -1,5 +1,40 @@
 # Storage
 
+## Durable private file assets (unreleased)
+
+`PrivateFileAssetService<TContext>` adds persistent metadata orchestration to the existing `FileManager`, `BufferedFileManagerStore` and verified transfer APIs. Objects remain in private object storage; metadata and recovery facts belong to the consumer's database. The package does not import a product schema, provide an in-memory persistence default, generate media, or start background workers.
+
+Construct the service with a `FileAssetRepository`, a `PrivateFileObjectStore`, a required `authorize(context, { scope, action, assetId? })` policy, a content detector and an explicit positive `maxObjectBytes`. `BufferedFileManagerStore` implements the object port, including idempotent `delete`, over existing Local/S3/WebDAV providers. Use a genuinely private bucket/namespace; a private upload ACL cannot undo a public bucket policy, and a local directory must not be exposed as static public files.
+
+Local existence checks return false only for `ENOENT`/`ENOTDIR`; deletion directly unlinks and ignores only `ENOENT`. Permission and other filesystem failures propagate, so inaccessible local objects cannot produce a false cleanup confirmation.
+
+The host derives `scope` from authenticated server context and decides ownership/tenant/operator policy. Supplying a scope from request data is not authorization. Rejected policy calls perform no metadata or object IO; scoped repository lookups also prevent IDs from another scope from exposing objects. Repository rows and object keys are internal integration data, not a public-file URL contract.
+
+| Entry | Behavior |
+| --- | --- |
+| `upload(context, { scope, idempotencyKey, fileName, body })` | Snapshots a bounded nonempty buffer, detects MIME and hashes it; atomically reserves metadata before private object IO. Existing identical requests reuse their identity. Changed bytes, size, MIME or normalized filename under the same scoped key are rejected before object IO. Successful transfer is read back and verified before `ready` is committed. |
+| `inspect(context, scope, id)` | Returns authorized metadata, including pending/deleted state; does not grant file access. |
+| `read(context, scope, id)` | Requires `ready`; returns bounded bytes only after size/MIME/hash verification and a final deletion-state check. No public or signed URL is returned or persisted. |
+| `recover(context, scope, id)` | For an interrupted upload, verifies an already stored object and commits readiness without writing new bytes. Missing pending content remains pending; retry `upload` with the same bytes when needed. For a tombstone, retries object cleanup. |
+| `delete(context, scope, id)` | Durably records logical deletion before provider IO. Attempts deletion and verifies current absence; failures reject while preserving the tombstone for recovery. Repeating deletion also rechecks previously confirmed cleanup. |
+
+`FileAsset.state` is `pending`, `ready` or `deleted`. **Deleted means logically inaccessible**, regardless of the independent `cleanupStatus`. `cleanupStatus: 'confirmed'` and `cleanupConfirmedAt` record an observed absence after a deletion attempt; they do not prove permanent physical deletion. The existing provider APIs cannot fence a remote upload that outlives a crashed process. A late completion cannot change deleted metadata back to ready; the live service attempts compensating cleanup, and retained tombstones allow durable workers to remove later arrivals. Never recycle or discard their idempotency/object keys merely because one existence check returned false.
+
+### Durable repository and recovery integration
+
+The consumer implements the exported `FileAssetRepository` port:
+
+- `reserve(candidate)` must be atomic under a database unique constraint on `(scope, idempotencyKey)`. Return the existing immutable row on that conflict. New rows use the supplied unique ID/object key, `state: 'pending'`, `revision: 0`, `updatedAt: createdAt` and null deletion/cleanup fields. IDs and object keys must also be unique.
+- `get(scope, id)` performs a scoped read and returns null only for an absent row. Database/permission/network failures reject.
+- `compareAndSwap(scope, id, revision, update)` atomically applies only mutable state/timestamp/cleanup fields and increments revision, returning null on a genuine revision mismatch. It never changes immutable content or ownership. Keep tombstones and enforce their terminal logical state in the adapter. Reserve/CAS operations must return independent row snapshots.
+- In the same database transaction as reservations and relevant transitions, the host records a durable outbox/task for recovery. Its worker calls `recover` with a trusted system context and explicit scope/ID, retries failures, and retains reconciliation for tombstones that may have outstanding remote writes. This package alone does not supply that worker or claim the host has installed it. No manual bucket sweep is the intended recovery path.
+
+Uploads use service-generated, dedicated `private-assets/<id>` keys, never caller-supplied paths or a shared content key. A provider error or lost response leaves a recoverable reservation; an object-success/database-commit failure does not delete the object and pretend the request failed cleanly. Recovery verifies all bytes before accepting it. Same-request concurrent uploads may repeat identical immutable object IO, while atomic reservation and revision checks prevent conflicting content or late state resurrection. There is no cross-database/object-storage transaction or exactly-once external-write claim.
+
+`FileLifecycleManager.evaluate` remains a policy evaluator, not an authorization or deletion mechanism. The host evaluates already scoped metadata, maps selected object keys to asset IDs, and calls the authorized asset deletion API so cleanup remains journaled. Do not bypass tombstones with direct provider deletes.
+
+Verification uses an explicitly atomic test repository double, failure/concurrency injection, and actual temporary local objects through `BufferedFileManagerStore`; temporary files are removed. Those checks establish package state/orchestration behavior, not a consumer's PostgreSQL constraints, durable recovery worker, private bucket policy or real provider behavior. Consumer integration must verify those separate contracts before deployment.
+
 ## WebDAV streaming and directory APIs (unreleased)
 
 `WebDavStorage.uploadStream(readable, key, { contentType?, signal? })` streams through a bounded Node Transform to the WebDAV SDK without collecting the file. It counts bytes, awaits both the source pipeline and remote response, and aborts/destroys the streams on source failure, remote failure, setup failure or cancellation. Failed remote writes may leave a partial remote object: the provider does not promise atomic overwrite or delete a previous object on failure. Consumers retain recovery/commit policy.

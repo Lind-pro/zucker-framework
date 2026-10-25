@@ -1,5 +1,34 @@
 # @zucker-framework/cli
 
+## 1.0.10
+
+### Patch Changes
+
+- Allow each dynamic form to supply localized interface and fallback validation text without changing
+  caller-owned field content, discarding drafts, or changing the default language for existing callers.
+  The Admin template supplies its active Chinese/English copy to form previews.
+- Generate independent JWT and provider-settings encryption keys in the full Server consumer's private environment file. Preserve their separation and never print either key during initialization.
+- Validate user-role replacement input and serialize replacements through the owning user row before
+  deleting and inserting memberships. Concurrent replacements must not accidentally combine grants,
+  and failed writes retain the previous set. The Admin template exposes the existing assignment API
+  through an authorized, localized editor with isolated drafts and retryable failures.
+- Ship validated Admin/Web and explicit `server-full` generator assets with the CLI so init works outside a Framework checkout. Preserve the existing `server` fallback behavior, pin generated Framework dependencies and runtime metadata, and include consumer-owned AGENTS.md with an optional relative CLAUDE.md link.
+
+  Add the non-overwriting installConsumerAgentInstructions helper to the existing agent-instructions entrypoint. Exclude private configuration, caches, generated output, uploads and source symlinks from template assets. Make frontend proxy, lint and theme configuration self-contained. The full Server includes its Prisma schema/migrations, account composition and standalone lint tooling, and generates a fresh private JWT environment file. Matching account packages and consumer-owned database/mail configuration remain required; this change does not publish updated artifacts or automatically provision external services.
+
+  Extend the consumer assets with optional verified OAuth, owner-managed API keys, durable hosted
+  checkout and credit fulfillment, bounded private attachments/recovery, and configurable public-site
+  connections. Web purchase and account pages use those authenticated contracts. Providers remain
+  disabled without explicit application configuration; recurring fulfillment and background outbox/file
+  recovery workers are not implied by the initial checkout or explicit recovery endpoints.
+
+  Make the default signed-in entry the real account page, preserve legacy dashboard bookmarks through
+  localized redirects, and separate authenticated reads from the account mutation rate budget without
+  counting the guard twice. Include standalone Admin Node build types, Chinese/English interface
+  selection, working default metadata editors and the existing authorized user-role assignment flow.
+
+- @zucker-framework/ai-access@1.0.10
+
 ## 1.0.8
 
 ### Patch Changes

@@ -47,7 +47,7 @@ interface AccessLogQueryBody {
 }
 
 @UseGuards(JwtAuthGuard, PermissionsGuard)
-@Permissions()
+@Permissions('logging:query')
 @Controller('logging')
 export class LoggingController {
   /** In-memory ring buffer of access log payloads */

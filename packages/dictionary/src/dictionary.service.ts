@@ -1,9 +1,11 @@
 import { Injectable, Inject, Logger, Optional } from '@nestjs/common';
 import { type DatabaseAdapter } from '@zucker-framework/core';
-import { EventEmitter2 } from 'eventemitter2';
+// The CommonJS default is the original EventEmitter2 constructor in both formats.
+import EventEmitter2Constructor, { type EventEmitter2 } from 'eventemitter2';
 import type { DictionaryItem } from './index';
 import type { DictDefine } from './dict-define';
 import { ClearDictionaryCacheEvent } from './clear-dictionary-cache-event';
+import { dictionaryItemRecord } from './dictionary-item-data';
 
 /** Internal model for dictionary row (without items relation) */
 interface DictionaryRow {
@@ -51,7 +53,7 @@ export class DictionaryService {
 
   constructor(
     @Inject(DATABASE_ADAPTER) private readonly db: DatabaseAdapter,
-    @Optional() private readonly eventEmitter?: EventEmitter2,
+    @Optional() @Inject(EventEmitter2Constructor) private readonly eventEmitter?: EventEmitter2,
     @Optional() @Inject('TOPIC_EVENT_BUS') private readonly topicEventBus?: TopicEventBusLike,
   ) {}
 
@@ -142,7 +144,7 @@ export class DictionaryService {
       orderBy: { ordinal: 'asc' },
     })) as DictionaryItem[];
 
-    return { ...dict, items };
+    return { ...dict, items: items.map(dictionaryItemRecord) };
   }
 
   /**
@@ -177,7 +179,7 @@ export class DictionaryService {
     const itemsByDictId = new Map<string, DictionaryItem[]>();
     for (const item of allItems) {
       const list = itemsByDictId.get(item.dictId) ?? [];
-      list.push(item);
+      list.push(dictionaryItemRecord(item));
       itemsByDictId.set(item.dictId, list);
     }
 

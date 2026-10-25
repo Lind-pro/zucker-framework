@@ -1,5 +1,20 @@
 # @zucker-framework/auth
 
+## 1.0.10
+
+### Patch Changes
+
+- Add atomic owner-scoped renaming for active API keys, returning only safe name/id metadata while preserving secret, permissions and lifecycle state.
+- Expose PersistentSessionRefreshTokenStore to bind the existing token-pair lifecycle to durable, independently revocable sessions without cache-miss resurrection. Add exact session lookup and active-session refresh initialization.
+
+  The Server consumer template composes this API with public registration, hashed one-use verification/reset tickets, HttpOnly refresh cookies, owner-scoped sessions, credential-version invalidation and explicit administrator setup. The full template requires its own PostgreSQL migrations and mail configuration; no default administrator password is created on startup. This is local source integration, not a published artifact or a production migration.
+
+- Add server-side Google ID-token verification with bounded JWKS caching and rotation, plus one-time OAuth login/linking proofs composed from existing ticket primitives. Reject browser-supplied third-party profiles at the generic binding endpoint: consumers must configure a verified binding-proof resolver or keep their own authenticated binding controller. Preserve the trusted low-level binding API and consumer-owned admission, ownership and transaction policies.
+- Updated dependencies
+  - @zucker-framework/cache@1.0.10
+  - @zucker-framework/crud@1.0.10
+  - @zucker-framework/core@1.0.10
+
 ## 1.0.8
 
 ### Patch Changes

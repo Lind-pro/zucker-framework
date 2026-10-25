@@ -1,3 +1,4 @@
+import { useAdminI18n } from '@/i18n';
 import React, { useRef } from 'react';
 import {
   PageContainer,
@@ -5,10 +6,9 @@ import {
   ModalForm,
   ProFormText,
   ProFormTextArea,
-  ProFormSelect,
 } from '@ant-design/pro-components';
 import type { ActionType, ProColumns } from '@ant-design/pro-components';
-import { Button, message, Popconfirm, Tag } from 'antd';
+import { Button, message, Popconfirm } from 'antd';
 import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
 import httpClient, { queryRequest } from '@/lib/http-client';
 import { PermissionGuard } from '@/lib/permission';
@@ -17,68 +17,73 @@ import { useBatchDelete } from '@/hooks/useBatchDelete';
 interface PermissionRecord {
   id: string;
   name: string;
-  code: string;
-  type: string;
   description: string;
   createdAt: string;
 }
 
-const typeOptions = [
-  { label: '菜单', value: 'menu' },
-  { label: '按钮', value: 'button' },
-  { label: '接口', value: 'api' },
-];
-
-const typeColorMap: Record<string, string> = { menu: 'blue', button: 'green', api: 'orange' };
-
 const PermissionPage: React.FC = () => {
+  const { t } = useAdminI18n();
   const actionRef = useRef<ActionType>(null);
   const { rowSelection, batchDelete, selectedRowKeys } = useBatchDelete('/permissions', actionRef);
 
   const handleDelete = async (id: string) => {
-    await httpClient.delete(`/permissions/${id}`);
-    message.success('删除成功');
+    await httpClient.delete(`/permissions/${encodeURIComponent(id)}`);
+    message.success(t('删除成功'));
     actionRef.current?.reload();
   };
+  async function savePermission(values: Record<string, unknown>, id?: string) {
+    const fields = {
+      name: String(values.name).trim(),
+      description: String(values.description ?? ''),
+    };
+    try {
+      if (id) await httpClient.put(`/permissions/${encodeURIComponent(id)}`, fields);
+      else await httpClient.post('/permissions', { id: String(values.id).trim(), ...fields });
+      message.success(t(id ? '更新成功' : '创建成功'));
+      actionRef.current?.reload();
+      return true;
+    } catch {
+      message.error(
+        t(
+          '权限保存未确认，请核对编码、权限和连接后重试；当前草稿已保留。',
+          'Permission save was not confirmed. Check the identifier, access and connection, then retry. Your draft is kept.',
+        ),
+      );
+      return false;
+    }
+  }
 
   const columns: ProColumns<PermissionRecord>[] = [
-    { title: '权限名称', dataIndex: 'name' },
-    { title: '权限编码', dataIndex: 'code', copyable: true },
+    { title: t('权限名称'), dataIndex: 'name' },
+    { title: t('权限编码'), dataIndex: 'id', copyable: true },
+    { title: t('描述'), dataIndex: 'description', search: false, ellipsis: true },
+    { title: t('创建时间'), dataIndex: 'createdAt', valueType: 'dateTime', search: false },
     {
-      title: '类型',
-      dataIndex: 'type',
-      valueEnum: { menu: '菜单', button: '按钮', api: '接口' },
-      render: (_, record) => (
-        <Tag color={typeColorMap[record.type]}>{record.type}</Tag>
-      ),
-    },
-    { title: '描述', dataIndex: 'description', search: false, ellipsis: true },
-    { title: '创建时间', dataIndex: 'createdAt', valueType: 'dateTime', search: false },
-    {
-      title: '操作',
+      title: t('操作'),
       valueType: 'option',
       render: (_, record) => [
         <PermissionGuard key="edit" permission="permissions:update">
           <ModalForm
-            title="编辑权限"
-            trigger={<a>编辑</a>}
+            name={`permission-edit-${record.id}`}
+            modalProps={{ destroyOnHidden: true }}
+            submitter={{ searchConfig: { submitText: t('保存'), resetText: t('取消') } }}
+            title={t('编辑权限')}
+            trigger={<a>{t('编辑')}</a>}
             initialValues={record}
-            onFinish={async (values) => {
-              await httpClient.put(`/permissions/${record.id}`, values);
-              message.success('更新成功');
-              actionRef.current?.reload();
-              return true;
-            }}
+            onFinish={(values) => savePermission(values, record.id)}
           >
-            <ProFormText name="name" label="权限名称" rules={[{ required: true }]} />
-            <ProFormText name="code" label="权限编码" rules={[{ required: true }]} />
-            <ProFormSelect name="type" label="类型" options={typeOptions} rules={[{ required: true }]} />
-            <ProFormTextArea name="description" label="描述" />
+            <ProFormText
+              name="name"
+              label={t('权限名称')}
+              rules={[{ required: true, whitespace: true }]}
+            />
+            <ProFormText name="id" label={t('权限编码')} disabled />
+            <ProFormTextArea name="description" label={t('描述')} />
           </ModalForm>
         </PermissionGuard>,
         <PermissionGuard key="delete" permission="permissions:delete">
-          <Popconfirm title="确定删除?" onConfirm={() => handleDelete(record.id)}>
-            <a style={{ color: '#DC2626' }}>删除</a>
+          <Popconfirm title={t('确定删除?')} onConfirm={() => handleDelete(record.id)}>
+            <a style={{ color: '#DC2626' }}>{t('删除')}</a>
           </Popconfirm>
         </PermissionGuard>,
       ],
@@ -86,7 +91,7 @@ const PermissionPage: React.FC = () => {
   ];
 
   return (
-    <PageContainer title="权限管理">
+    <PageContainer title={t('权限管理')}>
       <ProTable<PermissionRecord>
         actionRef={actionRef}
         rowKey="id"
@@ -96,28 +101,43 @@ const PermissionPage: React.FC = () => {
         toolBarRender={() => [
           selectedRowKeys.length > 0 && (
             <PermissionGuard key="batch-delete" permission="permissions:delete">
-              <Popconfirm title={`确定删除选中的 ${selectedRowKeys.length} 条记录?`} onConfirm={batchDelete}>
+              <Popconfirm
+                title={t('确定删除选中的 {count} 条记录？', undefined, {
+                  count: selectedRowKeys.length,
+                })}
+                onConfirm={batchDelete}
+              >
                 <Button danger icon={<DeleteOutlined />}>
-                  批量删除 ({selectedRowKeys.length})
+                  {t('批量删除 (')}
+                  {selectedRowKeys.length})
                 </Button>
               </Popconfirm>
             </PermissionGuard>
           ),
           <PermissionGuard key="create" permission="permissions:add">
             <ModalForm
-              title="新建权限"
-              trigger={<Button type="primary" icon={<PlusOutlined />}>新建权限</Button>}
-              onFinish={async (values) => {
-                await httpClient.post('/permissions', values);
-                message.success('创建成功');
-                actionRef.current?.reload();
-                return true;
-              }}
+              name="permission-create"
+              modalProps={{ destroyOnHidden: true }}
+              submitter={{ searchConfig: { submitText: t('保存'), resetText: t('取消') } }}
+              title={t('新建权限')}
+              trigger={
+                <Button type="primary" icon={<PlusOutlined />}>
+                  {t('新建权限')}
+                </Button>
+              }
+              onFinish={(values) => savePermission(values)}
             >
-              <ProFormText name="name" label="权限名称" rules={[{ required: true }]} />
-              <ProFormText name="code" label="权限编码" rules={[{ required: true }]} />
-              <ProFormSelect name="type" label="类型" options={typeOptions} rules={[{ required: true }]} />
-              <ProFormTextArea name="description" label="描述" />
+              <ProFormText
+                name="name"
+                label={t('权限名称')}
+                rules={[{ required: true, whitespace: true }]}
+              />
+              <ProFormText
+                name="id"
+                label={t('权限编码')}
+                rules={[{ required: true, whitespace: true }]}
+              />
+              <ProFormTextArea name="description" label={t('描述')} />
             </ModalForm>
           </PermissionGuard>,
         ]}

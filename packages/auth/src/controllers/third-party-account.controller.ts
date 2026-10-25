@@ -1,5 +1,6 @@
 import {
   Controller,
+  Inject,
   Post,
   Delete,
   Get,
@@ -9,14 +10,14 @@ import {
 } from '@nestjs/common';
 import {
   ThirdPartyAccountService,
-  type ThirdPartyProfile,
+  type ThirdPartyBindingRequest,
 } from '../services/third-party-account.service';
 import { Permissions } from '../decorators';
 
 @Controller('third-party-account')
 export class ThirdPartyAccountController {
   constructor(
-    private readonly thirdPartyAccountService: ThirdPartyAccountService,
+    @Inject(ThirdPartyAccountService) private readonly thirdPartyAccountService: ThirdPartyAccountService,
   ) {}
 
   /** 获取当前用户的所有第三方绑定 */
@@ -30,15 +31,13 @@ export class ThirdPartyAccountController {
   @Post('bind/:provider')
   @Permissions()
   async bind(
-    @Req() req: { user: { id: string } },
+    @Req() req: ThirdPartyBindingRequest,
     @Param('provider') provider: string,
-    @Body() profile: ThirdPartyProfile,
+    @Body() body: unknown,
   ) {
-    await this.thirdPartyAccountService.bindAccount(
-      req.user.id,
-      provider,
-      profile,
-    );
+    const proof = body && typeof body === 'object' && !Array.isArray(body)
+      ? (body as { proof?: unknown }).proof : undefined;
+    await this.thirdPartyAccountService.bindAccountWithProof(req.user.id, provider, proof, req);
     return { success: true };
   }
 

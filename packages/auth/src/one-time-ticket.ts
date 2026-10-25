@@ -50,10 +50,17 @@ export class OneTimeTicketService<T extends OneTimeTicketRecord> {
       expiresAt: new Date(now.getTime() + this.options.expirySeconds * 1000) });
     return code;
   }
-  async consume(code: string): Promise<T> {
+  /** Validate immutable context before claiming; a throwing validator leaves the ticket usable. */
+  async consume(code: string, validate?: (ticket: Readonly<T>) => void): Promise<T> {
     const ticket = await this.store.find(this.hash(code));
     const now = this.options.now?.() ?? new Date();
     if (!ticket || ticket.consumedAt || ticket.expiresAt <= now) throw new OneTimeTicketError('invalid');
+    const validation: unknown = validate?.(ticket);
+    if (validation !== undefined) {
+      // A Promise-returning validator cannot race ahead of the atomic claim.
+      if (validation instanceof Promise) void validation.catch(() => {});
+      throw new TypeError('Ticket validators must throw synchronously or return undefined');
+    }
     if (!await this.store.claim(ticket.id, now)) throw new OneTimeTicketError('consumed');
     return ticket;
   }

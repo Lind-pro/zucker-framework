@@ -1,5 +1,11 @@
 # @zucker-framework/task
 
+## 1.0.10
+
+### Patch Changes
+
+- Add optional host interruption to durable task attempts, preserving abandoned leases for recovery while draining in-flight heartbeats. Add a neutral PostgreSQL durable notification repository and schema with atomic enqueue, claims, lease fencing and expired-attempt recovery.
+
 ## 1.0.8
 
 ## 1.0.7

@@ -51,7 +51,7 @@ interface PageResult<T> {
 
 @Controller('i18n')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
-@Permissions()
+@Permissions('i18n:query')
 export class I18nManagementController {
   private readonly logger = new Logger(I18nManagementController.name);
 
@@ -81,6 +81,7 @@ export class I18nManagementController {
    */
   @Post()
   @HttpCode(HttpStatus.CREATED)
+  @Permissions('i18n:add')
   create(@Body() body: CreateI18nEntryRequest): I18nEntry {
     return this.i18nStore.create(body);
   }
@@ -90,6 +91,7 @@ export class I18nManagementController {
    * Body: { code?: string, translations?: Record<string, string> }
    */
   @Put(':id')
+  @Permissions('i18n:update')
   update(
     @Param('id') id: string,
     @Body() body: UpdateI18nEntryRequest,

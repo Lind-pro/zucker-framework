@@ -1,3 +1,4 @@
+import { useAdminI18n } from '@/i18n';
 import React from 'react';
 import {
   ModalForm,
@@ -28,9 +29,13 @@ interface FieldEditorProps {
 }
 
 const FieldEditor: React.FC<FieldEditorProps> = ({ field, trigger, onFinish, title }) => {
+  const { t } = useAdminI18n();
+  const formId = React.useId();
   return (
     <ModalForm<FieldDefinition & { options?: Array<{ label: string; value: string | number }> }>
-      title={title ?? (field ? '编辑字段' : '新建字段')}
+      name={`field-editor-${formId}`}
+      submitter={{ searchConfig: { submitText: t('确认', 'Confirm'), resetText: t('取消', 'Cancel') } }}
+      title={title ?? (field ? t("编辑字段") : t("新建字段"))}
       trigger={trigger}
       initialValues={
         field
@@ -48,6 +53,7 @@ const FieldEditor: React.FC<FieldEditorProps> = ({ field, trigger, onFinish, tit
       modalProps={{ destroyOnClose: true }}
       onFinish={async (values) => {
         const result: FieldDefinition = {
+          ...field,
           key: values.key,
           name: values.name,
           type: values.type,
@@ -63,30 +69,30 @@ const FieldEditor: React.FC<FieldEditorProps> = ({ field, trigger, onFinish, tit
     >
       <ProFormText
         name="key"
-        label="字段标识"
-        rules={[{ required: true, message: '请输入字段标识' }]}
+        label={t("字段标识")}
+        rules={[{ required: true, message: t("请输入字段标识") }]}
         disabled={!!field}
-        tooltip="字段的唯一标识，创建后不可修改"
+        tooltip={t("字段的唯一标识，创建后不可修改")}
       />
       <ProFormText
         name="name"
-        label="显示名"
-        rules={[{ required: true, message: '请输入显示名' }]}
+        label={t("显示名")}
+        rules={[{ required: true, message: t("请输入显示名") }]}
       />
       <ProFormSelect
         name="type"
-        label="类型"
-        rules={[{ required: true, message: '请选择类型' }]}
-        options={FIELD_TYPE_OPTIONS}
+        label={t("类型")}
+        rules={[{ required: true, message: t("请选择类型") }]}
+        options={FIELD_TYPE_OPTIONS.map(option => ({ ...option, label: t(option.label) }))}
       />
-      <ProFormSwitch name="required" label="是否必填" />
-      <ProFormText name="defaultValue" label="默认值" />
-      <ProFormTextArea name="description" label="描述" />
+      <ProFormSwitch name="required" label={t("是否必填")} />
+      <ProFormText name="defaultValue" label={t("默认值")} />
+      <ProFormTextArea name="description" label={t("描述")} />
 
       <Form.Item noStyle shouldUpdate={(prev, cur) => prev.type !== cur.type}>
         {({ getFieldValue }) =>
           getFieldValue('type') === 'enum' ? (
-            <Form.Item label="枚举选项">
+            <Form.Item label={t("枚举选项")}>
               <Form.List name="options">
                 {(fields, { add, remove }) => (
                   <>
@@ -95,25 +101,24 @@ const FieldEditor: React.FC<FieldEditorProps> = ({ field, trigger, onFinish, tit
                         <Form.Item
                           {...restField}
                           name={[name, 'label']}
-                          rules={[{ required: true, message: '请输入标签' }]}
+                          rules={[{ required: true, message: t("请输入标签") }]}
                           style={{ marginBottom: 0 }}
                         >
-                          <Input placeholder="标签" />
+                          <Input placeholder={t("标签")} />
                         </Form.Item>
                         <Form.Item
                           {...restField}
                           name={[name, 'value']}
-                          rules={[{ required: true, message: '请输入值' }]}
+                          rules={[{ required: true, message: t("请输入值") }]}
                           style={{ marginBottom: 0 }}
                         >
-                          <Input placeholder="值" />
+                          <Input placeholder={t("值")} />
                         </Form.Item>
                         <MinusCircleOutlined onClick={() => remove(name)} />
                       </Space>
                     ))}
                     <Button type="dashed" onClick={() => add()} block icon={<PlusOutlined />}>
-                      添加选项
-                    </Button>
+                      {t("添加选项")}</Button>
                   </>
                 )}
               </Form.List>

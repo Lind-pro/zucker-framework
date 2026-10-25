@@ -12,11 +12,14 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: false,
   },
+  // Proxy URLs can contain OAuth codes or optional download tickets. Server-side audit logs
+  // already retain redacted request metadata; do not emit raw incoming URLs from the Web host.
+  logging: { incomingRequests: false },
   experimental: {
     optimizePackageImports: ["lucide-react"],
   },
   async rewrites() {
-    const apiUrl = process.env.API_URL || "http://localhost:3000";
+    const apiUrl = (process.env.API_URL || "http://localhost:4200/api").replace(/\/+$/, "");
     return [
       {
         source: "/api/:path*",

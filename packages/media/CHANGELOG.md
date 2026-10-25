@@ -1,5 +1,7 @@
 # @zucker-framework/media
 
+## 1.0.10
+
 ## 1.0.8
 
 ## 1.0.7

@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@config "../../tailwind.config.ts";
 
 :root {
   --color-background: #ffffff;
@@ -21,3 +22,21 @@ body {
   color: var(--color-foreground);
   font-family: system-ui, -apple-system, sans-serif;
 }
+
+.site-prose { line-height: 1.85; overflow-wrap: anywhere; }
+.site-prose > * + * { margin-top: 1.2rem; }
+.site-prose h2, .site-prose h3, .site-prose h4 { font-weight: 650; line-height: 1.4; scroll-margin-top: 6rem; }
+.site-prose h2 { font-size: 1.6rem; margin-top: 2.4rem; }
+.site-prose h3 { font-size: 1.25rem; margin-top: 2rem; }
+.site-prose a { color: #818cf8; text-decoration: underline; text-underline-offset: 3px; }
+.site-prose pre { padding: 1.2rem; border-radius: .75rem; background: var(--color-card); overflow-x: auto; }
+.site-prose code { font-size: .9em; }
+.site-prose ul, .site-prose ol { padding-left: 1.5rem; }
+.site-prose ul { list-style-type: disc; }
+.site-prose ol { list-style-type: decimal; }
+.site-prose blockquote { border-left: 3px solid #6366f1; padding-left: 1.2rem; color: var(--color-muted); }
+.site-prose table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; }
+.site-prose th, .site-prose td { padding: .6rem 1rem; border: 1px solid var(--color-border); }
+.site-prose img { max-width: 100%; height: auto; border-radius: .75rem; }
+.content-input { width: 100%; border: 1px solid var(--color-border); border-radius: .6rem; padding: .65rem .85rem; background: var(--color-background); }
+.content-input:focus { outline: 2px solid #6366f1; outline-offset: 2px; }

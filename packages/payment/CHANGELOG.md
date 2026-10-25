@@ -1,5 +1,39 @@
 # @zucker-framework/payment
 
+## 1.0.10
+
+### Patch Changes
+
+- Add a dependency-free Creem catalog Checkout adapter with explicit test/production configuration, raw-body HMAC webhook verification, read-only checkout/transaction/subscription observations, explicit cancellation, and the provider's supported full-remaining refund operation. Keep pending and unknown outcomes distinct, never invent payment amounts or refund receipt IDs, and do not automatically retry mutations.
+
+  Expose neutral subscription lifecycle/period/payment observations and a deterministic namespaced period key for consumer-owned transactional grant receipts. Document how existing order stores consume the hosted observations and why the catalog adapter is not a drop-in amount-based OrderService provider. No product pricing, entitlement policy, persistence migration or live payment calls are added.
+
+- Add a durable hosted-checkout workflow with frozen server-side catalog offers, ownership/account
+  binding, persistent create/capture claims, verified provider reconciliation and transactional
+  initial fulfillment, including a private immutable JSON snapshot of consumer entitlement policy.
+  Freeze separately validated public provider metadata for supported Stripe/Creem attribution;
+  reject reserved correlation overrides and unsupported PayPal metadata before external dispatch.
+  Add Stripe, PayPal and Creem catalog adapters with explicit capability and
+  payment-evidence boundaries; preserve the existing amount-based order/refund contracts.
+  Reject a known payable-amount mismatch before exposing a checkout URL, and include the
+  Stripe session return hint for owner-scoped, provider-verified unknown-outcome recovery.
+- Preserve legacy paid order state after a successful partial refund and return a partial-refund observation instead of claiming the entire payment was refunded. Validate requested refund money before claiming the order. Resolve PayPal Orders v2 references to a unique refundable capture before calling the capture refund endpoint, preserving the existing PaymentSession reference contract.
+- Use the subscription invoice as the hosted checkout receipt even when Stripe also supplies its payment intent, keeping the initial purchase aligned with renewal fulfillment. Incomplete subscription invoice evidence remains unresolved instead of binding a different payment identity.
+- Add provider subscription protocols for Stripe, Creem and PayPal, with paginated actual-money
+  receipts, explicit provider-period evidence, verified lifecycle webhook correlation, cancel-and-read
+  behavior, supported customer portal/invoice operations and capability declarations. Extend PayPal
+  hosted checkout to existing fixed-price subscription plans with durable creation keys and initial
+  transaction reconciliation. PayPal per-payment evidence remains distinct from service-period proof;
+  applications must explicitly choose entitlement policy or provide durable period receipts.
+- Add typed refund adapters for Stripe, PayPal and Creem using verified payment-kind identities and
+  actual decimal money. Support native full/partial refund commands, attributable Stripe invoice
+  funding, separate PayPal capture/sale protocols, refund queries and verified webhook evidence.
+  Expose explicit channel capabilities, scoped Stripe refund pagination, server command correlation,
+  separate cumulative refund totals and safe status-only/unknown outcomes. Keep provider IO and
+  protocols independent from consumer-owned refund permissions, durable command claims and ledger holds.
+- Add optional verified-payment preparation before hosted-checkout fulfillment transactions, allowing consumers to retrieve and persist refund evidence without performing provider I/O under ledger locks. Fulfillment adapters must still enforce persisted restrictions in the delivery transaction.
+- @zucker-framework/core@1.0.10
+
 ## 1.0.8
 
 ### Patch Changes

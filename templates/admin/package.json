@@ -20,6 +20,7 @@
     "@zucker-framework/fe-form": "workspace:*",
     "@zucker-framework/fe-http-client": "workspace:*",
     "@zucker-framework/fe-permission": "workspace:*",
+    "@zucker-framework/fe-site": "workspace:*",
     "@zucker-framework/fe-storage": "workspace:*",
     "@zucker-framework/fe-types": "workspace:*",
     "antd": "^5.29.3",
@@ -31,6 +32,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/node": "^20.19.43",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
     "@vitejs/plugin-react": "^6.1.1",

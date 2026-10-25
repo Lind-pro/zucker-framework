@@ -1,5 +1,19 @@
 # @zucker-framework/credit
 
+## 1.0.10
+
+### Patch Changes
+
+- Add opt-in transaction-bound credit lot holds with precise allocation, stable phase receipts and idempotent confirmation/release. Configured ledger consumption excludes held value, expiry preserves original allocation evidence while removing both free and frozen parts, and legacy unallocated freezing explicitly requires reconciliation.
+- Expose transaction-bound expiry of selected owned credit lots so a host can fence expiry and its canonical journal with the task completion transaction. Existing expiry scanning reuses the same mechanism, including lots whose deadline equals the scan time.
+- Route public package-root imports and requires to the existing matching ESM/CJS runtime and type artifacts. Previously, native ESM imports of these packages fell back to their CommonJS main entry, mixing auth/core provider classes with an application's ESM instances and breaking Nest dependency injection. Keep package.json metadata readable and preserve the existing main/module artifacts.
+
+  Add a native Node regression for both module formats that checks package resolution, shared auth/guard identity and an Admin/Nest composition using a synthetic memory adapter. This does not make mixed import/require copies of a dual package interchangeable and does not replace persistent consumer validation. No service implementation, guard registration or access policy is relaxed.
+
+  Use the CommonJS default export for eventemitter2 in config, dictionary and logging, with an explicit injection token referencing the original constructor. This fixes native ESM loading while retaining the shared Nest event emitter; no dependency is bundled or duplicated.
+
+- @zucker-framework/core@1.0.10
+
 ## 1.0.8
 
 ### Patch Changes

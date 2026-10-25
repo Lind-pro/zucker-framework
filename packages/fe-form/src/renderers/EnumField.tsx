@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Form, Select } from 'antd';
 import type { FieldDefinition, FieldOption } from '../types';
 import { toAntdRules } from '../validators';
+import { useFormMessages } from '../messages';
 
 interface Props {
   field: FieldDefinition;
@@ -10,7 +11,8 @@ interface Props {
 }
 
 export function EnumField({ field, fetchDictItems }: Props) {
-  const rules = toAntdRules(field.validators, field.required);
+  const messages = useFormMessages();
+  const rules = toAntdRules(field.validators, field.required, messages.requiredText);
   const dictCode = field.extra?.dictCode as string | undefined;
 
   const [options, setOptions] = useState<FieldOption[]>(field.options ?? []);
@@ -31,7 +33,7 @@ export function EnumField({ field, fetchDictItems }: Props) {
         loading={loading}
         options={options.map((o) => ({ label: o.label, value: o.value }))}
         allowClear
-        placeholder="请选择"
+        placeholder={messages.selectPlaceholder}
       />
     </Form.Item>
   );

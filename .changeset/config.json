@@ -28,6 +28,7 @@
       "@zucker-framework/fe-form",
       "@zucker-framework/fe-http-client",
       "@zucker-framework/fe-permission",
+      "@zucker-framework/fe-site",
       "@zucker-framework/fe-storage",
       "@zucker-framework/fe-types",
       "@zucker-framework/feature-flags",

@@ -69,8 +69,11 @@ export async function createStripeCheckoutSession(
 export async function retrieveStripeCheckoutSession(
   client: Pick<Stripe, 'checkout'>,
   id: string,
+  params?: Stripe.Checkout.SessionRetrieveParams,
 ): Promise<StripeCheckoutObservation> {
-  return observeStripeCheckoutSession(await client.checkout.sessions.retrieve(id));
+  return observeStripeCheckoutSession(params
+    ? await client.checkout.sessions.retrieve(id, params)
+    : await client.checkout.sessions.retrieve(id));
 }
 
 export interface StripePaymentIntentObservation {

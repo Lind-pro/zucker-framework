@@ -1,6 +1,6 @@
 {
   "name": "@zucker-framework/ai-access",
-  "version": "1.0.8",
+  "version": "1.0.10",
   "description": "Provider-neutral AI credential profiles, authentication drivers, and runtimes",
   "main": "dist/index.js",
   "module": "dist/index.mjs",

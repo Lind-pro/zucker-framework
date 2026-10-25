@@ -20,16 +20,160 @@ model users {
   password      String?
   email         String?   @unique
   emailVerified Boolean   @default(false)
+  credentialVersion Int   @default(0)
   locale        String    @default("en")
   deviceInfo    Json?
   firstVisitAt  DateTime?
   lastLoginAt   DateTime?
   lastLoginIp   String?
   loginCount    Int       @default(0)
+  avatarFileId String?
+  avatarRevision Int @default(0)
+  avatarFile fileAssets? @relation("CurrentAccountAvatar", fields: [avatarFileId], references: [id], onDelete: SetNull)
+  avatarChanges accountAvatarChanges[]
 
   loginHistory    userLoginHistory[]
   userTokens      userTokens[]
   thirdPartyBinds thirdPartyBinds[]
+  accountSessions accountSessions[]
+  accountTickets  accountTickets[]
+  billingOrders   billingOrders[]
+  oauthIntents accountOAuthIntents[]
+  oauthProofs accountOAuthProofs[]
+  apiKeys accountApiKeys[]
+  apiKeyUsage accountApiKeyUsage[]
+}
+
+model accountSessions {
+  authMethod    String @default("password")
+  oauthBindingId String?
+  oauthBinding thirdPartyBinds? @relation(fields: [oauthBindingId], references: [id], onDelete: SetNull)
+  oauthIntents accountOAuthIntents[]
+  oauthProofs accountOAuthProofs[]
+  id            String   @id @default(uuid())
+  userId        String
+  refreshJti    String   @unique
+  credentialVersion Int @default(0)
+  expiresAt     DateTime
+  revokedAt     DateTime?
+  revokedReason String?
+  lastActiveAt  DateTime @default(now())
+  createdAt     DateTime @default(now())
+  user          users    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+  @@map("account_sessions")
+}
+
+model accountTickets {
+  id         String   @id @default(cuid())
+  userId     String
+  email      String
+  purpose    String
+  credentialVersion Int @default(0)
+  tokenHash  String   @unique
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime @default(now())
+  user       users    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose])
+  @@index([expiresAt])
+  @@map("account_tickets")
+}
+
+// Consumer-owned OAuth intents and short-lived handoffs. Provider tokens are never stored.
+model accountOAuthIntents {
+  id String @id @default(cuid())
+  tokenHash String @unique
+  expiresAt DateTime
+  consumedAt DateTime?
+  createdAt DateTime @default(now())
+  provider String
+  purpose String
+  mode String
+  nonce String
+  codeVerifier String?
+  browserBindingHash String
+  origin String
+  locale String
+  returnPath String
+  userId String?
+  sessionId String?
+  user users? @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session accountSessions? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+  @@map("account_oauth_intents")
+}
+
+model accountOAuthProofs {
+  id String @id @default(cuid())
+  tokenHash String @unique
+  expiresAt DateTime
+  consumedAt DateTime?
+  createdAt DateTime @default(now())
+  purpose String
+  provider String
+  providerAccountId String
+  email String?
+  emailVerified Boolean
+  displayName String?
+  avatarUrl String?
+  browserBindingHash String
+  origin String
+  locale String
+  returnPath String
+  userId String?
+  sessionId String?
+  user users? @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session accountSessions? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+  @@map("account_oauth_proofs")
+}
+
+model accountApiKeys {
+  id String @id @default(cuid())
+  userId String
+  name String
+  keyPrefix String
+  keyHash String @unique
+  scopes String[] @default(["account:read"])
+  rateLimit Int @default(60)
+  dailyLimit Int?
+  monthlyLimit Int?
+  expiresAt DateTime?
+  revokedAt DateTime?
+  isActive Boolean @default(true)
+  lastUsedAt DateTime?
+  usageCount Int @default(0)
+  createdAt DateTime @default(now())
+  user users @relation(fields: [userId], references: [id], onDelete: Cascade)
+  usage accountApiKeyUsage[]
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+  @@map("account_api_keys")
+}
+
+model accountApiKeyUsage {
+  id String @id @default(cuid())
+  apiKeyId String
+  userId String
+  endpoint String
+  method String
+  statusCode Int
+  responseTime Int
+  errorMessage String?
+  timestamp DateTime @default(now())
+  apiKey accountApiKeys @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+  user users @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([apiKeyId, timestamp])
+  @@index([userId, timestamp])
+  @@map("account_api_key_usage")
 }
 
 model userLoginHistory {
@@ -261,6 +405,7 @@ model oauthClients {
 
 // 第三方绑定
 model thirdPartyBinds {
+  sessions accountSessions[]
   id                String    @id @default(cuid())
   userId            String
   provider          String
@@ -741,6 +886,12 @@ model creditTransaction {
   type        String
   amount      Int
   balance     Int
+  balanceBefore Int?
+  balanceAfter  Int?
+  frozenBalanceBefore Int?
+  frozenBalanceAfter Int?
+  ledgerIds     String[] @default([])
+  metadata      Json?
   description String?
   orderId     String?
   expireAt    DateTime?
@@ -751,6 +902,239 @@ model creditTransaction {
   @@index([type])
   @@index([expireAt])
   @@map("credit_transaction")
+}
+
+// The hosted-payment snapshot and all ledger/outbox writes share one transaction.
+model billingOrders {
+  id            String   @id
+  ownerId       String
+  offerId       String
+  providerId    String
+  accountScope  String
+  offer         Json
+  providerMetadata Json?
+  successUrl    String
+  cancelUrl     String
+  createKey     String   @unique
+  captureKey    String   @unique
+  creationState String
+  captureState  String
+  state         String
+  checkoutId    String?
+  checkoutUrl   String?
+  paymentId     String?
+  paymentKind   String?
+  subscriptionId String?
+  fulfilledAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @default(now()) @updatedAt
+  revision      Int      @default(0)
+  owner         users    @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  fulfillment   billingFulfillments?
+  subscriptionBinding billingSubscriptions?
+
+  @@unique([providerId, accountScope, checkoutId])
+  @@unique([providerId, accountScope, paymentKind, paymentId])
+  @@index([ownerId, createdAt])
+  @@map("billing_orders")
+}
+
+// The application binds this immutable policy only from a verified hosted checkout.
+model billingSubscriptions {
+  id                     String   @id
+  ownerId                String
+  initialOrderId         String   @unique
+  providerId             String
+  accountScope           String
+  providerSubscriptionId String
+  catalogReference       String
+  offer                  Json
+  grantBasis             String
+  initialPaymentId       String
+  initialPaymentKind     String
+  initialFulfilledAt     DateTime?
+  customerId             String?
+  status                 String   @default("unknown")
+  providerStatus         String   @default("unknown")
+  currentPeriodStart     DateTime?
+  currentPeriodEnd       DateTime?
+  cancelAtPeriodEnd      Boolean?
+  canceledAt             DateTime?
+  cancelState            String   @default("idle")
+  cancelMode             String?
+  cancelRequestedAt      DateTime?
+  observedAt             DateTime?
+  nextReconcileAt        DateTime @default(now())
+  reconcileStatus        String   @default("pending")
+  reconcileErrorCode     String?
+  lastReconcileTaskId    String?
+  revision               Int      @default(0)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @default(now()) @updatedAt
+  initialOrder           billingOrders @relation(fields: [initialOrderId], references: [id], onDelete: Restrict)
+  cycles                 billingSubscriptionCycles[]
+
+  @@unique([providerId, accountScope, providerSubscriptionId])
+  @@index([ownerId, createdAt])
+  @@index([reconcileStatus, nextReconcileAt])
+  @@map("billing_subscriptions")
+}
+
+model billingSubscriptionCycles {
+  id             String   @id
+  cycleKey       String   @unique
+  bindingId      String
+  ownerId        String
+  providerId     String
+  accountScope   String
+  subscriptionId String
+  catalogReference String
+  basis          String
+  periodStart    DateTime?
+  periodEnd      DateTime?
+  paymentId      String
+  paymentKind    String
+  recordId       String
+  paidMoney      Json
+  paidAt         DateTime
+  policyVersion  String
+  policy         Json
+  initial        Boolean
+  fulfilledAt    DateTime
+  binding        billingSubscriptions @relation(fields: [bindingId], references: [id], onDelete: Restrict)
+
+  @@unique([providerId, accountScope, paymentKind, paymentId])
+  @@index([bindingId, paidAt])
+  @@index([ownerId, paidAt])
+  @@map("billing_subscription_cycles")
+}
+
+model billingFulfillments {
+  orderId   String   @id
+  ownerId   String
+  policy    Json
+  credits   Int
+  createdAt DateTime @default(now())
+  order     billingOrders @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@index([ownerId, createdAt])
+  @@map("billing_fulfillments")
+}
+
+model billingOutbox {
+  id             String   @id @default(uuid())
+  kind           String
+  aggregateId    String
+  payload        Json
+  status         String   @default("pending")
+  attempts       Int      @default(0)
+  availableAt    DateTime @default(now())
+  leaseOwner     String?
+  leaseExpiresAt DateTime?
+  deliveredAt    DateTime?
+  createdAt      DateTime @default(now())
+
+  @@unique([kind, aggregateId])
+  @@index([status, availableAt])
+  @@map("billing_outbox")
+}
+
+model creditLots {
+  id              String   @id @default(cuid())
+  userId          String
+  source          String
+  sourceId        String?
+  amount          Int
+  remainingAmount Int
+  expiresAt       DateTime?
+  description     String?
+  isExpired       Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  allocations     creditAllocations[]
+  holdAllocations creditHoldAllocations[]
+
+  @@index([userId, isExpired, createdAt])
+  @@index([source, sourceId])
+  @@map("credit_lots")
+}
+
+model creditHolds {
+  id String @id
+  accountId String
+  amount Int
+  status String @default("HELD")
+  selectedLotIds String[]
+  resourceType String
+  resourceId String?
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  settledAt DateTime? @db.Timestamptz(3)
+  allocations creditHoldAllocations[]
+  @@index([accountId, createdAt])
+  @@index([resourceType, resourceId])
+  @@map("credit_holds")
+}
+model creditHoldAllocations {
+  holdId String
+  creditLotId String
+  amount Int
+  activeAmount Int
+  expiredAmount Int @default(0)
+  revokedAmount Int @default(0)
+  releasedAmount Int @default(0)
+  expiredAt DateTime? @db.Timestamptz(3)
+  hold creditHolds @relation(fields: [holdId], references: [id], onDelete: Restrict)
+  lot creditLots @relation(fields: [creditLotId], references: [id], onDelete: Restrict)
+  @@id([holdId, creditLotId])
+  @@index([creditLotId, activeAmount])
+  @@map("credit_hold_allocations")
+}
+
+model creditConsumptions {
+  id            String   @id @default(cuid())
+  userId        String
+  amount        Int
+  transactionId String   @unique
+  resourceType  String
+  resourceId    String?
+  createdAt     DateTime @default(now())
+  allocations   creditAllocations[]
+
+  @@index([userId, createdAt])
+  @@map("credit_consumptions")
+}
+
+model creditAllocations {
+  id            String   @id @default(cuid())
+  consumptionId String
+  creditLotId   String
+  source        String
+  sourceId      String?
+  amount        Int
+  expiresAt     DateTime?
+  consumption   creditConsumptions @relation(fields: [consumptionId], references: [id], onDelete: Restrict)
+  lot           creditLots @relation(fields: [creditLotId], references: [id], onDelete: Restrict)
+
+  @@unique([consumptionId, creditLotId])
+  @@map("credit_allocations")
+}
+
+model creditAccountLocks {
+  accountId String   @id @db.VarChar(191)
+  createdAt DateTime @default(now())
+  @@map("credit_account_locks")
+}
+
+model creditOperationReceipts {
+  idempotencyKey String   @id @db.VarChar(200)
+  accountId      String   @db.VarChar(191)
+  operationType  String   @db.VarChar(64)
+  amount         Int
+  resourceType   String   @db.VarChar(64)
+  resourceId     String?  @db.VarChar(191)
+  createdAt      DateTime @default(now())
+
+  @@index([accountId, createdAt])
+  @@map("credit_operation_receipts")
 }
 
 // ConfigService 使用 db.model('config') / db.model('configHistory')
@@ -834,3 +1218,426 @@ model promptTemplate {
 // 注意：Prisma 已有 dictionaries/dictionaryItems 模型，
 // 但代码使用的是 singular 形式。PrismaAdapter 需要做名称映射。
 // 这里添加 @@map 别名注释供参考，实际应在 PrismaAdapter 中处理。
+
+// Private objects stay in storage; this table is the durable ownership/recovery journal.
+model fileAssets {
+  id                 String   @id
+  ownerId            String
+  idempotencyKey     String
+  objectKey          String   @unique
+  fileName           String
+  sha256             String   @db.Char(64)
+  size               Int
+  mimeType           String
+  state              String   @default("pending")
+  revision           Int      @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @default(now()) @updatedAt
+  deletedAt          DateTime?
+  cleanupStatus      String?
+  cleanupConfirmedAt DateTime?
+  avatarUsers users[] @relation("CurrentAccountAvatar")
+  avatarChanges accountAvatarChanges[]
+
+  @@unique([ownerId, idempotencyKey])
+  @@index([ownerId, createdAt])
+  @@index([state, cleanupStatus, updatedAt])
+  @@map("file_assets")
+}
+
+/// Reference schema fragment for the durable task control plane.
+///
+/// Copy these models and enums into the consuming application's Prisma schema,
+/// then add application-owned relations and migrations there. The framework
+/// package intentionally does not generate or ship a Prisma Client.
+enum AsyncJobStatus {
+  QUEUED
+  PROCESSING
+  WAITING_PROVIDER
+  RETRYING
+  COMPLETED
+  FAILED
+  CANCELLED
+
+  @@map("async_job_status")
+}
+
+enum AsyncJobOutboxStatus {
+  PENDING
+  PUBLISHING
+  PUBLISHED
+
+  @@map("async_job_outbox_status")
+}
+
+model AsyncJob {
+  id                     String           @id
+  kind                   String
+  resourceType           String
+  resourceId             String
+  userId                 String?
+  orderId                String?
+  status                 AsyncJobStatus   @default(QUEUED)
+  stage                  String?
+  progress               Int              @default(0)
+  attempt                Int              @default(0)
+  maxAttempts            Int
+  idempotencyKey         String           @unique
+  idempotencyFingerprint String
+  handlerVersion         String
+  payload                Json
+  result                 Json?
+  errorCode              String?
+  errorCategory          String?
+  errorSummary           String?
+  errorRetryable         Boolean?
+  errorMetadata          Json?
+  providerRequestId      String?
+  workerId               String?
+  leaseToken             String?
+  leaseExpiresAt         DateTime? @db.Timestamptz(3)
+  heartbeatAt            DateTime? @db.Timestamptz(3)
+  availableAt            DateTime         @default(now()) @db.Timestamptz(3)
+  startedAt              DateTime? @db.Timestamptz(3)
+  completedAt            DateTime? @db.Timestamptz(3)
+  createdAt              DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime         @default(now()) @updatedAt @db.Timestamptz(3)
+  version                Int              @default(0)
+  outboxEvents           AsyncJobOutbox[]
+  timelineEvents         AsyncJobEvent[]
+  record                 JobRecord?
+
+  @@index([kind, status, availableAt])
+  @@index([status, leaseExpiresAt])
+  @@index([resourceType, resourceId])
+  @@index([userId, status, createdAt(sort: Desc)])
+  @@index([orderId])
+  @@index([providerRequestId])
+  @@map("async_jobs")
+}
+
+/// Append-only, payload-free task history suitable for support timelines.
+/// Install assets/task-events.postgresql.sql to populate this model atomically.
+model AsyncJobEvent {
+  id                String          @id
+  taskId            String
+  sequence          Int
+  eventType         String
+  fromStatus        AsyncJobStatus?
+  toStatus          AsyncJobStatus
+  stage             String?
+  progress          Int
+  attempt           Int
+  maxAttempts       Int
+  errorCode         String?
+  errorCategory     String?
+  errorRetryable    Boolean?
+  workerId          String?
+  providerRequestId String?
+  createdAt         DateTime        @default(now()) @db.Timestamptz(3)
+  task              AsyncJob        @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, sequence])
+  @@index([taskId, createdAt])
+  @@map("async_job_events")
+}
+
+model AsyncJobOutbox {
+  id             String               @id
+  taskId         String
+  topic          String
+  payload        Json
+  status         AsyncJobOutboxStatus @default(PENDING)
+  attempt        Int                  @default(0)
+  availableAt    DateTime             @default(now()) @db.Timestamptz(3)
+  workerId       String?
+  leaseToken     String?
+  leaseExpiresAt DateTime? @db.Timestamptz(3)
+  publishedAt    DateTime? @db.Timestamptz(3)
+  lastError      String?
+  createdAt      DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime             @default(now()) @updatedAt @db.Timestamptz(3)
+  task           AsyncJob             @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([status, availableAt])
+  @@index([status, leaseExpiresAt])
+  @@index([taskId, createdAt])
+  @@map("async_job_outbox")
+}
+
+/// Template-owned neutral result, committed together with the fenced task completion.
+model JobRecord {
+  taskId    String   @id
+  ownerId   String
+  value     String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  task      AsyncJob @relation(fields: [taskId], references: [id], onDelete: Restrict)
+
+  @@index([ownerId, createdAt])
+  @@map("job_records")
+}
+
+/// Opaque delivery metadata only; recipients/content belong to DeliveryMessage.
+model NotificationDelivery {
+  id                     String   @id
+  idempotencyKey         String   @unique
+  idempotencyFingerprint String
+  channel                String
+  deliveryRef            String
+  priority               Float    @default(0)
+  status                 String   @default("PENDING")
+  attempt                Int      @default(0)
+  maxAttempts            Int
+  availableAt            DateTime @default(now()) @db.Timestamptz(3)
+  workerId               String?
+  leaseToken             String?
+  leaseExpiresAt         DateTime? @db.Timestamptz(3)
+  providerMessageId      String?
+  errorCode              String?
+  errorRetryable         Boolean?
+  createdAt              DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  deliveredAt            DateTime? @db.Timestamptz(3)
+  failedAt               DateTime? @db.Timestamptz(3)
+  version                Int      @default(0)
+
+  @@index([status, availableAt, priority])
+  @@index([status, leaseExpiresAt])
+  @@map("notification_deliveries")
+}
+
+/// Private consumer-owned mail envelope; no account verification/reset bearer tickets.
+model DeliveryMessage {
+  id                   String   @id
+  ownerId              String
+  taskId               String?
+  providerId           String
+  providerAccountScope String
+  recipient            String
+  subject              String
+  text                 String
+  dispatchStartedAt    DateTime? @db.Timestamptz(3)
+  createdAt            DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([ownerId, createdAt])
+  @@map("delivery_messages")
+}
+
+
+// Consumer-owned CMS. Draft route/content changes never replace a published snapshot until publish.
+model siteContentEntry {
+  id                   String   @id
+  kind                 String
+  locale               String
+  slug                 String
+  draft                Json
+  status               String   @default("draft")
+  publishedSlug        String?
+  published            Json?
+  publishedTitle       String?
+  publishedDescription String?
+  searchText           String   @default("")
+  publishedAt          DateTime?
+  publishedRevision    Int?
+  revision             Int      @default(0)
+  createdBy            String
+  updatedBy            String
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @default(now()) @updatedAt
+
+  @@unique([kind, locale, slug])
+  @@unique([kind, locale, publishedSlug])
+  @@index([kind, locale, status, publishedAt, id])
+  @@map("site_content_entries")
+}
+
+model siteContentCategory {
+  id                String   @id
+  locale            String
+  slug              String
+  draft             Json
+  status            String   @default("draft")
+  publishedSlug     String?
+  published         Json?
+  publishedAt       DateTime?
+  publishedRevision Int?
+  revision          Int      @default(0)
+  createdBy         String
+  updatedBy         String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @default(now()) @updatedAt
+
+  @@unique([locale, slug])
+  @@unique([locale, publishedSlug])
+  @@index([locale, status, publishedAt, id])
+  @@map("site_content_categories")
+}
+
+
+model quotaUsage {
+  subjectId String
+  counter String
+  period String
+  limit Int
+  used Int @default(0)
+  updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  @@id([subjectId, counter, period])
+  @@map("quota_usage")
+}
+
+model quotaReservation {
+  id String @id
+  subjectId String
+  counter String
+  period String
+  amount Int
+  limit Int
+  policyVersion String
+  resourceType String
+  resourceId String
+  status String @default("RESERVED")
+  expiresAt DateTime @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @default(now()) @db.Timestamptz(3)
+  finishedAt DateTime? @db.Timestamptz(3)
+  reason String?
+  @@unique([subjectId, counter, resourceType, resourceId])
+  @@index([subjectId, counter, period, status])
+  @@index([status, expiresAt])
+  @@map("quota_reservations")
+}
+
+model billingRefundPayments {
+  id String @id
+  ownerId String
+  orderId String
+  cycleId String?
+  providerId String
+  accountScope String
+  paymentKind String
+  paymentId String
+  sourceKind String
+  sourceId String
+  title String
+  paidMoney Json
+  paidMinor String
+  minorScale Int
+  totalCredits Int
+  refundedMinor String @default("0")
+  providerPendingMinor String?
+  recoveredCredits Int @default(0)
+  revokedCredits Int @default(0)
+  expiredCredits Int @default(0)
+  suppressedCredits Int @default(0)
+  grantRecorded Boolean @default(false)
+  grantSource String?
+  grantSourceId String?
+  activeRequestId String?
+  attention Boolean @default(false)
+  revision Int @default(0)
+  observedAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+  @@unique([providerId, accountScope, paymentKind, paymentId])
+  @@unique([providerId, accountScope, sourceKind, sourceId])
+  @@index([ownerId, createdAt])
+  @@index([orderId])
+  @@index([cycleId])
+  @@map("billing_refund_payments")
+}
+model billingRefundAliases {
+  providerId String
+  accountScope String
+  paymentKind String
+  paymentId String
+  targetId String
+  @@id([providerId, accountScope, paymentKind, paymentId])
+  @@index([targetId])
+  @@map("billing_refund_aliases")
+}
+model billingRefundRequests {
+  id String @id
+  targetId String
+  ownerId String
+  actorId String
+  clientKey String
+  commandKey String @unique
+  requestedMinor String
+  beforeRefundedMinor String
+  expectedRefundedMinor String
+  money Json
+  reason String?
+  state String @default("prepared")
+  creditState String @default("held")
+  creditAmount Int
+  holdId String?
+  expiredCredits Int @default(0)
+  suppressedCredits Int @default(0)
+  revokedCredits Int @default(0)
+  shortfallCredits Int @default(0)
+  providerRefundId String?
+  confirmationBasis String?
+  checkedAt DateTime?
+  reconcileStatus String @default("idle")
+  lastReconcileTaskId String?
+  reconcileErrorCode String?
+  revision Int @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+  @@unique([actorId, clientKey])
+  @@index([targetId, createdAt])
+  @@index([state, updatedAt])
+  @@map("billing_refund_requests")
+}
+model billingRefundReceipts {
+  providerId String
+  accountScope String
+  refundId String
+  targetId String
+  sourceKind String
+  sourceId String
+  commandKey String?
+  state String
+  money Json?
+  amountMinor String?
+  totalRefundedMinor String?
+  occurredAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+  @@id([providerId, accountScope, refundId])
+  @@index([targetId, state])
+  @@map("billing_refund_receipts")
+}
+model billingRefundEvents {
+  providerId String
+  accountScope String
+  eventId String
+  sourceKind String
+  sourceId String
+  refundId String?
+  commandKey String?
+  evidence Json
+  targetId String?
+  status String @default("pending")
+  createdAt DateTime @default(now())
+  processedAt DateTime?
+  @@id([providerId, accountScope, eventId])
+  @@index([providerId, accountScope, sourceKind, sourceId, status])
+  @@map("billing_refund_events")
+}
+
+model accountAvatarChanges {
+  id String @id
+  userId String
+  idempotencyKey String
+  action String
+  assetId String?
+  expectedRevision Int
+  appliedRevision Int
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  user users @relation(fields: [userId], references: [id], onDelete: Cascade)
+  asset fileAssets? @relation(fields: [assetId], references: [id], onDelete: Restrict)
+  @@unique([userId, idempotencyKey])
+  @@index([userId, createdAt])
+  @@map("account_avatar_changes")
+}

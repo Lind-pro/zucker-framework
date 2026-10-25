@@ -1,10 +1,11 @@
-import { vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { InMemoryTaskRepository } from './in-memory-task-repository';
 import { ExponentialTaskRetryPolicy } from './retry-policy';
 import type { CreateTaskInput, TaskErrorSummary } from './task-repository';
 import {
   DurableTaskLeaseLostError,
+  DurableTaskAbortedError,
   DurableTaskNotClaimableError,
   DurableTaskNotFoundError,
   DurableTaskRetryScheduledError,
@@ -87,6 +88,49 @@ function createRuntime(options: {
 }
 
 describe('DurableWorkerRuntime', () => {
+  it('does not claim a task when the host signal is already aborted', async () => {
+    const repository = new InMemoryTaskRepository<Payload, Result>();
+    await repository.create(input());
+    const execute = vi.fn(async () => ({ artifactId: 'never' }));
+    const stopped = new AbortController(); stopped.abort();
+    await expect(createRuntime({ repository, handler: { execute } }).run('task-1', { signal: stopped.signal }))
+      .rejects.toBeInstanceOf(DurableTaskAbortedError);
+    expect(execute).not.toHaveBeenCalled();
+    expect(await repository.findById('task-1')).toMatchObject({ status: 'QUEUED', attempt: 0 });
+  });
+
+  it('stops host-interrupted heartbeats, drains renewal and leaves the attempt for durable lease recovery', async () => {
+    const repository = new InMemoryTaskRepository<Payload, Result>();
+    await repository.create(input());
+    const scheduler = new ManualHeartbeatScheduler(), stopped = new AbortController();
+    let entered!: () => void; const started = new Promise<void>(done => { entered = done; });
+    let finishRenewal!: () => void; const renewal = new Promise<void>(done => { finishRenewal = done; });
+    const heartbeat = vi.spyOn(repository, 'heartbeat').mockImplementationOnce(async () => { await renewal; return true; });
+    const cleanup = vi.fn();
+    const runtime = createRuntime({ repository, scheduler, handler: {
+      execute: async context => {
+        entered();
+        await new Promise<void>((_done, reject) => context.signal.addEventListener('abort', () => reject(context.signal.reason), { once: true }));
+        return { artifactId: 'never' };
+      }, cleanup,
+    } });
+    let settled = false;
+    const running = runtime.run('task-1', { signal: stopped.signal }).finally(() => { settled = true; });
+    const rejection = expect(running).rejects.toBeInstanceOf(DurableTaskAbortedError);
+    await started;
+    const tick = scheduler.runTick();
+    stopped.abort();
+    await Promise.resolve(); await Promise.resolve();
+    expect(scheduler.stopped).toBe(true);
+    expect(settled).toBe(false);
+    finishRenewal(); await tick; await rejection;
+    expect(cleanup).toHaveBeenCalledOnce();
+    expect(heartbeat).toHaveBeenCalledOnce();
+    const retained = await repository.findById('task-1');
+    expect(retained).toMatchObject({ status: 'PROCESSING', attempt: 1 });
+    expect(retained?.result).toBeUndefined();
+  });
+
   it('returns a typed error when the durable task does not exist', async () => {
     const repository = new InMemoryTaskRepository<Payload, Result>();
 

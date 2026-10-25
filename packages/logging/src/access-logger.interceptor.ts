@@ -8,7 +8,8 @@ import {
   HttpException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { EventEmitter2 } from 'eventemitter2';
+// The CommonJS default is the original EventEmitter2 constructor in both formats.
+import EventEmitter2Constructor, { type EventEmitter2 } from 'eventemitter2';
 import { Observable, throwError } from 'rxjs';
 import { tap, catchError } from 'rxjs/operators';
 import { randomUUID } from 'crypto';
@@ -35,6 +36,9 @@ export const ACCESS_LOG_CAPTURE_OPTIONS = Symbol('ACCESS_LOG_CAPTURE_OPTIONS');
 export interface AccessLogCaptureOptions {
   /** Retain client IPs for authorized audit/timeline queries. Disabled by default. */
   retainClientIp?: boolean;
+  /** Application privacy ceilings; false also overrides controller-level opt-ins. */
+  captureParameters?: boolean;
+  captureResults?: boolean;
 }
 
 export interface AccessLogBus {
@@ -63,7 +67,7 @@ export class AccessLoggerInterceptor implements NestInterceptor {
 
   constructor(
     private readonly reflector: Reflector,
-    @Optional() private readonly eventEmitter?: EventEmitter2,
+    @Optional() @Inject(EventEmitter2Constructor) private readonly eventEmitter?: EventEmitter2,
     @Optional()
     @Inject(ACCESS_LOG_BUS)
     private readonly bus?: AccessLogBus,
@@ -151,7 +155,7 @@ export class AccessLoggerInterceptor implements NestInterceptor {
     const ignoreAll = ignoreParams.includes('*');
 
     const parameters =
-      loggerOptions.logParameters !== false && !ignoreAll
+      this.captureOptions?.captureParameters !== false && loggerOptions.logParameters !== false && !ignoreAll
         ? this.sanitizeParameters(
             this.filterIgnoredParameters(this.extractParameters(request), ignoreParams),
             sensitiveFields,
@@ -196,7 +200,7 @@ export class AccessLoggerInterceptor implements NestInterceptor {
           const result = lastResult;
           const duration = Date.now() - startTime;
           const logResult =
-            loggerOptions.logResult === true ? this.simplifyResult(result) : undefined;
+            this.captureOptions?.captureResults !== false && loggerOptions.logResult === true ? this.simplifyResult(result) : undefined;
           const targetId = this.extractTargetId(request, result);
 
           const response = context.switchToHttp().getResponse();

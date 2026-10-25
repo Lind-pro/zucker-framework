@@ -23,6 +23,7 @@ import {
   HttpStatus,
   UseGuards,
   Logger,
+  BadRequestException,
 } from '@nestjs/common';
 import { NotFoundException } from '@zucker-framework/core';
 import { JwtAuthGuard, PermissionsGuard, Permissions, PermissionService, PermissionSyncService } from '@zucker-framework/auth';
@@ -64,9 +65,37 @@ interface CountResult {
   total: number;
 }
 
+/** Definition metadata only. Memberships use the separate authorization endpoints. */
+function permissionInput(body: unknown, existingId?: string): Record<string, unknown> {
+  const allowed = new Set(['id', 'name', 'description', 'status', 'actions', 'optionalFields', 'parents', 'properties']);
+  if (!body || typeof body !== 'object' || Array.isArray(body)
+    || Object.keys(body).some(key => !allowed.has(key)))
+    throw new BadRequestException('Unsupported permission fields');
+  const input = body as Record<string, unknown>;
+  if (existingId === undefined && (typeof input.id !== 'string' || !input.id.trim()
+    || typeof input.name !== 'string' || !input.name.trim()))
+    throw new BadRequestException('Permission identifier and name are required');
+  if (existingId !== undefined && input.id !== undefined && input.id !== existingId)
+    throw new BadRequestException('Permission identifiers cannot be changed');
+  if (input.name !== undefined && (typeof input.name !== 'string' || !input.name.trim())
+    || input.description !== undefined && input.description !== null && typeof input.description !== 'string'
+    || input.status !== undefined && typeof input.status !== 'boolean')
+    throw new BadRequestException('Invalid permission metadata');
+  for (const key of ['actions', 'optionalFields', 'parents'])
+    if (input[key] !== undefined && input[key] !== null && !Array.isArray(input[key]))
+      throw new BadRequestException(`Permission ${key} must be an array`);
+  if (input.properties !== undefined && input.properties !== null
+    && (typeof input.properties !== 'object' || Array.isArray(input.properties)))
+    throw new BadRequestException('Permission properties must be an object');
+  const { id, ...metadata } = input;
+  if (existingId !== undefined && !Object.keys(metadata).length)
+    throw new BadRequestException('No permission changes were supplied');
+  return existingId === undefined ? { id, ...metadata } : metadata;
+}
+
 @Controller('permissions')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
-@Permissions()
+@Permissions('permissions:query')
 export class PermissionsController {
   private readonly logger = new Logger(PermissionsController.name);
 
@@ -151,10 +180,12 @@ export class PermissionsController {
    */
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  async create(@Body() body: Partial<PermissionRecord> & { id: string; name: string }): Promise<PermissionRecord> {
+  @Permissions('permissions:add')
+  async create(@Body() body: unknown): Promise<PermissionRecord> {
+    const input = permissionInput(body);
     const created = await this.db
       .model('permissions')
-      .create({ data: { actions: [], status: true, ...body } });
+      .create({ data: { actions: [], status: true, ...input } });
 
     // Invalidate permission cache so new permissions are immediately effective
     this.permissionService.invalidatePermissionCache();
@@ -166,16 +197,17 @@ export class PermissionsController {
    * PUT /permissions/:id — 更新权限
    */
   @Put(':id')
+  @Permissions('permissions:update')
   async update(
     @Param('id') id: string,
-    @Body() body: Partial<PermissionRecord>,
+    @Body() body: unknown,
   ): Promise<PermissionRecord> {
+    const updateData = permissionInput(body, id);
     const existing = await this.loadById(id);
     if (!existing) {
       throw new NotFoundException(`Permission ${id} not found`);
     }
 
-    const { id: _id, ...updateData } = body;
     await this.db.model('permissions').update({
       where: { id },
       data: updateData,
@@ -192,6 +224,7 @@ export class PermissionsController {
    */
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @Permissions('permissions:delete')
   async remove(@Param('id') id: string): Promise<void> {
     const existing = await this.loadById(id);
     if (!existing) {
@@ -214,6 +247,7 @@ export class PermissionsController {
    */
   @Post('_sync')
   @HttpCode(HttpStatus.OK)
+  @Permissions('permissions:update')
   async syncPermissions(): Promise<{ synced: number }> {
     const result = await this.permissionSyncService.synchronize();
     this.permissionService.invalidatePermissionCache();

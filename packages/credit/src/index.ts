@@ -72,3 +72,9 @@ export type {
   CreditLotGrant,
   CreditLotConsumption,
 } from './batch-credit-ledger';
+
+export { CreditLotHoldError, CreditLotHeldError, CreditHoldMigrationRequiredError } from './credit-lot-hold';
+export type {
+  CreditLotHoldStatus, CreditLotHoldRecord, CreditLotHoldAllocation, CreditLotHold,
+  CreateCreditLotHold, SettleCreditLotHold, CreditLotHoldResult, CreditLotHoldStore,
+} from './credit-lot-hold';

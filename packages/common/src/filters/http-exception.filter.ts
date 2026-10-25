@@ -143,9 +143,11 @@ export class HttpExceptionFilter implements ExceptionFilter {
         message = exception.message;
       }
     } else if (exception instanceof Error) {
-      this.logger.error(`Unhandled error: ${exception.message}`, exception.stack);
+      // ORM/provider diagnostics can embed submitted fields, hashes, tokens and SQL values.
+      // Raw details remain available to an explicitly configured onServerError reporter.
+      this.logger.error('Unhandled server error');
     } else {
-      this.logger.error(`Unhandled non-Error exception: ${String(exception)}`);
+      this.logger.error('Unhandled non-Error exception');
     }
 
     if (retryAfterSeconds !== undefined) {

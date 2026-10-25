@@ -1,5 +1,11 @@
 # @zucker-framework/buffer
 
+## 1.0.10
+
+### Patch Changes
+
+- @zucker-framework/core@1.0.10
+
 ## 1.0.8
 
 ### Patch Changes

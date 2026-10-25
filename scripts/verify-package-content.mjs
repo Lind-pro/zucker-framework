@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { validateProjectBundle } from '../packages/cli/tooling/project-templates.mjs';
 
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const declarationFile = /\.d\.(?:ts|mts|cts)$/i;
@@ -47,6 +48,11 @@ function assertPackageLicenseFiles(manifest, files, readFile) {
 /** Check the actual package payload, including stale files left by older builds. */
 export function assertPackageContent(packageName, files, readFile) {
   const violations = [];
+  if (packageName === '@zucker-framework/cli') {
+    const assets = files.find(file => file === 'dist/project-templates.json' || file === 'package/dist/project-templates.json');
+    if (!assets) throw new Error('CLI is missing dist/project-templates.json; prepare generator assets before packing.');
+    validateProjectBundle(JSON.parse(readFile(assets).toString('utf8')));
+  }
   for (const file of files) {
     if (localFile.test(file) || cacheDirectory.test(file)) {
       violations.push(`${file}: local configuration or generated cache`);
@@ -78,7 +84,7 @@ export function assertTarballContent(tarball) {
   const relativeFiles = files.map((file) => file.replace(/^package\//, ''));
   assertPackageEntryFiles(manifest, relativeFiles);
   assertPackageLicenseFiles(manifest, relativeFiles, (file) => readFile(`package/${file}`));
-  assertPackageContent(archive, files, readFile);
+  assertPackageContent(manifest.name, files, readFile);
 }
 
 export function verifyPackageDirectories(directories) {

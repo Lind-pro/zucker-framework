@@ -19,6 +19,8 @@ import {
   HttpStatus,
   UseGuards,
   Logger,
+  BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import { NotFoundException } from '@zucker-framework/core';
 import { JwtAuthGuard, PermissionsGuard, Permissions } from '@zucker-framework/auth';
@@ -56,7 +58,7 @@ interface HistoryQueryRequest {
 
 @Controller('notification')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
-@Permissions()
+@Permissions('notification:query')
 export class NotificationController {
   private readonly logger = new Logger(NotificationController.name);
 
@@ -89,7 +91,10 @@ export class NotificationController {
    */
   @Post('template')
   @HttpCode(HttpStatus.CREATED)
+  @Permissions('notification:add')
   createTemplate(@Body() body: TemplateProperties): NotifyTemplate {
+    if (typeof body?.id !== 'string' || !body.id.trim()) throw new BadRequestException('Template identifier is required');
+    if (this.templateService.getTemplate(body.id)) throw new ConflictException('Template already exists; use the update operation');
     return this.templateService.createTemplate(body);
   }
 
@@ -98,6 +103,7 @@ export class NotificationController {
    * TemplateService uses an in-memory Map; update = remove + recreate.
    */
   @Put('template/:id')
+  @Permissions('notification:update')
   updateTemplate(
     @Param('id') id: string,
     @Body() body: Partial<TemplateProperties>,
@@ -126,6 +132,7 @@ export class NotificationController {
    */
   @Delete('template/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @Permissions('notification:delete')
   removeTemplate(@Param('id') id: string): void {
     const removed = this.templateService.remove(id);
     if (!removed) {

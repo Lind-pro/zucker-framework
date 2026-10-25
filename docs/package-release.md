@@ -326,7 +326,7 @@ with its documented peers installed.
 
 Artifact verification installs tarballs in fresh npm and pnpm consumers, verifies
 portable dependency declarations, checks peers and exercises ESM/CommonJS exports.
-It also checks 49 library declaration surfaces with strict NodeNext ESM/CJS
+It also checks the library declaration surfaces listed in its verification report with strict NodeNext ESM/CJS
 settings, renders a synthetic frontend form, and compiles/starts the CLI-generated
 server outside the framework workspace. Frontend callers use strict types with
 `skipLibCheck: true`, matching the frontend template: Ant Design's own dependency
@@ -338,8 +338,11 @@ that the publishing account controls the npm scope.
 
 The CLI includes a standalone server scaffold using versions captured in its
 release catalog, a standalone TypeScript configuration and a newly generated local
-JWT secret. The full admin/web templates require a framework checkout. Generated
-projects and framework packages have separate build and deployment lifecycles.
+JWT secret. The 1.0.10 preparation also bundles the full Server, Admin and Web
+templates, so those generated consumers no longer require a Framework checkout;
+see [the 1.0.10 preparation and migration notes](package-release-1.0.10.md) for
+publication status and adoption requirements. Generated projects and Framework
+packages have separate build and deployment lifecycles.
 The CLI requires Node.js 22.12 or later, consistent with Commander 15. The repository
 toolchain requires Node.js 22.22 or later; this does not replace individual library
 runtime contracts.

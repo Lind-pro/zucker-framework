@@ -3,13 +3,15 @@ import { Form, DatePicker } from 'antd';
 import type { FieldDefinition } from '../types';
 import { FieldType } from '../types';
 import { toAntdRules } from '../validators';
+import { useFormMessages } from '../messages';
 
 interface Props {
   field: FieldDefinition;
 }
 
 export function DateField({ field }: Props) {
-  const rules = toAntdRules(field.validators, field.required);
+  const messages = useFormMessages();
+  const rules = toAntdRules(field.validators, field.required, messages.requiredText);
   const showTime = field.type === FieldType.DATETIME;
 
   return (

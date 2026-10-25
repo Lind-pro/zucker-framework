@@ -7,6 +7,7 @@ import {
   credentialProfileId,
   type AIAccessProviderPlugin,
   type CredentialProfile,
+  type CredentialProfileStore,
 } from '@zucker-framework/ai-access';
 import { createAICommand } from './ai';
 
@@ -24,7 +25,7 @@ const createProfile = (profileName: string): CredentialProfile => ({
 });
 
 describe('zucker ai', () => {
-  let store: InMemoryCredentialProfileStore;
+  let store: CredentialProfileStore;
   let registry: AIAccessProviderRegistry;
   let provider: AIAccessProviderPlugin;
   let output: string[];

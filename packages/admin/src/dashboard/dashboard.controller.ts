@@ -28,7 +28,7 @@ export interface DashboardStats {
 
 @Controller('dashboard')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
-@Permissions()
+@Permissions('dashboard:query')
 export class DashboardController {
   private readonly logger = new Logger(DashboardController.name);
 

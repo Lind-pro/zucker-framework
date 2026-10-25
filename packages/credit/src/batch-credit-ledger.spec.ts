@@ -1,3 +1,4 @@
+import { describe, expect, it, vi } from 'vitest';
 import { BatchCreditLedger } from './batch-credit-ledger';
 import type { BatchCreditLedgerOptions } from './batch-credit-ledger';
 
@@ -99,4 +100,15 @@ it('revokes only selected owned unused lots, journals once, and never creates co
   expect(f.models.transactions.create).toHaveBeenCalledTimes(1);
   expect(f.models.transactions.create).toHaveBeenCalledWith({ data: { type: 'revoke', owner: 'a', amount: -3, balanceBefore: 10, balanceAfter: 7, lotIds: ['lot'] } });
   expect(f.models.allocations.createMany).not.toHaveBeenCalled();
+});
+
+it('expires selected lots on the supplied fenced transaction without opening another transaction', async () => {
+  const f = fixture(), now = new Date('2026-10-24T00:00:00Z');
+  f.models.lots.findFirst.mockResolvedValueOnce({ id: 'due', owner: 'a', remainingAmount: 3 }).mockResolvedValueOnce(null);
+  f.models.balances.update.mockResolvedValue({ balance: 7 });
+  expect(await f.ledger.expireInTransaction(f.tx, { accountId: 'a', lotIds: ['due', 'due', 'other'], transactionData: { type: 'EXPIRE', metadata: { task: 'owned-job' } } }, now)).toBe(3);
+  expect(f.scan.findMany).not.toHaveBeenCalled(); expect(f.resolveModels).toHaveBeenCalledWith(f.tx);
+  expect(f.models.lots.findFirst).toHaveBeenCalledTimes(2);
+  expect(f.models.lots.findFirst).toHaveBeenCalledWith({ where: { id: 'due', owner: 'a', isExpired: false, remainingAmount: { gt: 0 }, expiresAt: { lte: now } } });
+  expect(f.models.transactions.create).toHaveBeenCalledWith({ data: { type: 'EXPIRE', metadata: { task: 'owned-job' }, owner: 'a', amount: -3, balanceBefore: 10, balanceAfter: 7, lotIds: ['due'] } });
 });

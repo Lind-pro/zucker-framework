@@ -1,116 +1,77 @@
-/**
- * Web template (Next.js) — Login page e2e tests.
- *
- * All backend calls are intercepted with page.route().
- * Tests verify form render, successful login + cookie set, error state,
- * and open-redirect protection.
- */
-import { test, expect } from '@playwright/test';
+/** Synthetic account contract checks: no real backend or email. */
+import { test, expect, type Page, type Route } from '@playwright/test';
 
-// ── helpers ──────────────────────────────────────────────────────────────────
-
-async function mockLoginApi(
-  page: import('@playwright/test').Page,
-  opts: { success?: boolean } = {},
-) {
-  const success = opts.success ?? true;
-
-  await page.route('**/api/authorize/login', (route) => {
-    if (success) {
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          userId: 'u1',
-          token: 'web.test.token',
-          expires: 86400000,
-        }),
-      });
-    } else {
-      route.fulfill({
-        status: 401,
-        contentType: 'application/json',
-        body: JSON.stringify({ message: 'illegal_password', statusCode: 401 }),
-      });
-    }
+test.beforeEach(async ({ context, baseURL }) => {
+  if (!baseURL) throw new Error('Synthetic account checks require a local baseURL');
+  const origin = new URL(baseURL).origin;
+  await context.route('**/*', route => {
+    const url = new URL(route.request().url());
+    if (url.hostname === 'analytics.example.test') return route.fulfill({ contentType: 'application/javascript', body: 'window.__syntheticAnalyticsLoaded = true;' });
+    if (url.origin !== origin) return route.abort('blockedbyclient');
+    if (url.pathname.startsWith('/api/')) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ status: 503, result: null, message: 'Unmocked synthetic API request' }) });
+    return route.continue();
   });
+});
+
+const identity = { id: 'synthetic-user', username: 'synthetic', name: 'Synthetic member', email: 'synthetic@example.test', emailVerified: true,
+  permissions: [{ id: '*', actions: ['*'] }] };
+const respond = (route: Route, result: unknown, status = 200, headers: Record<string, string> = {}) => route.fulfill({ status,
+  contentType: 'application/json', headers, body: JSON.stringify({ status, result, message: status < 400 ? 'success' : 'Invalid credentials' }) });
+async function mockAccount(page: Page, validLogin = true) {
+  const calls: string[] = [];
+  await page.route('**/api/authorize/**', async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/authorize/api-keys') && route.request().method() === 'GET') return respond(route, { apiKeys: [] }); calls.push(path);
+    if (path.endsWith('/login')) return validLogin
+      ? respond(route, { userId: identity.id, token: 'synthetic-access', expires: 900000 }, 200,
+        { 'set-cookie': 'zucker-session=synthetic-refresh; Path=/; HttpOnly; SameSite=Lax' })
+      : respond(route, null, 401);
+    if (path.endsWith('/me')) return respond(route, identity);
+    if (path.endsWith('/sessions')) return respond(route, []);
+    if (path.endsWith('/refresh')) return respond(route, { access_token: 'synthetic-renewed-access' });
+    return respond(route, null, 404);
+  });
+  return calls;
+}
+async function signIn(page: Page) {
+  await page.getByLabel('Username', { exact: true }).fill('synthetic');
+  await page.getByLabel('Password', { exact: true }).fill('Synthetic123');
+  await page.getByRole('button', { name: 'Sign In', exact: true }).click();
 }
 
-// ── tests ────────────────────────────────────────────────────────────────────
-
-test.describe('Web Login page', () => {
-  test('renders login form', async ({ page }) => {
-    await mockLoginApi(page);
-    await page.goto('/login');
-
-    await expect(page.locator('input[name="username"], input[placeholder*="用户名"], input[type="email"]')).toBeVisible({ timeout: 8_000 });
-    await expect(page.locator('input[type="password"]')).toBeVisible();
-  });
-
-  test('navigates to /dashboard after successful login', async ({ page }) => {
-    await mockLoginApi(page, { success: true });
-    await page.goto('/login');
-
-    // Fill and submit the form (Next.js template uses standard HTML inputs)
-    await page.fill('input[name="username"]', 'admin');
-    await page.fill('input[type="password"]', 'Admin@123');
-    await page.click('button[type="submit"]');
-
-    await page.waitForURL(/dashboard/, { timeout: 10_000 });
-    expect(page.url()).toContain('/dashboard');
-  });
-
-  test('sets auth-token cookie after login', async ({ page }) => {
-    await mockLoginApi(page, { success: true });
-    await page.goto('/login');
-
-    await page.fill('input[name="username"]', 'admin');
-    await page.fill('input[type="password"]', 'Admin@123');
-    await page.click('button[type="submit"]');
-
-    await page.waitForURL(/dashboard/, { timeout: 10_000 });
-
+test.describe('Web account sign-in', () => {
+  test('preserves locale, HttpOnly refresh cookie and wildcard permissions', async ({ page }) => {
+    await mockAccount(page); await page.goto('/en/login'); await signIn(page);
+    await expect(page).toHaveURL(/\/en\/account$/);
     const cookies = await page.context().cookies();
-    const authCookie = cookies.find((c) => c.name === 'auth-token');
-    expect(authCookie).toBeDefined();
-    expect(authCookie?.value).toBe('web.test.token');
+    expect(cookies.find(cookie => cookie.name === 'zucker-session')).toMatchObject({ value: 'synthetic-refresh', httpOnly: true });
+    expect(cookies.some(cookie => cookie.name === 'auth-token')).toBe(false);
+    const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('auth-storage') || '{}').state);
+    expect(stored.permissions).toContain('*'); expect(stored.permissions).not.toContain('*:*');
+    expect(stored.refreshToken).toBeNull();
+    expect(await page.evaluate(() => document.cookie)).not.toContain('synthetic-refresh');
+    await expect(page.getByRole('heading', { name: 'Your account', exact: true })).toBeVisible();
   });
-
-  test('stays on login page on bad credentials', async ({ page }) => {
-    await mockLoginApi(page, { success: false });
-    await page.goto('/login');
-
-    await page.fill('input[name="username"]', 'admin');
-    await page.fill('input[type="password"]', 'wrongpass');
-    await page.click('button[type="submit"]');
-
-    // Should not navigate away
-    await page.waitForTimeout(1000);
-    expect(page.url()).toContain('/login');
+  test('bad credentials stay on the same page without refreshing another session', async ({ page }) => {
+    const calls = await mockAccount(page, false); await page.goto('/en/login'); await signIn(page);
+    await expect(page.getByRole('main').getByRole('alert')).toContainText('Sign-in failed');
+    await expect(page).toHaveURL(/\/en\/login$/);
+    expect(calls.filter(path => path.endsWith('/refresh'))).toHaveLength(0);
   });
-
-  test('open redirect is sanitised — falls back to /dashboard', async ({ page }) => {
-    await mockLoginApi(page, { success: true });
-    await page.goto('/login?redirect=//evil.com');
-
-    await page.fill('input[name="username"]', 'admin');
-    await page.fill('input[type="password"]', 'Admin@123');
-    await page.click('button[type="submit"]');
-
-    await page.waitForURL(/dashboard/, { timeout: 10_000 });
-    expect(page.url()).not.toContain('evil.com');
+  for (const target of ['//outside.example/path', '/\\outside.example/path', '/%2Foutside.example/path']) {
+    test(`rejects external redirect ${target}`, async ({ page }) => {
+      await mockAccount(page); await page.goto(`/en/login?redirect=${encodeURIComponent(target)}`); await signIn(page);
+      await expect(page).toHaveURL(/\/en\/account$/);
+    });
+  }
+  test('returns to an authorized locale-aware account path', async ({ page }) => {
+    await mockAccount(page); await page.goto('/en/login?redirect=%2Fen%2Faccount'); await signIn(page);
+    await expect(page).toHaveURL(/\/en\/account$/);
+    await expect(page.getByRole('heading', { name: 'Your account', exact: true })).toBeVisible();
   });
-
-  test('valid redirect param is honoured', async ({ page }) => {
-    await mockLoginApi(page, { success: true });
-    await page.goto('/login?redirect=/profile');
-
-    await page.fill('input[name="username"]', 'admin');
-    await page.fill('input[type="password"]', 'Admin@123');
-    await page.click('button[type="submit"]');
-
-    // Should go to /profile (or fall back gracefully if page doesn't exist)
-    await page.waitForURL(/\/(profile|dashboard)/, { timeout: 10_000 });
-    expect(page.url()).not.toContain('evil.com');
+  test('forgot-password link has a real localized destination', async ({ page }) => {
+    await page.goto('/en/login'); await page.getByRole('link', { name: 'Forgot password?' }).click();
+    await expect(page).toHaveURL(/\/en\/forgot-password$/);
+    await expect(page.getByRole('button', { name: 'Send reset link' })).toBeVisible();
   });
 });

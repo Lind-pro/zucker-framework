@@ -1,10 +1,10 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 function within(parent, child) {
   const path = relative(parent, child);
-  return path !== '..' && !path.startsWith('../') && !isAbsolute(path);
+  return path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path);
 }
 
 function markdownFiles(directory, includeLinks = false) {
@@ -142,4 +142,72 @@ export function auditAgentInstructions(repository, policy) {
     }
   }
   return { errors, skills: entrypoints.length, aliases: aliases.length };
+}
+
+
+/**
+ * Install caller-supplied, standalone consumer instructions. Template discovery
+ * belongs to init's packaged resources, never to a sibling repository lookup.
+ * Existing entries (including dangling links) are preserved without reading them.
+ */
+export function installConsumerAgentInstructions(repository, source, options = {}) {
+  if (typeof source !== 'string' || !source.trim() || Buffer.byteLength(source) > 32 * 1024) {
+    throw new Error('Consumer instructions must be nonempty UTF-8 text within 32 KiB.');
+  }
+  const root = realpathSync(repository);
+  if (!lstatSync(root).isDirectory()) throw new Error('Consumer project path must be a directory.');
+  const agentsPath = join(root, 'AGENTS.md');
+  const claudePath = join(root, 'CLAUDE.md');
+  const result = { agents: 'preserved', claude: 'skipped', warnings: [] };
+  const agentsEntry = lstatSync(agentsPath, { throwIfNoEntry: false });
+  const claudeEntry = lstatSync(claudePath, { throwIfNoEntry: false });
+  if (claudeEntry) result.claude = 'preserved';
+
+  // Do not silently install a competing canonical policy beside an existing
+  // Claude-only policy. A canonical dangling alias can safely be completed.
+  if (!agentsEntry && claudeEntry && !(claudeEntry.isSymbolicLink()
+    && ['AGENTS.md', './AGENTS.md'].includes(readlinkSync(claudePath)))) {
+    result.agents = 'skipped';
+    result.warnings.push('CLAUDE.md already exists without AGENTS.md; existing instructions were preserved. Merge them explicitly before adding AGENTS.md.');
+    return result;
+  }
+
+  if (!agentsEntry) {
+    try {
+      writeFileSync(agentsPath, source.endsWith('\n') ? source : `${source}\n`, { encoding: 'utf8', flag: 'wx' });
+      result.agents = 'created';
+    } catch (error) {
+      // Exclusive creation also preserves entries created after the initial check.
+      if (error?.code !== 'EEXIST') throw error;
+    }
+  }
+
+  if (options.claudeLink === false || claudeEntry) return result;
+
+  // Never introduce an alias to a missing, non-file, or external canonical entry.
+  try {
+    const canonical = realpathSync(agentsPath);
+    if (!within(root, canonical) || !lstatSync(canonical).isFile()) {
+      result.warnings.push('AGENTS.md is not a local instruction file; CLAUDE.md was not created.');
+      return result;
+    }
+  } catch (error) {
+    if (!['ENOENT', 'ENOTDIR', 'ELOOP'].includes(error?.code)) throw error;
+    result.warnings.push('AGENTS.md does not resolve to a local instruction file; CLAUDE.md was not created.');
+    return result;
+  }
+
+  try {
+    symlinkSync('AGENTS.md', claudePath, 'file');
+    result.claude = 'created';
+  } catch (error) {
+    if (error?.code === 'EEXIST') {
+      result.claude = 'preserved';
+    } else if (['EPERM', 'EACCES', 'ENOTSUP', 'EOPNOTSUPP', 'ENOSYS'].includes(error?.code)) {
+      result.warnings.push('AGENTS.md is available, but this filesystem could not create the optional CLAUDE.md link.');
+    } else {
+      throw error;
+    }
+  }
+  return result;
 }

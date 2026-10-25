@@ -6,6 +6,12 @@ import { Toaster } from "sonner";
 import { routing } from "@/i18n/routing";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
+import { SiteAnalytics } from "@/components/SiteAnalytics";
+import { SiteConnections } from "@/components/SiteConnections";
+import { readSafeSiteIntegrations } from "@/features/site/integrations.server";
+import { readSiteSettings } from "@/features/content/server";
+import { SiteTheme } from "@/features/site/SiteTheme";
+import { resolveSiteTheme } from "@zucker-framework/fe-site/content";
 import "../globals.css";
 
 export async function generateMetadata({
@@ -36,15 +42,22 @@ export default async function LocaleLayout({
   }
 
   const messages = await getMessages();
+  const site = await readSiteSettings(locale);
+  const theme = resolveSiteTheme(site.theme, ['default']);
+  const integrations = await readSafeSiteIntegrations();
 
   return (
-    <html lang={locale} className="dark">
-      <body className="min-h-screen flex flex-col">
+    <html lang={locale} suppressHydrationWarning>
+      <body data-site-theme={theme.name}>
         <NextIntlClientProvider messages={messages}>
-          <Header />
+          <SiteTheme appearance={site.appearance}><div className="min-h-screen flex flex-col">
+          <Header site={site} />
           <main className="flex-1">{children}</main>
-          <Footer />
+          <Footer site={site} locale={locale} />
           <Toaster position="top-right" richColors />
+          <SiteAnalytics config={integrations.analytics} />
+          <SiteConnections config={integrations.connections} />
+          </div></SiteTheme>
         </NextIntlClientProvider>
       </body>
     </html>

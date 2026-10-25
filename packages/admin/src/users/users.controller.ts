@@ -60,7 +60,7 @@ interface CountResult {
 
 @Controller('users')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
-@Permissions()
+@Permissions('users:query')
 export class UsersController {
   private readonly logger = new Logger(UsersController.name);
 
@@ -131,6 +131,7 @@ export class UsersController {
    */
   @Post()
   @HttpCode(HttpStatus.CREATED)
+  @Permissions('users:add')
   async create(
     @Body() body: Partial<UserEntity> & { username: string; password: string },
   ): Promise<Omit<UserEntity, 'password'>> {
@@ -143,6 +144,7 @@ export class UsersController {
    * PUT /users/:id — 更新用户
    */
   @Put(':id')
+  @Permissions('users:update')
   async update(
     @Param('id') id: string,
     @Body() body: Partial<UserEntity>,
@@ -161,6 +163,7 @@ export class UsersController {
    */
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @Permissions('users:delete')
   async remove(@Param('id') id: string): Promise<void> {
     await this.ensureUserExists(id);
     // 事务保障：删除关联数据和用户本身
@@ -195,31 +198,36 @@ export class UsersController {
    * Body: { roleIds: string[] }
    */
   @Put(':id/roles')
+  @Permissions('users:authorize')
   async setUserRoles(
     @Param('id') id: string,
-    @Body() body: { roleIds: string[] },
+    @Body() body: unknown,
   ): Promise<{ roleIds: string[] }> {
-    await this.ensureUserExists(id);
-    // 验证 roleId 存在性
-    if (body.roleIds.length > 0) {
-      const existingRoles = (await this.db.model('roles').findMany({
-        where: { id: { in: body.roleIds } },
-        select: { id: true },
-      })) as Array<{ id: string }>;
-      const foundIds = new Set(existingRoles.map(r => r.id));
-      const missing = body.roleIds.filter(id => !foundIds.has(id));
-      if (missing.length > 0) {
-        throw new ValidationException({ roleIds: [`Roles not found: ${missing.join(', ')}`] }, 'Invalid roles');
-      }
-    }
-    // 事务保障：先清除再创建，避免并发数据不一致
+    if (!body || typeof body !== 'object' || Array.isArray(body)
+      || Object.keys(body).some(key => key !== 'roleIds')
+      || !('roleIds' in body) || !Array.isArray(body.roleIds)
+      || body.roleIds.some(roleId => typeof roleId !== 'string' || !roleId.trim()))
+      throw new ValidationException({ roleIds: ['Must be an array of non-empty role identifiers'] }, 'Invalid roles');
+    const roleIds = [...new Set(body.roleIds as string[])];
     await this.db.$transaction(async (tx) => {
+      // A same-value parent update locks this user before reading/replacing child rows.
+      // Locking only existing links would allow concurrent replacements of an empty set to merge.
+      const locked = await tx.model('users').updateMany({ where: { id }, data: { id } });
+      if (!locked.count) throw new NotFoundException(`User ${id} not found`);
+      // Pin referenced roles through commit; deletion follows the same role -> link order.
+      // Sorting prevents two users assigning the same roles in opposite order from deadlocking.
+      for (const roleId of [...roleIds].sort()) {
+        const role = await tx.model('roles').updateMany({ where: { id: roleId }, data: { id: roleId } });
+        if (!role.count)
+          throw new ValidationException({ roleIds: [`Role not found: ${roleId}`] }, 'Invalid roles');
+      }
       await tx.model('userRoles').deleteMany({ where: { userId: id } });
-      for (const roleId of body.roleIds) {
+      for (const roleId of roleIds) {
         await tx.model('userRoles').create({ data: { userId: id, roleId } });
       }
     });
-    return { roleIds: body.roleIds };
+    this.permissionService.invalidatePermissionCache(id);
+    return { roleIds };
   }
 
   // ─── 用户-权限关联 ─────────
@@ -238,6 +246,7 @@ export class UsersController {
    * Body: { permissionIds: string[], grantType?: string }
    */
   @Put(':id/permissions')
+  @Permissions('users:authorize')
   async setUserPermissions(
     @Param('id') id: string,
     @Body() body: { permissionIds: string[]; grantType?: string },
@@ -252,6 +261,7 @@ export class UsersController {
         });
       }
     });
+    this.permissionService.invalidatePermissionCache(id);
     return { permissionIds: body.permissionIds };
   }
 
@@ -271,6 +281,7 @@ export class UsersController {
    * Body: { dimensionIds: string[] }
    */
   @Put(':id/dimensions')
+  @Permissions('users:authorize')
   async setUserDimensions(
     @Param('id') id: string,
     @Body() body: { dimensionIds: string[] },
@@ -284,6 +295,7 @@ export class UsersController {
         });
       }
     });
+    this.permissionService.invalidatePermissionCache(id);
     return { dimensionIds: body.dimensionIds };
   }
 

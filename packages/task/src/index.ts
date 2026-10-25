@@ -72,6 +72,7 @@ export type {
 
 export {
   DurableTaskLeaseLostError,
+  DurableTaskAbortedError,
   DurableTaskNotClaimableError,
   DurableTaskNotFoundError,
   DurableTaskRetryScheduledError,
@@ -83,6 +84,7 @@ export type {
   DurableTaskHandler,
   DurableWorkerHeartbeatScheduler,
   DurableWorkerRunResult,
+  DurableWorkerRunOptions,
   DurableWorkerRuntimeLogger,
   DurableWorkerRuntimeOptions,
 } from './durable-worker-runtime';
