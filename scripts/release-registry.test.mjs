@@ -7,6 +7,28 @@ const name = '@zucker-framework/core', version = '1.0.0', shasum = 'a'.repeat(40
 const metadata = { name, version, dist: { shasum }, 'dist-tags': { latest: version } };
 const response = (body, status = 200) => new Response(JSON.stringify(body), { status });
 
+test('distinguishes an unregistered package from a registered package missing the release version', async () => {
+  const absent = createRegistryReader('https://registry.npmjs.org/', { request: async () => response({}, 404) });
+  assert.equal(await absent.exists(name), false);
+  const registered = createRegistryReader('https://registry.npmjs.org/', {
+    request: async url => new URL(url).pathname.endsWith('/1.0.0')
+      ? response({}, 404) : response({ name, versions: { '0.9.0': { version: '0.9.0' } } }),
+  });
+  assert.equal(await registered.version(name, version), undefined);
+  assert.equal(await registered.exists(name), true);
+});
+
+test('package registration checks reject inaccessible or malformed metadata instead of treating it as absent', async () => {
+  for (const body of [null, [], { name: '@other/core', versions: {} }, { name }, { name, versions: [] }]) {
+    const reader = createRegistryReader('https://registry.npmjs.org/', { request: async () => response(body) });
+    await assert.rejects(reader.exists(name), /Unexpected registry package metadata/);
+  }
+  const denied = createRegistryReader('https://registry.npmjs.org/', { request: async () => response({}, 403) });
+  await assert.rejects(denied.exists(name), /failed \(403\)/);
+  const unavailable = createRegistryReader('https://registry.npmjs.org/', { request: async () => response({}, 503), sleep: async () => {} });
+  await assert.rejects(unavailable.exists(name), /failed \(503\)/);
+});
+
 test('reads tags through the native dist-tags endpoint rather than the delayed package index', async () => {
   const reader = createRegistryReader('https://registry.npmjs.org/', {
     request: async url => {

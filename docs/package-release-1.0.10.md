@@ -70,6 +70,14 @@ flow and establish this package's trusted-publisher binding for the existing
 GitHub repository, workflow and environment. Existing packages' bindings do not
 automatically grant publication rights to the new package.
 
+For this release the preparation job detects the new package before any upload,
+seals and retains the whole bundle, and skips automatic OIDC publishing. The
+maintainer then downloads that successful run's approved bundle and uses
+`--publish --auth session --bootstrap-new` with its original manifest checksum.
+After `fe-site` is published and its trusted publisher is established, dispatch
+the original prepared bundle through OIDC to complete the full fixed group.
+No manifest editing or failed-workflow exception is needed.
+
 Use the exact verified archive for that first upload and preserve its checksum.
 The publisher may skip an already uploaded version only when its bytes match;
 do not create another archive under the same version. Sequential uploads are not

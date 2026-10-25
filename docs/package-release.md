@@ -176,6 +176,28 @@ PRs run CI without publishing. Source checkout, CI artifacts, receipt and GitHub
 OIDC identity all identify the original push SHA, even when `main` advances.
 Publication runs are serialized and an active upload is never automatically cancelled.
 
+When the dry run finds package names that do not yet exist in the registry,
+preparation still seals and uploads the verified bundle, but the automatic OIDC
+job is skipped. This leaves a successful main run from which the maintainer can
+download the same approved bundle. No package is uploaded automatically before
+new-package ownership and trusted publishing can be established.
+
+For that first publication, use the existing maintainer npm login and the complete
+approved manifest; do not edit the release manifest down to a subset:
+
+```bash
+node scripts/publish-packages.mjs --bundle artifacts/approved-release \
+  --publish --auth session --bootstrap-new \
+  --manifest-sha256 <approved-sha256> --tag latest
+```
+
+This publishes only previously unregistered package names and writes
+`bootstrap-verification.json`, not the complete-release verification report.
+Establish their trusted publishers, then dispatch `publish.yml` with the original
+preparation run and checksum. The normal OIDC batch verifies and skips matching
+already-published bytes, and publishes the remaining packages. OIDC also rejects
+any still-unregistered package before starting an upload.
+
 Before pushing a package change:
 
 ```bash
