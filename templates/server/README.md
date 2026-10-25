@@ -9,10 +9,12 @@
 1. 使用与本模板匹配的固定 Framework 包，将 `workspace:*` 转为已核验版本；正常项目不依赖相邻源码目录。
 2. 安装本项目依赖。CLI `server-full` 已生成权限0600、带分别随机生成的 JWT_SECRET 和 CONFIG_ENCRYPTION_KEY 的私密 `.env`，直接填写该文件，不要覆盖它；手动复制模板时才复制 `.env.example` 并分别设置至少32字符、互不相同的 JWT_SECRET 与 CONFIG_ENCRYPTION_KEY。保存过加密连接设置后应保留原配置加密密钥，重启或包升级不能重新生成它。然后配置独立 PostgreSQL 地址、ACCOUNT_ORIGINS 和 WEB_URL。完整模板缺数据库会明确停止，不能用内存冒充账户持久化。
 3. 执行 `pnpm prisma:generate`、`pnpm db:migrate`，只对本项目数据库执行迁移。初始迁移创建表；后续凭据版本触发器确保后台改密也使旧会话和重置链接失效。不要用 schema push 代替迁移而遗漏触发器。
-4. 设置 SMTP 参数后执行 `pnpm dev`。Server 默认 `4200`，API 前缀 `/api`。没有邮件配置时公开注册/邮件操作明确返回不可用，不创建无法验证的账户。
+4. 执行 `pnpm dev`。Server 默认 `4200`，API 前缀 `/api`。SMTP 不是启动依赖；可以先用显式初始化的已验证管理员检查管理端登录。启用普通注册、邮箱验证或找回密码前再配置账户 `SMTP_*`，缺少配置时这些操作明确返回不可用。
 5. Web 默认 `4202`、Admin 默认 `4201`；ACCOUNT_ORIGINS 要包含实际浏览器 origin。开发代理保持同源请求，生产须明确 HTTPS 与转发配置。
 
 应用启动不创建默认账户、角色或固定密码。需要首位管理员时，在私密环境中设置 BOOTSTRAP_ADMIN_USERNAME/EMAIL/PASSWORD，显式执行 `pnpm account:admin`；使用满足正常用户名/密码策略的账户名。命令拒绝覆盖或提升已有账户，并补齐带读取权限的初始菜单而不覆盖用户已有菜单；成功后删除引导密码配置。该命令只供应用所有者受控初始化，不是公开注册入口。
+
+账户邮件和持久任务通知分别配置：账户邮件使用 `SMTP_*`；任务通知使用 `DELIVERY_PROVIDER=none|smtp|resend` 与 `DELIVERY_*`，默认不投递。配置一种不会自动启用另一种，字段见本项目 `.env.example`。
 
 ## 账户协议
 

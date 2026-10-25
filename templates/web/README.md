@@ -39,7 +39,7 @@ Plausible 填本网站设置页提供的当前脚本 URL；Vercel 填已启用 A
 
 结账归因使用 `readReferral` / `readBrowserReferral` 读取官方 cookie/global，再在服务端用 `referralMetadata` 重新校验。将白名单结果传给 `HostedCheckoutService.create({ ..., providerMetadata })`；不外传私有 `fulfillmentData`、任意浏览器 metadata 或原始 `atp` / `via` 参数。Affonso 有 Stripe/Creem 官方 metadata 协议；PromoteKit 已核对的是 Stripe 协议。当前 PayPal Orders 接口不接受任意 metadata。脚本加载本身不证明佣金归因成功。
 
-公开接口、官方协议和合成浏览器验收见 [fe-site](../../packages/fe-site/README.md)。新包当前是本地源码，需要不可变制品交付后再供独立消费者正式使用。
+安装后可查看本项目 `node_modules/@zucker-framework/fe-site/README.md` 和包内公开类型，核对所安装版本的接口及渠道协议；独立项目不需要 Framework 仓库中的 packages 目录。新包需要完成不可变制品交付后再供正式消费者使用。
 
 ## 购买与账单
 

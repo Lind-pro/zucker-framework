@@ -2,6 +2,8 @@
 
 本指南用于创建独立的 Framework 消费者。AI 开工前先读 [项目初始化技能](../.agents/skills/framework-project-bootstrap/SKILL.md) 和 [能力归属约束](architecture.md#新增能力的归属与接入)。新项目使用 Framework 的公开能力，业务代码和项目自己的约束属于新仓库。
 
+首次启动可先按[新 SaaS 落地手册](saas-quickstart.md)完成生成、数据库迁移、管理员、前端连接和首条业务；本页保留完整的制品与接入边界。
+
 **2026-10-24 状态：** Admin/Web/server-full已完成本地固定制品的独立初始化与运行验收：35个Framework包、13条真实迁移、98项持久契约及10类浏览器流程通过；真实公共配置补丁升级/回退保留消费者定制。新CLI与配套包尚未发布，不能把源码manifest版本或注册表旧同名版本当成这些新能力。真实供应商账号与生产部署仍需分别配置和验收。
 
 ## 1. 确定最小项目范围
@@ -57,7 +59,7 @@ pnpm dev
 1. 安装与该 CLI 资产匹配的固定包。本轮新增的持久刷新和管理权限契约尚未发布；验证当前源码时使用明确的本地固定 tarball/完整性与 lockfile，不把注册表同名版本冒充新 API。正式独立交付仍需对应不可变制品。
 2. 使用 CLI 新建的 `0600` 私密 `.env`；JWT_SECRET 与 CONFIG_ENCRYPTION_KEY 已分别独立随机生成且不打印。填写本项目 PostgreSQL `DATABASE_URL`、ACCOUNT_ORIGINS 与 WEB_URL，并补 SMTP；数据库/邮件凭据保持显式配置，不沿用另一个产品的账号或环境。不要用 `.env.example` 覆盖已生成的密钥。
 3. 执行 `pnpm prisma:generate` 和 `pnpm db:migrate`。迁移包含账户表和凭据版本触发器，不能用 schema push 省略迁移；生成 Client 不代表数据库已迁移。
-4. 配置 SMTP 后执行 `pnpm dev`。缺数据库会明确失败；邮件未配置时注册/邮件操作返回不可用，不产生假的验证成功。首次管理员由应用所有者按生成项目 README 显式执行 `pnpm account:admin`，启动没有默认账号或密码副作用。
+4. 执行 `pnpm dev`，缺数据库会明确失败。SMTP 不是启动依赖；首次管理员由应用所有者按生成项目 README 显式执行 `pnpm account:admin`，可先检查管理端登录，启动没有默认账号或密码副作用。启用普通注册/验证/找回前再配置账户 SMTP；缺少配置时邮件操作返回不可用。任务通知使用独立 `DELIVERY_*` 配置，不与账户邮件自动共用。
 5. 使用随项目提供的 ESLint 配置运行 `pnpm lint`；数据库集成检查按 README 的隔离测试要求执行。账户后端验证与生成项目安装、迁移、真实前端使用分别记录，不相互替代。
 
 完整 Server 将入口使用的 `dotenv` 声明为运行时依赖。生产裁剪开发依赖前仍需完成 Prisma Client 生成与应用编译，并保留生成后的 `dist`；`prisma`、`tsx` 和管理员初始化开发命令不属于仅安装生产依赖后的运行保证。
