@@ -35,6 +35,20 @@ export { OrderService, OrderNotFoundError } from './order.service';
 export type { Order, OrderStatus, CreateOrderParams } from './order.service';
 export { DatabaseOrderPersistence, ORDER_PERSISTENCE } from './order-persistence';
 export type { OrderPersistence } from './order-persistence';
+export { HostedCheckoutService } from './hosted-checkout/service';
+export { SubscriptionCycleService } from './subscription-lifecycle/service';
+export type { SubscriptionEntitlementBinding, SubscriptionCycleReceipt, SubscriptionCycleTransaction,
+  SubscriptionCyclePersistence, SubscriptionCycleInput } from './subscription-lifecycle/types';
+export { HostedCheckoutError } from './hosted-checkout/types';
+export type { HostedCheckoutMode, HostedCheckoutState, HostedCheckoutPaymentKind, HostedCheckoutJsonValue, HostedCheckoutOffer, HostedCheckoutOrder,
+  HostedCheckoutObservation, HostedCheckoutEvent, HostedCheckoutAdapter, HostedCheckoutTransaction,
+  HostedCheckoutPersistence, HostedCheckoutSelection, HostedCheckoutOptions } from './hosted-checkout/types';
+export { createStripeHostedCheckoutAdapter } from './hosted-checkout/stripe';
+export type { StripeHostedCheckoutOptions } from './hosted-checkout/stripe';
+export { createPayPalHostedCheckoutAdapter } from './hosted-checkout/paypal';
+export type { PayPalHostedCheckoutOptions } from './hosted-checkout/paypal';
+export { createCreemHostedCheckoutAdapter } from './hosted-checkout/creem';
+export type { CreemHostedCheckoutOptions } from './hosted-checkout/creem';
 
 // 挽回
 export { PaymentRecoveryService, friendlyErrorReason } from './recovery.service';
@@ -72,14 +86,45 @@ export {
 } from './providers/stripe';
 export type { StripeCheckoutObservation, StripePaymentIntentObservation } from './providers/stripe';
 export type { PaymentSettlementState } from './providers/payment-observation';
-export { PayPalPaymentTransport, observePayPalOrder, decodePayPalWebhookEvent, decodePayPalMoneyReturnedEvent } from './providers/paypal';
+export { createCreemAdapter, observeCreemCheckout, observeCreemTransaction, observeCreemSubscription,
+  observeCreemWebhook, verifyCreemWebhookEvent, CreemProtocolError } from './providers/creem';
+export type { CreemCheckoutAdapter } from './providers/creem';
+export type { CreemAdapterOptions, CreemCheckoutRequest, CreemCheckoutObservation, CreemTransactionObservation,
+  CreemSubscriptionObservation, CreemRefundObservation, CreemWebhookObservation } from './providers/creem-types';
+export { subscriptionPeriodKey } from './contract/subscription-observation';
+export type { SubscriptionPeriod, SubscriptionStatus, SubscriptionObservation } from './contract/subscription-observation';
+export { PayPalPaymentTransport, PayPalPaymentProtocolError, observePayPalOrder, decodePayPalWebhookEvent, decodePayPalMoneyReturnedEvent } from './providers/paypal';
 export type {
   PayPalPaymentTransportOptions,
+  PayPalSubscriptionCreateInput,
+  PayPalSubscriptionTransaction,
+  PayPalSubscriptionTransactionPage,
   PayPalCaptureRefundRequest,
   PayPalCaptureRefundResponse,
+  PayPalSaleRefundRequest,
   PayPalOrderRepresentation,
   PayPalOrderObservation,
   PayPalCaptureObservation,
   PayPalMoneyReturnedObservation,
   PayPalWebhookObservation,
 } from './providers/paypal';
+
+export { RefundProtocolError } from './refunds/types';
+export type { RefundAdapter, RefundCommand, RefundPaymentReference, RefundPaymentSource, RefundPaymentObservation,
+  RefundObservation, RefundWebhookEvent, RefundState } from './refunds/types';
+export { createStripeRefundAdapter } from './refunds/stripe';
+export type { StripeRefundOptions } from './refunds/stripe';
+export { createPayPalRefundAdapter } from './refunds/paypal';
+export type { PayPalRefundOptions } from './refunds/paypal';
+export { createCreemRefundAdapter } from './refunds/creem';
+export type { CreemRefundOptions } from './refunds/creem';
+
+export { SubscriptionProtocolError } from './subscriptions/types';
+export type { SubscriptionAdapter, SubscriptionDetails, SubscriptionPaidPeriod, SubscriptionPaidPeriodPage,
+  SubscriptionPaidReceipt, SubscriptionPaidReceiptPage, SubscriptionEvidenceIssue, SubscriptionInvoice, SubscriptionCancelMode } from './subscriptions/types';
+export { createStripeSubscriptionAdapter } from './subscriptions/stripe';
+export type { StripeSubscriptionOptions } from './subscriptions/stripe';
+export { createCreemSubscriptionAdapter } from './subscriptions/creem';
+export type { CreemSubscriptionOptions } from './subscriptions/creem';
+export { createPayPalSubscriptionAdapter, observePayPalSubscription } from './subscriptions/paypal';
+export type { PayPalSubscriptionOptions, PayPalSubscriptionPeriodReceipt } from './subscriptions/paypal';

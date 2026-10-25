@@ -38,3 +38,25 @@ cross-process locks, or exactly-once external event delivery.
 remaining value of the selected lots under the existing account lock, updates the cached balance
 and appends one journal entry on the supplied transaction. Repeating the command returns zero.
 The caller owns lot selection and refund/entitlement policy; consumed allocations remain intact.
+
+## Fenced credit expiry
+
+`BatchCreditLedger.expireInTransaction(tx, { accountId, lotIds, transactionData }, now)` expires only selected owned lots whose deadline has arrived, under the existing account lock. It re-reads each remaining amount, updates the canonical account and writes one journal row per newly expired lot on the supplied transaction. This lets a consumer include its active job lease fence and business state in the same commit. Duplicate or stale selections do not debit twice. The existing `expire()` scanner delegates to this method; it does not become a scheduler.
+
+Credit lots and periodic quota counters are distinct ledgers. `QuotaReservationService` and `QuotaCapacity` do not freeze credit lots or authorize spending a wallet. A consumer that requires monetary credit holds needs lot-aware hold allocation and consumption exclusion, not a counter reservation mapped into a balance field.
+
+## Wallet lot holds
+
+Configure `BatchCreditLedgerOptions.holds` with a `CreditLotHoldStore` on the same transaction/account-lock boundary as the existing lot and balance models. Without this optional port, existing ledger callers retain their behavior. With it, `consume()` excludes each lot's active held amount, including when it falls back from a preferred source. An unrelated `revokeUnused()` fails with `CreditLotHeldError` if its selected lots have active holds.
+
+- `hold(tx, { id, accountId, amount, lotIds, resourceType, resourceId, operationKey, transactionData })` reserves an exact positive integer from selected owned unexpired/unspent lots and moves available `balance` into `frozenBalance`. Every selected ID must belong to the account. It cannot borrow from other source lots.
+- `confirmHold(tx, { id, accountId, operationKey, transactionData, expiryTransactionData? })` revokes only this hold's remaining active allocations, reducing their lot remainder and frozen balance.
+- `releaseHold(tx, ...)` restores only remaining active allocations from frozen to available balance. It never refunds already-consumed credits.
+
+Each operation uses the supplied transaction and the common account lock, then the existing operation-receipt coordinator with a fixed hold phase and identity. The caller provides stable operation keys and transaction descriptions/references. The return value is `{ hold, changed }`; `hold.amount` remains the original amount, while `activeAmount`, `expiredAmount`, `revokedAmount` and `releasedAmount` sum to it. Replays do not repeat money/credit movements; an opposite terminal decision is a conflict. The optional `now` parameter is a caller-owned decision clock; by default settlement samples time after acquiring the account lock.
+
+Holds have no TTL. Unknown provider outcomes must not be resolved by automatically releasing a hold. Natural lot expiry moves active allocations into permanent expired evidence and reduces the corresponding frozen amount; it does not decide the hold's overall status. Confirmation/release first expires due source lots on the same transaction, so a late result cannot revive expired value. Expiry journals record the whole lot remainder and include `frozenBalanceBefore` / `frozenBalanceAfter` alongside available-balance changes. A refund-specific reconciliation must use its returned hold allocation totals rather than treating a whole-lot expiry journal as that refund's exclusive amount.
+
+Persist original allocation amounts, monotonic settled/expired amounts and immutable expiry evidence. The store's allocation update is an exact old-value CAS and its settlement is `HELD` to terminal CAS; a rejected write is not success. The consuming transaction must roll back receipts, allocation changes, balances and journal together on failure. Provider I/O belongs outside that transaction. Cash-to-credit conversion, source selection, refund authority and cash payment state remain consumer policy.
+
+When holds are configured, every stored frozen credit must have a matching active lot allocation. `CreditHoldMigrationRequiredError` explicitly refuses legacy unallocated freezing; the package does not guess its source or hide mismatches by clamping balances. Migrate/reconcile such accounts before enabling the port. The template enables the port for its canonical ledger and rejects inconsistent read projections as well. Total available plus frozen credit is bounded to the supported integer range, preserving headroom for a later full release.

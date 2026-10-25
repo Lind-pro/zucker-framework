@@ -67,6 +67,26 @@ describe('LocalFileStorage', () => {
     await expect(storage.delete('no-such-file.txt')).resolves.toBeUndefined();
   });
 
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+    'propagates real directory permission denial instead of reporting missing or deleted', async () => {
+      const key = 'protected/private.txt';
+      await storage.upload(Buffer.from('synthetic retained bytes'), key);
+      const directory = path.join(tmpDir, 'protected');
+      fs.chmodSync(directory, 0o000);
+      try {
+        await expect(storage.exists(key)).rejects.toMatchObject({ code: 'EACCES' });
+        await expect(storage.delete(key)).rejects.toMatchObject({ code: 'EACCES' });
+      } finally { fs.chmodSync(directory, 0o700); }
+      expect(await storage.exists(key)).toBe(true);
+      expect(fs.readFileSync(path.join(tmpDir, key), 'utf8')).toBe('synthetic retained bytes');
+    });
+
+  it('treats a non-directory ancestor as absent for lookup but does not report a successful delete', async () => {
+    await storage.upload(Buffer.from('synthetic file'), 'ancestor');
+    expect(await storage.exists('ancestor/child')).toBe(false);
+    await expect(storage.delete('ancestor/child')).rejects.toMatchObject({ code: 'ENOTDIR' });
+  });
+
   // ---- path traversal protection ----
 
   it('should reject path traversal with ../', async () => {

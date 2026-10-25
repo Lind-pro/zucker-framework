@@ -52,7 +52,7 @@ export class MenuController {
 
   /** GET /api/menu/all — 获取全部菜单列表（管理端用） */
   @Get('all')
-  @Permissions()
+  @Permissions('menu:query')
   async getAllMenus() {
     return this.db.model('menus').findMany({
       orderBy: { sortOrder: 'asc' },
@@ -61,7 +61,7 @@ export class MenuController {
 
   /** GET /api/menu/:id — 查询单个菜单 */
   @Get(':id')
-  @Permissions()
+  @Permissions('menu:query')
   async findOne(@Param('id') id: string) {
     return this.db.model('menus').findUnique({ where: { id } });
   }
@@ -69,14 +69,14 @@ export class MenuController {
   /** POST /api/menu — 创建菜单 */
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @Permissions()
+  @Permissions('menu:add')
   async create(@Body() body: Record<string, unknown>) {
     return this.db.model('menus').create({ data: body });
   }
 
   /** PUT /api/menu/:id — 更新菜单 */
   @Put(':id')
-  @Permissions()
+  @Permissions('menu:update')
   async update(@Param('id') id: string, @Body() body: Record<string, unknown>) {
     return this.db.model('menus').update({ where: { id }, data: body });
   }
@@ -84,7 +84,7 @@ export class MenuController {
   /** DELETE /api/menu/:id — 递归删除菜单及所有子菜单 */
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @Permissions()
+  @Permissions('menu:delete')
   async remove(@Param('id') id: string): Promise<void> {
     await this.db.$transaction(async (tx) => {
       // 递归收集所有后代菜单 ID
@@ -118,7 +118,7 @@ export class MenuController {
 
   /** PUT /api/menu/:id/sort — 更新菜单排序 */
   @Put(':id/sort')
-  @Permissions()
+  @Permissions('menu:update')
   async updateSort(
     @Param('id') id: string,
     @Body() body: { sortOrder: number },

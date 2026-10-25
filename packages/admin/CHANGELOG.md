@@ -1,5 +1,57 @@
 # @zucker-framework/admin
 
+## 1.0.10
+
+### Patch Changes
+
+- Connect the default form manager's create and edit actions to persistent form definitions. Supply
+  missing identity/empty fields on creation, expose the permission-protected PUT route, reject invalid
+  field shapes and map missing/unique records without treating failed writes as success.
+- Create and update a role's metadata and permission links in one transaction. Lock the role parent
+  before replacement or deletion, including empty permission sets, and evaluate sensitive changes
+  against the state read after that lock. Failed link writes now roll back metadata and new roles;
+  concurrent full replacements no longer combine grants.
+- Require explicit read and mutation permissions on default administrative controllers instead of allowing every authenticated account. Separate user/role authorization from ordinary edits, reject nested role relation writes and privileged role changes without authorization, invalidate permission caches after binding changes, and prevent notification creation from overwriting an existing template without update permission. Public health and configurable controller factories retain their existing contracts. Existing delegated admin roles must be assigned the appropriate resource actions explicitly.
+- Restore the default dictionary manager's persistent creation, item filtering and editing. Map
+  public item aliases to the existing text/ordinal/describe storage contract, preserve compatible
+  service inputs/outputs, and add permission-protected dictionary/item PUT endpoints with explicit
+  validation, not-found and conflict responses.
+- Route public package-root imports and requires to the existing matching ESM/CJS runtime and type artifacts. Previously, native ESM imports of these packages fell back to their CommonJS main entry, mixing auth/core provider classes with an application's ESM instances and breaking Nest dependency injection. Keep package.json metadata readable and preserve the existing main/module artifacts.
+
+  Add a native Node regression for both module formats that checks package resolution, shared auth/guard identity and an Admin/Nest composition using a synthetic memory adapter. This does not make mixed import/require copies of a dual package interchangeable and does not replace persistent consumer validation. No service implementation, guard registration or access policy is relaxed.
+
+  Use the CommonJS default export for eventemitter2 in config, dictionary and logging, with an explicit injection token referencing the original constructor. This fixes native ESM loading while retaining the shared Nest event emitter; no dependency is bundled or duplicated.
+
+- Accept only permission-definition metadata in the create/update HTTP endpoints. Keep memberships
+  behind their dedicated authorization operations, reject unsupported fields before persistence, and
+  preserve the permission identifier during metadata edits.
+- Validate user-role replacement input and serialize replacements through the owning user row before
+  deleting and inserting memberships. Concurrent replacements must not accidentally combine grants,
+  and failed writes retain the previous set. The Admin template exposes the existing assignment API
+  through an authorized, localized editor with isolated drafts and retryable failures.
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @zucker-framework/dictionary@1.0.10
+  - @zucker-framework/credit@1.0.10
+  - @zucker-framework/notification@1.0.10
+  - @zucker-framework/logging@1.0.10
+  - @zucker-framework/config@1.0.10
+  - @zucker-framework/form@1.0.10
+  - @zucker-framework/auth@1.0.10
+  - @zucker-framework/common@1.0.10
+  - @zucker-framework/crud@1.0.10
+  - @zucker-framework/ai@1.0.10
+  - @zucker-framework/core@1.0.10
+
 ## 1.0.8
 
 ### Patch Changes

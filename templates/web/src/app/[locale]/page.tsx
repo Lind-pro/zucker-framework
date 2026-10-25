@@ -1,3 +1,4 @@
+import { AccountLink } from "@/components/AccountLink";
 import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
 import { ArrowRight, Zap, Shield, Puzzle } from "lucide-react";
@@ -23,13 +24,13 @@ export default function HomePage() {
             {t("heroDescription")}
           </p>
           <div className="flex items-center justify-center gap-4">
-            <Link
+            <AccountLink
               href="/register"
               className="inline-flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white px-8 py-3 rounded-lg font-medium transition-colors"
             >
               {t("getStarted")}
               <ArrowRight className="w-4 h-4" />
-            </Link>
+            </AccountLink>
             <Link
               href="#features"
               className="inline-flex items-center gap-2 border border-[var(--color-border)] hover:bg-[var(--color-card)] px-8 py-3 rounded-lg font-medium transition-colors"
@@ -68,13 +69,13 @@ export default function HomePage() {
           <p className="text-lg text-[var(--color-muted)] mb-8">
             {t("ctaDescription")}
           </p>
-          <Link
+          <AccountLink
             href="/register"
             className="inline-flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white px-8 py-3 rounded-lg font-medium transition-colors"
           >
             {t("ctaButton")}
             <ArrowRight className="w-4 h-4" />
-          </Link>
+          </AccountLink>
         </div>
       </section>
     </div>

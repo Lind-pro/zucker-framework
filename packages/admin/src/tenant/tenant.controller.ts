@@ -50,7 +50,7 @@ interface PageResult<T> {
 
 @Controller('tenant')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
-@Permissions()
+@Permissions('tenant:query')
 export class TenantManagementController {
   private readonly logger = new Logger(TenantManagementController.name);
 
@@ -80,6 +80,7 @@ export class TenantManagementController {
    */
   @Post()
   @HttpCode(HttpStatus.CREATED)
+  @Permissions('tenant:add')
   create(@Body() body: CreateTenantRequest): TenantRecord {
     return this.tenantStore.create(body);
   }
@@ -88,6 +89,7 @@ export class TenantManagementController {
    * PUT /tenant/:id — 更新租户
    */
   @Put(':id')
+  @Permissions('tenant:update')
   update(
     @Param('id') id: string,
     @Body() body: UpdateTenantRequest,
@@ -104,6 +106,7 @@ export class TenantManagementController {
    */
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @Permissions('tenant:delete')
   remove(@Param('id') id: string): void {
     const deleted = this.tenantStore.delete(id);
     if (!deleted) {

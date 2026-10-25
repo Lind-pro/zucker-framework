@@ -282,6 +282,7 @@ export type { RefreshTokenClaims, RefreshTokenPair, RefreshTokenOptions, Refresh
 
 // Durable sessions and HttpOnly refresh-cookie transport
 export { PersistentSessionService } from './session/persistent-session.service';
+export { PersistentSessionRefreshTokenStore } from './session/persistent-refresh-token-store';
 export type {
   PersistentSession,
   PersistentSessionOptions,
@@ -342,3 +343,9 @@ export { OneTimeTicketService, DatabaseOneTimeTicketStore, OneTimeTicketError } 
 export type { OneTimeTicketRecord, OneTimeTicketStore } from './one-time-ticket';
 export type { ThirdPartyAccountOptions, ThirdPartyBindRecord } from './services/third-party-account.service';
 export type { PermissionImportOptions, PermissionImportRecord } from './services/permission.service';
+
+export { GoogleIdTokenVerifier, GoogleIdTokenError } from './google-id-token';
+export type { GoogleIdTokenVerifierOptions, GoogleIdTokenExpectation, GoogleIdTokenFailure, VerifiedGoogleIdentity } from './google-id-token';
+export { OAuthProofService, OAuthProofError } from './oauth-proof';
+export type { OAuthProofOptions, OAuthProofContext, OAuthProofRecord, VerifiedOAuthIdentity } from './oauth-proof';
+export type { ThirdPartyBindingRequest, ThirdPartyBindingProofInput } from './services/third-party-account.service';

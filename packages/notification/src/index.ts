@@ -106,6 +106,9 @@ export type {
   NotificationRetryPolicy,
 } from './durable-delivery';
 export { InMemoryDurableNotificationRepository } from './in-memory-durable-delivery.repository';
+export { PostgresNotificationDeliveryRepository } from './postgres-durable-delivery.repository';
+export type { NotificationSqlClient } from './postgres-durable-delivery.repository';
+export { notificationDeliverySchemaSql } from './postgres-delivery-schema';
 export { DurableNotificationWorker } from './durable-notification-worker';
 export type {
   DurableNotificationWorkerOptions,

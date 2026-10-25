@@ -20,7 +20,7 @@ import { JwtAuthGuard, PermissionsGuard, Permissions } from '@zucker-framework/a
 const SYSTEM_SCOPE = 'system';
 
 @UseGuards(JwtAuthGuard, PermissionsGuard)
-@Permissions()
+@Permissions('config:query')
 @Controller('config')
 export class ConfigController {
   constructor(private readonly configService: ConfigService) {}
@@ -41,6 +41,7 @@ export class ConfigController {
    */
   @Put()
   @HttpCode(HttpStatus.OK)
+  @Permissions('config:update')
   async setAll(
     @Body() values: Record<string, unknown>,
   ): Promise<{ updated: number }> {

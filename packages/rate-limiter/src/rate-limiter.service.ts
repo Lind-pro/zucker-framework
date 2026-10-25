@@ -13,8 +13,7 @@ import {
 } from 'rate-limiter-flexible';
 import { BusinessException, NotFoundException } from '@zucker-framework/core';
 import { createHmac } from 'node:crypto';
-import type Redis from 'ioredis';
-import type { RedisOptions } from 'ioredis';
+import type { Redis, RedisOptions } from 'ioredis';
 
 type RateLimiterUnion = RateLimiterMemory | RateLimiterRedis;
 

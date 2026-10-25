@@ -23,6 +23,18 @@ const access = option('--access') ?? process.env.PACKAGE_ACCESS ?? 'public';
 const manifestPath = join(bundleDir, 'release-manifest.json');
 const auth = option('--auth') ?? 'auto';
 if (!['auto', 'session', 'token', 'oidc'].includes(auth)) throw new Error('Unknown publishing authentication mode');
+const bootstrapNew = args.includes('--bootstrap-new');
+if (bootstrapNew && (dryRun || planOnly || auth !== 'session')) {
+  throw new Error('--bootstrap-new requires --publish --auth session');
+}
+const newPackagesReport = option('--new-packages-report');
+const hasNewPackagesReport = args.some(arg => arg === '--new-packages-report' || arg.startsWith('--new-packages-report='));
+if (hasNewPackagesReport && (!newPackagesReport || newPackagesReport.startsWith('--') || !dryRun || planOnly)) {
+  throw new Error('--new-packages-report requires a path and a dry run');
+}
+if (newPackagesReport && existsSync(resolve(rootDir, newPackagesReport))) {
+  throw new Error('Refusing to overwrite an existing new-packages report');
+}
 
 function option(name) {
   const exactIndex = args.indexOf(name);
@@ -211,7 +223,29 @@ try {
     }
   }
 
-  for (const artifact of artifacts) {
+  const newPackages = new Set();
+  if (newPackagesReport || bootstrapNew || authentication === 'oidc') {
+    // An absent target version is normal for every release. Only a confirmed
+    // missing package index requires maintainer bootstrap; query errors fail closed.
+    for (let index = 0; index < artifacts.length; index += 6) {
+      const batch = artifacts.slice(index, index + 6);
+      const existing = await Promise.all(batch.map(artifact =>
+        alreadyPublished.has(`${artifact.name}@${artifact.version}`)
+          ? true : registryReader.exists(artifact.name)));
+      existing.forEach((exists, offset) => { if (!exists) newPackages.add(batch[offset].name); });
+    }
+  }
+  if (newPackagesReport) {
+    writeFileSync(resolve(rootDir, newPackagesReport), `${JSON.stringify({ schemaVersion: 1,
+      newPackages: [...newPackages] }, null, 2)}\n`, { flag: 'wx' });
+  }
+  if (!dryRun && authentication === 'oidc' && newPackages.size) {
+    throw new Error(`Maintainer bootstrap required before OIDC upload: ${[...newPackages].join(', ')}`);
+  }
+  const selectedArtifacts = bootstrapNew
+    ? artifacts.filter(artifact => newPackages.has(artifact.name)) : artifacts;
+
+  for (const artifact of selectedArtifacts) {
     const packageId = `${artifact.name}@${artifact.version}`;
     if (alreadyPublished.has(packageId)) {
       process.stdout.write(`Skipping already published immutable artifact ${packageId}\n`);
@@ -244,15 +278,17 @@ try {
     // not leave unrelated packages unsubmitted. Only reads are retried.
     // A matching existing tarball does not prove the requested dist-tag still
     // selects it. Check the entire batch, including packages skipped on retry.
-    for (let index = 0; index < artifacts.length; index += 6) {
-      await Promise.all(artifacts.slice(index, index + 6).map(async (artifact) => {
+    for (let index = 0; index < selectedArtifacts.length; index += 6) {
+      await Promise.all(selectedArtifacts.slice(index, index + 6).map(async (artifact) => {
         await registryReader.verifyVersion(artifact.name, artifact.version, artifact.sha1);
         await registryReader.verifyTag(artifact.name, artifact.version, distTag);
       }));
     }
-    writeFileSync(join(bundleDir, 'registry-verification.json'), `${JSON.stringify({ sourceCommit: manifest.sourceCommit,
+    writeFileSync(join(bundleDir, bootstrapNew ? 'bootstrap-verification.json' : 'registry-verification.json'), `${JSON.stringify({
+      ...(bootstrapNew ? { schemaVersion: 1, mode: 'bootstrap-new', fullReleaseComplete: false } : {}),
+      sourceCommit: manifest.sourceCommit,
       manifestSha256: sha256(manifestPath), registry, distTag,
-      packages: artifacts.map(({ name, version, sha1: digest }) => ({ name, version, sha1: digest })) }, null, 2)}\n`);
+      packages: selectedArtifacts.map(({ name, version, sha1: digest }) => ({ name, version, sha1: digest })) }, null, 2)}\n`);
   }
 } finally {
   rmSync(npmConfigDirectory, { recursive: true, force: true });

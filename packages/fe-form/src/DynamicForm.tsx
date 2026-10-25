@@ -2,6 +2,12 @@ import { Form, Button, Spin, Alert, Row, Col } from 'antd';
 import type { FormDefinition, FieldOption } from './types';
 import { DynamicFormField } from './DynamicFormField';
 import { useFormDefinition } from './useFormDefinition';
+import {
+  FormMessagesContext,
+  resolveFormMessages,
+  useFormMessages,
+  type DynamicFormMessages,
+} from './messages';
 
 export interface DynamicFormProps {
   /** 从 API 加载表单定义（与 definition 二选一）*/
@@ -12,6 +18,8 @@ export interface DynamicFormProps {
   onFinish: (values: Record<string, unknown>) => Promise<void>;
   layout?: 'vertical' | 'horizontal' | 'inline';
   submitText?: string;
+  /** Instance-local interface translations; omitted messages retain the existing defaults. */
+  messages?: Partial<DynamicFormMessages>;
   /** 加载远程字典选项（ENUM 字段 extra.dictCode 存在时使用）*/
   fetchDictItems?: (dictCode: string) => Promise<FieldOption[]>;
 }
@@ -21,10 +29,11 @@ function FormContent({
   initialValues,
   onFinish,
   layout = 'vertical',
-  submitText = '提交',
+  submitText,
   fetchDictItems,
-}: Omit<DynamicFormProps, 'formId'> & { definition: FormDefinition }) {
+}: Omit<DynamicFormProps, 'formId' | 'messages'> & { definition: FormDefinition }) {
   const [form] = Form.useForm();
+  const messages = useFormMessages();
   const columns = definition.layout?.columns ?? 1;
 
   return (
@@ -44,7 +53,7 @@ function FormContent({
       </Row>
       <Form.Item>
         <Button type="primary" htmlType="submit">
-          {submitText}
+          {submitText ?? messages.submitText}
         </Button>
       </Form.Item>
     </Form>
@@ -52,22 +61,27 @@ function FormContent({
 }
 
 export function DynamicForm(props: DynamicFormProps) {
-  const { formId, definition: propDefinition, ...rest } = props;
+  const { formId, definition: propDefinition, messages: overrides, ...rest } = props;
+  const messages = resolveFormMessages(overrides);
 
   const { definition: loadedDefinition, loading, error } = useFormDefinition(formId);
   const definition = propDefinition ?? loadedDefinition;
 
   if (loading) {
-    return <Spin description="加载表单中..." />;
+    return <Spin description={messages.loadingText} />;
   }
 
   if (error) {
-    return <Alert type="error" title={`加载表单失败：${error}`} />;
+    return <Alert type="error" title={`${messages.loadFailedText}${error}`} />;
   }
 
   if (!definition) {
     return null;
   }
 
-  return <FormContent definition={definition} {...rest} />;
+  return (
+    <FormMessagesContext.Provider value={messages}>
+      <FormContent definition={definition} {...rest} />
+    </FormMessagesContext.Provider>
+  );
 }

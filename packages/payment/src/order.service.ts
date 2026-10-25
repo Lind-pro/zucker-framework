@@ -72,7 +72,9 @@ export class OrderService {
   private async initiatePayment(order: Order, payment: CreatePaymentInput): Promise<Order> {
     // Unknown provider outcomes remain created for reconciliation; never automatically re-charge.
     const session = await this.providers.get(order.providerId).createPayment(payment);
-    await this.transition(order.id, ['created'], 'paying', { paymentIntentId: session.providerRef });
+    await this.transition(order.id, ['created'], 'paying', {
+      paymentIntentId: session.providerRef,
+    });
     return this.getOrder(order.id);
   }
 
@@ -113,8 +115,12 @@ export class OrderService {
       });
     } else if (decision.next === 'failed' || decision.next === 'canceled') {
       await this.transition(orderId, [from], 'failed');
-    } else if (decision.next === 'refunded' || decision.next === 'partially_refunded') {
+    } else if (decision.next === 'refunded') {
       await this.transition(orderId, [from], 'refunded', { refundedAt: new Date() });
+    } else if (decision.next === 'partially_refunded') {
+      // Legacy persistence has no partial-refund state or cumulative refund ledger.
+      // Some money remains paid; do not claim a full refund or introduce a new persisted enum.
+      await this.transition(orderId, [from], 'paid', { paymentId: paymentRef, paidAt: new Date() });
     }
     // created / authorized / unknown：仍在途，保持当前状态等待对账
   }
@@ -126,6 +132,7 @@ export class OrderService {
   ): Promise<{ refundRef: string; state: SettlementState }> {
     const order = await this.getOrder(orderId);
     if (!order.paymentId) throw new Error(`订单 "${orderId}" 缺少 paymentId`);
+    const partial = options.money === undefined ? false : isPartialRefund(options.money, order);
     await this.transition(orderId, ['paid'], 'refunding');
     const result = await this.providers.get(order.providerId).refund({
       providerRef: order.paymentId,
@@ -133,7 +140,11 @@ export class OrderService {
       reason: options.reason,
       idempotencyKey,
     });
-    if (result.state === 'refunded') {
+    if (result.state === 'partially_refunded' || (result.state === 'refunded' && partial)) {
+      await this.transition(orderId, ['refunding'], 'paid');
+      // A completed individual refund is not aggregate proof that the original payment is fully refunded.
+      return { ...result, state: 'partially_refunded' };
+    } else if (result.state === 'refunded') {
       await this.transition(orderId, ['refunding'], 'refunded', { refundedAt: new Date() });
     } else if (result.state === 'failed') {
       await this.transition(orderId, ['refunding'], 'paid');
@@ -190,4 +201,30 @@ export class OrderService {
     );
     if (!changed) throw new Error(`订单 "${id}" 不存在或状态已变化，无法转换为 ${to}`);
   }
+}
+
+/** Compare decimal strings exactly without imposing Stripe's minor-unit rules on every provider. */
+function isPartialRefund(
+  money: CreatePaymentInput['money'],
+  order: Pick<Order, 'amount' | 'currency'>,
+): boolean {
+  if (!money || money.currency !== order.currency || !/^[A-Z]{3}$/.test(money.currency)) {
+    throw new Error('Refund currency must match the order currency');
+  }
+  const parts = (value: unknown): [string, string] => {
+    if (typeof value !== 'string' || !/^\d+(?:\.\d+)?$/.test(value) || !/[1-9]/.test(value)) {
+      throw new Error('Refund and order amounts must be positive decimal strings');
+    }
+    const [whole, fraction = ''] = value.split('.');
+    return [whole.replace(/^0+(?=\d)/, ''), fraction.replace(/0+$/, '')];
+  };
+  const [requested, requestedFraction] = parts(money.amount),
+    [total, totalFraction] = parts(order.amount);
+  const decimals = Math.max(requestedFraction.length, totalFraction.length);
+  const left = `${requested}.${requestedFraction.padEnd(decimals, '0')}`;
+  const right = `${total}.${totalFraction.padEnd(decimals, '0')}`;
+  if (requested.length > total.length || (requested.length === total.length && left > right)) {
+    throw new Error('Refund amount must not exceed the original order amount');
+  }
+  return requested.length < total.length || left < right;
 }

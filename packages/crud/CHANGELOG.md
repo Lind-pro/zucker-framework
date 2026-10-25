@@ -1,5 +1,14 @@
 # @zucker-framework/crud
 
+## 1.0.10
+
+### Patch Changes
+
+- Updated dependencies
+  - @zucker-framework/cache@1.0.10
+  - @zucker-framework/core@1.0.10
+  - @zucker-framework/event@1.0.10
+
 ## 1.0.9
 
 ### Patch Changes

@@ -10,7 +10,7 @@ import { PiiFilter } from './pii-filter';
 import { HTTP_COMPLETION_OBSERVATION, HTTP_ACCESS_CAPTURED } from './http-request-observation.middleware';
 import type { AccessLogService, OperationLogService } from './persistent-logs';
 
-function setup() {
+function setup(capture: { captureParameters?: boolean; captureResults?: boolean } = {}) {
   function handler() {}
   class RecordsController {}
   Reflect.defineMetadata(
@@ -45,12 +45,21 @@ function setup() {
     new PiiFilter({ sensitiveFields: ['privateDocument'] }),
     access as unknown as AccessLogService,
     operation as unknown as OperationLogService,
-    { retainClientIp: true },
+    { retainClientIp: true, ...capture },
   );
   return { context, access, operation, interceptor, events };
 }
 
 describe('persistent HTTP audit capture', () => {
+  it('keeps request and response data out of all audit sinks when the application disables capture', async () => {
+    const { interceptor, context, access, operation, events } = setup({ captureParameters: false, captureResults: false });
+    const response = { id: 'r1', value: 'private-configuration-value' };
+    expect(await lastValueFrom(interceptor.intercept(context, { handle: () => of(response) }))).toBe(response);
+    expect(access.log).toHaveBeenCalledWith(expect.objectContaining({ parameters: undefined, result: undefined }), expect.anything());
+    const sinks = JSON.stringify([access.log.mock.calls, operation.log.mock.calls, events.access.mock.calls, events.operation.mock.calls]);
+    expect(sinks).not.toContain('private-configuration-value');
+    expect(sinks).not.toContain('privateDocument');
+  });
   it('persists each log kind once with the configured redaction and audit IP policy', async () => {
     const { interceptor, context, access, operation, events } = setup();
     const result = { id: 'r1', privateDocument: 'secret-document' };

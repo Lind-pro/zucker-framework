@@ -1,0 +1,138 @@
+/** Consumer navigation policy; applied only by the explicit administrator setup command. */
+export const starterAdminMenus = [
+  { key: 'dashboard', name: '概览', path: '/dashboard', permission: 'dashboard:query' },
+  { key: 'identity', name: '用户与权限' },
+  { key: 'users', name: '用户', path: '/users', parent: 'identity', permission: 'users:query' },
+  { key: 'roles', name: '角色', path: '/roles', parent: 'identity', permission: 'roles:query' },
+  {
+    key: 'permissions',
+    name: '权限',
+    path: '/permissions',
+    parent: 'identity',
+    permission: 'permissions:query',
+  },
+  {
+    key: 'api-keys',
+    name: 'API 密钥',
+    path: '/records/api-keys',
+    parent: 'identity',
+    permission: 'api-keys:query',
+  },
+  { key: 'site', name: '内容与站点' },
+  {
+    key: 'content',
+    name: '页面、博客与文档',
+    path: '/content',
+    parent: 'site',
+    permission: 'content:manage',
+  },
+  {
+    key: 'categories',
+    name: '博客分类',
+    path: '/content/categories',
+    parent: 'site',
+    permission: 'content:manage',
+  },
+  {
+    key: 'config',
+    name: '站点配置',
+    path: '/config',
+    parent: 'site',
+    permission: 'content:manage',
+  },
+  { key: 'commerce', name: '交易与额度' },
+  {
+    key: 'orders',
+    name: '订单',
+    path: '/records/orders',
+    parent: 'commerce',
+    permission: 'billing:query',
+  },
+  {
+    key: 'subscriptions',
+    name: '订阅',
+    path: '/records/subscriptions',
+    parent: 'commerce',
+    permission: 'billing:query',
+  },
+  { key: 'credit', name: '积分', path: '/credit', parent: 'commerce', permission: 'credit:query' },
+  {
+    key: 'refunds',
+    name: '退款管理',
+    path: '/refunds',
+    parent: 'commerce',
+    permission: 'billing:refund',
+  },
+  { key: 'operations', name: '运行与审计' },
+  {
+    key: 'jobs',
+    name: '任务',
+    path: '/records/jobs',
+    parent: 'operations',
+    permission: 'jobs:query',
+  },
+  {
+    key: 'deliveries',
+    name: '通知投递',
+    path: '/records/deliveries',
+    parent: 'operations',
+    permission: 'notification:query',
+  },
+  {
+    key: 'files',
+    name: '文件资产',
+    path: '/records/files',
+    parent: 'operations',
+    permission: 'files:query',
+  },
+  {
+    key: 'access-log',
+    name: '访问日志',
+    path: '/access-log',
+    parent: 'operations',
+    permission: 'logging:query',
+  },
+  {
+    key: 'operation-logs',
+    name: '操作审计',
+    path: '/records/operation-logs',
+    parent: 'operations',
+    permission: 'logging:query',
+  },
+  {
+    key: 'system-monitor',
+    name: '健康检查',
+    path: '/system-monitor',
+    parent: 'operations',
+    permission: 'dashboard:query',
+  },
+  { key: 'system', name: '系统设置' },
+  {
+    key: 'connections',
+    name: '连接配置',
+    path: '/connections',
+    parent: 'system',
+    permission: 'config:query',
+  },
+  { key: 'menu', name: '菜单', path: '/menu', parent: 'system', permission: 'menu:query' },
+  {
+    key: 'dictionary',
+    name: '数据字典',
+    path: '/dictionary',
+    parent: 'system',
+    permission: 'dictionary:query',
+  },
+  {
+    key: 'form',
+    name: '动态表单',
+    path: '/form-engine',
+    parent: 'system',
+    permission: 'form:query',
+  },
+] satisfies Array<{
+  key: string;
+  name: string;
+  path?: string;
+  parent?: string;
+  permission?: string;
+}>;

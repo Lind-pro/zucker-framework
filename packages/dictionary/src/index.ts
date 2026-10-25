@@ -1,12 +1,14 @@
 export interface DictionaryItem {
   id: string;
   dictId: string;
+  /** Compatibility alias for text on canonical storage. */
   name: string;
   value: string;
   text: string;
   ordinal: number;
   parentId: string | null;
   path: string;
+  /** Compatibility alias for ordinal on canonical storage. */
   sortIndex: number;
   /** Item description / comments */
   description?: string;
@@ -105,6 +107,7 @@ export function dictionaryItemToJSON(item: DictionaryItem): Record<string, unkno
 export { DictionaryService, DICT_CHANGED_EVENT, DICT_CHANGED_TOPIC } from './dictionary.service';
 export type { DictChangePayload, DictionaryDetail } from './dictionary.service';
 export { DictionaryItemService } from './dictionary-item.service';
+export type { DictionaryItemInput, DictionaryItemUpdate } from './dictionary-item-data';
 export type { TreeNode } from './dictionary-item.service';
 export { DictField, DICT_FIELD_KEY, DICT_FIELDS_KEY, getDictFields, getDictFieldOptions } from './dict-field.decorator';
 export type { DictFieldOptions, DictFieldEntry } from './dict-field.decorator';

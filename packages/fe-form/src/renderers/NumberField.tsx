@@ -2,13 +2,15 @@ import React from 'react';
 import { Form, InputNumber } from 'antd';
 import type { FieldDefinition } from '../types';
 import { toAntdRules } from '../validators';
+import { useFormMessages } from '../messages';
 
 interface Props {
   field: FieldDefinition;
 }
 
 export function NumberField({ field }: Props) {
-  const rules = toAntdRules(field.validators, field.required);
+  const messages = useFormMessages();
+  const rules = toAntdRules(field.validators, field.required, messages.requiredText);
 
   return (
     <Form.Item name={field.key} label={field.name} rules={rules} tooltip={field.description}>

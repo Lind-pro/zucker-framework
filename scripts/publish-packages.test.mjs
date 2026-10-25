@@ -77,7 +77,11 @@ globalThis.fetch = async (url) => {
   const parsed = new URL(url);
   if (parsed.hostname !== 'registry.npmjs.org' || !parsed.searchParams.has('release_check')) throw new Error('Unexpected registry request');
   fs.appendFileSync(${JSON.stringify(networkLog)}, String(url) + '\\n');
-  if (!fs.existsSync(${JSON.stringify(published)})) return new Response('{}', { status: 404 });
+  if (!fs.existsSync(${JSON.stringify(published)})) {
+    if (process.env.ZUCKER_TEST_PACKAGE_EXISTS === '1' && decodeURIComponent(parsed.pathname) === '/@zucker-framework/publish-fixture')
+      return new Response(JSON.stringify({ name: '@zucker-framework/publish-fixture', versions: {} }));
+    return new Response('{}', { status: 404 });
+  }
   if (parsed.pathname.endsWith('/dist-tags')) return new Response(JSON.stringify({ latest: process.env.ZUCKER_TEST_TAG_VERSION || '1.0.0' }));
   return new Response(JSON.stringify({ name: '@zucker-framework/publish-fixture', version: '1.0.0', dist: { shasum: process.env.ZUCKER_TEST_DIGEST || ${JSON.stringify(digest)} },
     'dist-tags': { latest: process.env.ZUCKER_TEST_TAG_VERSION || '1.0.0' } }));
@@ -180,6 +184,7 @@ test('OIDC publishing skips whoami and removes token fallback credentials', () =
       GITHUB_ACTIONS: 'true', GITHUB_SHA: f.manifest.sourceCommit,
       ACTIONS_ID_TOKEN_REQUEST_URL: 'https://token.actions.githubusercontent.com/fixture',
       ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'synthetic-oidc-request', NODE_AUTH_TOKEN: 'must-not-be-used',
+      ZUCKER_TEST_PACKAGE_EXISTS: '1',
     });
     assert.equal(result.status, 0, result.stderr);
     const calls = readFileSync(f.log, 'utf8').trim().split('\n').map(JSON.parse);
@@ -259,7 +264,11 @@ else if (args[0] === 'publish') {
 const entries = ${JSON.stringify(entries)};
 globalThis.fetch = async url => {
   const uploaded = JSON.parse(fs.readFileSync(${JSON.stringify(state)}, 'utf8'));
-  if (!uploaded.length) return new Response('{}', { status: 404 });
+  if (!uploaded.length) {
+    const existing = entries.find(p => decodeURIComponent(new URL(url).pathname) === '/' + p.name);
+    return existing ? new Response(JSON.stringify({ name: existing.name, versions: {} }))
+      : new Response('{}', { status: 404 });
+  }
   // Fail immediately if the publisher stalls on a read between the two uploads.
   if (uploaded.length !== entries.length) return new Response('{}', { status: 403 });
   const pathname = decodeURIComponent(new URL(url).pathname);
@@ -293,6 +302,158 @@ test('rejects archive traversal, modified checksums and mismatched registry sett
     writeFileSync(f.manifestFile, JSON.stringify(original));
     assert.match(f.run().stderr, /Checksum mismatch/);
     assert.match(f.run(['--registry', 'https://user:secret@registry.example.com']).stderr, /must not contain credentials/);
+    assert.equal(existsSync(f.log), false);
+  } finally { rmSync(f.directory, { recursive: true, force: true }); }
+});
+
+function mixedPackageFixture() {
+  const f = cleanFixture();
+  const name = '@zucker-framework/new-fixture', version = '1.0.0';
+  const packageDir = join(f.directory, 'package');
+  const packed = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8'));
+  writeFileSync(join(packageDir, 'package.json'), JSON.stringify({ ...packed, name }));
+  writeFileSync(join(packageDir, 'THIRD_PARTY_NOTICES'), `${name}\nNo bundled dependencies.\n`);
+  const filename = 'zucker-framework-new-fixture-1.0.0.tgz';
+  execFileSync('tar', ['-czf', join(f.directory, filename), '-C', f.directory, 'package']);
+  f.manifest.packages.push({ name, version, filename,
+    sha256: createHash('sha256').update(readFileSync(join(f.directory, filename))).digest('hex') });
+  writeFileSync(f.manifestFile, JSON.stringify(f.manifest));
+  const hash = createHash('sha256').update(readFileSync(f.manifestFile)).digest('hex');
+  writeFileSync(join(f.directory, 'release-receipt.json'), JSON.stringify(releaseReceipt(f.manifest.sourceCommit, hash)));
+  const entries = f.manifest.packages.map(p => ({ ...p, tarball: join(f.directory, p.filename),
+    shasum: createHash('sha1').update(readFileSync(join(f.directory, p.filename))).digest('hex') }));
+  const state = join(f.directory, 'uploaded.json');
+  writeFileSync(state, '[]');
+  const config = join(f.directory, 'user.npmrc');
+  writeFileSync(config, 'registry=https://registry.npmjs.org/\n');
+  writeFileSync(join(f.directory, 'bin/npm'), `#!/usr/bin/env node
+const fs = require('node:fs'), args = process.argv.slice(2), entries = ${JSON.stringify(entries)};
+fs.appendFileSync(process.env.ZUCKER_NPM_TEST_LOG, JSON.stringify(args) + '\\n');
+if (args[0] === '--version') console.log('11.19.1');
+else if (args[0] === 'whoami') console.log('jetlinks');
+else if (args[0] === 'publish') {
+  const entry = entries.find(p => p.tarball === args[1]);
+  if (!entry) throw new Error('Unexpected archive');
+  if (!args.includes('--dry-run')) {
+    const uploaded = JSON.parse(fs.readFileSync(${JSON.stringify(state)}, 'utf8'));
+    if (uploaded.includes(entry.name)) throw new Error('Unexpected repeated upload');
+    uploaded.push(entry.name); fs.writeFileSync(${JSON.stringify(state)}, JSON.stringify(uploaded));
+  }
+} else throw new Error('Unexpected npm command');
+`, { mode: 0o755 });
+  const preload = join(f.directory, 'mixed-registry.mjs');
+  writeFileSync(preload, `import fs from 'node:fs';
+const entries = ${JSON.stringify(entries)};
+globalThis.fetch = async url => {
+  const parsed = new URL(url), pathname = decodeURIComponent(parsed.pathname);
+  if (parsed.hostname !== 'registry.npmjs.org' || !parsed.searchParams.has('release_check')) throw new Error('Unexpected registry request');
+  const entry = entries.find(p => pathname.includes(p.name));
+  if (!entry) throw new Error('Unexpected package');
+  const uploaded = JSON.parse(fs.readFileSync(${JSON.stringify(state)}, 'utf8'));
+  const published = uploaded.includes(entry.name);
+  const metadata = { name: entry.name, version: entry.version, dist: { shasum: entry.shasum } };
+  if (pathname === '/' + entry.name) {
+    if (entry.name === ${JSON.stringify(name)} && process.env.ZUCKER_TEST_INDEX_DENIED === '1') return new Response('{}', { status: 403 });
+    return published || entry.name === entries[0].name
+      ? new Response(JSON.stringify({ name: entry.name, versions: published ? { [entry.version]: metadata } : {} }))
+      : new Response('{}', { status: 404 });
+  }
+  if (!published) return new Response('{}', { status: 404 });
+  return new Response(JSON.stringify(pathname.endsWith('/dist-tags') ? { latest: entry.version } : metadata));
+};\n`);
+  return { ...f, newName: name, entries, state,
+    run: (args, environment = {}) => f.rawRun([...args, '--manifest-sha256', hash], {
+      NPM_CONFIG_USERCONFIG: config, NODE_AUTH_TOKEN: '', NODE_OPTIONS: `--import=${pathToFileURL(preload).href}`,
+      GITHUB_ACTIONS: 'true', GITHUB_SHA: f.manifest.sourceCommit,
+      ACTIONS_ID_TOKEN_REQUEST_URL: 'https://token.actions.githubusercontent.com/fixture',
+      ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'synthetic-oidc-request', ...environment,
+    }),
+  };
+}
+
+test('dry-run reports only unregistered names and never uploads or changes the manifest', () => {
+  const f = mixedPackageFixture();
+  try {
+    const report = join(f.directory, 'new-packages.json'), before = readFileSync(f.manifestFile);
+    const result = f.run(['--dry-run', '--new-packages-report', report]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(readFileSync(report)), { schemaVersion: 1, newPackages: [f.newName] });
+    assert.deepEqual(JSON.parse(readFileSync(f.state)), []);
+    assert.deepEqual(readFileSync(f.manifestFile), before);
+    const calls = readFileSync(f.log, 'utf8').trim().split('\n').map(JSON.parse);
+    assert.equal(calls.length, 2);
+    assert(calls.every(args => args.includes('--dry-run')));
+    assert.match(f.run(['--dry-run', '--new-packages-report', f.manifestFile]).stderr, /Refusing to overwrite/);
+    assert.deepEqual(readFileSync(f.manifestFile), before);
+  } finally { rmSync(f.directory, { recursive: true, force: true }); }
+});
+
+test('OIDC refuses every upload when the batch includes an unregistered package', () => {
+  const f = mixedPackageFixture();
+  try {
+    const result = f.run(['--publish', '--auth', 'oidc']);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /Maintainer bootstrap required.*@zucker-framework\/new-fixture/);
+    assert.deepEqual(JSON.parse(readFileSync(f.state)), []);
+    const calls = readFileSync(f.log, 'utf8').trim().split('\n').map(JSON.parse);
+    assert.equal(calls.filter(args => args[0] === 'publish').length, 0);
+    assert.equal(existsSync(join(f.directory, 'registry-verification.json')), false);
+  } finally { rmSync(f.directory, { recursive: true, force: true }); }
+});
+
+test('session bootstrap uploads only new names, remains idempotent, and ordinary OIDC completes the same bundle', () => {
+  const f = mixedPackageFixture();
+  try {
+    const before = readFileSync(f.manifestFile);
+    const bootstrap = () => f.run(['--publish', '--auth', 'session', '--bootstrap-new']);
+    const first = bootstrap();
+    assert.equal(first.status, 0, first.stderr);
+    assert.deepEqual(JSON.parse(readFileSync(f.state)), [f.newName]);
+    const report = JSON.parse(readFileSync(join(f.directory, 'bootstrap-verification.json')));
+    assert.equal(report.fullReleaseComplete, false);
+    assert.equal(report.mode, 'bootstrap-new');
+    assert.deepEqual(report.packages.map(p => p.name), [f.newName]);
+    assert.equal(existsSync(join(f.directory, 'registry-verification.json')), false);
+    const second = bootstrap();
+    assert.equal(second.status, 0, second.stderr);
+    assert.deepEqual(JSON.parse(readFileSync(f.state)), [f.newName]);
+    assert.deepEqual(JSON.parse(readFileSync(join(f.directory, 'bootstrap-verification.json'))).packages, []);
+    const release = f.run(['--publish', '--auth', 'oidc']);
+    assert.equal(release.status, 0, release.stderr);
+    assert.deepEqual(new Set(JSON.parse(readFileSync(f.state))), new Set(f.entries.map(p => p.name)));
+    assert.equal(JSON.parse(readFileSync(join(f.directory, 'registry-verification.json'))).packages.length, 2);
+    assert.deepEqual(readFileSync(f.manifestFile), before);
+  } finally { rmSync(f.directory, { recursive: true, force: true }); }
+});
+
+test('bootstrap requires explicit session upload and retains source, CI and full-bundle checksum checks', () => {
+  const dirty = fixture();
+  try {
+    for (const args of [[], ['--publish'], ['--publish', '--auth', 'oidc'], ['--publish', '--auth', 'token']]) {
+      assert.match(dirty.run([...args, '--bootstrap-new']).stderr, /requires --publish --auth session/);
+    }
+    assert.match(dirty.run(['--publish', '--auth', 'session', '--bootstrap-new']).stderr, /dirty worktree/);
+    assert.equal(existsSync(dirty.log), false);
+  } finally { rmSync(dirty.directory, { recursive: true, force: true }); }
+  const f = mixedPackageFixture();
+  try {
+    f.github.data.jobs.at(-1).conclusion = 'failure'; f.github.save();
+    assert.match(f.run(['--publish', '--auth', 'session', '--bootstrap-new']).stderr, /Required CI job/);
+    f.github.data.jobs.at(-1).conclusion = 'success'; f.github.save();
+    writeFileSync(join(f.directory, f.entries[0].filename), 'changed non-bootstrap archive');
+    assert.match(f.run(['--publish', '--auth', 'session', '--bootstrap-new']).stderr, /Checksum mismatch/);
+    assert.equal(existsSync(f.log), false);
+  } finally { rmSync(f.directory, { recursive: true, force: true }); }
+});
+
+test('unavailable registry indexes do not become a bootstrap report or an upload', () => {
+  const f = mixedPackageFixture();
+  try {
+    const report = join(f.directory, 'new-packages.json');
+    const result = f.run(['--dry-run', '--new-packages-report', report], { ZUCKER_TEST_INDEX_DENIED: '1' });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /failed \(403\)/);
+    assert.equal(existsSync(report), false);
     assert.equal(existsSync(f.log), false);
   } finally { rmSync(f.directory, { recursive: true, force: true }); }
 });

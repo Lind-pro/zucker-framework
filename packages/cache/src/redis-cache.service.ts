@@ -5,8 +5,7 @@ import {
   OnModuleInit,
   OnModuleDestroy,
 } from "@nestjs/common";
-import type Redis from "ioredis";
-import type { RedisOptions } from "ioredis";
+import type { Redis, RedisOptions } from "ioredis";
 
 export interface RedisCacheServiceOptions {
   /** No URL means disabled. The consumer owns environment configuration. */

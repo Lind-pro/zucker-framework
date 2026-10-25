@@ -21,7 +21,9 @@ for (const name of ['@nestjs/common', '@nestjs/core', '@nestjs/platform-express'
   dependencies[name] = server.dependencies[name];
 }
 dependencies.dotenv = cli.dependencies.dotenv;
+const rootManifest = JSON.parse(readFileSync(join(rootDir, 'package.json'), 'utf8'));
 const catalog = {
+  runtime: { node: rootManifest.engines.node, packageManager: rootManifest.packageManager },
   versions: Object.fromEntries(Object.values(packages).map((manifest) => [manifest.name, manifest.version])),
   server: {
     dependencies,

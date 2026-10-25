@@ -1,26 +1,23 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'node:path';
 
-export default defineConfig({
-  plugins: [react()],
-  resolve: {
-    alias: {
-      '@': path.resolve(import.meta.dirname, './src'),
-      // 直接从源码处理 fe-form，避免 dist 中 external 引用解析失败
-      '@zucker-framework/fe-form': path.resolve(
-        import.meta.dirname,
-        '../../packages/fe-form/src/index.ts',
-      ),
+export default defineConfig(({ mode }) => {
+  // This is a development proxy setting, not a browser-exposed VITE_* value.
+  const env = loadEnv(mode, process.cwd(), 'API_PROXY_TARGET');
+  return {
+    plugins: [react()],
+    resolve: {
+      alias: { '@': path.resolve(import.meta.dirname, './src') },
     },
-  },
-  server: {
-    port: 4201,
-    proxy: {
-      '/api': {
-        target: 'http://localhost:4200',
-        changeOrigin: true,
+    server: {
+      port: 4201,
+      proxy: {
+        '/api': {
+          target: env.API_PROXY_TARGET || 'http://localhost:4200',
+          changeOrigin: true,
+        },
       },
     },
-  },
+  };
 });

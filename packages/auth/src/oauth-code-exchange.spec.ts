@@ -135,4 +135,24 @@ describe('OAuth authorization code exchange', () => {
       exchangeGitHubOAuthCode({ ...options, signal: controller.signal, fetcher }),
     ).rejects.toBe(error);
   });
+  it('sends PKCE and redirect URI and obtains GitHub verified email evidence even for a public email', async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(json({ access_token: 'synthetic-access' }))
+      .mockResolvedValueOnce(json({ id: 42, login: 'handle', email: 'public@example.test' }))
+      .mockResolvedValueOnce(json([{ email: 'public@example.test', primary: true, verified: false },
+        { email: 'verified@example.test', primary: false, verified: true }]));
+    const profile = await exchangeGitHubOAuthCode({ ...options, redirectUri: 'https://app.example.test/callback', codeVerifier: 'synthetic-pkce', includeEmailVerification: true, fetcher });
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(JSON.parse(String(fetcher.mock.calls[0][1]?.body))).toMatchObject({ code_verifier: 'synthetic-pkce', redirect_uri: 'https://app.example.test/callback' });
+    expect(profile).toMatchObject({ email: 'verified@example.test', emailVerified: true });
+  });
+  it('projects Google ID-token/verified-email evidence and sends the original PKCE verifier', async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(json({ access_token: 'synthetic-access', id_token: 'synthetic-id-token' }))
+      .mockResolvedValueOnce(json({ id: 'google-id', email: 'member@example.test', verified_email: true }));
+    const profile = await exchangeGoogleOAuthCode({ ...options, redirectUri: 'https://app.example.test/callback', codeVerifier: 'synthetic-pkce', fetcher });
+    expect((fetcher.mock.calls[0][1]?.body as URLSearchParams).get('code_verifier')).toBe('synthetic-pkce');
+    expect(profile).toMatchObject({ idToken: 'synthetic-id-token', emailVerified: true });
+  });
+
 });

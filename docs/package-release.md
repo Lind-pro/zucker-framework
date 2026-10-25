@@ -176,6 +176,28 @@ PRs run CI without publishing. Source checkout, CI artifacts, receipt and GitHub
 OIDC identity all identify the original push SHA, even when `main` advances.
 Publication runs are serialized and an active upload is never automatically cancelled.
 
+When the dry run finds package names that do not yet exist in the registry,
+preparation still seals and uploads the verified bundle, but the automatic OIDC
+job is skipped. This leaves a successful main run from which the maintainer can
+download the same approved bundle. No package is uploaded automatically before
+new-package ownership and trusted publishing can be established.
+
+For that first publication, use the existing maintainer npm login and the complete
+approved manifest; do not edit the release manifest down to a subset:
+
+```bash
+node scripts/publish-packages.mjs --bundle artifacts/approved-release \
+  --publish --auth session --bootstrap-new \
+  --manifest-sha256 <approved-sha256> --tag latest
+```
+
+This publishes only previously unregistered package names and writes
+`bootstrap-verification.json`, not the complete-release verification report.
+Establish their trusted publishers, then dispatch `publish.yml` with the original
+preparation run and checksum. The normal OIDC batch verifies and skips matching
+already-published bytes, and publishes the remaining packages. OIDC also rejects
+any still-unregistered package before starting an upload.
+
 Before pushing a package change:
 
 ```bash
@@ -326,7 +348,7 @@ with its documented peers installed.
 
 Artifact verification installs tarballs in fresh npm and pnpm consumers, verifies
 portable dependency declarations, checks peers and exercises ESM/CommonJS exports.
-It also checks 49 library declaration surfaces with strict NodeNext ESM/CJS
+It also checks the library declaration surfaces listed in its verification report with strict NodeNext ESM/CJS
 settings, renders a synthetic frontend form, and compiles/starts the CLI-generated
 server outside the framework workspace. Frontend callers use strict types with
 `skipLibCheck: true`, matching the frontend template: Ant Design's own dependency
@@ -338,8 +360,11 @@ that the publishing account controls the npm scope.
 
 The CLI includes a standalone server scaffold using versions captured in its
 release catalog, a standalone TypeScript configuration and a newly generated local
-JWT secret. The full admin/web templates require a framework checkout. Generated
-projects and framework packages have separate build and deployment lifecycles.
+JWT secret. The 1.0.10 preparation also bundles the full Server, Admin and Web
+templates, so those generated consumers no longer require a Framework checkout;
+see [the 1.0.10 preparation and migration notes](package-release-1.0.10.md) for
+publication status and adoption requirements. Generated projects and Framework
+packages have separate build and deployment lifecycles.
 The CLI requires Node.js 22.12 or later, consistent with Commander 15. The repository
 toolchain requires Node.js 22.22 or later; this does not replace individual library
 runtime contracts.

@@ -65,13 +65,23 @@ export class LocalFileStorage implements FileManager {
 
   async delete(key: string): Promise<void> {
     const filePath = this.resolvePath(key);
-    if (fs.existsSync(filePath)) {
+    try {
       fs.unlinkSync(filePath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     }
   }
 
   async exists(key: string): Promise<boolean> {
-    return fs.existsSync(this.resolvePath(key));
+    const filePath = this.resolvePath(key);
+    try {
+      fs.statSync(filePath);
+      return true;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT' || code === 'ENOTDIR') return false;
+      throw error;
+    }
   }
 
   async getPublicUrl(key: string): Promise<string> {

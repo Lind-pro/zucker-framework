@@ -3,13 +3,15 @@ import { Form, Upload, Button } from 'antd';
 import { UploadOutlined } from '@ant-design/icons';
 import type { FieldDefinition } from '../types';
 import { toAntdRules } from '../validators';
+import { useFormMessages } from '../messages';
 
 interface Props {
   field: FieldDefinition;
 }
 
 export function FileField({ field }: Props) {
-  const rules = toAntdRules(field.validators, field.required);
+  const messages = useFormMessages();
+  const rules = toAntdRules(field.validators, field.required, messages.requiredText);
   const accept = field.extra?.accept as string | undefined;
   const maxCount = (field.extra?.maxCount as number) ?? 1;
 
@@ -23,7 +25,7 @@ export function FileField({ field }: Props) {
       getValueFromEvent={(e) => (Array.isArray(e) ? e : e?.fileList)}
     >
       <Upload accept={accept} maxCount={maxCount} beforeUpload={() => false}>
-        <Button icon={<UploadOutlined />}>选择文件</Button>
+        <Button icon={<UploadOutlined />}>{messages.chooseFileText}</Button>
       </Upload>
     </Form.Item>
   );

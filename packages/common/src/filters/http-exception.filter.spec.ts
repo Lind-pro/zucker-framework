@@ -4,6 +4,7 @@ import {
   ConflictException,
   HttpException,
   HttpStatus,
+  Logger,
 } from '@nestjs/common';
 import {
   BusinessException,
@@ -203,6 +204,24 @@ describe('HttpExceptionFilter', () => {
   // ─── Unknown errors ──────────────────────────────────────────────
 
   describe('Unknown errors', () => {
+    it('withholds unknown diagnostic values from logs and responses while preserving the explicit reporting hook', () => {
+      const log = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => {});
+      const report = vi.fn(), safeFilter = new HttpExceptionFilter({ onServerError: report });
+      const secret = 'SYNTHETIC-ORM-PRIVATE-PAYLOAD';
+      const error = new Error(`Invalid create({ password: '${secret}', privateDocument: '${secret}' })`);
+      const opaque = { toString() { throw new Error(secret); } };
+      try {
+        for (const thrown of [error, secret, opaque]) {
+          const { statusCode, body } = catchAndGetResponse(safeFilter, thrown);
+          expect(statusCode).toBe(500);
+          expect(JSON.stringify(body)).not.toContain(secret);
+          expect(report).toHaveBeenLastCalledWith(expect.objectContaining({ exception: thrown, kind: 'unknown' }));
+        }
+        expect(log).toHaveBeenCalled();
+        expect(JSON.stringify(log.mock.calls)).not.toContain(secret);
+      } finally { log.mockRestore(); }
+    });
+
     it('should handle generic Error as 500', () => {
       const { statusCode, body } = catchAndGetResponse(filter, new Error('unexpected failure'));
 

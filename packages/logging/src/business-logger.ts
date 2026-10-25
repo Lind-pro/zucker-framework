@@ -1,5 +1,6 @@
 import { Injectable, Inject, Optional, Logger } from '@nestjs/common';
-import { EventEmitter2 } from 'eventemitter2';
+// The CommonJS default is the original EventEmitter2 constructor in both formats.
+import EventEmitter2Constructor, { type EventEmitter2 } from 'eventemitter2';
 import { getCorrelationId } from './correlation-id';
 import { PiiFilter } from './pii-filter';
 
@@ -36,7 +37,7 @@ export class BusinessLogger {
   private readonly piiFilter = new PiiFilter();
 
   constructor(
-    @Optional() private readonly eventEmitter?: EventEmitter2,
+    @Optional() @Inject(EventEmitter2Constructor) private readonly eventEmitter?: EventEmitter2,
     @Optional()
     @Inject(BUSINESS_LOGGER_BUS)
     private readonly bus?: BusinessLogBus,

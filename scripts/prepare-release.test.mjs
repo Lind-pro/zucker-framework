@@ -105,6 +105,42 @@ test('workflows retain verified artifacts and the publication job cannot rebuild
   assert.equal(publish.jobs.prepare.needs, 'ci');
   assert.equal(publish.jobs.publish.needs, 'prepare');
   assert.equal(publish.jobs.publish.environment, 'npm-publish');
+  assert.equal(publish.jobs.prepare.outputs.bootstrap_required, '${{ steps.bootstrap.outputs.required }}');
+  assert(publish.jobs.prepare.steps.some(step => step.run?.includes('--new-packages-report artifacts/release/new-packages.json')));
+  assert.match(publish.jobs.publish.if, /needs\.prepare\.outputs\.bootstrap_required == 'false'/);
+  assert.match(publish.jobs.publish.if, /github\.event_name == 'workflow_dispatch'/);
+});
+
+test('a successful preparation-only main run retains a downloadable approved bundle', () => {
+  const f = fixture();
+  try {
+    Object.assign(f.environment, { GITHUB_REPOSITORY: releasePolicy.repository, GITHUB_EVENT_NAME: 'push',
+      GITHUB_REF: 'refs/heads/main', GITHUB_RUN_ID: '100',
+      GITHUB_WORKFLOW_REF: `${releasePolicy.repository}/.github/workflows/publish.yml@refs/heads/main` });
+    Object.assign(f.github.data.ci, { path: '.github/workflows/publish.yml', status: 'in_progress', conclusion: null });
+    f.github.data.preparation = { ...f.github.data.ci };
+    f.github.data.jobs = f.github.data.jobs.map(job => ({ ...job, name: `CI / ${job.name}` }));
+    f.github.data.jobs.push({ name: releasePolicy.automaticPrepareJob, status: 'completed', conclusion: 'success' },
+      { name: 'Publish the approved bundle through OIDC', status: 'completed', conclusion: 'skipped' });
+    f.github.data.releaseArtifacts[0].name = `${releasePolicy.releaseArtifactPrefix}-100-1`;
+    f.github.save();
+    const prepared = join(f.directory, 'prepared');
+    assert.equal(f.run('download-ci', '--output', prepared).status, 0);
+    const sealed = f.run('seal', '--bundle', prepared, '--tag', 'latest');
+    assert.equal(sealed.status, 0, sealed.stderr);
+    Object.assign(f.github.data.ci, { status: 'completed', conclusion: 'success' });
+    f.github.data.preparation = { ...f.github.data.ci };
+    f.github.data.preparedDirectory = prepared;
+    f.github.save();
+    // Local maintainer recovery has no GitHub OIDC environment to impersonate.
+    Object.assign(f.environment, { GITHUB_ACTIONS: '', GITHUB_SHA: '', GITHUB_RUN_ID: '',
+      GITHUB_WORKFLOW_REF: '', GITHUB_EVENT_NAME: '' });
+    const destination = join(f.directory, 'maintainer-download');
+    const result = f.run('download-prepared', '--run', '100', '--manifest-sha256', f.hash, '--output', destination);
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(readFileSync(join(destination, 'release-manifest.json')), readFileSync(join(prepared, 'release-manifest.json')));
+    assert.deepEqual(readFileSync(join(destination, 'artifact.bin')), readFileSync(join(prepared, 'artifact.bin')));
+  } finally { rmSync(f.directory, { recursive: true, force: true }); }
 });
 
 test('automatic push seals and publishes the same-run artifact only after preparation completes', () => {

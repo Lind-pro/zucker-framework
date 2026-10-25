@@ -2,6 +2,7 @@ import React from 'react';
 import { Form, Input } from 'antd';
 import type { FieldDefinition } from '../types';
 import { toAntdRules } from '../validators';
+import { useFormMessages } from '../messages';
 
 interface Props {
   field: FieldDefinition;
@@ -9,7 +10,8 @@ interface Props {
 
 export function StringField({ field }: Props) {
   const multiline = field.extra?.multiline === true;
-  const rules = toAntdRules(field.validators, field.required);
+  const messages = useFormMessages();
+  const rules = toAntdRules(field.validators, field.required, messages.requiredText);
 
   return (
     <Form.Item name={field.key} label={field.name} rules={rules} tooltip={field.description}>

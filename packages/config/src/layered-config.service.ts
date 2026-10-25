@@ -1,6 +1,7 @@
 import { Injectable, Inject, Logger, Optional } from '@nestjs/common';
 import { type DatabaseAdapter, ValidationException } from '@zucker-framework/core';
-import { EventEmitter2 } from 'eventemitter2';
+// The CommonJS default is the original EventEmitter2 constructor in both formats.
+import EventEmitter2Constructor, { type EventEmitter2 } from 'eventemitter2';
 import { ConfigScopeManager } from './config-scope-manager';
 
 export type ConfigLayer = 'system' | 'tenant' | 'user';
@@ -53,7 +54,7 @@ export class LayeredConfigService {
   constructor(
     @Inject(DATABASE_ADAPTER) private readonly db: DatabaseAdapter,
     private readonly scopeManager: ConfigScopeManager,
-    @Optional() private readonly eventEmitter?: EventEmitter2,
+    @Optional() @Inject(EventEmitter2Constructor) private readonly eventEmitter?: EventEmitter2,
     @Optional() @Inject('TOPIC_EVENT_BUS') private readonly topicEventBus?: TopicEventBusLike,
   ) {}
 

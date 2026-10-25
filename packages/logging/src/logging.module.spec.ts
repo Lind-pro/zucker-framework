@@ -4,8 +4,15 @@ import { CorrelationIdMiddleware } from './correlation-id';
 import { ZuckerLoggingModule } from './logging.module';
 import { HttpRequestObservationMiddleware, HTTP_REQUEST_OBSERVATION_OPTIONS } from './http-request-observation.middleware';
 import { RejectedRequestLoggerMiddleware } from './rejected-request-logger.middleware';
+import { ACCESS_LOG_CAPTURE_OPTIONS } from './access-logger.interceptor';
 
 describe('ZuckerLoggingModule', () => {
+  it('passes explicit privacy ceilings into the HTTP interceptor', () => {
+    expect(ZuckerLoggingModule.forRoot({ captureParameters: false, captureResults: false }).providers).toContainEqual({
+      provide: ACCESS_LOG_CAPTURE_OPTIONS,
+      useValue: { retainClientIp: undefined, captureParameters: false, captureResults: false },
+    });
+  });
   it('uses the Nest 11 named wildcard for all correlation-id routes', () => {
     const forRoutes = vi.fn();
     const apply = vi.fn(() => ({ forRoutes }));

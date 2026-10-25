@@ -1,11 +1,15 @@
 import type { FormRule as Rule } from 'antd';
 import type { FieldValidator } from './types';
 
-export function toAntdRules(validators: FieldValidator[] = [], required?: boolean): Rule[] {
+export function toAntdRules(
+  validators: FieldValidator[] = [],
+  required?: boolean,
+  requiredMessage = '该字段为必填项',
+): Rule[] {
   const rules: Rule[] = [];
 
   if (required) {
-    rules.push({ required: true, message: '该字段为必填项' });
+    rules.push({ required: true, message: requiredMessage });
   }
 
   for (const v of validators) {

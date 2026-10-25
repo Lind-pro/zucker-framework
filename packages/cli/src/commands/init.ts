@@ -1,66 +1,80 @@
 import { Command } from 'commander';
-import { existsSync, mkdirSync, writeFileSync, readFileSync, cpSync } from 'fs';
+import { existsSync, mkdirSync, writeFileSync, readFileSync, lstatSync } from 'fs';
 import { resolve, join } from 'path';
 import { randomBytes } from 'node:crypto';
+import { installConsumerAgentInstructions } from '../../tooling/agent-instructions.mjs';
+import { collectTemplateAssets, validateProjectBundle, validateTemplateAssets, writeTemplateAssets, type ProjectBundle } from '../../tooling/project-templates.mjs';
 
 interface ReleaseCatalog {
   versions: Record<string, string>;
+  runtime?: { node: string; packageManager: string };
   server: { dependencies: Record<string, string>; devDependencies: Record<string, string> };
 }
 
-function readReleaseCatalog(): ReleaseCatalog {
-  const path = resolve(__dirname, 'release-catalog.json');
+function readReleaseCatalog(runtimeDirectory: string): ReleaseCatalog {
+  const path = resolve(runtimeDirectory, 'release-catalog.json');
   if (!existsSync(path)) throw new Error('CLI release catalog is missing; build or reinstall the CLI package.');
   return JSON.parse(readFileSync(path, 'utf8')) as ReleaseCatalog;
 }
 
-const AVAILABLE_MODULES = [
-  { name: 'auth', pkg: '@zucker-framework/auth', description: 'Authentication & authorization' },
-  { name: 'logging', pkg: '@zucker-framework/logging', description: 'Access logging' },
-  { name: 'config', pkg: '@zucker-framework/config', description: 'System configuration' },
-  { name: 'dictionary', pkg: '@zucker-framework/dictionary', description: 'Data dictionary' },
-  { name: 'cache', pkg: '@zucker-framework/cache', description: 'Caching layer' },
-  { name: 'storage', pkg: '@zucker-framework/storage', description: 'File storage' },
-  { name: 'notification', pkg: '@zucker-framework/notification', description: 'Notification system' },
-  { name: 'credit', pkg: '@zucker-framework/credit', description: 'Credit/points system' },
-  { name: 'ai', pkg: '@zucker-framework/ai', description: 'AI integration' },
-  { name: 'i18n', pkg: '@zucker-framework/i18n', description: 'Internationalization' },
-  { name: 'tenant', pkg: '@zucker-framework/tenant', description: 'Multi-tenancy' },
-  { name: 'form', pkg: '@zucker-framework/form', description: 'Dynamic form engine' },
-  { name: 'monitoring', pkg: '@zucker-framework/monitoring', description: 'System monitoring' },
-];
+function readProjectBundle(runtimeDirectory: string): ProjectBundle {
+  const path = join(runtimeDirectory, 'project-templates.json');
+  if (!existsSync(path)) throw new Error('CLI project assets are missing; build or reinstall the CLI.');
+  const bundle: unknown = JSON.parse(readFileSync(path, 'utf8'));
+  validateProjectBundle(bundle);
+  return bundle;
+}
+function installInstructions(targetDir: string, bundle: ProjectBundle) {
+  const result = installConsumerAgentInstructions(targetDir, bundle.consumerInstructions);
+  for (const warning of result.warnings) console.warn(warning);
+}
 
-export const initCommand = new Command('init')
+
+function createFullServerEnvironment(targetDir: string): void {
+  let environment = readFileSync(join(targetDir, '.env.example'), 'utf8');
+  // Authentication and stored provider settings have independent key material and rotation policies.
+  for (const name of ['JWT_SECRET', 'CONFIG_ENCRYPTION_KEY']) {
+    const assignment = `${name}=${randomBytes(32).toString('hex')}`;
+    const existing = new RegExp(`^${name}=.*$`, 'gm');
+    environment = existing.test(environment) ? environment.replace(existing, assignment)
+      : `${environment.trimEnd()}\n${assignment}\n`;
+  }
+  writeFileSync(join(targetDir, '.env'), environment, { mode: 0o600, flag: 'wx' });
+}
+
+export function createInitCommand(runtimeDirectory?: string, workingDirectory?: string) {
+  return new Command('init')
   .description('Initialize a new Zucker project')
   .argument('[name]', 'Project name', 'zucker-app')
-  .option('--template <template>', 'Template to use (server, admin, web)', 'server')
+  .option('--template <template>', 'Template to use (server, server-full, admin, web)', 'server')
   .action(async (name: string, options: { template: string }) => {
-    if (!['server', 'admin', 'web'].includes(options.template)) {
+    if (!['server', 'server-full', 'admin', 'web'].includes(options.template)) {
       throw new Error(`Unsupported template: ${options.template}`);
     }
     if (!/^[a-z0-9][a-z0-9._-]*$/.test(name)) throw new Error('Project name must use lowercase letters, digits, dots, underscores or hyphens.');
-    const catalog = readReleaseCatalog();
-    const targetDir = resolve(process.cwd(), name);
+    const runtime = runtimeDirectory ?? __dirname;
+    const catalog = readReleaseCatalog(runtime);
+    const bundle = readProjectBundle(runtime);
+    const targetDir = resolve(workingDirectory ?? process.cwd(), name);
 
     console.log(`\n  Initializing Zucker project: ${name}`);
     console.log(`  Template: ${options.template}`);
     console.log(`  Directory: ${targetDir}\n`);
 
     // Check if directory already exists
-    if (existsSync(targetDir)) {
-      console.log(`  \x1b[31mError:\x1b[0m Directory "${name}" already exists.`);
-      process.exit(1);
+    if (lstatSync(targetDir, { throwIfNoEntry: false })) {
+      throw new Error(`Directory "${name}" already exists.`);
     }
 
-    // Locate the template directory
-    // Try to resolve from the monorepo first, then from installed package
-    const monorepoTemplate = resolve(__dirname, '..', '..', '..', 'templates', options.template);
-    const templateDir = existsSync(monorepoTemplate) ? monorepoTemplate : null;
+    // Explicit bundled templates always use the CLI payload; nearby checkouts cannot change them.
+    // Preserve the existing Server skeleton/full-checkout behavior for compatibility.
+    const monorepoTemplate = resolve(runtime, '..', '..', '..', 'templates', options.template);
+    const packaged = options.template === 'admin' || options.template === 'web' || options.template === 'server-full'
+      ? bundle.templates[options.template] : undefined;
+    const templateDir = options.template === 'server' && existsSync(monorepoTemplate) ? monorepoTemplate : null;
+    const assets = packaged ?? (templateDir ? collectTemplateAssets(templateDir) : null);
 
-    if (!templateDir) {
-      if (options.template !== 'server') {
-        throw new Error(`The ${options.template} template requires a framework checkout. The installed CLI includes the standalone server scaffold.`);
-      }
+    if (!assets) {
       console.log(`  \x1b[33mNote:\x1b[0m Template "${options.template}" not found locally.`);
       console.log('  Generating minimal project scaffold instead.\n');
 
@@ -73,7 +87,8 @@ export const initCommand = new Command('init')
         version: '0.1.0',
         private: true,
         type: 'commonjs',
-        engines: { node: '>=22.12.0' },
+        engines: { node: catalog.runtime?.node ?? '>=22.22.0' },
+        ...(catalog.runtime?.packageManager ? { packageManager: catalog.runtime.packageManager } : {}),
         scripts: {
           dev: 'nest start --watch',
           build: 'nest build',
@@ -104,7 +119,7 @@ export const initCommand = new Command('init')
       };
       writeFileSync(resolve(targetDir, 'tsconfig.json'), JSON.stringify(tsconfig, null, 2) + '\n');
       writeFileSync(resolve(targetDir, 'nest-cli.json'), JSON.stringify({ sourceRoot: 'src', compilerOptions: { deleteOutDir: true } }, null, 2) + '\n');
-      writeFileSync(resolve(targetDir, '.gitignore'), 'node_modules/\ndist/\n.env\n.env.local\n');
+      writeFileSync(resolve(targetDir, '.gitignore'), 'node_modules/\ndist/\n.env*\n!.env.example\n');
       writeFileSync(resolve(targetDir, '.env'), `JWT_SECRET=${randomBytes(32).toString('hex')}\n`, { mode: 0o600 });
 
       // Document configuration without exposing the generated local secret.
@@ -112,7 +127,8 @@ export const initCommand = new Command('init')
         '# JWT secret — required for production',
         '# JWT_SECRET=your-secure-secret-here',
         '',
-        '# Database URL — leave unset to use InMemoryAdapter',
+        '# Database URL — reserved for an application-owned persistent adapter',
+        '# This minimal scaffold always uses InMemoryAdapter until its module wiring is changed.',
         '# DATABASE_URL=postgresql://user:pass@localhost:5432/zucker',
         '',
       ].join('\n'));
@@ -166,6 +182,8 @@ export const initCommand = new Command('init')
         '',
       ].join('\n'));
 
+      installInstructions(targetDir, bundle);
+      writeFileSync(join(targetDir, 'README.md'), '# ' + name + '\n\nMinimal Server scaffold. The memory adapter is a disposable demonstration, not persistent storage. Configure and verify the application-owned database and auth policies before real use.\n\nCommands: `pnpm install`, `pnpm dev`. Read `AGENTS.md` before extending the application.\n');
       console.log('  \x1b[32mProject scaffolded successfully!\x1b[0m\n');
       console.log('  Next steps:');
       console.log(`    cd ${name}`);
@@ -175,32 +193,52 @@ export const initCommand = new Command('init')
     }
 
     // Copy template
-    console.log(`  Copying template from ${templateDir}...\n`);
-    cpSync(templateDir, targetDir, {
-      recursive: true,
-      filter: (src) => !src.split(/[\\/]/).some((part) =>
-        ['node_modules', 'dist', '.turbo', '.next', '.cache', 'generated'].includes(part)
-        || part.startsWith('.env') && part !== '.env.example'
-        || part.endsWith('.tsbuildinfo')),
-    });
+    console.log('  Preparing project files...\n');
+    {
+      // Validate dependency catalog before creating any consumer files.
+      validateTemplateAssets(assets);
+      const manifest = JSON.parse(Buffer.from(assets['package.json'], 'base64').toString('utf8'));
+      for (const field of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
+        for (const [dependency, version] of Object.entries(manifest[field] ?? {})) {
+          if (typeof version === 'string' && version.startsWith('workspace:') && !catalog.versions[dependency]) {
+            throw new Error(`No release version found for ${dependency}`);
+          }
+        }
+      }
+      mkdirSync(targetDir);
+      writeTemplateAssets(assets, targetDir);
+    }
 
     const copiedManifestPath = resolve(targetDir, 'package.json');
     const copiedManifest = JSON.parse(readFileSync(copiedManifestPath, 'utf8')) as Record<string, unknown>;
     copiedManifest.name = name;
+    if (catalog.runtime?.packageManager) copiedManifest.packageManager = catalog.runtime.packageManager;
+    if (catalog.runtime?.node) copiedManifest.engines = { ...(copiedManifest.engines as object ?? {}), node: catalog.runtime.node };
     for (const field of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
       const entries = copiedManifest[field] as Record<string, string> | undefined;
       for (const [dependency, version] of Object.entries(entries ?? {})) {
         if (!version.startsWith('workspace:')) continue;
         const releasedVersion = catalog.versions[dependency];
         if (!releasedVersion) throw new Error(`No release version found for ${dependency}`);
-        entries![dependency] = releasedVersion;
+        if (entries) entries[dependency] = releasedVersion;
       }
     }
     writeFileSync(copiedManifestPath, JSON.stringify(copiedManifest, null, 2) + '\n');
 
+    if (options.template === 'server-full') createFullServerEnvironment(targetDir);
+    installInstructions(targetDir, bundle);
     console.log('  \x1b[32mProject created successfully!\x1b[0m\n');
     console.log('  Next steps:');
     console.log(`    cd ${name}`);
     console.log('    pnpm install');
+    if (options.template === 'server-full') {
+      console.log("    Configure the generated private .env (PostgreSQL, origins and SMTP; JWT secret is already generated).");
+      console.log('    pnpm prisma:generate');
+      console.log('    pnpm db:migrate');
+    }
     console.log('    pnpm dev\n');
   });
+
+}
+
+export const initCommand = createInitCommand();

@@ -45,6 +45,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       manifest_sha256: ${{ steps.seal.outputs.manifest_sha256 }}
+      bootstrap_required: ${{ steps.bootstrap.outputs.required }}
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -61,7 +62,22 @@ jobs:
         run: node scripts/prepare-release.mjs download-ci --output artifacts/release
 
       - name: Verify all versions and tarballs before any upload
-        run: node scripts/publish-packages.mjs --bundle artifacts/release --dry-run --tag latest
+        run: >-
+          node scripts/publish-packages.mjs --bundle artifacts/release --dry-run --tag latest
+          --new-packages-report artifacts/release/new-packages.json
+
+      - name: Identify packages requiring their first publication
+        id: bootstrap
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, appendFileSync } from 'node:fs';
+          const report = JSON.parse(readFileSync('artifacts/release/new-packages.json', 'utf8'));
+          if (report.schemaVersion !== 1 || !Array.isArray(report.newPackages)) throw new Error('Invalid new-package report');
+          const required = report.newPackages.length > 0;
+          appendFileSync(process.env.GITHUB_OUTPUT, `required=${required}\n`);
+          if (required) appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+            `First publication required for: ${report.newPackages.join(', ')}. The verified bundle will be sealed and retained; automatic OIDC upload is skipped. Use the same bundle with the maintainer bootstrap command before configuring trusted publishing.\n`);
+          NODE
 
       - name: Seal the verified bundle
         id: seal
@@ -80,7 +96,8 @@ jobs:
     needs: prepare
     if: >-
       always() && !cancelled() && github.ref == 'refs/heads/main' &&
-      (needs.prepare.result == 'success' || github.event_name == 'workflow_dispatch')
+      ((needs.prepare.result == 'success' && needs.prepare.outputs.bootstrap_required == 'false') ||
+       github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     environment: npm-publish
     permissions:

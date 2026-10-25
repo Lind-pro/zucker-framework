@@ -1,5 +1,13 @@
 # @zucker-framework/fe-analytics
 
+## 1.0.10
+
+### Patch Changes
+
+- Add optional site analytics configuration and lifecycle helpers for GA, Clarity,
+  Plausible, OpenPanel and Vercel Analytics. Keep scripts disabled without explicit
+  configuration and avoid duplicate initialization across client navigation.
+
 ## 1.0.8
 
 ## 1.0.7
