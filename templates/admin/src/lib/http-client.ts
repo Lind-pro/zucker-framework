@@ -1,4 +1,4 @@
-import { createHttpClient } from '@zucker-framework/fe-http-client';
+import { createHttpClient, createCookieRefresh } from '@zucker-framework/fe-http-client';
 import useAuthStore from '../stores/useAuthStore';
 
 interface PaginatedResult<T> {
@@ -14,6 +14,8 @@ export const httpClient = createHttpClient({
   baseURL: '/api',
   timeout: 60000,
   withCredentials: true,
+  refreshWithCookie: createCookieRefresh('/api/authorize/refresh'),
+  refreshLockName: 'zucker-account-refresh',
 
   getToken: () => useAuthStore.getState().token,
   setToken: (token) => useAuthStore.getState().updateToken(token),
@@ -29,6 +31,11 @@ export const httpClient = createHttpClient({
   onForbidden: () => {
     // 403 由各页面自行处理
   },
+});
+
+export const accountPublicClient = createHttpClient({
+  baseURL: '/api', withCredentials: true,
+  getToken: () => null, clearAuth: () => {}, onUnauthorized: () => {},
 });
 
 /**
