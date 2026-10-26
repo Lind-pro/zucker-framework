@@ -1,6 +1,7 @@
 import { Injectable, Inject, Logger, Optional } from '@nestjs/common';
 import { type DatabaseAdapter } from '@zucker-framework/core';
-import { EventEmitter2 } from 'eventemitter2';
+// The CommonJS default is the original EventEmitter2 constructor in both formats.
+import EventEmitter2Constructor, { type EventEmitter2 } from 'eventemitter2';
 import type { DictionaryItem } from './index';
 import { ClearDictionaryCacheEvent } from './clear-dictionary-cache-event';
 
@@ -25,7 +26,7 @@ export class DictionaryItemService {
 
   constructor(
     @Inject(DATABASE_ADAPTER) private readonly db: DatabaseAdapter,
-    @Optional() private readonly eventEmitter?: EventEmitter2,
+    @Optional() @Inject(EventEmitter2Constructor) private readonly eventEmitter?: EventEmitter2,
   ) {}
 
   /**
