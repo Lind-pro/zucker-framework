@@ -9,6 +9,8 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "markdown-it": "15.0.3",
+    "next-themes": "0.4.6",
     "@zucker-framework/fe-auth": "workspace:*",
     "@zucker-framework/fe-http-client": "workspace:*",
     "clsx": "^2.1.1",
@@ -19,7 +21,9 @@
     "react-dom": "19.2.8",
     "sonner": "^2.0.8",
     "tailwind-merge": "^3.6.0",
-    "zustand": "^5.0.15"
+    "zustand": "^5.0.15",
+    "@zucker-framework/fe-analytics": "workspace:*",
+    "@zucker-framework/fe-site": "workspace:*"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",

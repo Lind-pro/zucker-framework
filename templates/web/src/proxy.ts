@@ -3,31 +3,21 @@ import { type NextRequest, NextResponse } from "next/server";
 import { routing } from "./i18n/routing";
 
 const intlMiddleware = createMiddleware(routing);
-
-/** 需要登录才能访问的路径前缀（不含 locale） */
-const PROTECTED_PREFIXES = ["/dashboard"];
+const PROTECTED_PREFIXES = ["/dashboard", "/account", "/billing", "/content/manage"];
 
 export default function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-
-  // 去掉 locale 前缀（如 /zh/dashboard → /dashboard）
-  const pathnameWithoutLocale = pathname.replace(/^\/[a-z]{2}(?=\/|$)/, "");
-  const isProtected = PROTECTED_PREFIXES.some((p) => pathnameWithoutLocale.startsWith(p));
-
-  if (isProtected) {
-    const token = request.cookies.get("auth-token")?.value;
-    if (!token) {
-      // 取当前 locale（pathname 的第一段），兜底 zh
-      const locale = pathname.split("/")[1] ?? "zh";
-      const loginUrl = new URL(`/${locale}/login`, request.url);
-      loginUrl.searchParams.set("redirect", pathname);
-      return NextResponse.redirect(loginUrl);
-    }
+  const first = pathname.split("/")[1];
+  const locale = routing.locales.find((value) => value === first) ?? routing.defaultLocale;
+  const hasLocale = routing.locales.some((value) => value === first);
+  const localPath = hasLocale ? pathname.slice(first.length + 1) || "/" : pathname;
+  const protectedPath = PROTECTED_PREFIXES.some((prefix) => localPath === prefix || localPath.startsWith(`${prefix}/`));
+  // Presence is only a routing hint. The server validates the session and every resource request.
+  if (protectedPath && !request.cookies.get("zucker-session")?.value) {
+    const login = new URL(`/${locale}/login`, request.url);
+    login.searchParams.set("redirect", pathname + request.nextUrl.search);
+    return NextResponse.redirect(login);
   }
-
   return intlMiddleware(request);
 }
-
-export const config = {
-  matcher: ["/((?!api|_next|_vercel|.*\\..*).*)"],
-};
+export const config = { matcher: ["/((?!api|_next|_vercel|.*\\..*).*)"] };

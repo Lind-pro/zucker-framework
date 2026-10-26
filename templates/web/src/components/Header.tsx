@@ -1,93 +1,73 @@
-"use client";
+'use client';
+import { useLocale, useTranslations } from 'next-intl';
+import { usePathname } from '@/i18n/navigation';
+import { AccountLink } from '@/components/AccountLink';
+import { Menu, X } from 'lucide-react';
+import { useState } from 'react';
+import { AppearanceControl } from '@/features/site/SiteTheme';
+import { localizedHref, type PublicSiteSettings } from '@/features/content/types';
 
-import { useTranslations } from "next-intl";
-import { Link, usePathname } from "@/i18n/navigation";
-import { Menu, X } from "lucide-react";
-import { useState } from "react";
-
-export function Header() {
-  const t = useTranslations("nav");
-  const tCommon = useTranslations("common");
-  const pathname = usePathname();
+export function Header({ site }: { site: PublicSiteSettings }) {
+  const t = useTranslations('common'),
+    locale = useLocale(),
+    pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
-
-  const navItems = [
-    { href: "/", label: t("home") },
-    { href: "/#features", label: t("features") },
-    { href: "/dashboard", label: t("dashboard") },
-  ];
-
+  const nav = site.navigation.map((item, index) => (
+    <a
+      key={`${item.href}-${index}`}
+      href={localizedHref(item.href, locale)}
+      onClick={() => setMenuOpen(false)}
+      className={`block text-sm font-medium hover:text-primary-500 ${pathname === item.href ? 'text-primary-500' : 'text-[var(--color-muted)]'}`}
+    >
+      {item.label}
+    </a>
+  ));
   return (
-    <header className="sticky top-0 z-50 border-b border-[var(--color-border)] bg-[var(--color-background)]/80 backdrop-blur-sm">
-      <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
-        <Link href="/" className="text-xl font-bold text-primary-500">
-          Zucker
-        </Link>
-
-        {/* Desktop nav */}
-        <nav className="hidden md:flex items-center gap-6">
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`text-sm font-medium transition-colors hover:text-primary-500 ${
-                pathname === item.href
-                  ? "text-primary-500"
-                  : "text-[var(--color-muted)]"
-              }`}
-            >
-              {item.label}
-            </Link>
-          ))}
+    <header className="sticky top-0 z-50 border-b border-[var(--color-border)] bg-[var(--color-background)]/90 backdrop-blur-sm">
+      <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between gap-5">
+        <a href={`/${locale}`} className="text-xl font-bold text-primary-500 truncate">
+          {site.name}
+        </a>
+        <nav
+          aria-label={locale === 'zh' ? '主导航' : 'Main navigation'}
+          className="hidden md:flex items-center gap-5"
+        >
+          {nav}
         </nav>
-
         <div className="hidden md:flex items-center gap-3">
-          <Link
-            href="/login"
-            className="text-sm font-medium text-[var(--color-muted)] hover:text-[var(--color-foreground)] transition-colors"
-          >
-            {tCommon("login")}
-          </Link>
-          <Link
+          <AppearanceControl locale={locale} />
+          <AccountLink href="/login" className="text-sm text-[var(--color-muted)]">
+            {t('login')}
+          </AccountLink>
+          <AccountLink
             href="/register"
-            className="text-sm font-medium bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg transition-colors"
+            className="rounded-lg bg-primary-600 px-4 py-2 text-sm text-white"
           >
-            {tCommon("register")}
-          </Link>
+            {t('register')}
+          </AccountLink>
         </div>
-
-        {/* Mobile menu toggle */}
         <button
           className="md:hidden p-2"
+          aria-expanded={menuOpen}
+          aria-controls="mobile-navigation"
+          aria-label={locale === 'zh' ? '切换导航菜单' : 'Toggle navigation'}
           onClick={() => setMenuOpen(!menuOpen)}
-          aria-label="Toggle menu"
         >
-          {menuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          {menuOpen ? <X size={20} /> : <Menu size={20} />}
         </button>
       </div>
-
-      {/* Mobile nav */}
       {menuOpen && (
-        <div className="md:hidden border-t border-[var(--color-border)] px-6 py-4 space-y-3">
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="block text-sm font-medium text-[var(--color-muted)] hover:text-primary-500"
-              onClick={() => setMenuOpen(false)}
-            >
-              {item.label}
-            </Link>
-          ))}
-          <div className="flex gap-3 pt-3 border-t border-[var(--color-border)]">
-            <Link href="/login" className="text-sm font-medium text-[var(--color-muted)]">
-              {tCommon("login")}
-            </Link>
-            <Link href="/register" className="text-sm font-medium text-primary-500">
-              {tCommon("register")}
-            </Link>
+        <nav
+          id="mobile-navigation"
+          className="md:hidden space-y-4 border-t border-[var(--color-border)] p-6"
+        >
+          {nav}
+          <div className="flex items-center gap-4">
+            <AppearanceControl locale={locale} />
+            <AccountLink href="/login">{t('login')}</AccountLink>
+            <AccountLink href="/register">{t('register')}</AccountLink>
           </div>
-        </div>
+        </nav>
       )}
     </header>
   );

@@ -1,85 +1,43 @@
 "use client";
-
 import { useState } from "react";
-import { useTranslations } from "next-intl";
-import { useRouter } from "next/navigation";
+import { useLocale, useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
-import { httpClient } from "@/lib/http-client";
+import { accountPublicClient } from "@/lib/http-client";
+import { AccountForm, buttonClass, FormMessage, inputClass } from "../account/_components/AccountForm";
+import { accountErrorKey } from "../account/_components/account-flow";
 
 export default function RegisterPage() {
-  const t = useTranslations("auth");
-  const router = useRouter();
-
+  const t = useTranslations("auth"), locale = useLocale();
   const [form, setForm] = useState({ username: "", email: "", password: "", confirmPassword: "" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-
-  const handleChange = (field: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => {
-    setForm((prev) => ({ ...prev, [field]: e.target.value }));
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-
-    if (form.password !== form.confirmPassword) {
-      setError("两次输入的密码不一致");
-      return;
-    }
-
-    setLoading(true);
-    try {
-      await httpClient.post("/users", {
-        username: form.username,
-        email: form.email,
-        password: form.password,
-      });
-      router.push("/login");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "注册失败，请重试");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="min-h-[80vh] flex items-center justify-center px-6">
-      <div className="w-full max-w-md p-8 rounded-xl bg-[var(--color-card)] border border-[var(--color-border)]">
-        <h1 className="text-2xl font-bold mb-2">{t("registerTitle")}</h1>
-        <p className="text-[var(--color-muted)] mb-8">{t("registerDescription")}</p>
-
-        <form className="space-y-4" onSubmit={handleSubmit}>
-          {(["username", "email", "password", "confirmPassword"] as const).map((field) => (
-            <div key={field}>
-              <label className="block text-sm font-medium mb-1.5">{t(field)}</label>
-              <input
-                type={field.toLowerCase().includes("password") ? "password" : field === "email" ? "email" : "text"}
-                value={form[field]}
-                onChange={handleChange(field)}
-                required
-                className="w-full px-4 py-2.5 rounded-lg bg-[var(--color-background)] border border-[var(--color-border)] focus:outline-none focus:ring-2 focus:ring-primary-500"
-              />
-            </div>
-          ))}
-
-          {error && <p className="text-sm text-red-500">{error}</p>}
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-primary-600 hover:bg-primary-700 disabled:opacity-60 text-white py-2.5 rounded-lg font-medium transition-colors"
-          >
-            {loading ? "注册中..." : t("registerButton")}
-          </button>
-        </form>
-
-        <p className="mt-6 text-center text-sm text-[var(--color-muted)]">
-          {t("hasAccount")}{" "}
-          <Link href="/login" className="text-primary-500 hover:text-primary-400">
-            {t("goLogin")}
-          </Link>
-        </p>
-      </div>
-    </div>
-  );
+  const [registered, setRegistered] = useState(false);
+  return <AccountForm title={t("registerTitle")} description={t("registerDescription")}>
+    {registered ? <div className="space-y-4"><FormMessage message={t("registrationAccepted")} /><Link href="/verify-email" className="text-primary-500 hover:underline">{t("resendVerification")}</Link></div>
+      : <form className="space-y-4" onSubmit={async (event) => {
+        event.preventDefault(); setError("");
+        if (form.password !== form.confirmPassword) { setError(t("passwordMismatch")); return; }
+        setLoading(true);
+        try {
+          const result = await accountPublicClient.post<{ verificationRequired: boolean }>("/authorize/register", {
+            username: form.username, email: form.email, password: form.password, locale,
+          });
+          if (result.verificationRequired !== true) throw new Error("Unexpected account response");
+          setRegistered(true); setForm({ username: "", email: "", password: "", confirmPassword: "" });
+        } catch (failure) { setError(t(accountErrorKey(failure, "registrationFailed"))); }
+        finally { setLoading(false); }
+      }}>
+        {(["username", "email", "password", "confirmPassword"] as const).map((field) => <div key={field}>
+          <label htmlFor={`register-${field}`} className="block text-sm font-medium mb-1.5">{t(field)}</label>
+          <input id={`register-${field}`} name={field} type={field.toLowerCase().includes("password") ? "password" : field === "email" ? "email" : "text"}
+            autoComplete={field.toLowerCase().includes("password") ? "new-password" : field} required
+            minLength={field.toLowerCase().includes("password") ? 8 : undefined} maxLength={field.toLowerCase().includes("password") ? 128 : 254}
+            className={inputClass} value={form[field]} onChange={(event) => setForm({ ...form, [field]: event.target.value })} />
+        </div>)}
+        <p className="text-xs text-[var(--color-muted)]">{t("passwordRequirements")}</p>
+        <FormMessage message={error} error />
+        <button type="submit" disabled={loading} className={`${buttonClass} w-full`}>{loading ? t("registering") : t("registerButton")}</button>
+      </form>}
+    <p className="mt-6 text-center text-sm text-[var(--color-muted)]">{t("hasAccount")} <Link href="/login" className="text-primary-500 hover:underline">{t("goLogin")}</Link></p>
+  </AccountForm>;
 }
