@@ -1,13 +1,13 @@
 import type { FileManager } from './storage.interface';
+import type { PrivateFileObjectStore } from './file-asset';
 import {
   StorageTransferError,
   type StorageTransferErrorFactory,
-  type BufferedObjectStore,
   type DownloadedStorageObject,
 } from './verified-object-transfer';
 
 /** Bounded in-memory transfer adapter over the existing FileManager contract. */
-export class BufferedFileManagerStore implements BufferedObjectStore {
+export class BufferedFileManagerStore implements PrivateFileObjectStore {
   constructor(
     private readonly manager: FileManager,
     private readonly maxObjectBytes: number,
@@ -41,6 +41,10 @@ export class BufferedFileManagerStore implements BufferedObjectStore {
 
   exists(key: string): Promise<boolean> {
     return this.manager.exists(key);
+  }
+
+  delete(key: string): Promise<void> {
+    return this.manager.delete(key);
   }
 
   async write(

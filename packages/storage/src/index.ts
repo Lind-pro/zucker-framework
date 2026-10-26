@@ -58,3 +58,10 @@ export type {
   StorageTransferErrorFactory,
 } from './verified-object-transfer';
 export { BufferedFileManagerStore } from './buffered-file-manager-store';
+export { PrivateFileAssetService } from './private-file-asset.service';
+export { FileAssetError } from './file-asset';
+export type {
+  FileAsset, FileAssetState, FileAssetAction, FileAssetReservation, FileAssetMutation,
+  FileAssetRepository, PrivateFileObjectStore, FileAssetAccessRequest,
+  PrivateFileAssetOptions, FileAssetErrorCode,
+} from './file-asset';
