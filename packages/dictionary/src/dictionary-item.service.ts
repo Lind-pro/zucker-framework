@@ -4,6 +4,7 @@ import { type DatabaseAdapter } from '@zucker-framework/core';
 import EventEmitter2Constructor, { type EventEmitter2 } from 'eventemitter2';
 import type { DictionaryItem } from './index';
 import { ClearDictionaryCacheEvent } from './clear-dictionary-cache-event';
+import { dictionaryItemData, dictionaryItemRecord, type DictionaryItemInput, type DictionaryItemUpdate } from './dictionary-item-data';
 
 import { DATABASE_ADAPTER } from '@zucker-framework/crud';
 
@@ -36,17 +37,19 @@ export class DictionaryItemService {
   async findAll(filter?: { dictId?: string }): Promise<DictionaryItem[]> {
     const where: Record<string, unknown> = {};
     if (filter?.dictId) where.dictId = filter.dictId;
-    return this.db.model('dictionaryItem').findMany({
+    const items = await this.db.model('dictionaryItem').findMany({
       where,
-      orderBy: { sortIndex: 'asc' },
-    }) as Promise<DictionaryItem[]>;
+      orderBy: [{ ordinal: 'asc' }, { id: 'asc' }],
+    });
+    return items.map(dictionaryItemRecord);
   }
 
   async findByDictId(dictId: string): Promise<DictionaryItem[]> {
-    return this.db.model('dictionaryItem').findMany({
+    const items = await this.db.model('dictionaryItem').findMany({
       where: { dictId },
-      orderBy: { sortIndex: 'asc' },
-    }) as Promise<DictionaryItem[]>;
+      orderBy: [{ ordinal: 'asc' }, { id: 'asc' }],
+    });
+    return items.map(dictionaryItemRecord);
   }
 
   async getTree(dictId: string): Promise<TreeNode[]> {
@@ -54,56 +57,32 @@ export class DictionaryItemService {
     return this.buildTree(items);
   }
 
-  async create(data: {
-    dictId: string;
-    name: string;
-    value: string;
-    text: string;
-    parentId?: string;
-    sortIndex?: number;
-    description?: string;
-    status?: boolean;
-    properties?: Record<string, unknown>;
-    searchCode?: string;
-    valueType?: string;
-  }): Promise<DictionaryItem> {
+  async create(data: DictionaryItemInput): Promise<DictionaryItem> {
     const path = data.parentId
       ? await this.buildPath(data.parentId)
       : '';
 
     // Auto-fill ordinal if not provided
-    let ordinal = data.sortIndex;
+    let ordinal = data.ordinal ?? data.sortIndex;
     if (ordinal === undefined || ordinal === null) {
       ordinal = await this.nextOrdinal(data.dictId);
     }
 
     const result = await this.db.model('dictionaryItem').create({
       data: {
-        ...data,
+        ...dictionaryItemData(data),
         path,
         ordinal,
       },
     }) as DictionaryItem;
     this.emitCacheClear();
-    return result;
+    return dictionaryItemRecord(result);
   }
 
   /**
    * Batch create items, auto-filling ordinals for items that don't have one.
    */
-  async createBatch(items: Array<{
-    dictId: string;
-    name: string;
-    value: string;
-    text: string;
-    parentId?: string;
-    sortIndex?: number;
-    description?: string;
-    status?: boolean;
-    properties?: Record<string, unknown>;
-    searchCode?: string;
-    valueType?: string;
-  }>): Promise<DictionaryItem[]> {
+  async createBatch(items: DictionaryItemInput[]): Promise<DictionaryItem[]> {
     // Group by dictId for ordinal assignment
     const byDictId = new Map<string, typeof items>();
     for (const item of items) {
@@ -114,11 +93,11 @@ export class DictionaryItemService {
 
     const results: DictionaryItem[] = [];
     for (const [dictId, group] of byDictId) {
-      const allHaveOrdinal = group.every((i) => i.sortIndex !== undefined && i.sortIndex !== null);
-      const noneHaveOrdinal = group.every((i) => i.sortIndex === undefined || i.sortIndex === null);
+      const allHaveOrdinal = group.every((i) => (i.ordinal ?? i.sortIndex) != null);
+      const noneHaveOrdinal = group.every((i) => (i.ordinal ?? i.sortIndex) == null);
 
       if (!allHaveOrdinal && !noneHaveOrdinal) {
-        throw new Error('Within a batch for the same dictId, all items must have sortIndex or none must');
+        throw new Error('Within a batch for the same dictId, all items must have ordinal/sortIndex or none must');
       }
 
       let nextOrd = 0;
@@ -127,12 +106,12 @@ export class DictionaryItemService {
       }
 
       for (const item of group) {
-        const ordinal = allHaveOrdinal ? item.sortIndex! : nextOrd++;
+        const ordinal = item.ordinal ?? item.sortIndex ?? nextOrd++;
         const path = item.parentId ? await this.buildPath(item.parentId) : '';
         const created = (await this.db.model('dictionaryItem').create({
-          data: { ...item, path, ordinal },
+          data: { ...dictionaryItemData(item), path, ordinal },
         })) as DictionaryItem;
-        results.push(created);
+        results.push(dictionaryItemRecord(created));
       }
     }
 
@@ -144,32 +123,25 @@ export class DictionaryItemService {
    * Find items by search code (fuzzy/quick lookup).
    */
   async findBySearchCode(dictId: string, searchCode: string): Promise<DictionaryItem[]> {
-    return this.db.model('dictionaryItem').findMany({
+    const items = await this.db.model('dictionaryItem').findMany({
       where: {
         dictId,
         searchCode: { contains: searchCode },
       },
-      orderBy: { sortIndex: 'asc' },
-    }) as Promise<DictionaryItem[]>;
+      orderBy: [{ ordinal: 'asc' }, { id: 'asc' }],
+    });
+    return items.map(dictionaryItemRecord);
   }
 
-  async update(id: string, data: Partial<{
-    name: string;
-    value: string;
-    text: string;
-    sortIndex: number;
-    description: string;
-    status: boolean;
-    properties: Record<string, unknown>;
-    searchCode: string;
-    valueType: string;
-  }>): Promise<DictionaryItem> {
+  async update(id: string, data: DictionaryItemUpdate): Promise<DictionaryItem> {
+    const existing = data.valueType !== undefined && data.properties === undefined
+      ? await this.db.model('dictionaryItem').findUnique({ where: { id } }) as DictionaryItem | null : null;
     const result = await this.db.model('dictionaryItem').update({
       where: { id },
-      data,
+      data: dictionaryItemData(data, existing?.properties),
     }) as DictionaryItem;
     this.emitCacheClear();
-    return result;
+    return dictionaryItemRecord(result);
   }
 
   async delete(id: string): Promise<void> {
@@ -203,7 +175,7 @@ export class DictionaryItemService {
       where: { id },
       data: {
         parentId: targetParentId,
-        sortIndex,
+        ordinal: sortIndex,
         path: newPath,
       },
     });
@@ -216,12 +188,13 @@ export class DictionaryItemService {
    * Get all items matching specific values within a dictionary.
    */
   async findByValues(dictId: string, values: string[]): Promise<DictionaryItem[]> {
-    return this.db.model('dictionaryItem').findMany({
+    const items = await this.db.model('dictionaryItem').findMany({
       where: {
         dictId,
         value: { in: values },
       },
-    }) as Promise<DictionaryItem[]>;
+    });
+    return items.map(dictionaryItemRecord);
   }
 
   /**

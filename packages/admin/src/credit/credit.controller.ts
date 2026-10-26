@@ -43,7 +43,7 @@ interface CreditCountResult {
 }
 
 @UseGuards(JwtAuthGuard, PermissionsGuard)
-@Permissions()
+@Permissions('credit:query')
 @Controller('credit')
 export class CreditController {
   constructor(private readonly creditService: CreditService) {}

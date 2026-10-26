@@ -5,6 +5,7 @@ import EventEmitter2Constructor, { type EventEmitter2 } from 'eventemitter2';
 import type { DictionaryItem } from './index';
 import type { DictDefine } from './dict-define';
 import { ClearDictionaryCacheEvent } from './clear-dictionary-cache-event';
+import { dictionaryItemRecord } from './dictionary-item-data';
 
 /** Internal model for dictionary row (without items relation) */
 interface DictionaryRow {
@@ -143,7 +144,7 @@ export class DictionaryService {
       orderBy: { ordinal: 'asc' },
     })) as DictionaryItem[];
 
-    return { ...dict, items };
+    return { ...dict, items: items.map(dictionaryItemRecord) };
   }
 
   /**
@@ -178,7 +179,7 @@ export class DictionaryService {
     const itemsByDictId = new Map<string, DictionaryItem[]>();
     for (const item of allItems) {
       const list = itemsByDictId.get(item.dictId) ?? [];
-      list.push(item);
+      list.push(dictionaryItemRecord(item));
       itemsByDictId.set(item.dictId, list);
     }
 
