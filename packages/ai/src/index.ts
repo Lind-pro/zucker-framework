@@ -137,7 +137,13 @@ export { KlingProvider } from './providers/kling.provider';
 
 export * from './model-catalog.service';
 
-export type { ImageProvider, ImageProviderOptions, ImageProviderResult } from './image-provider';
+export type {
+  ImageProvider,
+  ImageProviderOptions,
+  ImageProviderResult,
+  ImageProviderSource,
+  ImageProviderUsage,
+} from './image-provider';
 export { ImageProviderConfigError } from './image-provider';
 export { OpenAIImageProvider } from './providers/openai-image.provider';
 export type {
