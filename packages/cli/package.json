@@ -16,7 +16,7 @@
     "tooling/agent-instructions.d.mts"
   ],
   "scripts": {
-    "build": "tsup --config tsup.config.ts && node ../../scripts/prepare-cli-catalog.mjs",
+    "build": "tsup --config tsup.config.ts && node ../../scripts/prepare-cli-catalog.mjs && node ../../scripts/prepare-cli-templates.mjs",
     "clean": "rm -rf dist",
     "lint": "eslint src/",
     "prepack": "node ../../scripts/prepare-package-legal.mjs"
@@ -32,6 +32,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.19.43",
+    "@types/pg": "8.23.1",
     "tsx": "^4.23.13"
   },
   "engines": {

@@ -85,3 +85,101 @@ test('checks real npm file selection and archive contents without running lifecy
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+function projectBundleFixture() {
+  const encode = (source) => Buffer.from(source).toString('base64');
+  const template = (name, entrypoints) => Object.fromEntries([
+    ['package.json', encode(JSON.stringify({ name: `synthetic-${name}`, private: true }))],
+    ...entrypoints.map((path) => [path, encode(`// synthetic ${path}\n`)]),
+  ]);
+  return {
+    version: 1,
+    consumerInstructions: '# Standalone consumer\n',
+    templates: {
+      admin: template('admin', ['index.html', 'vite.config.ts', 'tsconfig.json', 'src/main.tsx']),
+      web: template('web', ['next.config.ts', 'tsconfig.json', 'src/app/[locale]/layout.tsx', 'src/app/[locale]/page.tsx']),
+      'server-full': template('server-full', ['README.md', '.env.example', '.gitignore', 'nest-cli.json', 'tsconfig.json', 'eslint.config.cjs', 'prisma.config.ts', 'prisma/schema.prisma', 'prisma/migrations/migration_lock.toml', 'prisma/migrations/20261024000000_initial/migration.sql', 'prisma/migrations/20261024000100_credential_version/migration.sql', 'src/main.ts', 'src/app.module.ts', 'src/database.ts', 'src/accounts/account.module.ts', 'src/accounts/account.controller.ts', 'src/accounts/account.guard.ts', 'src/accounts/account.service.ts', 'src/accounts/account-mailer.ts', 'src/accounts/create-administrator.ts', 'src/scripts/create-admin.ts']),
+    },
+  };
+}
+
+test('accepts only validated CLI generator assets in directory and tarball payload paths', () => {
+  const bundle = Buffer.from(JSON.stringify(projectBundleFixture()));
+  for (const path of ['dist/project-templates.json', 'package/dist/project-templates.json']) {
+    assert.doesNotThrow(() => assertPackageContent('@zucker-framework/cli', [path], () => bundle));
+  }
+});
+
+test('requires generator assets in the CLI payload without imposing that requirement on other packages', () => {
+  assert.throws(() => assertPackageContent('@zucker-framework/cli', ['dist/index.js'], () => ''), /missing dist\/project-templates.json/);
+  assert.throws(() => assertPackageContent('@zucker-framework/cli', ['package/dist/index.js'], () => ''), /missing dist\/project-templates.json/);
+  assert.doesNotThrow(() => assertPackageContent('@zucker-framework/example', ['dist/index.js'], () => 'export {};'));
+  assert.throws(() => assertPackageContent('@zucker-framework/example', ['dist/component.tsx'], () => ''), /uncompiled source/);
+});
+
+test('rejects private files and invalid structure hidden inside the CLI JSON assets', () => {
+  const encode = (value) => Buffer.from(value).toString('base64');
+  const mutations = [
+    (bundle) => { bundle.version = 2; },
+    (bundle) => { bundle.consumerInstructions = ''; },
+    (bundle) => { delete bundle.templates.web; },
+    (bundle) => { delete bundle.templates['server-full']; },
+    (bundle) => { delete bundle.templates['server-full']['prisma/migrations/20261024000100_credential_version/migration.sql']; },
+    (bundle) => { bundle.templates['server-full']['src/generated/prisma/client.ts'] = encode('SYNTHETIC_PRIVATE_FIXTURE'); },
+    (bundle) => { bundle.templates.admin['.env.production'] = encode('SYNTHETIC_PRIVATE_FIXTURE'); },
+    (bundle) => { bundle.templates.admin['package.json'] = encode('SYNTHETIC_PRIVATE_FIXTURE_NOT_JSON'); },
+    (bundle) => { bundle.templates.admin['package.json'] = encode('{"dependencies":[]}'); },
+    (bundle) => { delete bundle.templates.admin['src/main.tsx']; },
+    (bundle) => { delete bundle.templates.web['src/app/[locale]/layout.tsx']; },
+  ];
+  for (const mutate of mutations) {
+    const bundle = projectBundleFixture();
+    mutate(bundle);
+    for (const path of ['dist/project-templates.json', 'package/dist/project-templates.json']) {
+      assert.throws(() => assertPackageContent('@zucker-framework/cli', [path], () => Buffer.from(JSON.stringify(bundle))), (error) => {
+        assert.match(error.message, /invalid|Invalid|missing|no package manifest/);
+        assert.doesNotMatch(error.message, /SYNTHETIC_PRIVATE_FIXTURE/);
+        return true;
+      });
+    }
+  }
+});
+
+test('validated generator assets do not exempt unrelated CLI files from release rules', () => {
+  const payload = Buffer.from(JSON.stringify(projectBundleFixture()));
+  for (const path of ['src/internal.ts', 'dist/index.js.map', 'dist/.env', 'AGENTS.md']) {
+    assert.throws(() => assertPackageContent('@zucker-framework/cli', ['dist/project-templates.json', path], (file) => {
+      if (file === 'dist/project-templates.json') return payload;
+      assert.fail('Excluded release files must not be read');
+    }), /source material excluded/);
+  }
+});
+
+test('validates the embedded generator bundle using the actual CLI tarball manifest', (context) => {
+  const directory = mkdtempSync(join(tmpdir(), 'zucker-cli-content-test-'));
+  context.after(() => rmSync(directory, { recursive: true, force: true }));
+  const packageDir = join(directory, 'package');
+  mkdirSync(join(packageDir, 'dist'), { recursive: true });
+  writeFileSync(join(packageDir, 'package.json'), JSON.stringify({
+    name: '@zucker-framework/cli', version: '0.0.0', license: 'Apache-2.0',
+    main: 'dist/index.js', bin: { zucker: './dist/index.js' },
+  }));
+  writeFileSync(join(packageDir, 'dist/index.js'), 'module.exports = {};\n');
+  writeFileSync(join(packageDir, 'LICENSE'), readFileSync(new URL('../LICENSE', import.meta.url)));
+  writeFileSync(join(packageDir, 'NOTICE'), readFileSync(new URL('../NOTICE', import.meta.url)));
+  writeFileSync(join(packageDir, 'THIRD_PARTY_NOTICES'), '@zucker-framework/cli\nNo bundled dependencies.\n');
+  const assets = join(packageDir, 'dist/project-templates.json');
+  const tarball = join(directory, 'fixture.tgz');
+  const archive = () => execFileSync('tar', ['-czf', tarball, '-C', directory, 'package']);
+  const bundle = projectBundleFixture();
+  writeFileSync(assets, JSON.stringify(bundle));
+  archive();
+  assert.doesNotThrow(() => assertTarballContent(tarball));
+  bundle.templates.web['.env.local'] = Buffer.from('SYNTHETIC_PRIVATE_FIXTURE').toString('base64');
+  writeFileSync(assets, JSON.stringify(bundle));
+  archive();
+  assert.throws(() => assertTarballContent(tarball), /Invalid template asset: \.env.local/);
+  rmSync(assets);
+  archive();
+  assert.throws(() => assertTarballContent(tarball), /missing dist\/project-templates.json/);
+});
