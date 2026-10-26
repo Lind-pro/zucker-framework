@@ -33,6 +33,11 @@ import {
   PERSISTENT_LOG_OPTIONS,
   type PersistentLogOptions,
 } from './persistent-logs';
+import {
+  HttpRequestObservationMiddleware,
+  HTTP_REQUEST_OBSERVATION_OPTIONS,
+  type HttpRequestObservationOptions,
+} from './http-request-observation.middleware';
 
 export interface ZuckerLoggingOptions extends AccessLogCaptureOptions {
   pii?: PiiFilterOptions;
@@ -42,6 +47,8 @@ export interface ZuckerLoggingOptions extends AccessLogCaptureOptions {
   persistence?: PersistentLogOptions;
   /** Capture 4xx/5xx responses even when no controller action runs. Requires persistence. */
   rejectedRequests?: Omit<RejectedRequestLogOptions, 'retainClientIp'>;
+  /** Unsampled, once-per-response observation before access detail sampling. */
+  httpObservation?: Omit<HttpRequestObservationOptions, 'retainClientIp'>;
 }
 const LOGGING_OPTIONS = Symbol('LOGGING_OPTIONS');
 
@@ -54,6 +61,8 @@ export class ZuckerLoggingModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
     if (this.options.correlationId !== false)
       consumer.apply(CorrelationIdMiddleware).forRoutes('{*path}');
+    if (this.options.httpObservation)
+      consumer.apply(HttpRequestObservationMiddleware).forRoutes('{*path}');
     if (this.options.rejectedRequests)
       consumer.apply(RejectedRequestLoggerMiddleware).forRoutes('{*path}');
   }
@@ -61,6 +70,8 @@ export class ZuckerLoggingModule implements NestModule {
   static forRoot(options: ZuckerLoggingOptions = {}): DynamicModule {
     if (options.rejectedRequests && !options.persistence)
       throw new Error('Rejected request logging requires persistence');
+    if (options.httpObservation?.slowRequestMs !== undefined && !options.persistence)
+      throw new Error('Slow request detail logging requires persistence');
     return {
       module: ZuckerLoggingModule,
       // 关键：@Global() 装饰器只让本模块的 _static_ providers 全局可见；
@@ -74,6 +85,12 @@ export class ZuckerLoggingModule implements NestModule {
           useValue: typeof options.correlationId === 'object' ? options.correlationId : {},
         },
         Reflector,
+        ...(options.httpObservation
+          ? [
+              { provide: HTTP_REQUEST_OBSERVATION_OPTIONS, useValue: { ...options.httpObservation, retainClientIp: options.retainClientIp } },
+              HttpRequestObservationMiddleware,
+            ]
+          : []),
         ...(options.rejectedRequests
           ? [
               {
@@ -87,7 +104,8 @@ export class ZuckerLoggingModule implements NestModule {
         { provide: LogSanitizer, useFactory: () => new LogSanitizer(options.pii) },
         {
           provide: ACCESS_LOG_CAPTURE_OPTIONS,
-          useValue: { retainClientIp: options.retainClientIp },
+          useValue: { retainClientIp: options.retainClientIp,
+            captureParameters: options.captureParameters, captureResults: options.captureResults },
         },
         ...(options.persistence
           ? [

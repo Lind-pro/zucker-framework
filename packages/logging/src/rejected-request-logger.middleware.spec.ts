@@ -31,7 +31,8 @@ describe('rejected-request persistence', () => {
     response.statusCode = 403;
     finish();
     expect(log).toHaveBeenCalledWith(
-      expect.objectContaining({ action: 'http:403', userId: 'synthetic-user', ip: '192.0.2.2' }),
+      expect.objectContaining({ action: 'http:403', userId: 'synthetic-user', ip: '192.0.2.2', exception: 'HTTP 403', statusCode: 403 }),
+      { completionObservation: undefined, completionResponse: undefined },
     );
   });
   it('skips configured routes and successes, and omits IPs by default', () => {
@@ -59,10 +60,17 @@ describe('rejected-request persistence', () => {
     );
     finish();
     expect(log).not.toHaveBeenCalled();
+    // A new request has its own final status; completion is never recorded twice.
+    middleware.use(
+      { path: '/other', url: '/other', method: 'GET', headers: {}, ip: '192.0.2.2' },
+      response,
+      () => {},
+    );
     response.statusCode = 404;
     finish();
     expect(log).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'http:404', ip: undefined }),
+      { completionObservation: undefined, completionResponse: undefined },
     );
     expect(() => ZuckerLoggingModule.forRoot({ rejectedRequests: {} })).toThrow(
       'requires persistence',

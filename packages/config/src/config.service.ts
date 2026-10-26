@@ -30,7 +30,11 @@ export interface ConfigChangePayload {
   key: string;
   oldValue: unknown;
   newValue: unknown;
+  /** Protected values are redacted in events; trusted consumers must reload through get(). */
+  sensitive?: true;
 }
+
+const PROTECTED_CONFIG_VALUE = '[REDACTED]';
 
 /**
  * Encryption adapter interface for config values.
@@ -69,6 +73,7 @@ export class ConfigService {
    * @returns 配置值，不存在时返回 undefined
    */
   async get<T = string>(scope: string, key: string): Promise<T | undefined> {
+    this.requireEncryption(scope, key);
     const cacheKey = `${scope}:${key}`;
     if (this.cache.has(cacheKey)) {
       return this.cache.get(cacheKey) as T;
@@ -86,9 +91,9 @@ export class ConfigService {
     if (this.encryptor && this.isEncryptedProperty(scope, key)) {
       try {
         value = (await this.encryptor.decrypt(value as unknown as string)) as unknown as T;
-      } catch (decryptError) {
-        this.logger.error(`Failed to decrypt config ${scope}.${key}: ${decryptError instanceof Error ? decryptError.message : String(decryptError)}`);
-        return undefined;
+      } catch {
+        this.logger.error(`Failed to decrypt protected config ${scope}.${key}`);
+        throw new Error('Protected configuration could not be decrypted');
       }
     }
 
@@ -128,6 +133,7 @@ export class ConfigService {
    * @throws ValidationException 校验失败时
    */
   async set(scope: string, key: string, value: unknown): Promise<void> {
+    this.requireEncryption(scope, key, value);
     // Validate against scope definition if available
     if (this.scopeManager?.has(scope)) {
       const errors = this.scopeManager.validate(scope, key, value);
@@ -161,9 +167,9 @@ export class ConfigService {
     await this.db.model('config').update({
       where: { scope_key: { scope, key } },
       data: { value: storedValue },
-    }).catch(async (updateError: unknown) => {
+    }).catch(async () => {
       // upsert: create if not exists
-      this.logger.debug(`Config key ${scope}.${key} not found, creating: ${updateError instanceof Error ? updateError.message : String(updateError)}`);
+      this.logger.debug(`Config key ${scope}.${key} update did not succeed; attempting creation`);
       await this.db.model('config').create({
         data: { scope, key, value: storedValue },
       });
@@ -178,7 +184,7 @@ export class ConfigService {
     // 记录配置变更历史（支持版本回溯）
     await this.recordHistory(scope, key, oldValue, value);
 
-    const payload: ConfigChangePayload = { scope, key, oldValue, newValue: value };
+    const payload = this.changePayload(scope, key, oldValue, value);
     this.eventEmitter?.emit(CONFIG_CHANGED_EVENT, payload);
     // Publish to TopicEventBus for cross-module event-driven integration
     if (this.topicEventBus) {
@@ -196,6 +202,7 @@ export class ConfigService {
   async setProperties(scope: string, values: Record<string, unknown>): Promise<void> {
     const entries = Object.entries(values);
     if (entries.length === 0) return;
+    for (const [key, value] of entries) this.requireEncryption(scope, key, value);
 
     // Batch validate all entries first (fail-fast)
     if (this.scopeManager?.has(scope)) {
@@ -231,22 +238,26 @@ export class ConfigService {
         await tx.model('config').update({
           where: { scope_key: { scope, key } },
           data: { value: storedValue },
-        }).catch(async (updateError: unknown) => {
-          this.logger.debug(`Config key ${scope}.${key} not found, creating: ${updateError instanceof Error ? updateError.message : String(updateError)}`);
+        }).catch(async () => {
+          this.logger.debug(`Config key ${scope}.${key} update did not succeed; attempting creation`);
           await tx.model('config').create({
             data: { scope, key, value: storedValue },
           });
         });
 
-        if (this.cache.size >= ConfigService.CACHE_MAX_SIZE) {
-          const firstKey = this.cache.keys().next().value!;
-          this.cache.delete(firstKey);
-        }
-        this.cache.set(cacheKey, value);
-        changes.push({ scope, key, oldValue, newValue: value });
+        changes.push(this.changePayload(scope, key, oldValue, value));
       }
     });
 
+    // Failed transactions must not leave process-local secrets/configuration ahead of storage.
+    for (const [key, value] of entries) {
+      while (this.cache.size >= ConfigService.CACHE_MAX_SIZE) {
+        const oldest = this.cache.keys().next().value;
+        if (oldest === undefined) break;
+        this.cache.delete(oldest);
+      }
+      this.cache.set(`${scope}:${key}`, value);
+    }
     // Emit events after all writes succeed (single batch notification)
     for (const payload of changes) {
       this.eventEmitter?.emit(CONFIG_CHANGED_EVENT, payload);
@@ -283,15 +294,16 @@ export class ConfigService {
 
     // Override with stored values
     for (const record of records) {
+      this.requireEncryption(scope, record.key);
       let value = record.value;
 
       // Decrypt if encrypted property
       if (this.encryptor && this.isEncryptedProperty(scope, record.key)) {
         try {
           value = await this.encryptor.decrypt(value as string);
-        } catch (decryptError) {
-          this.logger.error(`Failed to decrypt config ${scope}.${record.key}: ${decryptError instanceof Error ? decryptError.message : String(decryptError)}`);
-          continue;
+        } catch {
+          this.logger.error(`Failed to decrypt protected config ${scope}.${record.key}`);
+          throw new Error('Protected configuration could not be decrypted');
         }
       }
 
@@ -331,7 +343,7 @@ export class ConfigService {
 
     this.cache.delete(cacheKey);
 
-    const payload: ConfigChangePayload = { scope, key, oldValue, newValue: undefined };
+    const payload = this.changePayload(scope, key, oldValue, undefined);
     this.eventEmitter?.emit(CONFIG_CHANGED_EVENT, payload);
     if (this.topicEventBus) {
       await this.topicEventBus.publish(CONFIG_CHANGED_TOPIC, payload);
@@ -407,12 +419,13 @@ export class ConfigService {
     newValue: unknown,
   ): Promise<void> {
     try {
+      const values = this.changePayload(scope, key, oldValue, newValue);
       await this.db.model('configHistory').create({
         data: {
           scope,
           key,
-          oldValue: oldValue !== undefined ? JSON.stringify(oldValue) : null,
-          newValue: JSON.stringify(newValue),
+          oldValue: values.oldValue !== undefined ? JSON.stringify(values.oldValue) : null,
+          newValue: JSON.stringify(values.newValue),
           changedAt: new Date(),
         },
       });
@@ -436,11 +449,14 @@ export class ConfigService {
       const where: Record<string, unknown> = { scope };
       if (key) where.key = key;
 
-      return await this.db.model('configHistory').findMany({
+      const records = await this.db.model('configHistory').findMany({
         where,
         orderBy: { changedAt: 'desc' },
         take: limit,
       }) as Array<{ scope: string; key: string; oldValue: unknown; newValue: unknown; changedAt: Date }>;
+      // Hide historical values too, including rows written before protected history was introduced.
+      return records.map(record => this.isEncryptedProperty(record.scope, record.key)
+        ? { ...record, oldValue: PROTECTED_CONFIG_VALUE, newValue: PROTECTED_CONFIG_VALUE } : record);
     } catch {
       return [];
     }
@@ -451,11 +467,13 @@ export class ConfigService {
    * @param historyId 历史记录 ID
    */
   async rollback(historyId: string): Promise<void> {
+    const record = await this.db.model('configHistory').findUnique({
+      where: { id: historyId },
+    }) as { scope: string; key: string; oldValue: string | null } | null;
+    if (record && this.isEncryptedProperty(record.scope, record.key)) {
+      throw new Error('Protected configuration requires an explicit replacement; history cannot restore secrets');
+    }
     try {
-      const record = await this.db.model('configHistory').findUnique({
-        where: { id: historyId },
-      }) as { scope: string; key: string; oldValue: string | null } | null;
-
       if (!record || record.oldValue === null) return;
 
       const value = JSON.parse(record.oldValue);
@@ -463,6 +481,18 @@ export class ConfigService {
     } catch (error) {
       this.logger.warn(`Config rollback failed: ${error instanceof Error ? error.message : String(error)}`);
     }
+  }
+
+  private requireEncryption(scope: string, key: string, value?: unknown): void {
+    if (!this.isEncryptedProperty(scope, key)) return;
+    if (!this.encryptor) throw new Error('Protected configuration requires an encryption adapter');
+    if (arguments.length === 3 && typeof value !== 'string') throw new Error('Protected configuration must be a string');
+  }
+
+  private changePayload(scope: string, key: string, oldValue: unknown, newValue: unknown): ConfigChangePayload {
+    if (!this.isEncryptedProperty(scope, key)) return { scope, key, oldValue, newValue };
+    return { scope, key, oldValue: oldValue === undefined ? undefined : PROTECTED_CONFIG_VALUE,
+      newValue: newValue === undefined ? undefined : PROTECTED_CONFIG_VALUE, sensitive: true };
   }
 
   /**

@@ -10,7 +10,7 @@
 
 ## HTTP error policy
 
-`HttpExceptionFilter` accepts optional `HttpExceptionFilterOptions`. `formatResponse(normalized, context)` customizes the response envelope after Framework status/message/retry-header normalization. Context includes the original exception, request and classification (`http`, `business`, `validation`, `unknown`). `onServerError(context)` can report 5xx errors; a reporting exception cannot replace the HTTP response. Without options, the existing Framework envelope and behavior are unchanged. Configure product disclosure/messages as a policy object rather than wrapping Nest request/response objects.
+`HttpExceptionFilter` accepts optional `HttpExceptionFilterOptions`. `formatResponse(normalized, context)` customizes the response envelope after Framework status/message/retry-header normalization. Context includes the original exception, request and classification (`http`, `business`, `validation`, `unknown`). `onServerError(context)` can report 5xx errors; a reporting exception cannot replace the HTTP response. Unknown errors use a fixed default log message and response: raw exception messages/stacks and thrown objects may contain ORM values, credential hashes, tokens or private content. An explicit reporter receives the original context and owns any redaction before external logging. Configure product disclosure/messages as a policy object rather than wrapping Nest request/response objects.
 
 ## HTTP input and generated JSON
 

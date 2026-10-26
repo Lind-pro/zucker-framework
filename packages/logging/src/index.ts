@@ -40,6 +40,9 @@ export type {
   OperationLogStatus,
   LogQuery,
   PersistentLogOptions,
+  AccessLogPersistenceContext,
+  AccessLogWriteContext,
+  AccessLogCompletionResponse,
 } from './persistent-logs';
 export { ACCESS_LOG_CAPTURE_OPTIONS } from './access-logger.interceptor';
 export type { AccessLogCaptureOptions } from './access-logger.interceptor';
@@ -71,6 +74,8 @@ export * from './operational-metrics';
 
 export * from './http-error-logger.interceptor';
 export * from './rejected-request-logger.middleware';
+export { HttpRequestObservationMiddleware, HTTP_REQUEST_OBSERVATION_OPTIONS } from './http-request-observation.middleware';
+export type { HttpRequestObservation, HttpRequestObservationOptions } from './http-request-observation.middleware';
 
 export { CORRELATION_ID_OPTIONS } from './correlation-id';
 export type { CorrelationIdOptions } from './correlation-id';

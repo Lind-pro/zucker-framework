@@ -1,5 +1,12 @@
 import { Inject, Injectable, type NestMiddleware } from '@nestjs/common';
 import { AccessLogService } from './persistent-logs';
+import {
+  HTTP_ACCESS_CAPTURED,
+  HTTP_COMPLETION_OBSERVATION,
+  HTTP_COMPLETION_RESPONSE,
+  type ObservedHttpRequest,
+} from './http-request-observation.middleware';
+import { getCorrelationId } from './correlation-id';
 
 export interface RejectedRequestLogOptions {
   skipPaths?: readonly string[];
@@ -7,7 +14,7 @@ export interface RejectedRequestLogOptions {
   retainClientIp?: boolean;
 }
 export const REJECTED_REQUEST_LOG_OPTIONS = Symbol('REJECTED_REQUEST_LOG_OPTIONS');
-interface RequestData {
+interface RequestData extends ObservedHttpRequest {
   path: string;
   method: string;
   url: string;
@@ -36,8 +43,13 @@ export class RejectedRequestLoggerMiddleware implements NestMiddleware {
       return;
     }
     const start = Date.now();
+    const requestId = getCorrelationId();
+    let completed = false;
     response.on('finish', () => {
-      if (response.statusCode < 400) return;
+      if (completed) return;
+      completed = true;
+      if (response.statusCode < 400 || request[HTTP_ACCESS_CAPTURED]) return;
+      request[HTTP_ACCESS_CAPTURED] = true;
       const header = (name: string) => {
         const value = request.headers[name];
         return Array.isArray(value) ? value[0] : value;
@@ -57,7 +69,13 @@ export class RejectedRequestLoggerMiddleware implements NestMiddleware {
         userAgent: header('user-agent'),
         requestTime: new Date(start),
         responseTime: Date.now() - start,
-      });
+        statusCode: response.statusCode,
+        requestId,
+        exception: `HTTP ${response.statusCode}`,
+      }, {
+        completionObservation: request[HTTP_COMPLETION_OBSERVATION],
+        completionResponse: request[HTTP_COMPLETION_RESPONSE],
+      }).catch(() => {});
     });
     next();
   }
