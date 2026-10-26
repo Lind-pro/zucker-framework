@@ -1,6 +1,6 @@
 {
   "name": "@zucker-framework/fe-site",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "description": "Optional site advertising, referral and support connections with controlled public configuration.",
   "main": "dist/index.js",
   "module": "dist/index.mjs",

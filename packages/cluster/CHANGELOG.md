@@ -1,5 +1,12 @@
 # @zucker-framework/cluster
 
+## 1.0.11
+
+### Patch Changes
+
+- @zucker-framework/core@1.0.11
+  - @zucker-framework/event@1.0.11
+
 ## 1.0.10
 
 ### Patch Changes
