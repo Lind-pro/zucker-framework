@@ -269,3 +269,10 @@ describe('QueryParamEntity - withFilter, withIncludes, withExcludes', () => {
     expect(entity.excludes).toEqual(['password', 'secret']);
   });
 });
+
+
+it('preserves the opt-in count strategy through construction and cloning', () => {
+  const query = new QueryParamEntity({ inferTotal: true, page: 1, pageSize: 10 });
+  expect(query.clone().inferTotal).toBe(true);
+  expect(QueryParamEntity.of(query).inferTotal).toBe(true);
+});

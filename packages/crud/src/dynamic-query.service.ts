@@ -1,7 +1,7 @@
 import { Injectable, Inject, Logger, Optional } from '@nestjs/common';
 import { type DatabaseAdapter, type Term } from '@zucker-framework/core';
 import { FilterOperatorFactory } from './operators';
-import { type PaginatedResult } from './pagination';
+import { resolvePageTotal, type PaginatedResult } from './pagination';
 import { DATABASE_ADAPTER } from './crud.module';
 import { TermExpressionParser } from './expression/term-expression-parser';
 
@@ -45,6 +45,9 @@ export interface DynamicQueryParam {
   excludes?: string[];
   /** Whether to run COUNT and SELECT queries in parallel */
   parallelPager?: boolean;
+  /** Opt in to SELECT-first counting. Requires stable ordering; see README consistency limits.
+   * Ignored when total is supplied or parallelPager is true. */
+  inferTotal?: boolean;
   /** Structured Term conditions  */
   terms?: Term[];
 }
@@ -264,6 +267,7 @@ export class DynamicQueryService {
    * @param queryParam 查询参数
    * @param defaultOrderField 默认排序字段
    * @param dataAccessTerms DataAccess 产生的过滤条件（由 DataPermissionGuard 注入）
+   * @param requiredWhere Trusted service-owned constraints, ANDed with user and access filters
    * @param denyFields DataAccess 产生的禁止字段列表
    * @returns 分页查询结果
    */
@@ -273,6 +277,7 @@ export class DynamicQueryService {
     defaultOrderField?: string,
     dataAccessTerms?: Term[],
     denyFields?: string[],
+    requiredWhere?: Record<string, unknown>,
   ): Promise<PaginatedResult<T>> {
     const {
       filters, filter, where: whereExpr, terms,
@@ -306,9 +311,13 @@ export class DynamicQueryService {
     const accessWhere = dataAccessTerms
       ? this.dynamicQueryParam.termsToWhere(dataAccessTerms)
       : {};
-    const where = Object.keys(accessWhere).length > 0
+    const scopedWhere = Object.keys(accessWhere).length > 0
       ? (Object.keys(userWhere).length > 0 ? { AND: [userWhere, accessWhere] } : accessWhere)
       : userWhere;
+    // Trusted service constraints are ANDed after every user filter representation.
+    const where = requiredWhere && Object.keys(requiredWhere).length
+      ? { AND: [scopedWhere, requiredWhere] }
+      : scopedWhere;
 
     const sort = this.dynamicQueryParam.parseOrderBy(orderBy, defaultOrderField);
 
@@ -381,6 +390,15 @@ export class DynamicQueryService {
         totalPages: Math.ceil(total / safePageSize),
         pageIndex: safePage - 1,
       };
+    }
+
+    if (queryParam.inferTotal) {
+      const data = await modelOps.findMany({
+        where, orderBy: sort, ...pagination, ...(select ? { select } : {}),
+      }) as T[];
+      const total = await resolvePageTotal(data.length, pagination, () => modelOps.count({ where }));
+      return { data, total, page: safePage, pageSize: safePageSize,
+        totalPages: Math.ceil(total / safePageSize), pageIndex: safePage - 1 };
     }
 
     // 默认：先 count 再 findMany

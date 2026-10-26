@@ -7,6 +7,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock NestJS decorators to avoid dependency issues
 vi.mock('@nestjs/common', () => ({
+  BadRequestException: class BadRequestException extends Error {},
   Injectable: () => (target: any) => target,
   NotFoundException: class NotFoundException extends Error {
     constructor(msg: string) { super(msg); this.name = 'NotFoundException'; }
@@ -120,7 +121,7 @@ describe('SoftDeleteService', () => {
     expect(result.deletedAt).not.toBeNull();
     expect(db.model('testModel').update).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: '1' },
+        where: { id: '1', deletedAt: null },
         data: expect.objectContaining({ deletedAt: expect.any(Date) }),
       }),
     );
@@ -147,7 +148,7 @@ describe('SoftDeleteService', () => {
     expect(result.deletedAt).toBeNull();
     expect(db.model('testModel').update).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: '1' },
+        where: { id: '1', deletedAt: entity.deletedAt },
         data: { deletedAt: null },
       }),
     );
@@ -182,16 +183,15 @@ describe('SoftDeleteService', () => {
       expect.objectContaining({
         page: 1,
         pageSize: 20,
-        filters: JSON.stringify({ 'deletedAt$isNull': true }),
       }),
-      'createdAt',
+      'createdAt', undefined, undefined, { deletedAt: null },
     );
   });
 
   it('should add deletedAt null filter to deleteMany where clause', async () => {
     await service.deleteMany({ status: 'old' });
     const call = db.model('testModel').updateMany.mock.calls[0][0];
-    expect(call.where).toHaveProperty('deletedAt', null);
+    expect(call.where).toEqual({ AND: [{ status: 'old' }, { deletedAt: null }] });
   });
 
   it('should not add deletedAt filter when includeDeleted option is set for deleteMany', async () => {
@@ -217,7 +217,7 @@ describe('SoftDeleteService', () => {
         page: 1,
         pageSize: 20,
       }),
-      'createdAt',
+      'createdAt', undefined, undefined, undefined,
     );
     // Should NOT have the deletedAt filter injected
     const callArgs = dynamicQuery.findMany.mock.calls[0][1];

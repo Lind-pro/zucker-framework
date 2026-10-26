@@ -23,6 +23,7 @@ export class QueryParamEntity implements DynamicQueryParam {
   includes?: string[];
   excludes?: string[];
   parallelPager?: boolean;
+  inferTotal?: boolean;
 
   private _terms: Term[] = [];
   private _termsInitialized = false;
@@ -38,6 +39,7 @@ export class QueryParamEntity implements DynamicQueryParam {
       this.includes = param.includes ? [...param.includes] : undefined;
       this.excludes = param.excludes ? [...param.excludes] : undefined;
       this.parallelPager = param.parallelPager;
+      this.inferTotal = param.inferTotal;
 
       if (param.filters !== undefined) {
         this.filters = param.filters;
@@ -231,6 +233,7 @@ export class QueryParamEntity implements DynamicQueryParam {
     cloned.includes = this.includes ? [...this.includes] : undefined;
     cloned.excludes = this.excludes ? [...this.excludes] : undefined;
     cloned.parallelPager = this.parallelPager;
+    cloned.inferTotal = this.inferTotal;
     cloned._noPaging = this._noPaging;
     cloned._noSort = this._noSort;
     cloned._terms = this.getTerms().map((term) => this.cloneTerm(term));

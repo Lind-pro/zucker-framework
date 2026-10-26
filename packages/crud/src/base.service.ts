@@ -44,6 +44,15 @@ function hasErrorCode(error: unknown, code: string): boolean {
 export abstract class CrudService<T extends CrudEntity> {
   protected readonly logger = new Logger(this.constructor.name);
   protected readonly modelName: string;
+  /** Trusted constraints for dynamic queries, independent of user filter syntax. */
+  protected get requiredQueryWhere(): Record<string, unknown> | undefined { return undefined; }
+
+  private findManyScoped<R = unknown>(model: string, query: DynamicQueryParam, order?: string): Promise<PaginatedResult<R>> {
+    return this.requiredQueryWhere
+      ? this.dynamicQuery.findMany<R>(model, query, order, undefined, undefined, this.requiredQueryWhere)
+      : this.dynamicQuery.findMany<R>(model, query, order);
+  }
+
   protected readonly defaultOrderField: string = 'createdAt';
 
   constructor(
@@ -196,7 +205,7 @@ export abstract class CrudService<T extends CrudEntity> {
    * @returns 分页查询结果
    */
   async findAll(query: DynamicQueryParam): Promise<PaginatedResult<T>> {
-    return this.dynamicQuery.findMany<T>(this.modelName, query, this.defaultOrderField);
+    return this.findManyScoped<T>(this.modelName, query, this.defaultOrderField);
   }
 
   /**
@@ -237,7 +246,7 @@ export abstract class CrudService<T extends CrudEntity> {
    */
   async countByQuery(query: DynamicQueryParam): Promise<number> {
     // 使用 DynamicQueryParamService.parseFilters 解析，确保与 findMany 的过滤逻辑一致
-    const result = await this.dynamicQuery.findMany(
+    const result = await this.findManyScoped(
       this.modelName,
       {
         ...query,
@@ -254,7 +263,7 @@ export abstract class CrudService<T extends CrudEntity> {
    * 判断数据是否存在
    */
   async exists(query: DynamicQueryParam): Promise<boolean> {
-    const result = await this.dynamicQuery.findMany(
+    const result = await this.findManyScoped(
       this.modelName,
       {
         ...query,
@@ -284,7 +293,7 @@ export abstract class CrudService<T extends CrudEntity> {
       total = param.total;
     } else {
       // 通过 DynamicQueryParamService 解析过滤条件，避免原始 JSON 直接注入查询
-      const countResult = await this.dynamicQuery.findMany(
+      const countResult = await this.findManyScoped(
         this.modelName,
         {
           ...param,
@@ -305,7 +314,7 @@ export abstract class CrudService<T extends CrudEntity> {
     const totalPages = Math.ceil(total / pageSize);
     const adjustedPage = page > totalPages && totalPages > 0 ? totalPages : page;
 
-    return this.dynamicQuery.findMany<T>(
+    return this.findManyScoped<T>(
       this.modelName,
       { ...param, page: adjustedPage, pageSize, total },
       this.defaultOrderField,
