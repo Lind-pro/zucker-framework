@@ -3,8 +3,8 @@ import type {
   Order as PayPalOrder,
   OrderApplicationContextShippingPreference,
   OrderApplicationContextUserAction,
-} from "@paypal/paypal-server-sdk";
-import type { PayPalPaymentTransport } from "../../providers/paypal";
+} from '@paypal/paypal-server-sdk';
+import type { PayPalPaymentTransport } from '../../providers/paypal';
 
 /*
  * The PayPal SDK is an optional peer that PayPalPaymentTransport loads on use;
@@ -13,9 +13,9 @@ import type { PayPalPaymentTransport } from "../../providers/paypal";
  * string constants, so the literal values are pinned here and typed against the
  * SDK's enums so a future SDK rename still fails type-checking.
  */
-const CAPTURE_INTENT = "CAPTURE" as CheckoutPaymentIntent;
-const PAY_NOW = "PAY_NOW" as OrderApplicationContextUserAction;
-const NO_SHIPPING = "NO_SHIPPING" as OrderApplicationContextShippingPreference;
+const CAPTURE_INTENT = 'CAPTURE' as CheckoutPaymentIntent;
+const PAY_NOW = 'PAY_NOW' as OrderApplicationContextUserAction;
+const NO_SHIPPING = 'NO_SHIPPING' as OrderApplicationContextShippingPreference;
 import type {
   CreatePaymentInput,
   PaymentProviderAdapter,
@@ -23,8 +23,9 @@ import type {
   RefundInput,
   WebhookObservation,
   WebhookRequest,
-} from "../payment-contract";
-import type { SettlementState } from "../settlement";
+} from '../payment-contract';
+import type { SettlementState } from '../settlement';
+import { toMinorUnits } from '../money';
 
 /**
  * PayPal Orders v2 适配器。
@@ -45,9 +46,31 @@ export interface PayPalAdapterOptions {
  * 这是供应商事实；"本产品只卖哪几种"属于上层应用，不写在这里。
  */
 export const PAYPAL_SUPPORTED_CURRENCIES = [
-  "AUD", "BRL", "CAD", "CNY", "CZK", "DKK", "EUR", "HKD", "HUF",
-  "ILS", "JPY", "MYR", "MXN", "TWD", "NZD", "NOK", "PHP", "PLN",
-  "GBP", "RUB", "SGD", "SEK", "CHF", "THB", "USD",
+  'AUD',
+  'BRL',
+  'CAD',
+  'CNY',
+  'CZK',
+  'DKK',
+  'EUR',
+  'HKD',
+  'HUF',
+  'ILS',
+  'JPY',
+  'MYR',
+  'MXN',
+  'TWD',
+  'NZD',
+  'NOK',
+  'PHP',
+  'PLN',
+  'GBP',
+  'RUB',
+  'SGD',
+  'SEK',
+  'CHF',
+  'THB',
+  'USD',
 ] as const;
 
 /**
@@ -59,46 +82,44 @@ export const PAYPAL_SUPPORTED_CURRENCIES = [
 export function observePayPalState(order: PayPalOrder): SettlementState {
   const captures = order.purchaseUnits?.[0]?.payments?.captures ?? [];
   switch (order.status) {
-    case "CREATED":
-    case "SAVED":
-    case "PAYER_ACTION_REQUIRED":
-      return "created";
-    case "APPROVED":
-      return "authorized";
-    case "VOIDED":
-      return "canceled";
-    case "COMPLETED": {
-      if (captures.some((capture) => capture.status === "COMPLETED")) return "captured";
-      if (captures.some((c) => c.status === "DECLINED" || c.status === "FAILED")) return "failed";
-      return "authorized";
+    case 'CREATED':
+    case 'SAVED':
+    case 'PAYER_ACTION_REQUIRED':
+      return 'created';
+    case 'APPROVED':
+      return 'authorized';
+    case 'VOIDED':
+      return 'canceled';
+    case 'COMPLETED': {
+      if (captures.some((capture) => capture.status === 'COMPLETED')) return 'captured';
+      if (captures.some((c) => c.status === 'DECLINED' || c.status === 'FAILED')) return 'failed';
+      return 'authorized';
     }
     default:
-      return "unknown";
+      return 'unknown';
   }
 }
 
-export function createPayPalAdapter(
-  options: PayPalAdapterOptions,
-): PaymentProviderAdapter {
+export function createPayPalAdapter(options: PayPalAdapterOptions): PaymentProviderAdapter {
   const { transport } = options;
 
   const toSession = (order: PayPalOrder): PaymentSession => {
     const unit = order.purchaseUnits?.[0];
-    const approve = order.links?.find((link) => link.rel === "approve")?.href;
+    const approve = order.links?.find((link) => link.rel === 'approve')?.href;
     return {
-      providerRef: order.id ?? "",
-      nextAction: approve ? { kind: "redirect", url: approve } : { kind: "none" },
+      providerRef: order.id ?? '',
+      nextAction: approve ? { kind: 'redirect', url: approve } : { kind: 'none' },
       state: observePayPalState(order),
       money: {
-        amount: unit?.amount?.value ?? "0",
-        currency: unit?.amount?.currencyCode ?? "",
+        amount: unit?.amount?.value ?? '0',
+        currency: unit?.amount?.currencyCode ?? '',
       },
       raw: order,
     };
   };
 
   return {
-    id: "paypal",
+    id: 'paypal',
     supportedCurrencies: PAYPAL_SUPPORTED_CURRENCIES,
 
     async createPayment(input: CreatePaymentInput): Promise<PaymentSession> {
@@ -120,14 +141,13 @@ export function createPayPalAdapter(
             returnUrl: input.returnUrl,
             cancelUrl: input.cancelUrl,
             userAction: PAY_NOW,
-            shippingPreference:
-              NO_SHIPPING,
+            shippingPreference: NO_SHIPPING,
             brandName: options.brandName,
           },
         },
         // 幂等：同一个键重试，PayPal 返回同一笔订单
         paypalRequestId: input.idempotencyKey,
-        prefer: "return=representation",
+        prefer: 'return=representation',
       });
       return toSession(payment.raw);
     },
@@ -136,7 +156,7 @@ export function createPayPalAdapter(
       const payment = await transport.captureOrder({
         id: providerRef,
         paypalRequestId: idempotencyKey,
-        prefer: "return=representation",
+        prefer: 'return=representation',
       });
       return toSession(payment.raw);
     },
@@ -148,8 +168,48 @@ export function createPayPalAdapter(
     },
 
     async refund(input: RefundInput) {
+      // providerRef remains the Orders v2 ID throughout this legacy contract. Refunds use
+      // a capture ID, resolved by a read; never send the order ID to /captures/:id/refund.
+      const payment = await transport.getOrder({ id: input.providerRef });
+      if (payment.raw.id !== input.providerRef)
+        throw new Error('PayPal order reference does not match');
+      const captures =
+        payment.raw.purchaseUnits?.flatMap((unit) => unit.payments?.captures ?? []) ?? [];
+      const settled = captures.filter((capture) =>
+        ['COMPLETED', 'PARTIALLY_REFUNDED', 'REFUNDED'].includes(capture.status ?? ''),
+      );
+      const capture = settled[0];
+      if (
+        captures.length !== 1 ||
+        settled.length !== 1 ||
+        !capture?.id ||
+        !['COMPLETED', 'PARTIALLY_REFUNDED'].includes(capture.status ?? '')
+      ) {
+        throw new Error('PayPal order must identify one refundable capture');
+      }
+      const currency = capture.amount?.currencyCode,
+        amount = capture.amount?.value;
+      if (
+        !currency ||
+        !amount ||
+        !PAYPAL_SUPPORTED_CURRENCIES.includes(
+          currency as (typeof PAYPAL_SUPPORTED_CURRENCIES)[number],
+        )
+      ) {
+        throw new Error('PayPal capture amount is unavailable');
+      }
+      const unitCurrency = ['JPY', 'HUF', 'TWD'].includes(currency) ? 'JPY' : 'USD';
+      const capturedAmount = toMinorUnits(amount, unitCurrency);
+      if (capturedAmount <= 0) throw new Error('PayPal capture amount must be positive');
+      if (input.money !== undefined) {
+        if (!input.money || input.money.currency !== currency)
+          throw new Error('PayPal refund currency does not match the capture');
+        const requested = toMinorUnits(input.money.amount, unitCurrency);
+        if (requested <= 0 || requested > capturedAmount)
+          throw new Error('PayPal refund amount exceeds the capture or is not positive');
+      }
       const refund = await transport.refundCapture(
-        input.providerRef,
+        capture.id,
         {
           ...(input.money
             ? {
@@ -164,20 +224,20 @@ export function createPayPalAdapter(
         input.idempotencyKey,
       );
       return {
-        refundRef: refund.id ?? "",
+        refundRef: refund.id ?? '',
         state:
-          refund.status === "COMPLETED"
-            ? ("refunded" as SettlementState)
-            : ("unknown" as SettlementState),
+          refund.status === 'COMPLETED'
+            ? ('refunded' as SettlementState)
+            : ('unknown' as SettlementState),
       };
     },
 
     async parseWebhook(request: WebhookRequest): Promise<WebhookObservation> {
       if (!options.webhookId) {
-        throw new Error("PayPal webhookId is not configured; refusing to trust the request");
+        throw new Error('PayPal webhookId is not configured; refusing to trust the request');
       }
       const body =
-        typeof request.rawBody === "string"
+        typeof request.rawBody === 'string'
           ? request.rawBody
           : new TextDecoder().decode(request.rawBody);
       const valid = await transport.verifyWebhookSignature(
@@ -185,24 +245,24 @@ export function createPayPalAdapter(
         request.headers,
         options.webhookId,
       );
-      if (!valid) throw new Error("PayPal webhook signature verification failed");
+      if (!valid) throw new Error('PayPal webhook signature verification failed');
 
       const event = JSON.parse(body) as {
         event_type?: string;
         resource?: { supplementary_data?: { related_ids?: { order_id?: string } } };
       };
-      const type = event.event_type ?? "unknown";
+      const type = event.event_type ?? 'unknown';
       const providerRef = event.resource?.supplementary_data?.related_ids?.order_id;
       const state: SettlementState =
-        type === "PAYMENT.CAPTURE.COMPLETED"
-          ? "captured"
-          : type === "PAYMENT.CAPTURE.DENIED" || type === "PAYMENT.CAPTURE.DECLINED"
-            ? "failed"
-            : type === "PAYMENT.CAPTURE.REFUNDED"
-              ? "refunded"
-              : type === "PAYMENT.CAPTURE.REVERSED"
-                ? "refunded"
-                : "unknown";
+        type === 'PAYMENT.CAPTURE.COMPLETED'
+          ? 'captured'
+          : type === 'PAYMENT.CAPTURE.DENIED' || type === 'PAYMENT.CAPTURE.DECLINED'
+            ? 'failed'
+            : type === 'PAYMENT.CAPTURE.REFUNDED'
+              ? 'refunded'
+              : type === 'PAYMENT.CAPTURE.REVERSED'
+                ? 'refunded'
+                : 'unknown';
       return { type, providerRef, state, raw: event };
     },
   };

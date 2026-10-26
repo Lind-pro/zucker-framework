@@ -72,16 +72,12 @@ const params: CreateOrderParams = {
 
 describe('persistent order workflow', () => {
   it('requires an explicit persistence port', () => {
-    expect(
-      () => new OrderService(payments().registry, undefined as never),
-    ).toThrow('persistence');
+    expect(() => new OrderService(payments().registry, undefined as never)).toThrow('persistence');
   });
   it('reads existing state through a new service and cannot mutate storage through returned references', async () => {
     const rows = new Map<string, Order>();
     const payment = payments();
-    await new OrderService(payment.registry, persistence(rows)).createOrder(
-      params,
-    );
+    await new OrderService(payment.registry, persistence(rows)).createOrder(params);
     const restarted = new OrderService(payment.registry, persistence(rows));
     const row = await restarted.getOrder(params.orderId);
     expect(row.status).toBe('paying');
@@ -93,9 +89,9 @@ describe('persistent order workflow', () => {
     const store = persistence(new Map());
     const payment = payments();
     vi.mocked(store.create).mockRejectedValueOnce(new Error('database unavailable'));
-    await expect(
-      new OrderService(payment.registry, store).createOrder(params),
-    ).rejects.toThrow('database unavailable');
+    await expect(new OrderService(payment.registry, store).createOrder(params)).rejects.toThrow(
+      'database unavailable',
+    );
     expect(payment.adapter.createPayment).not.toHaveBeenCalled();
   });
   it('allows only one simultaneous confirmation and one simultaneous refund', async () => {
@@ -131,10 +127,11 @@ describe('persistent order workflow', () => {
     async (state) => {
       const payment = payments();
       payment.adapter.capture.mockResolvedValue(capturedAs(state));
-      const service = new OrderService(payment.registry, persistence(new Map()),
-      );
+      const service = new OrderService(payment.registry, persistence(new Map()));
       await service.createOrder(params);
-      await expect(service.confirmOrder(params.orderId, 'k-capture')).resolves.toMatchObject({ state });
+      await expect(service.confirmOrder(params.orderId, 'k-capture')).resolves.toMatchObject({
+        state,
+      });
       expect((await service.getOrder(params.orderId)).status).toBe('confirming');
       await expect(service.confirmOrder(params.orderId, 'k-capture')).rejects.toThrow('状态已变化');
       expect(payment.adapter.capture).toHaveBeenCalledOnce();
@@ -159,5 +156,139 @@ describe('persistent order workflow', () => {
     await expect(service.createOrder(params)).rejects.toThrow('write failed');
     expect((await service.getOrder(params.orderId)).status).toBe('created');
     expect(payment.adapter.createPayment).toHaveBeenCalledOnce();
+  });
+});
+
+describe('legacy partial-refund boundary', () => {
+  function paid(amount = '10.00', currency = 'USD') {
+    const payment = payments(),
+      rows = new Map<string, Order>();
+    rows.set('paid-order', {
+      id: 'paid-order',
+      providerId: 'test',
+      paymentIntentId: 'payment-1',
+      paymentId: 'payment-1',
+      amount,
+      currency,
+      status: 'paid',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      paidAt: new Date(),
+    });
+    const store = persistence(rows),
+      service = new OrderService(payment.registry, store);
+    return { payment, rows, store, service };
+  }
+  it('does not turn a completed partial refund into a fully refunded order or guess cumulative totals', async () => {
+    const { payment, store, service } = paid();
+    payment.adapter.refund.mockResolvedValue({ refundRef: 'refund-1', state: 'refunded' });
+    const result = await service.refundOrder('paid-order', 'partial-1', {
+      money: { amount: '4.00', currency: 'USD' },
+    });
+    expect(result).toEqual({ refundRef: 'refund-1', state: 'partially_refunded' });
+    expect(await service.getOrder('paid-order')).toMatchObject({ status: 'paid' });
+    expect((await service.getOrder('paid-order')).refundedAt).toBeUndefined();
+    const restarted = new OrderService(payment.registry, store);
+    await expect(
+      restarted.refundOrder('paid-order', 'partial-2', {
+        money: { amount: '6.00', currency: 'USD' },
+      }),
+    ).resolves.toMatchObject({ state: 'partially_refunded' });
+    expect((await restarted.getOrder('paid-order')).status).toBe('paid');
+    expect(payment.adapter.refund).toHaveBeenNthCalledWith(2, {
+      providerRef: 'payment-1',
+      money: { amount: '6.00', currency: 'USD' },
+      reason: undefined,
+      idempotencyKey: 'partial-2',
+    });
+  });
+  it('preserves a provider partial observation without storing the full-refund terminal state', async () => {
+    const { payment, service } = paid();
+    payment.adapter.refund.mockResolvedValue({
+      refundRef: 'refund-partial',
+      state: 'partially_refunded',
+    });
+    await expect(service.refundOrder('paid-order', 'observed')).resolves.toMatchObject({
+      state: 'partially_refunded',
+    });
+    expect((await service.getOrder('paid-order')).status).toBe('paid');
+    expect((await service.getOrder('paid-order')).refundedAt).toBeUndefined();
+  });
+  it.each([undefined, { amount: '0010.000', currency: 'USD' }])(
+    'retains explicit whole-payment refund semantics for %j',
+    async (money) => {
+      const { payment, service } = paid();
+      payment.adapter.refund.mockResolvedValue({ refundRef: 'full', state: 'refunded' });
+      await expect(service.refundOrder('paid-order', 'full', { money })).resolves.toMatchObject({
+        state: 'refunded',
+      });
+      expect(await service.getOrder('paid-order')).toMatchObject({
+        status: 'refunded',
+        refundedAt: expect.any(Date),
+      });
+    },
+  );
+  it.each([
+    { amount: '1.00', currency: 'EUR' },
+    { amount: '0.00', currency: 'USD' },
+    { amount: '-1.00', currency: 'USD' },
+    { amount: '10.0001', currency: 'USD' },
+    { amount: '1e1', currency: 'USD' },
+    { amount: 'NaN', currency: 'USD' },
+    { amount: 5, currency: 'USD' },
+    null,
+  ])('rejects invalid refund %j before CAS or any provider request', async (money) => {
+    const { payment, store, service } = paid();
+    await expect(
+      service.refundOrder('paid-order', 'invalid', { money: money as never }),
+    ).rejects.toThrow();
+    expect(store.compareAndSet).not.toHaveBeenCalled();
+    expect(payment.adapter.refund).not.toHaveBeenCalled();
+    expect((await service.getOrder('paid-order')).status).toBe('paid');
+  });
+  it('compares large and multi-decimal amounts without a floating-point or two-decimal conversion', async () => {
+    const { payment, service } = paid('9007199254740993.003', 'KWD');
+    payment.adapter.refund.mockResolvedValue({ refundRef: 'precise', state: 'refunded' });
+    await expect(
+      service.refundOrder('paid-order', 'precise', {
+        money: { amount: '9007199254740993.002', currency: 'KWD' },
+      }),
+    ).resolves.toMatchObject({ state: 'partially_refunded' });
+    await expect(
+      service.refundOrder('paid-order', 'too-large', {
+        money: { amount: '9007199254740993.004', currency: 'KWD' },
+      }),
+    ).rejects.toThrow('exceed');
+    expect(payment.adapter.refund).toHaveBeenCalledOnce();
+  });
+  it('keeps an uncertain partial attempt in flight without retry and restores paid only on definite failure', async () => {
+    const { payment, service } = paid();
+    payment.adapter.refund.mockResolvedValue({ refundRef: 'pending', state: 'unknown' });
+    await service.refundOrder('paid-order', 'pending', {
+      money: { amount: '2.00', currency: 'USD' },
+    });
+    expect((await service.getOrder('paid-order')).status).toBe('refunding');
+    await expect(
+      service.refundOrder('paid-order', 'pending', { money: { amount: '2.00', currency: 'USD' } }),
+    ).rejects.toThrow('状态已变化');
+    expect(payment.adapter.refund).toHaveBeenCalledOnce();
+    const failed = paid();
+    failed.payment.adapter.refund.mockResolvedValue({ refundRef: 'failed', state: 'failed' });
+    await failed.service.refundOrder('paid-order', 'failed', {
+      money: { amount: '2.00', currency: 'USD' },
+    });
+    expect((await failed.service.getOrder('paid-order')).status).toBe('paid');
+  });
+  it('keeps a partially refunded capture observation nonterminal and retains its refund reference', async () => {
+    const payment = payments(),
+      service = new OrderService(payment.registry, persistence(new Map()));
+    payment.adapter.capture.mockResolvedValue(capturedAs('partially_refunded'));
+    await service.createOrder(params);
+    await service.confirmOrder(params.orderId, 'capture');
+    expect(await service.getOrder(params.orderId)).toMatchObject({
+      status: 'paid',
+      paymentId: 'payment-1',
+    });
+    expect((await service.getOrder(params.orderId)).refundedAt).toBeUndefined();
   });
 });
