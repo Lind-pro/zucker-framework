@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, Logger } from '@nestjs/common';
 import type { DatabaseAdapter, ModelOperations } from '@zucker-framework/core';
 import { createHash, randomBytes } from 'node:crypto';
 
@@ -253,6 +253,18 @@ export class ApiKeyService<T extends ApiKeyRecord = ApiKeyRecord> {
       where: { id: keyId, userId },
       data,
     });
+  }
+
+  /** Owner metadata edit on one still-active key; never rotates or returns credential material. */
+  async renameApiKey(keyId: string, userId: string, name: string): Promise<{ id: string; name: string }> {
+    if (typeof keyId !== 'string' || !keyId.trim() || typeof userId !== 'string' || !userId.trim())
+      throw new NotFoundException(this.message('notFound'));
+    if (typeof name !== 'string' || !name.trim()) throw new BadRequestException('API key name is required');
+    const normalized = name.trim();
+    const changed = await this.model().updateMany({ where: { id: keyId, userId, isActive: true, revokedAt: null,
+      OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] }, data: { name: normalized } });
+    if (changed.count !== 1) throw new NotFoundException(this.message('notFound'));
+    return { id: keyId, name: normalized };
   }
 
   /**

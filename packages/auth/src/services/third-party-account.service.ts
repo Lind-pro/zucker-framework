@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { type DatabaseAdapter, BusinessException, NotFoundException } from '@zucker-framework/core';
 
 export interface ThirdPartyProfile {
@@ -27,7 +27,21 @@ export interface ThirdPartyBindRecord {
   profileData?: Record<string, unknown>;
 }
 
+export interface ThirdPartyBindingRequest {
+  user: { id: string; [claim: string]: unknown };
+  headers?: { cookie?: string; authorization?: string; [header: string]: string | string[] | undefined };
+}
+export interface ThirdPartyBindingProofInput {
+  userId: string;
+  provider: string;
+  proof: string;
+  /** Current authenticated request for resolving its session/browser binding. */
+  request: ThirdPartyBindingRequest;
+}
+
 export interface ThirdPartyAccountOptions {
+  /** Consume a server-issued proof bound to this authenticated user/session/browser/provider. */
+  resolveBindingProof?: (input: ThirdPartyBindingProofInput) => Promise<ThirdPartyProfile>;
   bindingsModel?: string;
   usersModel?: string;
   /** Reject a second account of the same provider, including the same account. */
@@ -65,7 +79,22 @@ export class ThirdPartyAccountService {
     await this.db.model(this.bindingsModel).update({ where: { id }, data: this.profileData(profile) });
   }
 
-  /** 绑定第三方账号到用户 */
+  /** HTTP boundary: an unconfigured resolver and browser-supplied profiles never establish ownership. */
+  async bindAccountWithProof(userId: string, provider: string, proof: unknown, request: ThirdPartyBindingRequest): Promise<void> {
+    if (!this.options.resolveBindingProof || typeof proof !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(proof) ||
+      typeof provider !== 'string' || !provider || provider.length > 100 || !userId || request?.user?.id !== userId) {
+      throw new UnauthorizedException('A verified account binding proof is required');
+    }
+    const profile = await this.options.resolveBindingProof({ userId, provider, proof, request });
+    if (!profile || typeof profile.providerAccountId !== 'string' || !profile.providerAccountId) {
+      throw new UnauthorizedException('Invalid account binding proof');
+    }
+    // The resolver's claim and this write are not automatically one transaction. Custom consumers
+    // requiring atomicity must compose proof consumption and bindAccount in their own transaction.
+    await this.bindAccount(userId, provider, profile);
+  }
+
+  /** Trusted server primitive; callers must already have verified the provider identity. */
   async bindAccount(
     userId: string,
     provider: string,

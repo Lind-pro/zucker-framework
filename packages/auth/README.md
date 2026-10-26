@@ -28,6 +28,10 @@ Configure `PersistentSessionService<T>` with the shared database adapter and `Pe
 
 Register `RefreshTokenCookie` directly with `RefreshTokenCookieOptions`. The shared class always writes HttpOnly attributes and preserves them when clearing the cookie. Cookie name/security/lifetime belong to the application.
 
+`PersistentSessionRefreshTokenStore` binds `RefreshTokenService` to the existing persistent session model. Use the **session ID** as the refresh subject and create its owned session before calling `login`. `getSessionById` resolves only the primary key; `replaceRefreshJti` initializes only active, unexpired sessions. Rotation uses the same database compare-and-swap as `PersistentSessionService`; the database's fixed expiry is never extended and missing/revoked sessions never use cache-miss recovery. The consumer must still validate the current account and check session ownership/revocation for each access token. The Server template demonstrates separate access/refresh audiences, HttpOnly transport, transactional ticket consumption and credential-version invalidation using its own schema.
+
+The default menu controller now requires `menu:query/add/update/delete` for administrative operations. Its user-filtered `menu/tree` remains available to authenticated users. Grant the matching permission codes explicitly; authentication alone no longer grants menu modification.
+
 Extend `JwtStrategyBase<Claims>` for custom asynchronous identity validation; it retains Passport JWT extraction, signature and expiration handling. The existing concrete `JwtStrategy` still performs its synchronous default mapping. Consumers no longer need to cast a strategy constructor to hide a return-type mismatch.
 
 ## Refresh pairs without a new session table
@@ -65,3 +69,9 @@ Validation on 2026-09-11: all 24 auth unit-test files (178 tests) passed, includ
 ### Account deletion schema contract
 
 `UserService.deleteUser(userId, relatedModels)` requires the consumer to list the adapter models whose `userId` records must be removed (for example `['userRoles', 'userPermissions']`). Pass `[]` only when no related cleanup is required. All cleanup and account deletion use one transaction; failures propagate and no success event is published. The previous one-argument contract is removed; no optional-table guessing or compatibility fallback remains.
+
+### Verified OAuth identities and binding proofs
+
+`GoogleIdTokenVerifier` verifies Google One Tap credentials against official JWKS and a server-stored nonce, with bounded caching, rotation and sanitized errors. `OAuthProofService` reuses one-time tickets for distinct login/linking handoffs bound to the browser and, for linking, the authenticated user/session. Wrong context is rejected before claiming. The generic third-party binding endpoint now requires `{ proof }` and a configured `thirdPartyAccounts.resolveBindingProof`; raw client profiles are rejected. Low-level `bindAccount` remains available for trusted server integrations. See [identity verification, proof contracts and transaction boundaries](docs/oauth-identity-proofs.md).
+
+`ApiKeyService.renameApiKey(keyId, userId, name)` performs one atomic, owner-scoped metadata update restricted to an active, unrevoked and unexpired key. It returns only `{ id, name }`; it does not read/return the hash, rotate the secret, change scopes or reactivate a key. A missing owner/key or lost active-state predicate fails closed. Consumer HTTP handlers retain name-length/content policy, allowed origins and a name-only field whitelist; the broader existing administrative update API remains separate.

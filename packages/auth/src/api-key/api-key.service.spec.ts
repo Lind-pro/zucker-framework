@@ -84,4 +84,23 @@ describe('ApiKeyService persistent authentication', () => {
       data: { isActive: false, revokedAt: expect.any(Date) },
     });
   });
+
+  it('renames only active owned metadata through one atomic predicate and returns no credential fields', async () => {
+    const { service, keys } = harness();
+    expect(await service.renameApiKey('key-1', 'owner', '  Renamed client  ')).toEqual({ id: 'key-1', name: 'Renamed client' });
+    expect(keys.findUnique).not.toHaveBeenCalled(); expect(keys.update).not.toHaveBeenCalled();
+    expect(keys.updateMany).toHaveBeenCalledWith({ where: { id: 'key-1', userId: 'owner', isActive: true, revokedAt: null,
+      OR: [{ expiresAt: null }, { expiresAt: { gt: expect.any(Date) } }] }, data: { name: 'Renamed client' } });
+  });
+  it('does not report a rename after ownership or active-state CAS was lost', async () => {
+    const { service, keys } = harness(); keys.updateMany.mockResolvedValue({ count: 0 });
+    await expect(service.renameApiKey('key-1', 'other', 'new')).rejects.toThrow('API key not found');
+    await expect(service.renameApiKey('key-1', 'owner', 'new')).rejects.toThrow('API key not found');
+  });
+  it('does not omit an invalid owner predicate or persist an empty name', async () => {
+    const { service, keys } = harness();
+    await expect(service.renameApiKey('key-1', '', 'new')).rejects.toThrow();
+    await expect(service.renameApiKey('key-1', 'owner', '   ')).rejects.toThrow();
+    expect(keys.updateMany).not.toHaveBeenCalled();
+  });
 });
