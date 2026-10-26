@@ -80,6 +80,18 @@ export interface DurableWorkerRunResult {
   status: TaskStatus;
 }
 
+export interface DurableWorkerRunOptions {
+  /** Host interruption stops this attempt; durable recovery waits for its abandoned lease. */
+  signal?: AbortSignal;
+}
+
+export class DurableTaskAbortedError extends Error {
+  constructor(readonly taskId: string) {
+    super(`Durable task attempt was interrupted by its host: ${taskId}`);
+    this.name = 'DurableTaskAbortedError';
+  }
+}
+
 export class DurableTaskNotFoundError extends Error {
   constructor(readonly taskId: string) {
     super(`Durable task was not found: ${taskId}`);
@@ -180,7 +192,8 @@ export class DurableWorkerRuntime<TPayload = unknown, TResult = unknown> {
     }
   }
 
-  async run(taskId: string): Promise<DurableWorkerRunResult> {
+  async run(taskId: string, runOptions: DurableWorkerRunOptions = {}): Promise<DurableWorkerRunResult> {
+    if (runOptions.signal?.aborted) throw new DurableTaskAbortedError(taskId);
     let task = await this.repository.findById(taskId);
     if (!task) throw new DurableTaskNotFoundError(taskId);
     if (isTerminalTaskStatus(task.status)) return terminalResult(task);
@@ -208,6 +221,7 @@ export class DurableWorkerRuntime<TPayload = unknown, TResult = unknown> {
 
     const leaseToken = this.createLeaseToken();
     const claimedAt = this.now();
+    if (runOptions.signal?.aborted) throw new DurableTaskAbortedError(taskId);
     const claimed = await this.repository.claim({
       id: task.id,
       workerId: this.workerId,
@@ -220,7 +234,20 @@ export class DurableWorkerRuntime<TPayload = unknown, TResult = unknown> {
     const controller = new AbortController();
     let abortNotified = false;
     let heartbeatFailures = 0;
-    let heartbeatInFlight = false;
+    let heartbeatInFlight: Promise<void> | undefined;
+    let heartbeatHandle: unknown;
+    let heartbeatStarted = false;
+    const stopHeartbeat = () => {
+      if (!heartbeatStarted) return;
+      heartbeatStarted = false;
+      this.heartbeatScheduler.stop(heartbeatHandle);
+    };
+    const onHostAbort = () => {
+      if (!controller.signal.aborted) controller.abort(new DurableTaskAbortedError(claimed.id));
+      stopHeartbeat();
+    };
+    runOptions.signal?.addEventListener('abort', onHostAbort, { once: true });
+    if (runOptions.signal?.aborted) onHostAbort();
 
     const abortAttempt = async (operation: string): Promise<void> => {
       if (controller.signal.aborted) return;
@@ -248,33 +275,34 @@ export class DurableWorkerRuntime<TPayload = unknown, TResult = unknown> {
       });
     };
 
-    const heartbeat = async (): Promise<void> => {
-      if (heartbeatInFlight || controller.signal.aborted) return;
-      heartbeatInFlight = true;
-      try {
-        const renewed = await renewLease();
-        if (!renewed) {
-          this.options.logger?.error?.('durable_task_lease_lost', {
+    const heartbeat = (): Promise<void> => {
+      if (heartbeatInFlight || controller.signal.aborted) return Promise.resolve();
+      const renewal = (async () => {
+        try {
+          const renewed = await renewLease();
+          if (!renewed) {
+            this.options.logger?.error?.('durable_task_lease_lost', {
+              taskId: claimed.id,
+              kind: claimed.kind,
+            });
+            await abortAttempt('heartbeat');
+            return;
+          }
+          heartbeatFailures = 0;
+        } catch {
+          heartbeatFailures += 1;
+          this.options.logger?.warn?.('durable_task_heartbeat_failed', {
             taskId: claimed.id,
             kind: claimed.kind,
+            consecutiveFailures: heartbeatFailures,
           });
-          await abortAttempt('heartbeat');
-          return;
+          if (heartbeatFailures >= this.maxConsecutiveHeartbeatFailures) {
+            await abortAttempt('heartbeat');
+          }
         }
-        heartbeatFailures = 0;
-      } catch {
-        heartbeatFailures += 1;
-        this.options.logger?.warn?.('durable_task_heartbeat_failed', {
-          taskId: claimed.id,
-          kind: claimed.kind,
-          consecutiveFailures: heartbeatFailures,
-        });
-        if (heartbeatFailures >= this.maxConsecutiveHeartbeatFailures) {
-          await abortAttempt('heartbeat');
-        }
-      } finally {
-        heartbeatInFlight = false;
-      }
+      })();
+      heartbeatInFlight = renewal;
+      return renewal.finally(() => { if (heartbeatInFlight === renewal) heartbeatInFlight = undefined; });
     };
 
     const context: DurableTaskAttemptContext<TPayload, TResult> = {
@@ -283,6 +311,7 @@ export class DurableWorkerRuntime<TPayload = unknown, TResult = unknown> {
       signal: controller.signal,
       now: this.now,
       assertActive: async () => {
+        if (controller.signal.aborted) throw controller.signal.reason;
         let active: boolean;
         try {
           active = await renewLease();
@@ -295,6 +324,7 @@ export class DurableWorkerRuntime<TPayload = unknown, TResult = unknown> {
         throw new DurableTaskLeaseLostError(claimed.id, 'active check');
       },
       reportProgress: async (stage, progress) => {
+        if (controller.signal.aborted) throw controller.signal.reason;
         const updated = await this.repository.reportProgress({
           id: claimed.id,
           leaseToken,
@@ -308,9 +338,12 @@ export class DurableWorkerRuntime<TPayload = unknown, TResult = unknown> {
       },
     };
 
-    const heartbeatHandle = this.heartbeatScheduler.start(heartbeat, this.heartbeatIntervalMs);
-
     try {
+      if (!controller.signal.aborted) {
+        heartbeatHandle = this.heartbeatScheduler.start(heartbeat, this.heartbeatIntervalMs);
+        heartbeatStarted = true;
+      }
+      if (controller.signal.aborted) throw controller.signal.reason;
       const result = await handler.execute(context);
       if (controller.signal.aborted) {
         throw controller.signal.reason instanceof Error
@@ -377,7 +410,9 @@ export class DurableWorkerRuntime<TPayload = unknown, TResult = unknown> {
       if (!failed) return this.resolveRejectedCommit(claimed, 'failure');
       return { taskId: claimed.id, kind: claimed.kind, status: 'FAILED' };
     } finally {
-      this.heartbeatScheduler.stop(heartbeatHandle);
+      stopHeartbeat();
+      runOptions.signal?.removeEventListener('abort', onHostAbort);
+      await heartbeatInFlight?.catch(() => undefined);
       try {
         await handler.cleanup?.(context);
       } catch {

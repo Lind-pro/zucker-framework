@@ -9,3 +9,9 @@ The consumer owns persistent states, startup state transitions, retry eligibilit
 `runWithExecutionHeartbeat({ signal, heartbeat, intervalMs, failureThreshold }, work)` scopes serial heartbeat attempts to one callback. A successful heartbeat resets the consecutive failure count. At the configured threshold the work signal aborts with `ExecutionHeartbeatError`; the parent signal is unaffected, and the failure remains an error even when work swallows its abort. Caller cancellation forwards its original reason. Work must honor cancellation; the scope does not detach or duplicate it.
 
 The scope clears its timer/listener and awaits an already-running heartbeat before returning. The consumer owns all database writes and decides how heartbeat failure differs from user cancellation or process shutdown. No state table, lease, retry, worker or execution topology is introduced.
+
+## Durable worker host interruption
+
+`DurableWorkerRuntime.run(taskId, { signal })` accepts an optional host shutdown signal. An already-aborted signal refuses a new claim. During an attempt, interruption aborts the handler signal, stops lease heartbeats and drains an in-flight heartbeat before returning `DurableTaskAbortedError`. It leaves the processing row and its lease intact so `TaskLeaseReconciler` can recover it after expiry; host shutdown does not cancel the logical task. Existing `run(taskId)` callers retain their behavior.
+
+The host must signal and await every active attempt before closing its database. Handlers must honor their signal, and atomic business completion must still fence on the task's active token inside the same database transaction. Interruption cannot retract an external effect already accepted by a provider. One host owns registration, polling, wake hints, task attempts and provider closure; a `SingleProcessTaskSupervisor` alone is only a reconstructible in-memory scheduling layer.
