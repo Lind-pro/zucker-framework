@@ -61,8 +61,17 @@ write('runtime-contract.mjs', `import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 for (const name of ${JSON.stringify(runtimeNames)}) {
-  assert(Object.keys(await import(name)).length, name + ' ESM entry is empty');
-  assert(Object.keys(require(name)).length, name + ' CJS entry is empty');
+  for (const entry of [await import(name), require(name)]) {
+    assert(Object.keys(entry).length, name + ' entry is empty');
+    if (name === '@zucker-framework/crud') {
+      let counted = false;
+      assert.equal(await entry.resolvePageTotal(2, { skip: 0, take: 10 }, async () => { counted = true; return 99; }), 2);
+      assert.equal(counted, false);
+      assert.equal(await entry.resolvePageTotal(0, { skip: 10, take: 10 }, async () => 2), 2);
+      const where = Object.freeze({ id: 'record', ownerId: 'owner' });
+      assert.deepEqual(entry.withActiveRecordWhere(where), { ...where, AND: [where, { deletedAt: null }] });
+    }
+  }
 }\n`);
 run(['runtime-contract.mjs']);
 

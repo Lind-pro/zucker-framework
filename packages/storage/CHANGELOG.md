@@ -1,5 +1,21 @@
 # @zucker-framework/storage
 
+## 1.0.10
+
+### Patch Changes
+
+- Route public package-root imports and requires to the existing matching ESM/CJS runtime and type artifacts. Previously, native ESM imports of these packages fell back to their CommonJS main entry, mixing auth/core provider classes with an application's ESM instances and breaking Nest dependency injection. Keep package.json metadata readable and preserve the existing main/module artifacts.
+
+  Add a native Node regression for both module formats that checks package resolution, shared auth/guard identity and an Admin/Nest composition using a synthetic memory adapter. This does not make mixed import/require copies of a dual package interchangeable and does not replace persistent consumer validation. No service implementation, guard registration or access policy is relaxed.
+
+  Use the CommonJS default export for eventemitter2 in config, dictionary and logging, with an explicit injection token referencing the original constructor. This fixes native ESM loading while retaining the shared Nest event emitter; no dependency is bundled or duplicated.
+
+- Add private file asset orchestration over existing verified object transfers, with consumer-owned durable metadata and authorization ports. Reserve scoped idempotency and immutable content before uploading, verify content before readiness, and recover interrupted metadata commits without rewriting verified objects.
+
+  Keep logical deletion separate from observed physical cleanup, retain tombstones, reject stale readiness commits, and make failed or late-arriving object cleanup retryable. Extend BufferedFileManagerStore with deletion. Database uniqueness/CAS and durable recovery scheduling remain explicit consumer integration requirements; no schema, production storage access or background worker is provisioned by the package.
+
+  Propagate local filesystem permission/unknown errors instead of treating them as absence or successful deletion.
+
 ## 1.0.8
 
 ## 1.0.7

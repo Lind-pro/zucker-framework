@@ -10,7 +10,7 @@ Both providers advertise `supportsSingleAttempt: true`. Callers requiring a sing
 
 `ImageProviderResult.usage` exposes reported `inputTokens`, `outputTokens`, `totalTokens`, and optional input/output modality counts such as `text` and `image`. Missing counts stay unknown. Gemini output tokens include reported candidate and reasoning tokens; its output modality counts describe candidates only. The complete usage response remains in `usage.raw` and in `providerMeta.usage`, including cache, reasoning and tool token categories. OpenAI preserves usage for both encoded and URL image responses. Providers do not infer missing modalities, choose prices or settle a consumer's budget; the caller must use the categories required by its billing rules.
 
-SDK peers (`openai`, `@google/genai`) are loaded lazily and remain external to the package. Consumers install only the providers they select. Tests use SDK replacements and synthetic outputs. No real-provider calls, builds or publication were performed for this source migration. Package versions/lockfiles and artifact delivery remain a separate authorized release stage.
+SDK peers (`openai`, `@google/genai`) are loaded lazily and remain external to the package. Consumers install only the providers they select. Tests use SDK replacements and synthetic outputs. The earlier scoped AI patch release delivered the OpenAI editing, retry and usage contracts described below; the Gemini retry and usage additions are pending a new package release. Synthetic transport tests do not establish real model quality or account availability.
 
 ## Source-image editing
 

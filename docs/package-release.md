@@ -176,6 +176,28 @@ PRs run CI without publishing. Source checkout, CI artifacts, receipt and GitHub
 OIDC identity all identify the original push SHA, even when `main` advances.
 Publication runs are serialized and an active upload is never automatically cancelled.
 
+When the dry run finds package names that do not yet exist in the registry,
+preparation still seals and uploads the verified bundle, but the automatic OIDC
+job is skipped. This leaves a successful main run from which the maintainer can
+download the same approved bundle. No package is uploaded automatically before
+new-package ownership and trusted publishing can be established.
+
+For that first publication, use the existing maintainer npm login and the complete
+approved manifest; do not edit the release manifest down to a subset:
+
+```bash
+node scripts/publish-packages.mjs --bundle artifacts/approved-release \
+  --publish --auth session --bootstrap-new \
+  --manifest-sha256 <approved-sha256> --tag latest
+```
+
+This publishes only previously unregistered package names and writes
+`bootstrap-verification.json`, not the complete-release verification report.
+Establish their trusted publishers, then dispatch `publish.yml` with the original
+preparation run and checksum. The normal OIDC batch verifies and skips matching
+already-published bytes, and publishes the remaining packages. OIDC also rejects
+any still-unregistered package before starting an upload.
+
 Before pushing a package change:
 
 ```bash
@@ -326,7 +348,7 @@ with its documented peers installed.
 
 Artifact verification installs tarballs in fresh npm and pnpm consumers, verifies
 portable dependency declarations, checks peers and exercises ESM/CommonJS exports.
-It also checks 49 library declaration surfaces with strict NodeNext ESM/CJS
+It also checks the library declaration surfaces listed in its verification report with strict NodeNext ESM/CJS
 settings, renders a synthetic frontend form, and compiles/starts the CLI-generated
 server outside the framework workspace. Frontend callers use strict types with
 `skipLibCheck: true`, matching the frontend template: Ant Design's own dependency
@@ -338,8 +360,11 @@ that the publishing account controls the npm scope.
 
 The CLI includes a standalone server scaffold using versions captured in its
 release catalog, a standalone TypeScript configuration and a newly generated local
-JWT secret. The full admin/web templates require a framework checkout. Generated
-projects and framework packages have separate build and deployment lifecycles.
+JWT secret. The 1.0.10 preparation also bundles the full Server, Admin and Web
+templates, so those generated consumers no longer require a Framework checkout;
+see [the 1.0.10 preparation and migration notes](package-release-1.0.10.md) for
+publication status and adoption requirements. Generated projects and Framework
+packages have separate build and deployment lifecycles.
 The CLI requires Node.js 22.12 or later, consistent with Commander 15. The repository
 toolchain requires Node.js 22.22 or later; this does not replace individual library
 runtime contracts.
@@ -438,3 +463,66 @@ their transitive Common resolution as well (for example, with a package-manager
 override) and verify one Common/Nest provider and request-context instance. This
 release does not upgrade or deploy those consumers. The release consumer smoke
 checks exercise the new recovery API through both ESM and CommonJS exports.
+
+## Scoped encoded-image editing release
+
+The maintainer authorized the related image fix for CNIPA after acceptance. This
+preparation selects only `ai@1.0.9`, applying its manifest and changelog directly
+and consuming the encoded-image editing changeset for this scoped patch exception.
+The 51-package fixed-group configuration remains unchanged. `publish.yml` selects
+AI only for the single main push whose previous tip is
+`ab7f1bb0283d496ec11bf356921c60e53e4b54f6` and whose head commit message is exactly
+`fix(ai): prepare scoped image editing and single-attempt patch 1.0.9`. This binds
+the exception to this reviewed release's one non-force advancement. All other
+pushes pass an empty `release_packages` value to reusable CI, restoring its normal
+fixed-group selection automatically; no later manual reset is required. If main
+advances independently, stop and review this exception against the new baseline
+before pushing. Other package versions stay at `1.0.8` and remain verification
+inputs only. No workflow identity, OIDC permission, environment protection, or
+publication check is changed.
+
+The empty selector cannot publish this scoped patch: packing unchanged
+`admin@1.0.8` would change its AI dependency to `1.0.9`, and `cli@1.0.8` would carry
+a changed scaffold catalogue. The publisher skips existing versions only when
+their complete archive SHA-1 matches the registry and rejects a different checksum
+before any upload. Unselected archives are verified and removed from the bundle.
+
+The release adds the optional `ImageProvider.editImage` and encoded source/usage
+contracts, and OpenAI's single-attempt generation/edit implementation. Gemini's
+independent pending changes are excluded; its provider does not advertise
+`supportsSingleAttempt` in this artifact, so consumers requiring that capability
+must reject a Gemini route. The ordinary SDK retry defaults remain when the caller
+omits `maxRetries: 0`.
+
+AI keeps its current sibling dependencies at `1.0.8` when packed. A consumer using
+`admin@1.0.8` must align its transitive AI dependency to exactly `1.0.9` when adopting
+this fix and verify one AI/Nest provider instance. Publication does not update or
+deploy a consumer. Acceptance must complete before pushing the package commit to
+`main`, because the existing main-push workflow automatically publishes its exact
+CI-produced immutable bundle through the trusted `npm-publish` OIDC path.
+
+
+## Scoped CRUD query and soft-delete release
+
+The maintainer authorized committing and publishing this reviewed CRUD batch only.
+Publish `crud@1.0.9`, applying its manifest and changelog directly for this scoped
+exception. The pending CRUD changeset is consumed by this direct version change;
+the fixed group is unchanged and unrelated AI workspace changes are excluded.
+The workflow selects CRUD only for the main push from `6676f71f2207ebac18a1a3d433b60414d42bd834`
+with head message `feat(crud): publish query totals and soft-delete isolation 1.0.9`.
+Every other push restores the default complete-group selection. CI still verifies
+all packages; only CRUD is sealed and uploaded for publication. No OIDC identity,
+permission, environment protection or archive verification is bypassed.
+
+CRUD packs against core/cache/event 1.0.8. Consumers must align their compatible
+peer instances and verify the immutable artifact before adoption. The new
+`resolvePageTotal` and `withActiveRecordWhere` exports support custom transactional
+queries and consumer-owned retention extensions. See the CRUD README for the
+SELECT-first consistency limits, lifecycle write restrictions and root-only
+scope of SoftDeleteService. Publication alone does not deploy CNIPA or migrate data.
+
+## Scoped logging observability release
+
+The maintainer authorized publishing `logging@1.0.9` and updating the CNIPA consumer. This scoped exception versions only logging directly and leaves the fixed group configuration intact. Its one-push selector binds the exact reviewed baseline and release commit message; CI verifies all packages but seals and publishes only logging. Core stays at its already released `1.0.8`. The package adds opt-in HTTP completion observations and persistence policies, without requiring new log-table columns. Consumer aggregate schema, retention and sampling policy remain application-owned. Existing configurations retain their behavior. This authorization does not deploy CNIPA production.
+
+The fresh pnpm consumer pins Nest common/core/platform-express to the template lockfile-tested versions. The platform adapter imports Core internals; allowing the scaffold range to select platform-express 12.2 while Core remains 12.0.1 fails startup before any application module runs. The consumer check still compiles and starts the generated server and verifies HTTP behavior.

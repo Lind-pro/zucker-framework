@@ -47,7 +47,7 @@ Both policies may be asynchronous. Only explicit `false` skips a detail; throws,
 
 With persistence configured, completion observation also retains unannotated failures and optional slow-request details. It coordinates with the interceptor and rejection middleware so they write at most one access detail per request. Interceptor streams emit access/operation events and details once on completion, not once per chunk. `ACCESS_LOG_EVENT` remains an unsampled annotated-action event, emitted before the persistence policy; use completion observation, rather than that event, for complete HTTP request counts.
 
-`statusCode` and `requestId` are additional policy input fields only and are not written to legacy database columns. Rejected HTTP details carry `exception: "HTTP <status>"` so existing exception-based retention remains valid. The new options require a new logging package release for consumers; older packages ignore structural extra options and retain the previous full-detail behavior. Do not enable aggregate-only dashboard assumptions until capability activation is confirmed.
+`statusCode` and `requestId` are additional policy input fields only and are not written to legacy database columns. Rejected HTTP details carry `exception: "HTTP <status>"` so existing exception-based retention remains valid. The completion observation and persistence policy options are available starting in `logging@1.0.9`; older packages ignore structural extra options and retain the previous full-detail behavior. Do not enable aggregate-only dashboard assumptions until capability activation is confirmed.
 
 ## Read query boundaries
 

@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import type { ChatOpenAICallOptions } from '@langchain/openai';
 import { AIMessage, HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { z } from 'zod';
 import { StreamIdleTimeoutError } from '@zucker-framework/core';
@@ -42,6 +43,40 @@ function syntheticOpenAIStream() {
 }
 
 describe('LangChain stream execution', () => {
+  it('accepts a publicly configured Runnable and collects stream usage in one attempt', async () => {
+    const respond = syntheticOpenAIStream();
+    const fetch = vi.fn(async (...args: Parameters<typeof globalThis.fetch>) => {
+      const request = new Request(...args);
+      expect(await request.json()).toMatchObject({
+        response_format: { type: 'json_object' },
+        stream: true,
+      });
+      return respond();
+    });
+    const model = await createLangChainChatModel({
+      protocol: 'openai-compatible',
+      apiKey: 'synthetic',
+      model: 'synthetic',
+      maxTokens: 100,
+      maxRetries: 0,
+      timeoutMs: 1000,
+      fetch,
+    });
+    const callOptions: Partial<ChatOpenAICallOptions> = {
+      response_format: { type: 'json_object' },
+    };
+    const configured = model.withConfig(callOptions);
+    const messages = [new HumanMessage('return JSON')];
+    const result = await collectLangChainText({ model: configured, messages });
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      text: 'first second',
+      finishReason: 'stop',
+      usage: { input_tokens: 7, output_tokens: 3, total_tokens: 10 },
+    });
+  });
+
   it('gets finish metadata from the actual SDK stream before queued logging observers complete', async () => {
     const fetch = syntheticOpenAIStream();
     const model = await createLangChainChatModel({

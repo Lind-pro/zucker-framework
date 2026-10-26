@@ -177,4 +177,3 @@ ALTER TABLE "credit_allocations" ADD CONSTRAINT "credit_allocations_consumptionI
 
 -- AddForeignKey
 ALTER TABLE "credit_allocations" ADD CONSTRAINT "credit_allocations_creditLotId_fkey" FOREIGN KEY ("creditLotId") REFERENCES "credit_lots"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-

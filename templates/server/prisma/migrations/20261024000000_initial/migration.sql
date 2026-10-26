@@ -1037,4 +1037,3 @@ ALTER TABLE "rule_actions" ADD CONSTRAINT "rule_actions_ruleId_fkey" FOREIGN KEY
 
 -- AddForeignKey
 ALTER TABLE "alarm_records" ADD CONSTRAINT "alarm_records_alarmConfigId_fkey" FOREIGN KEY ("alarmConfigId") REFERENCES "alarm_configs"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-

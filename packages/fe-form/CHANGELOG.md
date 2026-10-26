@@ -1,5 +1,13 @@
 # @zucker-framework/fe-form
 
+## 1.0.10
+
+### Patch Changes
+
+- Allow each dynamic form to supply localized interface and fallback validation text without changing
+  caller-owned field content, discarding drafts, or changing the default language for existing callers.
+  The Admin template supplies its active Chinese/English copy to form previews.
+
 ## 1.0.8
 
 ## 1.0.7

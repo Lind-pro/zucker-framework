@@ -32,16 +32,22 @@ export function createRegistryReader(registry, { request = globalThis.fetch, sle
     }
   }
 
+  async function packageIndex(name) {
+    const index = await document(name);
+    if (index === undefined) return undefined;
+    if (index?.name !== name || !index.versions || typeof index.versions !== 'object'
+      || Array.isArray(index.versions)) throw new Error(`Unexpected registry package metadata for ${name}`);
+    return index;
+  }
+
   async function version(name, expectedVersion) {
     let metadata = await document(name, expectedVersion);
     if (metadata === undefined) {
       // npm's version route and package index can become visible at different
       // times. Both are authoritative registry documents; never infer success
       // from a dist-tag or npm's upload acknowledgement alone.
-      const index = await document(name);
+      const index = await packageIndex(name);
       if (index === undefined) return undefined;
-      if (index?.name !== name || !index.versions || typeof index.versions !== 'object'
-        || Array.isArray(index.versions)) throw new Error(`Unexpected registry package metadata for ${name}`);
       metadata = Object.hasOwn(index.versions, expectedVersion) ? index.versions[expectedVersion] : undefined;
       if (metadata === undefined) return undefined;
     }
@@ -67,6 +73,7 @@ export function createRegistryReader(registry, { request = globalThis.fetch, sle
 
   return {
     version,
+    async exists(name) { return (await packageIndex(name)) !== undefined; },
     async verifyVersion(name, expectedVersion, expectedSha1) {
       const metadata = await afterPublish(() => version(name, expectedVersion), `${name}@${expectedVersion}`);
       if (metadata.dist.shasum !== expectedSha1) throw new Error(`Registry checksum verification failed after publishing ${name}@${expectedVersion}`);

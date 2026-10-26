@@ -68,6 +68,18 @@ try {
   });
   report.testsPassed = exitCode === 0;
   if (!report.testsPassed) throw new Error(`NAS integration tests failed (${exitCode})`);
+  const crudExitCode = await new Promise((resolveExit, reject) => {
+    const child = spawn(process.execPath, ['scripts/verify-crud-postgres-contract.mjs'],
+      { cwd: rootDir, env: environment, stdio: ['ignore', 'pipe', 'pipe'] });
+    child.stdout.on('data', chunk => { testOutput += chunk; });
+    child.stderr.on('data', chunk => { testOutput += chunk; });
+    const timer = setTimeout(() => child.kill('SIGTERM'), 90000);
+    child.once('error', error => { clearTimeout(timer); reject(error); });
+    child.once('exit', code => { clearTimeout(timer); resolveExit(code); });
+  });
+  report.crudPostgresPassed = crudExitCode === 0;
+  report.testsPassed = report.testsPassed && report.crudPostgresPassed;
+  if (!report.crudPostgresPassed) throw new Error(`CRUD PostgreSQL contract failed (${crudExitCode})`);
 } catch (error) {
   report.error = redact(error.message);
   process.exitCode = 1;
