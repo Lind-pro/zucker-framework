@@ -200,6 +200,10 @@ export class HttpClient {
         if (error.response) {
           const { status, config: originalRequest } = error.response;
           const data = await readErrorData(error.response.data);
+          // Decoding a Blob is asynchronous: the consumer may have changed
+          // session and canceled this request while the body was being read.
+          // Never apply stale authentication or error side effects afterward.
+          if (originalRequest?.signal?.aborted) throw new axios.CanceledError(undefined, originalRequest);
           const message = data?.message;
           const errorMsg = typeof message === 'string' ? message : Array.isArray(message) ? message.join('；') : `请求失败 (${status})`;
           // 后端结构化错误 { message, code, details } —— 把 code/details 拍平到

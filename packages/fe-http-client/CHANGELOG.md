@@ -1,5 +1,11 @@
 # @zucker-framework/fe-http-client
 
+## 1.0.12
+
+### Patch Changes
+
+- Ignore canceled requests after asynchronously decoding binary error responses, so a stale response cannot clear a newer session or invoke error handlers.
+
 ## 1.0.11
 
 ## 1.0.10
