@@ -577,6 +577,7 @@ function visitSchemaNode(node: unknown, found: Set<string>): void {
     'else',
     'if',
     'not',
+    'oneOf',
     'patternProperties',
     'propertyNames',
     'then',

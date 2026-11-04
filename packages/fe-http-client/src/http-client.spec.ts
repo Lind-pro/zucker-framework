@@ -197,7 +197,7 @@ describe('HttpClient', () => {
       expect(setRefreshToken).toHaveBeenCalledWith('new-refresh');
     });
 
-    it('should reject queued requests when refresh fails', async () => {
+    it('should reject queued requests without clearing credentials on a transient refresh failure', async () => {
       refreshTokenFn.mockRejectedValue(new Error('refresh failed'));
 
       createClient();
@@ -214,8 +214,8 @@ describe('HttpClient', () => {
       };
 
       await expect(errorHandler(error)).rejects.toThrow();
-      expect(clearAuth).toHaveBeenCalled();
-      expect(onUnauthorized).toHaveBeenCalled();
+      expect(clearAuth).not.toHaveBeenCalled();
+      expect(onUnauthorized).not.toHaveBeenCalled();
     });
 
     it('should call onUnauthorized after retry 401', async () => {

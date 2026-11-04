@@ -27,6 +27,38 @@ const request: AIAccessRequest = {
 };
 
 describe('OpenAICodexCliSubscriptionProvider', () => {
+  it.each(['error', 'prompt-json'] as const)('按 %s 策略处理嵌套 oneOf，避免发送不受支持的 strict schema', async (unsupportedSchemaPolicy) => {
+    const outputSchema = {
+      type: 'object', properties: { actions: { type: 'array', items: { oneOf: [
+        { type: 'object', properties: { type: { const: 'search' }, query: { type: 'string' } }, required: ['type', 'query'], additionalProperties: false },
+        { type: 'object', properties: { type: { const: 'read' }, id: { type: 'string' } }, required: ['type', 'id'], additionalProperties: false },
+      ] } } }, required: ['actions'], additionalProperties: false,
+    };
+    const commandRunner = vi.fn(async (_command: CodexCliCommand) => ({
+      content: '{"actions":[{"type":"read","id":"synthetic-reference"}]}',
+      finishReason: 'completed', tokenUsage: { input: 12, output: 4, total: 16 },
+    }));
+    const onSchemaFallback = vi.fn();
+    const provider = new OpenAICodexCliSubscriptionProvider({
+      executable: 'codex', codexHome: '/tmp/synthetic-codex-home', workingDirectory: '/tmp/codex-inference',
+      unsupportedSchemaPolicy, onSchemaFallback, commandRunner,
+    });
+    const client = await provider.createModel({ modelId: request.model });
+    const run = client.complete({ ...request, outputSchema });
+    if (unsupportedSchemaPolicy === 'error') {
+      await expect(run).rejects.toMatchObject({ code: 'NOT_CONFIGURED', message: expect.stringContaining('oneOf') });
+      expect(commandRunner).not.toHaveBeenCalled();
+    } else {
+      await expect(run).resolves.toMatchObject({ finishReason: 'completed' });
+      expect(onSchemaFallback).toHaveBeenCalledWith({ unsupportedKeywords: ['oneOf'] });
+      expect(commandRunner).toHaveBeenCalledTimes(1);
+      const command = commandRunner.mock.calls[0]![0];
+      expect(command.args).not.toContain('--output-schema');
+      expect(command.stdin).toContain(JSON.stringify(outputSchema));
+      expect(command.stdin).toContain(request.input);
+    }
+  });
+
   it('以最小权限、临时会话和隔离环境运行官方 Codex CLI', async () => {
     let captured: CodexCliCommand | undefined;
     const commandRunner = vi.fn(async (command: CodexCliCommand) => {

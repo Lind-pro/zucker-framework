@@ -1,5 +1,11 @@
 # @zucker-framework/fe-http-client
 
+## 1.0.13
+
+### Patch Changes
+
+- Handle Codex oneOf schemas through prompt JSON with local validation and preserve authenticated sessions when token refresh encounters transient transport or service failures.
+
 ## 1.0.12
 
 ### Patch Changes

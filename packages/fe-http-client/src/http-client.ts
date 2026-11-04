@@ -1,6 +1,17 @@
 import axios, { AxiosInstance, AxiosError, AxiosResponse } from 'axios';
 import { ApiResponse, RequestConfig, HttpClientConfig, DownloadResponse } from './types';
 
+/** A failed refresh transport is not evidence that its credentials were rejected. */
+function normalizeRefreshFailure(error: unknown): Error & { status?: number } {
+  const received = error as { status?: unknown; response?: { status?: unknown } } | null | undefined;
+  const status = received?.response?.status ?? received?.status;
+  return Object.assign(new Error(error instanceof Error ? error.message : 'Token refresh failed'), {
+    cause: error,
+    ...(received?.response ? { response: received.response } : {}),
+    ...(typeof status === 'number' ? { status, _httpStatus: status } : {}),
+  });
+}
+
 /**
  * 生成请求 ID（UUID v4，crypto 不可用时退化为时间戳+随机数）
  */
@@ -264,6 +275,8 @@ export class HttpClient {
                 if (originalRequest.signal?.aborted || axios.isCancel(refreshError)) {
                   throw new axios.CanceledError();
                 }
+                const failure = normalizeRefreshFailure(refreshError);
+                if (failure.status !== 401 && failure.status !== 403) return Promise.reject(failure);
                 this.config.clearAuth();
                 const isLoginPage =
                   typeof window !== 'undefined' &&
@@ -708,7 +721,9 @@ export class HttpClient {
           } catch (error) {
             if (externalSignal?.aborted) throw externalSignal.reason ?? error;
             // 如果已经处理过（例如 retryResponse.status === 401 的 throw 被捕获），直接向上抛出避免重复处理
-            if ((error as { _authHandled?: boolean })._authHandled) throw error;
+            if ((error as { _authHandled?: boolean } | null)?._authHandled) throw error;
+            const failure = normalizeRefreshFailure(error);
+            if (failure.status !== 401 && failure.status !== 403) throw failure;
             this.config.clearAuth();
             this.config.onUnauthorized();
             throw Object.assign(new Error('认证失败'), { _authHandled: true });
@@ -747,7 +762,7 @@ export class HttpClient {
         } catch {
           // 不是 JSON，使用原始文本
         }
-        throw new Error(errorMessage);
+        throw Object.assign(new Error(errorMessage), { status: response.status, _httpStatus: response.status });
       }
 
       return response;
