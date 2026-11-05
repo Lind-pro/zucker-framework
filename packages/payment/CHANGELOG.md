@@ -1,5 +1,11 @@
 # @zucker-framework/payment
 
+## 1.0.14
+
+### Patch Changes
+
+- @zucker-framework/core@1.0.14
+
 ## 1.0.13
 
 ### Patch Changes

@@ -1,5 +1,14 @@
 # @zucker-framework/ai
 
+## 1.0.14
+
+### Patch Changes
+
+- Normalize official OpenAI Chat Completions token limits to max_completion_tokens and omit unsupported GPT-6 reasoning sampling parameters. Preserve compatible-provider requests, injected transports, cancellation, and retry policy across streamed and structured LangChain calls.
+- @zucker-framework/ai-access@1.0.14
+  - @zucker-framework/common@1.0.14
+  - @zucker-framework/core@1.0.14
+
 ## 1.0.13
 
 ### Patch Changes

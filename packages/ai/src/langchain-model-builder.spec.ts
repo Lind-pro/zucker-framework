@@ -84,7 +84,7 @@ describe('LangChain model construction', () => {
         maxRetries: 3,
         maxTokens: 8000,
         modelKwargs: { thinking: { type: 'enabled' }, reasoning_effort: 'high' },
-        configuration: { baseURL: 'https://provider.test/v1', timeout: 900000, maxRetries: 0, fetch: undefined },
+        configuration: { baseURL: 'https://provider.test/v1', timeout: 900000, maxRetries: 0, fetch: expect.any(Function) },
       }),
     );
     expect(calls.openai.mock.calls[0][0]).not.toHaveProperty('temperature');

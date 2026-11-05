@@ -58,6 +58,35 @@ function validateTransport(options: { proxyUrl?: string; fetch?: typeof fetch })
   if (options.proxyUrl && !options.fetch) throw new Error('proxyUrl requires an explicit proxy-aware fetch transport');
 }
 
+function openAIChatFetch(transport: typeof fetch = globalThis.fetch): typeof fetch {
+  return (input, init) => {
+    const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url);
+    if (url.origin !== 'https://api.openai.com' ||
+        url.pathname.replace(/\/$/, '') !== '/v1/chat/completions' ||
+        typeof init?.body !== 'string') return transport(input, init);
+
+    // Use the public SDK transport boundary: LangChain's model-name allowlist
+    // also governs its cloned completion clients and misses newer OpenAI models.
+    const body: unknown = JSON.parse(init.body);
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return transport(input, init);
+    const params = body as Record<string, unknown>;
+    if (params.max_tokens !== undefined) {
+      params.max_completion_tokens ??= params.max_tokens;
+      delete params.max_tokens;
+    }
+    // `thinking` belongs to compatible providers; OpenAI uses reasoning_effort.
+    delete params.thinking;
+    if (typeof params.model === 'string' && /^gpt-6(?:[.-]|$)/.test(params.model) &&
+        params.reasoning_effort !== 'none') {
+      delete params.temperature;
+      delete params.top_p;
+      delete params.logprobs;
+      delete params.top_logprobs;
+    }
+    return transport(input, { ...init, body: JSON.stringify(params) });
+  };
+}
+
 /** SDK construction only: no model discovery, database, default route or prompts. */
 export async function createLangChainChatModel(
   options: LangChainChatModelOptions,
@@ -82,7 +111,8 @@ export async function createLangChainChatModel(
   return new ChatOpenAI({
     apiKey: options.apiKey,
     model: options.model,
-    ...(options.thinking?.enabled ? {} : { temperature: options.temperature }),
+    ...(options.thinking?.enabled && options.thinking.reasoningEffort !== 'none'
+      ? {} : { temperature: options.temperature }),
     maxTokens: options.maxTokens,
     streaming: options.streaming,
     maxRetries: options.maxRetries,
@@ -90,7 +120,7 @@ export async function createLangChainChatModel(
       baseURL: options.baseURL,
       timeout: options.timeoutMs,
       maxRetries: 0,
-      fetch: options.fetch,
+      fetch: openAIChatFetch(options.fetch),
     },
     ...(options.thinking
       ? {
