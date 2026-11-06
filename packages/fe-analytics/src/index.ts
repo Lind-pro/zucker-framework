@@ -5,4 +5,5 @@ export {
   trackEvent,
   trackPageView,
   flushEvents,
+  defineEventCatalog,
 } from './analytics';

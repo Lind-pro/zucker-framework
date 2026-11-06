@@ -135,3 +135,18 @@ if (typeof window !== 'undefined') {
   window.addEventListener('beforeunload', flushEvents);
   window.addEventListener('pagehide', flushEvents);
 }
+
+/**
+ * A product's closed list of event names. `track` only accepts listed names, so
+ * a renamed or misspelled event fails type checking instead of silently
+ * splitting a metric; `has` lets the receiving server drop unknown names.
+ */
+export function defineEventCatalog<const Names extends readonly string[]>(names: Names) {
+  const known = new Set<string>(names);
+  if (known.size !== names.length) throw new Error('Analytics event names must be unique');
+  return {
+    names,
+    has: (name: string): name is Names[number] => known.has(name),
+    track: (name: Names[number], eventData?: Record<string, unknown>) => trackEvent(name, eventData),
+  };
+}

@@ -1,5 +1,18 @@
 # @zucker-framework/notification
 
+## 1.0.15
+
+### Patch Changes
+
+- Measure what sent mail achieves and keep product event names consistent.
+
+  - `MailEngagementService.stats()` also reports `bounced`, `complained` and `bounceRate`; the new `byTemplate()` returns the same delivery and engagement figures per template, most-sent first. Both still count each provider message once and compute open/click rates only over delivered messages that were marked as tracked when sent.
+  - `MailServiceOptions.linkTracking` tags links to the consumer's own origins with per-message query parameters (for example UTM values from the template or campaign) at the single send point; `tagMailLinks()` is exported for previews. Other links, existing parameters and fragments are preserved.
+  - `defineEventCatalog(names)` in `@zucker-framework/fe-analytics` gives a product a closed list of event names: `track` rejects unlisted names at type-check time and `has` lets the receiving server drop unknown ones.
+
+- @zucker-framework/core@1.0.15
+  - @zucker-framework/queue@1.0.15
+
 ## 1.0.14
 
 ### Patch Changes

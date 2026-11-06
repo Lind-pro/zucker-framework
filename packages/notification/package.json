@@ -1,6 +1,6 @@
 {
   "name": "@zucker-framework/notification",
-  "version": "1.0.14",
+  "version": "1.0.15",
   "description": "Notification providers and durable delivery primitives for Zucker applications",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -31,8 +31,10 @@
   "devDependencies": {
     "@types/node": "^20.19.43",
     "@types/nodemailer": "^8.0.1",
+    "@types/pg": "8.23.1",
     "@zucker-framework/core": "workspace:*",
-    "@zucker-framework/queue": "workspace:*"
+    "@zucker-framework/queue": "workspace:*",
+    "pg": "8.23.0"
   },
   "peerDependencies": {
     "@nestjs/common": "^12.0.0",

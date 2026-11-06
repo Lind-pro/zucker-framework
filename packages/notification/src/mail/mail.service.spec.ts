@@ -167,3 +167,40 @@ describe('mail delivery orchestration', () => {
     await mail.onModuleDestroy();
   });
 });
+
+describe('attributing visits from sent mail', () => {
+  it('tags links to the configured site per message and leaves untagged messages unchanged', async () => {
+    const provider = {
+      name: 'test',
+      supportsIdempotency: true,
+      isConfigured: () => true,
+      deliver: vi.fn().mockResolvedValue({ success: true, messageId: 'receipt' }),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+    const db = {
+      model: () => ({ create: vi.fn().mockResolvedValue({ id: 'history' }) }),
+    } as unknown as DatabaseAdapter;
+    const mail = new MailService({
+      database: db,
+      providers: [provider],
+      minimumIntervalMs: 0,
+      templates: { defaultLocale: 'en', contentFields: { en: 'bodyEn' }, builtIns: [] },
+      linkTracking: {
+        origins: ['https://site.test'],
+        params: ({ template, campaignId }) =>
+          template === 'code' ? null : { utm_source: 'email', utm_campaign: campaignId ?? template ?? 'mail' },
+      },
+    });
+    const html = '<a href="https://site.test/write">Open</a>';
+    await mail.sendMailWithResult({ to: 'a@example.test', subject: 'S', html, template: 'welcome' });
+    await mail.sendMailWithResult({ to: 'a@example.test', subject: 'S', html, template: 'news', logMetadata: { campaignId: 'c1' } });
+    await mail.sendMailWithResult({ to: 'a@example.test', subject: 'S', html, template: 'code' });
+    const sent = provider.deliver.mock.calls.map((call) => call[0].html);
+    expect(sent).toEqual([
+      '<a href="https://site.test/write?utm_source=email&amp;utm_campaign=welcome">Open</a>',
+      '<a href="https://site.test/write?utm_source=email&amp;utm_campaign=c1">Open</a>',
+      html,
+    ]);
+    await mail.onModuleDestroy();
+  });
+});

@@ -1,5 +1,22 @@
 # @zucker-framework/admin
 
+## 1.0.15
+
+### Patch Changes
+
+- Updated dependencies
+  - @zucker-framework/notification@1.0.15
+  - @zucker-framework/ai@1.0.15
+  - @zucker-framework/auth@1.0.15
+  - @zucker-framework/common@1.0.15
+  - @zucker-framework/config@1.0.15
+  - @zucker-framework/core@1.0.15
+  - @zucker-framework/credit@1.0.15
+  - @zucker-framework/crud@1.0.15
+  - @zucker-framework/dictionary@1.0.15
+  - @zucker-framework/form@1.0.15
+  - @zucker-framework/logging@1.0.15
+
 ## 1.0.14
 
 ### Patch Changes

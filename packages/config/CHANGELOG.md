@@ -1,5 +1,13 @@
 # @zucker-framework/config
 
+## 1.0.15
+
+### Patch Changes
+
+- @zucker-framework/core@1.0.15
+  - @zucker-framework/crud@1.0.15
+  - @zucker-framework/feature-flags@1.0.15
+
 ## 1.0.14
 
 ### Patch Changes

@@ -141,6 +141,7 @@ export type { MailModuleAsyncOptions } from './mail/mail.module';
 
 export * from './mail/mail-engagement.service';
 export * from './mail/resend-webhook.service';
+export * from './mail/mail-links';
 
 export * from './mail/mail-history.service';
 export * from './mail/mail-batch';

@@ -75,7 +75,23 @@ export class MailEngagementService {
       throw new ServiceUnavailableException('Mail history is not ready; retry the callback');
     }
   }
+  /** Delivery and engagement over the send window, across all matching templates. */
   async stats(filters: MailHistoryFilters = {}) {
+    const { rows, from, enabled } = await this.cohort(filters, false);
+    return { ...this.summarize(rows[0], enabled), trackingConfigured: enabled, from: from.toISOString() };
+  }
+
+  /** The same figures per template, most-sent first, for comparing notifications. */
+  async byTemplate(filters: Omit<MailHistoryFilters, 'template'> = {}) {
+    const { rows, from, enabled } = await this.cohort(filters, true);
+    return {
+      trackingConfigured: enabled,
+      from: from.toISOString(),
+      templates: rows.map((row) => ({ template: (row.template as string | null) ?? null, ...this.summarize(row, enabled) })),
+    };
+  }
+
+  private async cohort(filters: MailHistoryFilters, perTemplate: boolean) {
     const enabled = this.options.trackingConfigured();
     const from = new Date(Date.now() - (this.options.windowDays ?? 30) * 86_400_000);
     const values: unknown[] = [
@@ -101,44 +117,53 @@ export class MailEngagementService {
       conditions.push(`strpos(lower(recipient), lower($${values.length})) > 0`);
     }
     // Opens/clicks share the delivered-message cohort, so rates cannot exceed 100%.
-    const [row] = await this.options.query(
+    const group = perTemplate ? 'template' : 'NULL::text';
+    const rows = await this.options.query(
       `
       WITH messages AS (
-        SELECT "messageId",
+        SELECT "messageId", min(template) AS template,
           bool_or(metadata->'engagement'->>'firstDeliveredAt' IS NOT NULL) AS delivered,
           bool_or(metadata->'engagement'->>'firstOpenedAt' IS NOT NULL) AS opened,
           bool_or(metadata->'engagement'->>'firstClickedAt' IS NOT NULL) AS clicked,
+          bool_or(metadata->'engagement'->>'firstBouncedAt' IS NOT NULL) AS bounced,
+          bool_or(metadata->'engagement'->>'firstComplainedAt' IS NOT NULL) AS complained,
           bool_or(metadata->>'engagementTracking' = $3) AS tracked
         FROM ${this.table} WHERE ${conditions.join(' AND ')} GROUP BY "messageId"
       )
-      SELECT count(*)::int AS accepted,
+      SELECT ${group} AS template, count(*)::int AS accepted,
         count(*) FILTER (WHERE delivered)::int AS delivered,
+        count(*) FILTER (WHERE bounced)::int AS bounced,
+        count(*) FILTER (WHERE complained)::int AS complained,
         count(*) FILTER (WHERE delivered AND opened)::int AS opened,
         count(*) FILTER (WHERE delivered AND clicked)::int AS clicked,
         count(*) FILTER (WHERE tracked AND delivered)::int AS "trackedDelivered",
         count(*) FILTER (WHERE tracked AND delivered AND opened)::int AS "trackedOpened",
         count(*) FILTER (WHERE tracked AND delivered AND clicked)::int AS "trackedClicked"
-      FROM messages
+      FROM messages ${perTemplate ? 'GROUP BY template ORDER BY accepted DESC, template' : ''}
     `,
       values,
     );
+    return { rows, from, enabled };
+  }
+
+  private summarize(row: Record<string, unknown> | undefined, enabled: boolean) {
+    const count = (key: string) => Number(row?.[key] ?? 0);
     const counts = {
-      accepted: Number(row?.accepted ?? 0),
-      delivered: Number(row?.delivered ?? 0),
-      opened: Number(row?.opened ?? 0),
-      clicked: Number(row?.clicked ?? 0),
-      trackedDelivered: Number(row?.trackedDelivered ?? 0),
-      trackedOpened: Number(row?.trackedOpened ?? 0),
-      trackedClicked: Number(row?.trackedClicked ?? 0),
+      accepted: count('accepted'),
+      delivered: count('delivered'),
+      bounced: count('bounced'),
+      complained: count('complained'),
+      opened: count('opened'),
+      clicked: count('clicked'),
+      trackedDelivered: count('trackedDelivered'),
+      trackedOpened: count('trackedOpened'),
+      trackedClicked: count('trackedClicked'),
     };
     return {
       ...counts,
-      trackingConfigured: enabled,
-      from: from.toISOString(),
-      openRate:
-        enabled && counts.trackedDelivered ? counts.trackedOpened / counts.trackedDelivered : null,
-      clickRate:
-        enabled && counts.trackedDelivered ? counts.trackedClicked / counts.trackedDelivered : null,
+      openRate: enabled && counts.trackedDelivered ? counts.trackedOpened / counts.trackedDelivered : null,
+      clickRate: enabled && counts.trackedDelivered ? counts.trackedClicked / counts.trackedDelivered : null,
+      bounceRate: counts.accepted ? counts.bounced / counts.accepted : null,
     };
   }
 }

@@ -1,6 +1,6 @@
 # Frontend analytics
 
-`configureAnalytics`, `trackEvent`, `trackPageView` and `flushEvents` provide browser event buffering and best-effort unload delivery. Existing consumers retain the default array payload and beacon transport.
+`configureAnalytics`, `trackEvent`, `trackPageView` and `flushEvents` provide browser event buffering and best-effort unload delivery. Existing consumers retain the default array payload and beacon transport. `defineEventCatalog(names)` turns a product's event list into a typed `track` (unlisted names fail type checking) and a `has` check the receiving server can use to drop unknown names.
 
 For an API that accepts individual events, set `batchSize: 1`, `flushInterval: 0`, and `serializeEvents: ([event]) => JSON.stringify(event)`. The serializer defines the wire fields; remove fields the API does not accept or the product does not collect. Configure `getHeaders` for dynamic authentication headers. Its presence uses `fetch` with `keepalive: true`, including anonymous events when it returns `{}`, because `sendBeacon` cannot set authorization headers. A refused beacon falls back to fetch.
 

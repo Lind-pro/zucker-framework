@@ -1,4 +1,5 @@
 import { MailHistoryService } from './mail-history.service';
+import { tagMailLinks, type MailLinkTracking } from './mail-links';
 import { Injectable, Logger, BadRequestException, type OnModuleDestroy } from '@nestjs/common';
 import type { DatabaseAdapter } from '@zucker-framework/core';
 import {
@@ -50,6 +51,8 @@ export interface MailServiceOptions {
     metadata: Record<string, unknown>,
     context: { provider: string; template?: string; userId?: string },
   ) => Record<string, unknown>;
+  /** Tags links to the consumer's own site so visits from an email can be attributed. */
+  linkTracking?: MailLinkTracking;
 }
 interface SendSlotReservation {
   resolve: (acquired: boolean) => void;
@@ -114,6 +117,16 @@ export class MailService implements OnModuleDestroy {
     // Validate/normalize before dispatch so malformed metadata cannot turn a sent email into a failed call.
     return Object.keys(metadata).length ? JSON.parse(JSON.stringify(metadata)) : undefined;
   }
+  private tagLinks(options: MailRequestOptions): MailRequestOptions {
+    const tracking = this.options.linkTracking;
+    if (!tracking || typeof options.html !== 'string') return options;
+    const campaignId = options.logMetadata?.campaignId;
+    const params = tracking.params({
+      template: options.template,
+      campaignId: typeof campaignId === 'string' ? campaignId : undefined,
+    });
+    return params ? { ...options, html: tagMailLinks(options.html, tracking.origins, params) } : options;
+  }
   async sendMail(options: MailRequestOptions): Promise<boolean> {
     return (await this.sendMailWithResult(options)).success;
   }
@@ -143,6 +156,7 @@ export class MailService implements OnModuleDestroy {
     }
 
     const metadata = this.buildLogMetadata(options, provider.name);
+    options = this.tagLinks(options);
 
     // 全局节流 + 每秒 429 退避重试：
     //  - 每次尝试前预约发送时隙，限制启动速率不超过邮件商 req/s
