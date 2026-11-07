@@ -721,6 +721,10 @@ importers:
         version: 20.19.43
 
   packages/media:
+    dependencies:
+      fast-xml-parser:
+        specifier: ^5.11.1
+        version: 5.11.1
     devDependencies:
       '@rdkit/rdkit':
         specifier: 2025.3.4-1.0.0

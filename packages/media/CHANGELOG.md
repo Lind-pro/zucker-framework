@@ -1,5 +1,11 @@
 # @zucker-framework/media
 
+## 1.0.16
+
+### Patch Changes
+
+- Keep Word equations when reading DOCX text. `ommlToLatex(xml)` converts an Office Math (`m:oMath`/`m:oMathPara`) element to LaTeX — fractions, scripts, radicals, delimiters, n-ary operators, accents, functions, limits, bars, equation arrays and matrices, with Greek letters and operators as LaTeX commands. `readDocxDocumentText(documentXml)` reads `word/document.xml` as text with inline equations in `$…$`, display equations in `$$…$$` and table cells separated by tabs. Plain-text DOCX readers such as mammoth's `extractRawText` drop equations entirely.
+
 ## 1.0.15
 
 ## 1.0.14

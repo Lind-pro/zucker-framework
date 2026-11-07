@@ -42,3 +42,7 @@ All policies are explicit `DocumentTextOptions`: OCR page limit, text threshold,
 The default command port requires installed Poppler and Tesseract/language data. The structural ports do not import Playwright, PDFParse, Mammoth, Sharp or AdmZip: these are **consumer adapter dependencies**, not missing mandatory library peers. Tested source integration uses existing Playwright 1.57, pdf-parse 2.x, Mammoth, Sharp and AdmZip. ZIP validation uses portable IEEE CRC-32 rather than a Node 22-only `node:zlib.crc32` import, so the new default entry does not raise the library runtime requirement to the maintainer toolchain version.
 
 `DocumentTextError.code` distinguishes `INVALID_ZIP` (with original cause) and `OCR_PAGE_LIMIT` for localized consumer handling. Other errors remain observable (including native ENOENT/abort errors); applications own localized HTTP error mapping, filename/MIME detection, Office retry policy and filing limits. This API is not yet present in the published `1.0.4` artifact. Publish a new immutable version before migrating production consumers; do not use source links or version overrides to pretend it is released.
+
+## Word equations
+
+`readDocxDocumentText(documentXml)` reads the body of `word/document.xml` as text and keeps Office Math equations as LaTeX (`$…$` inline, `$$…$$` display); `ommlToLatex(xml)` converts a single equation. Use them instead of a plain-text DOCX reader when the document may contain equations — those readers drop them silently. The caller unzips the DOCX and applies its own archive limits.
