@@ -43,7 +43,7 @@ run('private files over HTTP with PostgreSQL and isolated local objects', () => 
     const module = await Test.createTestingModule({ imports: [
       ZuckerCrudModule.forRootAsync({ useFactory: () => database }),
       ZuckerAuthModule.forRoot({ jwtSecret: 'synthetic-private-files-test-secret-only', registerControllers: false }),
-      ZuckerRateLimiterModule.forRoot({ limiters: { accounts: { points: 2000, duration: 60 }, 'api-default': { points: 2000, duration: 60 } } }),
+      ZuckerRateLimiterModule.forRoot({ limiters: { accounts: { points: 2000, duration: 60 }, 'session-refresh': { points: 2000, duration: 60 }, 'session-refresh-network': { points: 2000, duration: 60 }, 'session-read': { points: 2000, duration: 60 }, 'api-default': { points: 2000, duration: 60 } } }),
       ZuckerStorageModule.forRoot({ provider: 'local', basePath: directory }), AccountModule, FilesModule,
     ], providers: [{ provide: APP_GUARD, useClass: AccountGuard }, { provide: APP_GUARD, useClass: PermissionsGuard }] })
       .overrideProvider(ACCOUNT_MAILER).useValue(mailer).overrideProvider(FILE_MANAGER).useValue(manager)

@@ -188,8 +188,8 @@ Provider setup uses public adapters:
 
 | Adapter | Catalog binding and capability |
 | --- | --- |
-| `createStripeHostedCheckoutAdapter({ client, accountScope, livemode, webhookSecret? })` | Stripe Price ID, payment or initial subscription Checkout. Retrieval expands line items and checks exact quantity/catalog/money. `no_payment_required` does not prove paid money. One-time payment intent and subscription invoice references remain distinct. No explicit capture. |
-| `createPayPalHostedCheckoutAdapter({ transport, accountScope, webhookId?, brandName? })` | Server catalog SKU and exact totals for Orders v2; full `PayPalPaymentTransport` also enables Subscriptions v1 with a server-owned existing Plan ID. Fixed-price, quantity-one, no-trial/setup/tax-override plans are validated before creation. Subscriptions use the local order as `custom_id`, the persisted create key as `PayPal-Request-Id`, and approval URLs. Read-only confirmation enumerates the earliest actual settled transaction; a refunded first payment cannot be replaced with a later renewal. Explicit capture applies only to one-time approved Orders. Multiple/partial captures are outside this workflow. |
+| `createStripeHostedCheckoutAdapter({ client, accountScope, livemode, webhookSecret? })` | Stripe Price ID, payment or initial subscription Checkout. With `client.prices` it implements `quote`: the Price's amount/currency/type is read before an order exists and an archived or different price refuses the checkout. Retrieval expands line items and checks exact quantity/catalog/money. `no_payment_required` does not prove paid money. One-time payment intent and subscription invoice references remain distinct. No explicit capture. |
+| `createPayPalHostedCheckoutAdapter({ transport, accountScope, webhookId?, brandName? })` | Server catalog SKU and exact totals for Orders v2; full `PayPalPaymentTransport` also enables Subscriptions v1 with a server-owned existing Plan ID. Fixed-price, quantity-one, no-trial/setup/tax-override plans are validated before creation, and `quote` reads the plan price before an order exists. Subscriptions use the local order as `custom_id`, the persisted create key as `PayPal-Request-Id`, and approval URLs. Read-only confirmation enumerates the earliest actual settled transaction; a refunded first payment cannot be replaced with a later renewal. Explicit capture applies only to one-time approved Orders. Multiple/partial captures are outside this workflow. |
 | `createCreemHostedCheckoutAdapter({ adapter, accountScope })` | Wraps `createCreemAdapter`; forwards product ID, stable local order ID as `request_id`, quantity one and success URL. Uses paid order/transaction evidence, never product price. Supports one-time or initial subscription purchase. Creem exposes no cancel URL in this API. No capture or refund method is fabricated. |
 
 Create/capture provider calls occur outside database transactions. Before each call, an atomic CAS
@@ -203,6 +203,11 @@ binding it. Missing correlation evidence is an error, not permission to grant or
 Before releasing a new payable URL, known outstanding money must match the frozen offer. A mismatch
 leaves the claimed creation unresolved and returns no URL; it never silently charges a changed catalog
 price. A settled checkout may report zero outstanding money, so actual paid money is verified separately.
+Earlier still, an adapter's optional `quote(offer)` reads the provider's own price for the catalog
+reference before any order is stored: a different amount, currency or mode refuses the checkout with
+`conflict`, so an administrator-edited catalog amount that no longer matches the provider price fails
+cleanly instead of leaving an unresolved creation (or, for providers that report no outstanding
+amount, charging the buyer and then failing verification). `null` means the provider cannot tell.
 The Stripe adapter preserves the application's return parameters and appends
 `session_id={CHECKOUT_SESSION_ID}` using Stripe's documented
 [hosted Checkout return mechanism](https://docs.stripe.com/payments/existing-customers?platform=web&ui=stripe-hosted).
@@ -417,3 +422,55 @@ Protocol references checked 2026-10-24: [Stripe refunds](https://docs.stripe.com
 [PayPal sale schema](https://developer.paypal.com/api/deprecated/payments/v1/schema.json),
 [Creem full-remaining refunds](https://docs.creem.io/api-reference/endpoint/refund-payment),
 [Creem signed refund events](https://docs.creem.io/skills/creem-api/WEBHOOKS).
+
+## Subscription plan catalog and user subscriptions
+
+Plans are the single source of what is sold and at what price. `PlanCatalogStore` is the persistence
+port for database-backed plans: `slug`, `name`, `description`, listed `status`, `order`,
+`features`, `quotas`, a `revision` incremented by every write, and `prices: PlanPrice[]` where each
+price is `{ interval: 'month' | 'year' | 'one_time' | 'lifetime', currency, amount, termDays,
+providerRefs }` (`amount` is an exact decimal string; `termDays` only for `one_time`;
+`providerRefs` maps a provider id to its catalog reference, e.g. a Stripe Price ID). Types come from
+`@zucker-framework/fe-types/back-office` (`SubscriptionPlanRecord = SubscriptionPlan<Date>`).
+
+`PlanCatalogService` validates writes with `validatePlanWrite`/`validatePlanPrices` (unknown fields,
+slug format, amounts only as strings with the currency's precision, unique `(interval, currency)`,
+provider reference formats — `stripe` must be a `price_…` ID, others are opaque) and delegates
+`{features, quotas}` to the injected `validateGrant` — normally `validatePlanGrant` from
+`@zucker-framework/credit`. `update` accepts `expectedRevision` (stale → `conflict`). The store
+enforces slug and provider-reference uniqueness (one reference sells one price) and refuses to
+delete referenced plans atomically. Errors are branded `PlanCatalogError`s with reasons
+`invalid` / `not_found` / `conflict` / `referenced`.
+
+Checkout: `planOfferId(planId, interval, currency)` names a plan price as an offer
+(`plan:<planId>:<interval>:<currency>`, never colliding with static offer ids). `resolveOffer(offerId,
+providerId)` returns the listed plan's current price for that provider (positive amounts only),
+`planCheckoutMode(interval)` (`month`/`year` → `subscription`, others → `payment`) and a
+`PlanPriceSnapshot` to freeze on the order. Write-back reads it back with `readPlanPriceSnapshot` and
+uses its `planId` — never a slug or provider-reference lookup.
+
+`SubscriptionAssignmentService` keeps one current subscription per user through
+`UserSubscriptionStore`, whose `transaction(userId, …)` must hold the same account lock as payment
+fulfillment. `assign` (administrator assign/modify/revoke; omitted dates keep a live same-plan term,
+a lapsed term starts over, `ONE_TIME` needs an explicit end, LIFETIME has none and cannot be
+`CANCELED`), `cancel` (keeps the paid end date; LIFETIME is refused — revoke it with `EXPIRED`) and
+the payment write-back `recordPayment`. Every payment reference is recorded once through
+`recordPaymentEvidence` (the payment ledger); the result's `outcome` is `applied`, `replayed`,
+`ended` (period already over: evidence only), `superseded` (a recurring period the live same-plan
+term already covers, or evidence older than the evidence defining another plan's term), `kept` (an
+active LIFETIME term, or a longer administrator-granted term of another plan, is never shortened or
+replaced) or `revoked` (an administrator revoked the term at or after the payment's `purchasedAt`).
+A same-plan `ONE_TIME` payment is stacked: the term is extended from max(now, current end) by the
+paid duration, while the ledger keeps the paid period itself. `admitPurchase(userId, { planId,
+billingCycle, termDays })` applies the same precedence at checkout, before an order exists, and
+refuses (`conflict` with `details.refusal`: `lifetime_active`, `longer_admin_term`,
+`term_covers_purchase`; `pending_payment` with `provider_subscription` while a provider plan
+subscription bills) every purchase whose payment would be recorded without improving the term. A
+checkout payment that still ends `kept`/`superseded`/`revoked` means the term changed between
+checkout and payment; flag it for a refund. Administrator changes are refused with
+`pending_payment` while `pendingPayment` returns the blocking order or provider subscription (it is
+returned as `details.blocking`); revocation (`EXPIRED`) and `cancel` are refused only by a provider
+subscription, not by an unsettled checkout. Validity comes from the injected `activeTerm` predicate (pass `isActiveTerm`
+from credit). `changed` runs after `assign`/`cancel` commit; `recordPayment` runs inside the caller's
+payment transaction and returns its `change` for the caller to publish after commit (for example
+through its outbox).

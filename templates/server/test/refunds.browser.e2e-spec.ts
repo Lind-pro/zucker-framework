@@ -1,11 +1,20 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { chromium, expect as browserExpect, type Browser, type Page } from '@playwright/test';
-import { spawn, type ChildProcess } from 'node:child_process';
-import { resolve } from 'node:path';
+import { expect as browserExpect, type Browser, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { managementFixture } from './helpers/management-fixture';
 import { refundBrowserProviders } from './helpers/refund-browser-providers';
+import {
+  artifact,
+  isolatedContext,
+  labeled,
+  launchBrowser,
+  login as signIn,
+  newPage,
+  noHorizontalOverflow,
+  startAdmin,
+  type AdminServer,
+} from './helpers/fe-admin-browser';
 import { readCreditBalance } from '../src/credits/credits.service';
 const run =
   process.env.TEST_DATABASE_URL && process.env.RUN_REFUNDS_BROWSER === '1'
@@ -17,7 +26,7 @@ run('real Admin refund browser with PostgreSQL cash and hold facts', () => {
     providers: ReturnType<typeof refundBrowserProviders>,
     browser: Browser,
     page: Page,
-    vite: ChildProcess,
+    admin: AdminServer,
     counter = 0;
   async function purchase(mode: 'payment' | 'subscription' = 'payment') {
     const owner = await f.member(`refundui${++counter}`);
@@ -39,18 +48,15 @@ run('real Admin refund browser with PostgreSQL cash and hold facts', () => {
     return { ...result, owner };
   }
   async function login(target = page, username = 'manageadmin') {
-    await target.goto('/login');
-    await target.getByPlaceholder('用户名', { exact: true }).fill(username);
-    await target.getByPlaceholder('密码', { exact: true }).fill(f.password);
-    await target.getByRole('button', { name: /登.*录/ }).click();
+    await signIn(target, username, f.password);
     await browserExpect(target).toHaveURL(/\/dashboard$/);
   }
   async function openForm(orderId: string, amount = '2.00', reason = 'Synthetic UI refund') {
     await page.goto(`/refunds?targetType=order&targetId=${orderId}`);
     await page.getByRole('button', { name: '申请退款', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: '确认退款申请' });
-    await dialog.getByLabel('退款金额（USD）', { exact: true }).fill(amount);
-    await dialog.getByLabel('退款原因（可选）', { exact: true }).fill(reason);
+    await labeled(dialog, '退款金额（USD）').fill(amount);
+    await labeled(dialog, '退款原因（可选）').fill(reason);
     return dialog;
   }
   beforeAll(async () => {
@@ -58,54 +64,15 @@ run('real Admin refund browser with PostgreSQL cash and hold facts', () => {
     f = await managementFixture(process.env.TEST_DATABASE_URL!, origin, providers.options);
     const address = f.app.getHttpServer().address();
     if (!address || typeof address === 'string') throw new Error('API not listening');
-    vite = spawn(
-      'pnpm',
-      ['exec', 'vite', '--host', 'localhost', '--port', '4322', '--strictPort'],
-      {
-        cwd: resolve('../admin'),
-        env: { ...process.env, API_PROXY_TARGET: `http://127.0.0.1:${address.port}` },
-        stdio: ['ignore', 'pipe', 'pipe'],
-      },
-    );
-    let output = '';
-    vite.stdout?.on('data', (chunk) => {
-      output = (output + String(chunk)).slice(-2000);
-    });
-    vite.stderr?.on('data', (chunk) => {
-      output = (output + String(chunk)).slice(-2000);
-    });
-    const deadline = Date.now() + 45_000;
-    let ready = false;
-    while (Date.now() < deadline) {
-      if (vite.exitCode !== null) throw new Error(`Admin startup failed: ${output}`);
-      try {
-        if ((await fetch(origin, { signal: AbortSignal.timeout(1500) })).ok) {
-          ready = true;
-          break;
-        }
-      } catch {}
-      await new Promise((resolve) => setTimeout(resolve, 300));
-    }
-    if (!ready) throw new Error(`Admin startup exceeded 45 seconds: ${output}`);
-    browser = await chromium.launch({ channel: 'chrome', headless: true });
-    const context = await browser.newContext({
-      baseURL: origin,
-      viewport: { width: 1440, height: 1000 },
-    });
-    await context.route('**/*', (route) =>
-      new URL(route.request().url()).origin === origin
-        ? route.continue()
-        : route.abort('blockedbyclient'),
-    );
-    page = await context.newPage();
-    page.setDefaultTimeout(7000);
-    page.setDefaultNavigationTimeout(15000);
+    admin = await startAdmin(4322, address.port);
+    browser = await launchBrowser();
+    page = await newPage(await isolatedContext(browser, origin));
     await login();
   }, 65_000);
   afterEach(async (context) => {
     if (context.task.result?.state === 'fail' && page) {
       await page.screenshot({
-        path: '/tmp/zucker-refunds-failure.png',
+        path: artifact('refunds-failure.png'),
         fullPage: true,
         animations: 'disabled',
       });
@@ -118,13 +85,7 @@ run('real Admin refund browser with PostgreSQL cash and hold facts', () => {
   });
   afterAll(async () => {
     await browser?.close();
-    if (vite && vite.exitCode === null) {
-      vite.kill('SIGTERM');
-      await Promise.race([
-        new Promise((resolve) => vite.once('exit', resolve)),
-        new Promise((resolve) => setTimeout(resolve, 2500)),
-      ]);
-    }
+    await admin?.stop();
     await f?.close();
   });
   it('does not dispatch on viewing/canceling/checking, then shows pending cash and reserved credits before settlement', async () => {
@@ -132,7 +93,8 @@ run('real Admin refund browser with PostgreSQL cash and hold facts', () => {
       before = providers.calls.length;
     let dialog = await openForm(order.orderId);
     expect(providers.calls.length).toBe(before);
-    await dialog.getByRole('button', { name: /取\s*消/ }).click();
+    await dialog.getByRole('button', { name: '取消', exact: true }).click();
+    await browserExpect(dialog).toHaveCount(0);
     await page.getByRole('button', { name: '核对渠道记录', exact: true }).click();
     await browserExpect(page.getByText('渠道退款事实已核对', { exact: true })).toBeVisible();
     expect(providers.calls.length).toBe(before);
@@ -154,10 +116,13 @@ run('real Admin refund browser with PostgreSQL cash and hold facts', () => {
       frozen: 0,
     });
     expect(providers.calls.length).toBe(before + 1);
+    // The details drawer is modal; close it before checking the refreshed target panel.
+    await details.getByRole('button', { name: '关闭', exact: true }).click();
+    await browserExpect(details).toHaveCount(0);
     await browserExpect(page.getByText('查看现有退款', { exact: true })).toHaveCount(0);
     await browserExpect(page.getByRole('button', { name: '申请退款', exact: true })).toBeEnabled();
     await page.screenshot({
-      path: '/tmp/zucker-refunds-settled.png',
+      path: artifact('refunds-settled.png'),
       fullPage: true,
       animations: 'disabled',
     });
@@ -219,7 +184,7 @@ run('real Admin refund browser with PostgreSQL cash and hold facts', () => {
     await page.getByRole('button', { name: '查看现有退款', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: '确认退款申请' });
     await browserExpect(dialog).toBeVisible();
-    await browserExpect(dialog.getByLabel('退款金额（USD）', { exact: true })).toHaveValue('2.00');
+    await browserExpect(labeled(dialog, '退款金额（USD）')).toHaveValue('2.00');
     await dialog.getByRole('button', { name: '确认退款', exact: true }).click();
     await browserExpect(dialog).toHaveCount(0);
     expect(providers.calls.length).toBe(before + 1);
@@ -285,14 +250,8 @@ run('real Admin refund browser with PostgreSQL cash and hold facts', () => {
     await browserExpect(page).toHaveURL(/targetType=cycle/);
     await browserExpect(page.getByText('付款周期退款概况', { exact: true })).toBeVisible();
     expect(providers.calls.length).toBe(before);
-    const context = await browser.newContext({ baseURL: origin });
-    await context.route('**/*', (route) =>
-      new URL(route.request().url()).origin === origin
-        ? route.continue()
-        : route.abort('blockedbyclient'),
-    );
-    const userPage = await context.newPage();
-    userPage.setDefaultTimeout(7000);
+    const context = await isolatedContext(browser, origin);
+    const userPage = await newPage(context);
     await login(userPage, `refundui${counter}`);
     await userPage.goto('/refunds');
     await browserExpect(userPage.getByText('没有访问权限', { exact: true })).toBeVisible();
@@ -303,15 +262,15 @@ run('real Admin refund browser with PostgreSQL cash and hold facts', () => {
     await context.close();
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/refunds');
-    await browserExpect(
-      page.getByRole('columnheader', { name: '整体状态', exact: true }),
-    ).toBeVisible();
-    await browserExpect(page.locator('.ant-spin-spinning')).toHaveCount(0);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 2)).toBe(
-      true,
-    );
+    // Below the md breakpoint the refund table renders as stacked cards with the same labels.
+    const cards = page.getByRole('list', { name: '退款管理', exact: true });
+    await browserExpect(cards).toBeVisible();
+    await browserExpect(cards.locator('dt', { hasText: /^整体状态$/ }).first()).toBeVisible();
+    await browserExpect(page.getByRole('table', { name: '退款管理' })).toBeHidden();
+    await browserExpect(page.getByText('正在加载…')).toHaveCount(0);
+    expect(await noHorizontalOverflow(page)).toBe(true);
     await page.screenshot({
-      path: '/tmp/zucker-refunds-mobile.png',
+      path: artifact('refunds-mobile.png'),
       fullPage: true,
       animations: 'disabled',
     });

@@ -30,6 +30,10 @@ import { NotFoundException } from '@zucker-framework/core';
 import { JwtAuthGuard, PermissionsGuard, Permissions, PermissionService, RoleHierarchyService, type RoleEntity } from '@zucker-framework/auth';
 import { DATABASE_ADAPTER } from '@zucker-framework/crud';
 import type { DatabaseAdapter } from '@zucker-framework/core';
+import { adminPage, toAdminWhere, type AdminQueryFilterOptions } from '../query-filter';
+
+/** Filterable role fields (allow-list). */
+export const ROLE_FILTER: AdminQueryFilterOptions = { eq: ['id', 'name', 'status', 'parentId', 'groupId'], like: ['name', 'description'] };
 
 interface RoleWithPermissions extends RoleEntity {
   permissionIds: string[];
@@ -78,15 +82,15 @@ export class RolesController {
   @Post('_query')
   @HttpCode(HttpStatus.OK)
   async query(@Body() body: QueryRequest): Promise<PageResult<RoleEntity>> {
-    const pageIndex = body.pageIndex ?? 0;
-    const pageSize = body.pageSize ?? 10;
-    const filter = body.filter ?? {};
-
-    const allRoles = (await this.db.model('roles').findMany({ where: filter })) as RoleEntity[];
-    const total = allRoles.length;
-    const start = pageIndex * pageSize;
-    const data = allRoles.slice(start, start + pageSize);
-
+    const { pageIndex, pageSize } = adminPage(body);
+    const filter = toAdminWhere(body.filter, ROLE_FILTER);
+    const roles = this.db.model('roles');
+    // Paged in the database. A stable order keeps pages consistent: without it PostgreSQL may return
+    // rows in a different physical order on each request, so a picker could skip or repeat roles.
+    const [data, total] = await Promise.all([
+      roles.findMany({ where: filter, orderBy: [{ id: 'asc' }], skip: pageIndex * pageSize, take: pageSize }) as Promise<RoleEntity[]>,
+      roles.count({ where: filter }),
+    ]);
     return { data, total, pageIndex, pageSize };
   }
 
@@ -96,11 +100,7 @@ export class RolesController {
   @Post('_count')
   @HttpCode(HttpStatus.OK)
   async count(@Body() body: { filter?: Record<string, unknown> }): Promise<CountResult> {
-    const roles = (await this.db.model('roles').findMany({
-      where: body.filter ?? {},
-      select: { id: true },
-    })) as Array<{ id: string }>;
-    return { total: roles.length };
+    return { total: await this.db.model('roles').count({ where: toAdminWhere(body.filter, ROLE_FILTER) }) };
   }
 
   /**

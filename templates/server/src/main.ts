@@ -3,13 +3,19 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { HttpExceptionFilter } from '@zucker-framework/common';
 import { AppModule } from './app.module';
-import { applicationCorsOptions } from './http-options';
+import type { NestExpressApplication } from '@nestjs/platform-express';
+import { applicationCorsOptions, trustProxySetting } from './http-options';
 
 async function bootstrap() {
   const startTime = performance.now();
 
-  const app = await NestFactory.create(AppModule, { rawBody: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
   app.enableShutdownHooks();
+  // Per-IP rate limits need the real client address behind a reverse proxy (see TRUST_PROXY).
+  const trustProxy = trustProxySetting(process.env.TRUST_PROXY);
+  if (trustProxy !== undefined) app.set('trust proxy', trustProxy);
+  else if (process.env.NODE_ENV === 'production')
+    Logger.warn('TRUST_PROXY is not set: if this server runs behind a proxy or load balancer, all clients share its address and per-IP rate limits', 'Bootstrap');
   const bootstrapTime = performance.now() - startTime;
   Logger.log(`NestJS module init completed in ${bootstrapTime.toFixed(0)}ms`, 'Bootstrap');
 

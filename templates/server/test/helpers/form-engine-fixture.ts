@@ -18,7 +18,7 @@ import { AccountGuard } from '../../src/accounts/account.guard';
 import { ACCOUNT_MAILER } from '../../src/accounts/account.service';
 import { createAdministrator } from '../../src/accounts/create-administrator';
 export async function formEngineFixture(databaseUrl: string, origin = 'http://localhost:4330') {
-  const url = new URL(databaseUrl); if (url.pathname !== '/cnipa_dev') throw new Error('Requires designated development database');
+  const url = new URL(databaseUrl); if (!/(?:_dev|_test|_tests)$/.test(url.pathname)) throw new Error('Use an isolated development/test database');
   const schema = `zucker_forms_${randomUUID().replaceAll('-', '')}`, pool = new Pool({ connectionString: url.href, connectionTimeoutMillis: 5000 });
   const client = await pool.connect(); let setupFailure: unknown;
   try { await client.query('BEGIN'); await client.query(`CREATE SCHEMA "${schema}"`); await client.query(`SET LOCAL search_path TO "${schema}"`);
@@ -32,7 +32,7 @@ export async function formEngineFixture(databaseUrl: string, origin = 'http://lo
   try {
     const module = await Test.createTestingModule({ imports: [EventEmitterModule.forRoot(), ZuckerCrudModule.forRootAsync({ useFactory: () => database }),
       ZuckerAuthModule.forRoot({ jwtSecret: 'synthetic-forms-only-at-least-32-characters', registerControllers: false }), ZuckerFormModule.forRoot(),
-      ZuckerAdminModule.forRoot({ features: ['form'] }), ZuckerRateLimiterModule.forRoot({ globalGuard: false, limiters: { accounts: { points: 3000, duration: 60 }, 'api-default': { points: 3000, duration: 60 } } }), AccountModule],
+      ZuckerAdminModule.forRoot({ features: ['form'] }), ZuckerRateLimiterModule.forRoot({ globalGuard: false, limiters: { accounts: { points: 3000, duration: 60 }, 'session-refresh': { points: 3000, duration: 60 }, 'session-refresh-network': { points: 3000, duration: 60 }, 'session-read': { points: 3000, duration: 60 }, 'api-default': { points: 3000, duration: 60 } } }), AccountModule],
       controllers: [MenuController], providers: [{ provide: APP_GUARD, useClass: AccountGuard }, { provide: APP_GUARD, useClass: PermissionsGuard }] })
       .overrideProvider(ACCOUNT_MAILER).useValue({ assertConfigured() {}, async send(email: string, _purpose: string, ticket: string) { deliveries.set(email, ticket); } }).compile();
     const app = module.createNestApplication(); closeApp = () => app.close(); app.setGlobalPrefix('api'); app.useGlobalFilters(new HttpExceptionFilter()); await app.listen(0, '127.0.0.1');

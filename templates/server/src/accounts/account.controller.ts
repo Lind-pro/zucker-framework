@@ -1,8 +1,9 @@
 import { Body, Controller, Delete, ForbiddenException, Get, HttpCode, Param, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { PermissionService, Permissions, Public, RefreshTokenCookie } from '@zucker-framework/auth';
 import type { RefreshCookieResponse } from '@zucker-framework/auth';
-import { RateLimit, RateLimitGuard } from '@zucker-framework/rate-limiter';
+import { RateLimit, RateLimitGuard, RateLimiterService, TooManyRequestsException } from '@zucker-framework/rate-limiter';
 import { AccountService, ACCESS_TTL_SECONDS, SESSION_TTL_SECONDS } from './account.service';
+import { ACCOUNTS_LIMITER, SESSION_READ_LIMITER, SESSION_REFRESH_LIMITER, SESSION_REFRESH_NETWORK_LIMITER } from '../rate-limits';
 
 interface AccountRequest {
   headers: { cookie?: string; origin?: string; 'sec-fetch-site'?: string };
@@ -11,13 +12,14 @@ interface AccountRequest {
 
 @Controller('authorize')
 @UseGuards(RateLimitGuard)
-@RateLimit('accounts')
+@RateLimit(ACCOUNTS_LIMITER)
 @Permissions()
 export class AccountController {
   private readonly cookie = new RefreshTokenCookie({ name: 'zucker-session', path: '/',
     secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: SESSION_TTL_SECONDS * 1000 });
   private readonly origins = new Set((process.env.ACCOUNT_ORIGINS ?? 'http://localhost:4201,http://localhost:4202').split(',').map(value => value.trim()));
-  constructor(private readonly accounts: AccountService, private readonly permissions: PermissionService) {}
+  constructor(private readonly accounts: AccountService, private readonly permissions: PermissionService,
+    private readonly limiter: RateLimiterService) {}
 
   private sameOrigin(req: AccountRequest): void {
     if (!req.headers.origin || !this.origins.has(req.headers.origin) || req.headers['sec-fetch-site'] === 'cross-site') {
@@ -52,10 +54,24 @@ export class AccountController {
     this.cookie.issue(res, pair.refreshToken);
     return { userId: pair.userId, token: pair.accessToken, expires: ACCESS_TTL_SECONDS * 1000 };
   }
+  /**
+   * Page loads restore their access token here, so this is not on the credential budget: a per-IP
+   * ceiling (guard) plus a per-session budget once the cookie's signature is verified.
+   */
   @Post('refresh') @Public() @HttpCode(200)
+  @RateLimit(SESSION_REFRESH_NETWORK_LIMITER)
   async refresh(@Req() req: AccountRequest, @Res({ passthrough: true }) res: RefreshCookieResponse) {
     this.sameOrigin(req);
-    const pair = await this.accounts.refresh(this.cookie.read(req) ?? '');
+    const token = this.cookie.read(req) ?? '';
+    const sessionId = await this.accounts.refreshSessionId(token);
+    if (sessionId) {
+      try { await this.limiter.consume(SESSION_REFRESH_LIMITER, `session:${sessionId}`); }
+      catch (error) {
+        if (error instanceof TooManyRequestsException) throw new TooManyRequestsException('Too many requests', error.retryAfter);
+        throw error;
+      }
+    }
+    const pair = await this.accounts.refresh(token);
     this.cookie.issue(res, pair.refreshToken);
     return { access_token: pair.accessToken };
   }
@@ -67,7 +83,7 @@ export class AccountController {
     return { success: true };
   }
   @Get('me')
-  @RateLimit({ limiter: 'api-default', keyExtractor: '#userId' })
+  @RateLimit({ limiter: SESSION_READ_LIMITER, keyExtractor: '#userId' })
   async me(@Req() req: AccountRequest) {
     const user = await this.accounts.currentUser(req.user.id, req.user.sid);
     const permissions = await this.permissions.findUserPermissions(user.id);

@@ -23,6 +23,7 @@
       "@zucker-framework/event",
       "@zucker-framework/ext-kit",
       "@zucker-framework/ext-server",
+      "@zucker-framework/fe-admin",
       "@zucker-framework/fe-analytics",
       "@zucker-framework/fe-auth",
       "@zucker-framework/fe-form",

@@ -79,6 +79,15 @@ export interface HostedCheckoutAdapter {
   readonly supportsMetadata?: boolean;
   /** Validate protocol/currency limitations before the durable dispatch claim. No I/O. */
   validate(offer: HostedCheckoutOffer): void;
+  /**
+   * Optional read-only lookup of the provider's own price for `offer.catalogReference`. It runs
+   * before an order exists: a provider price whose money (or mode) differs from the offer refuses
+   * the checkout with `conflict`, so a catalog edited away from the provider price fails cleanly
+   * instead of charging the buyer and then failing verification. Return null when the provider
+   * cannot tell (the amount the provider reports at creation is still checked before the URL is
+   * released, and paid money is always verified).
+   */
+  quote?(offer: Readonly<HostedCheckoutOffer>): Promise<{ money: Money; mode?: HostedCheckoutMode } | null>;
   create(order: Readonly<HostedCheckoutOrder>): Promise<HostedCheckoutObservation>;
   retrieve(checkoutId: string): Promise<HostedCheckoutObservation>;
   capture?(checkoutId: string, idempotencyKey: string): Promise<HostedCheckoutObservation>;

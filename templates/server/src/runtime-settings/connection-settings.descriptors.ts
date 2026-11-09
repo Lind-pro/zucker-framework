@@ -7,6 +7,7 @@ import { oauthSettings } from '../oauth/oauth.config';
 import { connectionSdkAvailable } from './connection-sdk';
 import { siteAnalyticsConfig, siteConnectionsConfig, validatePublicAnalytics, validatePublicConnections } from './site-public.config';
 import { AI_CONNECTIONS, validateAIConnection } from '../ai-connections/ai-connections.config';
+import { smtpSettingsFromConnection } from '../mail/smtp-transport';
 
 export type ConnectionFieldType = 'text' | 'secret' | 'boolean' | 'select' | 'number' | 'url';
 export interface ConnectionField {
@@ -58,6 +59,21 @@ export const CONNECTION_PROFILES: readonly ConnectionProfile[] = [
     text('FILES_S3_BUCKET', 'Bucket'), { ...text('FILES_S3_REGION', 'Region'), defaultValue: 'us-east-1' }, { key: 'FILES_S3_ENDPOINT', label: '兼容 S3 的 Endpoint', type: 'url' },
     secret('FILES_S3_ACCESS_KEY_ID', 'Access Key ID'), secret('FILES_S3_SECRET_ACCESS_KEY', 'Secret Access Key'), { key: 'FILES_S3_FORCE_PATH_STYLE', label: '使用 Path Style（留空时按 Endpoint 选择）', type: 'boolean' }] },
 ];
+const CATEGORY_KEYS: Readonly<Record<string, string>> = { AI: 'ai', '公开站点': 'public-site', '支付': 'payments', '登录': 'sign-in', '邮件': 'mail', '存储': 'storage' };
+/**
+ * Stable translation keys sent next to the display text (`labelKey` and friends), so clients
+ * translate by key instead of by the exact Chinese wording. AI fields share keys across providers.
+ */
+export function connectionLabelKeys(profile: ConnectionProfile) {
+  const prefix = AI_CONNECTIONS.find(connection => connection.id === profile.id)?.prefix;
+  const fieldKey = (field: ConnectionField) =>
+    `connections.field.${prefix && field.key.startsWith(`${prefix}_`) ? `AI_${field.key.slice(prefix.length + 1)}` : field.key}`;
+  return {
+    labelKey: `connections.${profile.id}`,
+    categoryKey: `connections.category.${CATEGORY_KEYS[profile.category] ?? profile.category.toLowerCase()}`,
+    field: (field: ConnectionField) => ({ labelKey: fieldKey(field), ...(field.description ? { descriptionKey: `${fieldKey(field)}.description` } : {}) }),
+  };
+}
 export function connectionProfile(id: string): ConnectionProfile {
   const profile = CONNECTION_PROFILES.find(row => row.id === id); if (!profile) throw new BadRequestException('Unknown connection profile'); return profile;
 }
@@ -94,10 +110,11 @@ export async function validateConnection(profile: ConnectionProfile, env: NodeJS
     }
     else if (profile.id === 'account-email') {
       if (!env.SMTP_HOST && !env.SMTP_FROM && !env.SMTP_USER && !env.SMTP_PASSWORD) return;
-      const port = Number(env.SMTP_PORT ?? 587);
-      if (!env.SMTP_HOST?.trim() || !env.SMTP_FROM?.trim() || !env.WEB_URL || !Number.isSafeInteger(port) || port < 1 || port > 65535) throw new Error();
+      // Same parsing as the shared SmtpTransport that account mail and MailService use.
+      const smtp = smtpSettingsFromConnection(env);
+      if (!smtp.host || !smtp.from || !env.WEB_URL || !Number.isSafeInteger(smtp.port) || smtp.port < 1 || smtp.port > 65535) throw new Error();
       oauthSettings(env);
-      const provider = new EmailProvider({ host: env.SMTP_HOST, from: env.SMTP_FROM, port, secure: env.SMTP_SECURE === 'true', auth: { user: env.SMTP_USER ?? '', pass: env.SMTP_PASSWORD ?? '' } });
+      const provider = new EmailProvider({ host: smtp.host, from: smtp.from, port: smtp.port, secure: smtp.secure, auth: { user: smtp.user, pass: smtp.password } });
       try { if (!provider.isConfigured()) throw new Error(); } finally { await provider.close(); }
     }
   } catch { throw new BadRequestException('Connection configuration cannot be assembled locally; check required fields and installed provider support'); }

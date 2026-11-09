@@ -17,6 +17,8 @@ import { BillingRuntimeModule } from './billing/billing-runtime';
 import { ContentModule } from './content/content.module';
 import { CreditsModule } from './credits/credits.module';
 import { ManagementModule } from './management/management.module';
+import { SubscriptionsModule } from './subscriptions/subscriptions.module';
+import { MailModule } from './mail/mail.module';
 import { RuntimeSettingsModule } from './runtime-settings/runtime-settings.module';
 import { RUNTIME_ENVIRONMENT } from './runtime-settings/runtime-settings.tokens';
 import { AIConnectionsModule } from './ai-connections/ai-connections.module';
@@ -26,6 +28,7 @@ import { ZuckerConfigModule } from '@zucker-framework/config';
 import { ZuckerDictionaryModule } from '@zucker-framework/dictionary';
 import { ZuckerCacheModule } from '@zucker-framework/cache';
 import { ZuckerRateLimiterModule } from '@zucker-framework/rate-limiter';
+import { APP_RATE_LIMITERS } from './rate-limits';
 import { ZuckerStorageModule } from '@zucker-framework/storage';
 import { FilesModule } from './files/files.module';
 import { storageOptionsFromEnvironment } from './files/files.config';
@@ -71,6 +74,8 @@ if (!jwtSecret || jwtSecret.length < 32) throw new Error('JWT_SECRET must be an 
     ContentModule,
     CreditsModule,
     ManagementModule,
+    SubscriptionsModule,
+    MailModule,
     OAuthModule,
     ZuckerLoggingModule.forRoot({ persistence: {}, rejectedRequests: {},
       captureParameters: false, captureResults: false }),
@@ -82,13 +87,7 @@ if (!jwtSecret || jwtSecret.length < 32) throw new Error('JWT_SECRET must be an 
     ZuckerRateLimiterModule.forRoot({
       // Controllers run this guard after authentication; a global copy would consume twice.
       globalGuard: false,
-      limiters: {
-        accounts: { points: 20, duration: 60 },
-        'api-key': { points: 60, duration: 60, blockDuration: 0 },
-        billing: { points: 60, duration: 60 },
-        login: { points: 5, duration: 900 },        // 15分钟最多5次登录
-        'api-default': { points: 100, duration: 60 }, // 每分钟100次API调用
-      },
+      limiters: { ...APP_RATE_LIMITERS },
     }),
     ZuckerStorageModule.forRootAsync({ inject: [RUNTIME_ENVIRONMENT],
       useFactory: environment => storageOptionsFromEnvironment(environment as NodeJS.ProcessEnv) }),

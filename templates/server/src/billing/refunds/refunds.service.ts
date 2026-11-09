@@ -61,11 +61,18 @@ export class BillingRefundsService {
     if (!row) throw new HostedCheckoutError('not_found', 'Payment order was not found'); return row;
   }
   private async local(type: RefundTargetType, id: string): Promise<RefundLocalPayment> {
+    const local = await this.localPayment(type, id);
+    // Plan purchases grant entitlement, not credits; this credit-recovering flow cannot refund them.
+    if (local.totalCredits === 0) throw new HostedCheckoutError('unsupported',
+      'Plan purchases grant no credits; refund them in the payment provider and adjust the plan in subscription management');
+    return local;
+  }
+  private async localPayment(type: RefundTargetType, id: string): Promise<RefundLocalPayment> {
     if (type === 'order') {
       const order = await this.order(id);
       if (order.state !== 'paid' || !order.paymentId || !order.paymentKind) throw new HostedCheckoutError('conflict', 'Only verified paid orders can be refunded');
       const initialCycle = order.offer.mode === 'subscription' ? await this.database.model('billingSubscriptionCycles').findMany({ where: { bindingId: order.id, initial: true }, take: 1 }) as SubscriptionCycleReceipt[] : [];
-      if (initialCycle[0]) return this.local('cycle', initialCycle[0].id);
+      if (initialCycle[0]) return this.localPayment('cycle', initialCycle[0].id);
       const fulfilled = await this.database.model('billingFulfillments').findUnique({ where: { orderId: order.id } });
       return { ownerId: order.ownerId, orderId: order.id, providerId: order.providerId, accountScope: order.accountScope, title: order.offer.description,
         reference: { paymentId: order.paymentId, paymentKind: order.paymentKind, paidMoney: order.offer.money }, totalCredits: validateCreditFulfillmentPolicy(order.offer.fulfillmentData).credits,
@@ -152,6 +159,8 @@ export class BillingRefundsService {
   /** Verified checkout observation is prepared outside the original fulfillment transaction. */
   async prepareCheckout(order: Readonly<HostedCheckoutOrder>, observation: Readonly<HostedCheckoutObservation>, fence?: SubscriptionExecutionFence): Promise<void> {
     if (!this.adapters.has(order.providerId)) return;
+    // Nothing to block or recover for a purchase that granted no credits (plan purchases).
+    if (validateCreditFulfillmentPolicy(order.offer.fulfillmentData).credits === 0) return;
     if (observation.state !== 'paid' || !observation.paidMoney || !observation.paymentId || !observation.paymentKind) refundConflict('Verified checkout payment is required for refund preparation');
     const persisted = await this.order(order.id);
     if (persisted.ownerId !== order.ownerId || persisted.accountScope !== order.accountScope || persisted.providerId !== order.providerId) refundConflict('Checkout refund preparation identity differs');
@@ -165,6 +174,7 @@ export class BillingRefundsService {
     const binding = await this.database.model('billingSubscriptions').findUnique({ where: { id: bindingId } }) as BillingSubscription | null;
     if (!binding || binding.ownerId !== ownerId) throw new HostedCheckoutError('forbidden', 'Subscription refund preparation owner mismatch');
     if (!this.adapters.has(binding.providerId)) return;
+    if (validateCreditFulfillmentPolicy(binding.offer.fulfillmentData).credits === 0) return;
     const cycles = await this.database.model('billingSubscriptionCycles').findMany({ where: { providerId: binding.providerId, accountScope: binding.accountScope, paymentId: payment.paymentId, paymentKind: payment.paymentKind }, take: 1 }) as SubscriptionCycleReceipt[];
     const cycle = cycles[0]; if (cycle && (cycle.ownerId !== ownerId || cycle.bindingId !== bindingId)) refundConflict('Payment already belongs to a different subscription');
     await this.observeLocal({ ownerId, orderId: binding.initialOrderId, cycleId: cycle?.id, providerId: binding.providerId, accountScope: binding.accountScope,

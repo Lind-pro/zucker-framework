@@ -6,6 +6,7 @@ import { ApplicationDatabase, ApplicationTransaction } from '../database';
 import { checkoutCreditOperation, createCreditLedger, validateCreditFulfillmentPolicy } from './ledger';
 import { bindCheckoutSubscription } from './subscription-persistence';
 import { refundCheckoutGrant } from './refunds/refunds.grant';
+import { assertPlanFulfillment, type BillingExtensions } from './billing-extensions';
 
 const coordinator = new PostgresCreditOperationCoordinator();
 export const CHECKOUT_FULFILLED_OUTBOX_KIND = 'billing.credit-fulfilled';
@@ -30,10 +31,13 @@ class TransactionCheckoutOrders extends DatabaseOrderPersistence<HostedCheckoutO
 }
 
 class RootCheckoutOrders extends DatabaseOrderPersistence<HostedCheckoutOrder> {
-  constructor(private readonly database: ApplicationDatabase) {
+  constructor(private readonly database: ApplicationDatabase, private readonly configRevision?: () => string | null) {
     super(database.model('billingOrders') as ModelOperations<HostedCheckoutOrder>);
   }
   override create(args: Record<string, unknown>): Promise<HostedCheckoutOrder> {
+    // The payment configuration revision this order is created with (null when unknown).
+    const revision = this.configRevision?.() ?? null;
+    if (revision) args = { ...args, data: { ...(args.data as Record<string, unknown>), configRevision: revision } };
     const data = args.data as Record<string, unknown>;
     if (data.providerMetadata === null) {
       // Omission writes SQL NULL for this optional JSON field; bare JSON null is ambiguous to Prisma.
@@ -48,10 +52,12 @@ class RootCheckoutOrders extends DatabaseOrderPersistence<HostedCheckoutOrder> {
 }
 
 /** All payment/order, operation receipt, lot, balance, journal and outbox writes share this transaction. */
-export function createCheckoutPersistence(database: ApplicationDatabase): HostedCheckoutPersistence {
+export function createCheckoutPersistence(database: ApplicationDatabase, options: {
+  extensions?: Pick<BillingExtensions, 'checkoutFulfilled'>; configRevision?: () => string | null;
+} = {}): HostedCheckoutPersistence {
   const ledger = createCreditLedger(database);
   return {
-    orders: new RootCheckoutOrders(database),
+    orders: new RootCheckoutOrders(database, options.configRevision),
     transaction: work => database.transaction(async tx => {
       const orders = new TransactionCheckoutOrders(tx);
       return work({
@@ -99,6 +105,10 @@ export function createCheckoutPersistence(database: ApplicationDatabase): Hosted
           await tx.model('billingFulfillments').create({ data: {
             orderId: order.id, ownerId: order.ownerId, credits: allowance.credits, policy,
           } });
+          // Registered integrations (plan entitlement for one-time plan purchases) commit with the grant;
+          // without them a plan order fails here instead of being fulfilled without its entitlement.
+          if (options.extensions) await options.extensions.checkoutFulfilled(tx, order);
+          else assertPlanFulfillment(order.offer.fulfillmentData, false);
           await tx.model('billingOutbox').create({ data: {
             kind: CHECKOUT_FULFILLED_OUTBOX_KIND, aggregateId: order.id,
             payload: { orderId: order.id, ownerId: order.ownerId, credits: allowance.credits,

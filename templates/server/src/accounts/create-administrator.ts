@@ -1,12 +1,30 @@
 import type { DatabaseAdapter } from '@zucker-framework/core';
 import { UsernameValidator, UserService } from '@zucker-framework/auth';
 
+import type { SubscriptionPlanWrite } from '@zucker-framework/payment';
+import { seedPlans } from '../subscriptions/plan-seeds';
 import { starterAdminMenus } from './starter-admin-menus';
+
+/**
+ * Back-office permission codes (RFC §8) that are checked with `@Permissions(code)` rather than
+ * discovered from `@Resource` declarations, so they must exist as rows before an administrator can
+ * grant them to a delegated role. Together with every starter menu code they are seeded once.
+ * Installations created before these codes existed get them (and the new starter menus) from the
+ * idempotent data step of migration 20261109000000_back_office; keep both lists in sync.
+ */
+export const BACK_OFFICE_PERMISSIONS: readonly string[] = [
+  'plans:query', 'plans:add', 'plans:update', 'plans:delete',
+  'subscriptions:query', 'subscriptions:update',
+  'quota:query', 'quota:update',
+  'mail:query', 'mail:update',
+];
 
 /** Explicit owner setup only. This function is never reachable from public account HTTP routes. */
 export async function createAdministrator(
   db: DatabaseAdapter,
   input: { username: string; email: string; password: string },
+  /** Initial plans (see planSeedsFromBillingCatalog); existing slugs are never changed. */
+  options: { plans?: readonly SubscriptionPlanWrite[] } = {},
 ): Promise<string> {
   const email = input.email.trim().toLowerCase();
   if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
@@ -52,6 +70,11 @@ export async function createAdministrator(
           });
       }
     }
+    const codes = new Set([...BACK_OFFICE_PERMISSIONS, ...starterAdminMenus.flatMap(menu => menu.permission ? [menu.permission] : [])]);
+    for (const code of codes)
+      if (!(await tx.model('permissions').findUnique({ where: { id: code } })))
+        await tx.model('permissions').create({ data: { id: code, name: code, description: 'Seeded with the starter back office' } });
+    await seedPlans(tx, options.plans ?? []);
     return user.id;
   });
 }

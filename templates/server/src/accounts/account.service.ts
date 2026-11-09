@@ -225,6 +225,22 @@ export class AccountService {
     } catch { throw new UnauthorizedException('Invalid or expired session'); }
   }
 
+  /**
+   * Session id of a correctly signed, unexpired refresh token that is still the session's current
+   * token, or null. Used only as the per-session rate-limit key: a leaked, already rotated token
+   * must not spend the victim session's budget (it stays on the per-IP network budget). refresh()
+   * remains the authority on rotation and replay.
+   */
+  async refreshSessionId(token: string): Promise<string | null> {
+    if (!token) return null;
+    try {
+      const claims = await this.jwt.verifyAsync(token, { algorithms: ['HS256'], audience: 'zucker:refresh' });
+      if (claims.tokenUse !== 'refresh' || typeof claims.sub !== 'string' || !claims.sub) return null;
+      const session = await this.sessions.getSessionById(claims.sub);
+      return session && session.refreshJti === claims.jti ? claims.sub : null;
+    } catch { return null; }
+  }
+
   async refresh(token: string): Promise<RefreshTokenPair> {
     try { return await this.tokens.refresh(token); }
     catch (error) {

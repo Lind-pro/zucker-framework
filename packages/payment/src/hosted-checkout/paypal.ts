@@ -107,6 +107,13 @@ export function createPayPalHostedCheckoutAdapter(options: PayPalHostedCheckoutO
       }
       toMinorUnits(offer.money.amount, ['JPY', 'HUF', 'TWD'].includes(offer.money.currency) ? 'JPY' : 'USD');
     },
+    // One-time orders carry the offer amount itself; only a subscription plan has its own price.
+    async quote(offer) {
+      if (offer.mode !== 'subscription' || !subscriptions) return null;
+      const plan = await subscriptions.plan(offer.catalogReference);
+      sameId(plan.id, offer.catalogReference);
+      return { money: planMoney(plan), mode: 'subscription' };
+    },
     async create(order) {
       if (order.providerMetadata && Reflect.ownKeys(order.providerMetadata).length) {
         throw new HostedCheckoutError('unsupported', 'PayPal Orders does not support arbitrary checkout metadata');

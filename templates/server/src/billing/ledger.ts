@@ -18,15 +18,21 @@ export interface CreditFulfillmentPolicy {
   grantBasis?: 'period' | 'payment';
 }
 
-/** Consumer policy for this template's credit offers, never a client-selected amount. */
+/**
+ * Consumer policy for this template's credit offers, never a client-selected amount. A plan offer
+ * also carries its frozen `plan` snapshot (validated by the plan write-back hook) and may grant no
+ * credits; every other offer must grant a positive amount.
+ */
 export function validateCreditFulfillmentPolicy(value: unknown): CreditFulfillmentPolicy {
   if (!value || typeof value !== 'object' || Array.isArray(value))
     throw new TypeError('Invalid credit fulfillment policy');
   const policy = value as Record<string, unknown>;
+  const plan = policy.plan !== undefined;
   if (
-    Object.keys(policy).some((key) => !['credits', 'expiresInDays', 'grantBasis'].includes(key)) ||
+    Object.keys(policy).some((key) => !['credits', 'expiresInDays', 'grantBasis', 'plan'].includes(key)) ||
+    (plan && (!policy.plan || typeof policy.plan !== 'object' || Array.isArray(policy.plan))) ||
     !Number.isSafeInteger(policy.credits) ||
-    Number(policy.credits) <= 0 ||
+    Number(policy.credits) < (plan ? 0 : 1) ||
     Number(policy.credits) > 2_147_483_647
   )
     throw new TypeError('Invalid credit fulfillment policy');

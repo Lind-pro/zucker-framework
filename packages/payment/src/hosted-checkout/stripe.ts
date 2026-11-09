@@ -1,11 +1,12 @@
 import type Stripe from 'stripe';
 import { fromMinorUnits, toMinorUnits } from '../contract/money';
 import { createStripeCheckoutSession, retrieveStripeCheckoutSession, stripeResourceId, verifyStripeWebhookEvent } from '../providers/stripe';
-import { HostedCheckoutError, type HostedCheckoutAdapter, type HostedCheckoutObservation } from './types';
+import { HostedCheckoutError, type HostedCheckoutAdapter, type HostedCheckoutObservation, type HostedCheckoutOffer } from './types';
 import { snapshotProviderMetadata } from './validation';
 
 export interface StripeHostedCheckoutOptions {
-  client: Pick<Stripe, 'checkout' | 'webhooks'>;
+  /** With `prices`, the adapter quotes the Stripe Price before an order is created (see `quote`). */
+  client: Pick<Stripe, 'checkout' | 'webhooks'> & Partial<Pick<Stripe, 'prices'>>;
   accountScope: string;
   livemode: boolean;
   webhookSecret?: string;
@@ -41,6 +42,7 @@ export function createStripeHostedCheckoutAdapter(options: StripeHostedCheckoutO
       subscriptionId: stripeResourceId(raw.subscription),
     };
   };
+  const prices = options.client.prices;
   return {
     id: 'stripe', accountScope: options.accountScope, modes: ['payment', 'subscription'], supportsMetadata: true,
     validate(offer) {
@@ -48,6 +50,17 @@ export function createStripeHostedCheckoutAdapter(options: StripeHostedCheckoutO
       toMinorUnits(amount, currency === 'UGX' ? 'USD' : currency);
       if (currency === 'UGX' || currency === 'ISK') toMinorUnits(amount, 'JPY');
     },
+    ...(prices ? { quote: async (offer: Readonly<HostedCheckoutOffer>) => {
+      const price = await prices.retrieve(offer.catalogReference);
+      if (price.livemode !== options.livemode) throw new HostedCheckoutError('verification_failed', 'Stripe environment mismatch');
+      if (!price.active) throw new HostedCheckoutError('conflict', 'The Stripe price is archived; this offer is unavailable');
+      const currency = price.currency?.toUpperCase();
+      const amount = price.unit_amount;
+      // Tiered, metered or customer-chosen prices have no single amount to compare.
+      if (!currency || amount === null || amount === undefined || !Number.isSafeInteger(amount) || amount < 0) return null;
+      return { money: { currency, amount: fromMinorUnits(amount, currency === 'UGX' ? 'USD' : currency) },
+        mode: price.type === 'recurring' ? 'subscription' as const : 'payment' as const };
+    } } : {}),
     async create(order) {
       const metadata = snapshotProviderMetadata(order.providerMetadata ?? undefined);
       const returnUrl = new URL(order.successUrl);

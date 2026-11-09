@@ -84,6 +84,31 @@ function assertPublishedFiles(manifest, tarball) {
   }
 }
 
+/**
+ * fe-admin must ship its own code only: React, the router, Zustand, icons and the sibling fe-*
+ * packages stay external so a consumer keeps one store/runtime instance. esbuild marks every
+ * inlined module with a `// <path>` region comment, so a bundled dependency is detectable.
+ */
+function assertFeAdminArtifact(manifest, tarball) {
+  if (manifest.name !== '@zucker-framework/fe-admin') return;
+  const files = capture('tar', ['-tf', tarball]).trim().split('\n');
+  if (!files.includes('package/styles.css') || !manifest.exports?.['./styles.css'])
+    throw new Error('fe-admin must publish ./styles.css');
+  for (const peer of ['react', 'react-dom', 'react-router', 'zustand', 'lucide-react'])
+    if (!manifest.peerDependencies?.[peer]) throw new Error(`fe-admin must keep ${peer} as a peer dependency`);
+  const code = files.filter(file => /\.(?:mjs|js|cjs)$/.test(file));
+  if (code.filter(file => file.endsWith('.mjs')).length < 2) throw new Error('fe-admin ESM build must be code-split');
+  const bundled = /^\s*\/\/ (?:[./]*node_modules\/|(?:\.\.\/)+fe-[a-z-]+\/)/m;
+  const externalImport = /from\s*["'](?:react|zustand|@zucker-framework\/fe-auth)["']|require\(["'](?:react|zustand|@zucker-framework\/fe-auth)["']\)/;
+  let imports = false;
+  for (const file of code) {
+    const source = capture('tar', ['-xOf', tarball, '--', file]);
+    if (bundled.test(source)) throw new Error(`fe-admin ${file} bundles a dependency instead of importing it`);
+    imports ||= externalImport.test(source);
+  }
+  if (!imports) throw new Error('fe-admin does not import React/Zustand/fe-auth externally');
+}
+
 function sha256(file) {
   return createHash('sha256').update(readFileSync(file)).digest('hex');
 }
@@ -116,6 +141,7 @@ try {
     assertPackageRuntimeDependencies(manifest, esmSources);
     assertPortableDependencies(manifest);
     assertPublishedFiles(manifest, tarball);
+    assertFeAdminArtifact(manifest, tarball);
     return { filename, tarball, manifest, sha256: sha256(tarball) };
   });
 
@@ -265,8 +291,13 @@ if (typeof notification.DurableNotificationWorker !== 'function') throw new Erro
         '@types/react-dom': installedVersion('templates/admin', '@types/react-dom'),
         react: installedVersion('templates/admin', 'react'),
         'react-dom': installedVersion('templates/admin', 'react-dom'),
-        antd: installedVersion('templates/admin', 'antd'),
-        '@ant-design/icons': installedVersion('templates/admin', '@ant-design/icons'),
+        // The admin template no longer uses Ant Design; fe-form's own development host pins its peers.
+        antd: installedVersion('packages/fe-form', 'antd'),
+        '@ant-design/icons': installedVersion('packages/fe-form', '@ant-design/icons'),
+        'react-router': installedVersion('templates/admin', 'react-router'),
+        zustand: installedVersion('templates/admin', 'zustand'),
+        // fe-admin peer; the admin template is its host.
+        'lucide-react': installedVersion('templates/admin', 'lucide-react'),
         // The HTTP adapter imports Core internals; use the lockfile-tested tuple,
         // rather than mixing pinned Core with the scaffold's floating adapter.
         '@nestjs/common': installedVersion('templates/server', '@nestjs/common'),
@@ -333,6 +364,16 @@ if (typeof DurableNotificationWorker !== 'function') throw new Error('notificati
 `,
   );
   run('node', ['smoke.mjs'], { cwd: pnpmConsumerDirectory });
+  // fe-admin resolves its peers from the consumer and loads without a DOM until rendered.
+  writeFileSync(
+    join(pnpmConsumerDirectory, 'smoke-fe-admin.mjs'),
+    `import { createAdminApp } from '@zucker-framework/fe-admin';
+import { PORT_ERROR_REASONS, readPortError } from '@zucker-framework/fe-types/back-office';
+if (typeof createAdminApp !== 'function') throw new Error('fe-admin pnpm export missing');
+if (!PORT_ERROR_REASONS.includes('pending_payment') || readPortError({ code: 'conflict' }).reason !== 'conflict') throw new Error('fe-types back-office export missing');
+`,
+  );
+  run('node', ['smoke-fe-admin.mjs'], { cwd: pnpmConsumerDirectory });
   run('node', [join(rootDir, 'scripts/verify-consumer-contracts.mjs'), pnpmConsumerDirectory,
     join(packDirectory, 'consumer-verification.json')]);
   // Unselected tarballs were verification inputs only; never include them in the upload bundle.

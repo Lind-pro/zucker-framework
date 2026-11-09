@@ -62,7 +62,7 @@ run('durable jobs HTTP contract and actual Nest lifecycle', () => {
     const module = await Test.createTestingModule({ imports: [
       ZuckerCrudModule.forRootAsync({ useFactory: () => database }),
       ZuckerAuthModule.forRoot({ jwtSecret: 'synthetic-runtime-http-secret-only', registerControllers: false }),
-      ZuckerRateLimiterModule.forRoot({ limiters: { accounts: { points: 2000, duration: 60 }, 'api-default': { points: 2000, duration: 60 } } }),
+      ZuckerRateLimiterModule.forRoot({ limiters: { accounts: { points: 2000, duration: 60 }, 'session-refresh': { points: 2000, duration: 60 }, 'session-refresh-network': { points: 2000, duration: 60 }, 'session-read': { points: 2000, duration: 60 }, 'api-default': { points: 2000, duration: 60 } } }),
       ZuckerStorageModule.forRoot({ provider: 'local', basePath: directory }), AccountModule, JobsModule,
     ], providers: [{ provide: APP_GUARD, useClass: AccountGuard }, { provide: APP_GUARD, useClass: PermissionsGuard }] })
       .overrideProvider(ACCOUNT_MAILER).useValue(mailer)

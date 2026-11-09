@@ -57,7 +57,7 @@ run('durable OAuth template flows', () => {
     const db = new ApplicationDatabase(scopedUrl);
     const module = await Test.createTestingModule({ imports: [
       ZuckerCrudModule.forRootAsync({ useFactory: () => db }), ZuckerAuthModule.forRoot({ jwtSecret: 'synthetic-oauth-test-secret-only-long', registerControllers: false }),
-      ZuckerRateLimiterModule.forRoot({ limiters: { accounts: { points: 2000, duration: 60 }, 'api-default': { points: 2000, duration: 60 } } }), AccountModule, OAuthModule,
+      ZuckerRateLimiterModule.forRoot({ limiters: { accounts: { points: 2000, duration: 60 }, 'session-refresh': { points: 2000, duration: 60 }, 'session-refresh-network': { points: 2000, duration: 60 }, 'session-read': { points: 2000, duration: 60 }, 'api-default': { points: 2000, duration: 60 } } }), AccountModule, OAuthModule,
     ], providers: [{ provide: APP_GUARD, useClass: AccountGuard }, { provide: APP_GUARD, useClass: PermissionsGuard }] })
       .overrideProvider(ACCOUNT_MAILER).useValue(mailer).overrideProvider(OAUTH_SETTINGS).useValue(config)
       .overrideProvider(OAUTH_PROVIDER_CLIENT).useValue(providerClient).compile();

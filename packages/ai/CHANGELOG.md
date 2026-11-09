@@ -1,5 +1,14 @@
 # @zucker-framework/ai
 
+## 1.0.18
+
+### Patch Changes
+
+- Updated dependencies
+  - @zucker-framework/common@1.0.18
+  - @zucker-framework/ai-access@1.0.18
+  - @zucker-framework/core@1.0.18
+
 ## 1.0.17
 
 ### Patch Changes

@@ -66,7 +66,7 @@ run('management PostgreSQL permissions, projections and lot-aware grants', () =>
     await request(f.app.getHttpServer()).get('/api/management/orders').expect(401);
     for (const resource of [
       'orders',
-      'subscriptions',
+      'billing-subscriptions',
       'jobs',
       'deliveries',
       'files',
@@ -170,7 +170,7 @@ run('management PostgreSQL permissions, projections and lot-aware grants', () =>
     });
     const second = (await get('orders?page=2&pageSize=1').expect(200)).body;
     expect(second.data[0].id).not.toBe(orders.data[0].id);
-    for (const resource of ['orders', 'subscriptions', 'jobs', 'deliveries']) {
+    for (const resource of ['orders', 'billing-subscriptions', 'jobs', 'deliveries']) {
       const projection = await get(resource).expect(200);
       expect(JSON.stringify(projection.body)).not.toMatch(
         /PRIVATE-|fulfillmentData|providerMetadata|leaseToken|payload|customerId|accountScope|createKey|captureKey/,

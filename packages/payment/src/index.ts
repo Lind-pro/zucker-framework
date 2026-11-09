@@ -128,3 +128,52 @@ export { createCreemSubscriptionAdapter } from './subscriptions/creem';
 export type { CreemSubscriptionOptions } from './subscriptions/creem';
 export { createPayPalSubscriptionAdapter, observePayPalSubscription } from './subscriptions/paypal';
 export type { PayPalSubscriptionOptions, PayPalSubscriptionPeriodReceipt } from './subscriptions/paypal';
+
+// 套餐目录与用户订阅指派（套餐内容、价格与功能目录由消费者提供）
+export {
+  PlanCatalogService,
+  PlanCatalogError,
+  validatePlanWrite,
+  validatePlanPrices,
+  normalizePlanAmount,
+  planOfferId,
+  parsePlanOfferId,
+  planCheckoutMode,
+  readPlanPriceSnapshot,
+  DEFAULT_PROVIDER_REF_FORMATS,
+  MAX_PLAN_PRICES,
+  MAX_ONE_TIME_TERM_DAYS,
+} from './plans/plan-catalog';
+export type {
+  SubscriptionPlanRecord,
+  SubscriptionPlanWrite,
+  PlanPrice,
+  PlanPriceInterval,
+  PlanPriceSnapshot,
+  ResolvedPlanOffer,
+  PlanCatalogErrorReason,
+  PlanCatalogStore,
+  PlanUpdateOptions,
+  PlanCatalogServiceOptions,
+} from './plans/plan-catalog';
+export { SubscriptionAssignmentService, SubscriptionAssignmentError, addBillingCycle } from './plans/subscription-assignment';
+export type {
+  UserSubscriptionStatus,
+  UserSubscriptionCycle,
+  UserSubscriptionSource,
+  UserSubscriptionRecord,
+  UserSubscriptionWrite,
+  AssignablePlan,
+  SubscriptionPaymentEvidence,
+  PendingPaymentBlock,
+  UserSubscriptionStore,
+  SubscriptionAssignmentErrorReason,
+  SubscriptionAssignmentInput,
+  SubscriptionPaymentInput,
+  SubscriptionPurchaseInput,
+  PlanPurchaseRefusal,
+  SubscriptionPaymentOutcome,
+  SubscriptionPaymentResult,
+  SubscriptionChange,
+  SubscriptionAssignmentOptions,
+} from './plans/subscription-assignment';

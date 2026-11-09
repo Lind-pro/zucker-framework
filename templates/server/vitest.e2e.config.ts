@@ -32,5 +32,7 @@ export default defineConfig({
     hookTimeout: 30_000,
     pool: 'forks',
     singleFork: true,
+    // Specs share fixed ports and start their own Vite/Chromium; run files one at a time.
+    fileParallelism: false,
   },
 });

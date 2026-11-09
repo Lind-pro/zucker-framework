@@ -33,7 +33,7 @@
 
 修改类账户请求须带允许的 Origin；跨站 Cookie 请求拒绝。刷新和访问令牌有不同 audience/type，刷新令牌不能作为 API Bearer 凭证。会话采用数据库固定有效期，刷新不会延长数据库期限；退出、账户停用、密码变更均由数据库事实判定。
 
-登录和账户写操作使用 `accounts` 限流预算；本人资料、会话、API Key、头像和外部绑定读取使用 `api-default` 的用户维度预算，公开提供方列表按来源 IP 读取预算计数。组合根关闭重复的全局限流 Guard，各控制器在认证之后显式使用 `RateLimitGuard`，一次请求只消耗一次。新增受限控制器沿用 `@UseGuards(RateLimitGuard)` 与 `@RateLimit(...)`，不另注册第二个全局实例。
+限流策略集中在 `src/rate-limits.ts`（`APP_RATE_LIMITERS`）。登录、注册、邮箱验证、找回/重置密码和其他账户写操作使用严格的 `accounts` 预算（每 IP 每分钟 20 次）。每次整页加载都会调用 `POST /authorize/refresh` 与 `GET /authorize/me`，因此它们不占用凭据预算：刷新按已验签刷新令牌的会话计数（`session-refresh`，每会话每分钟 60 次），另有每 IP 每分钟 300 次的总上限（`session-refresh-network`，含无效 Cookie）；`me` 按用户计数（`session-read`，每分钟 120 次）。刷新令牌的轮换与重放拒绝不变。本人会话列表、API Key、头像和外部绑定读取使用 `api-default` 的用户维度预算，公开提供方列表按来源 IP 读取预算计数。`test/account-rate-limits.persistent.e2e-spec.ts` 以实际策略验证两点：正常浏览不被限流，凭据端点保持严格。组合根关闭重复的全局限流 Guard，各控制器在认证之后显式使用 `RateLimitGuard`，一次请求只消耗一次。新增受限控制器沿用 `@UseGuards(RateLimitGuard)` 与 `@RateLimit(...)`，不另注册第二个全局实例。
 
 邮件票据只保存 SHA-256 摘要。链接将原始票据放在片段 `#ticket=...`，页面读取后移除地址中的片段，再以请求正文提交，避免进入访问日志或 Referer。邮件投递仍是明确的即时发送，失败可请求新链接；本批不宣称已具备崩溃恢复 outbox。
 
@@ -195,11 +195,26 @@ published artifact, a live-provider certification or a production deployment.
 
 ## 管理范围查询与正向积分发放
 
-`ManagementModule` 提供经过明确字段投影的管理查询：订单/订阅（`billing:query`）、任务（`jobs:query`）、投递（`notification:query`）、文件（`files:query`）、日志（`logging:query`）、积分（`credit:query`）与 API 密钥元数据（`api-keys:query`）。这些查询与个人 owner-scoped 接口分开，支持有界分页和允许的 owner/status 过滤；密钥 hash/secret、私有支付策略、任务 payload、租约和存储键不会返回。
+`ManagementModule` 提供经过明确字段投影的管理查询：订单与支付渠道订阅（`/management/orders`、`/management/billing-subscriptions`，`billing:query`）、任务（`jobs:query`）、投递（`notification:query`）、文件（`files:query`）、日志（`logging:query`）、积分（`credit:query`）与 API 密钥元数据（`api-keys:query`）。这些查询与个人 owner-scoped 接口分开，支持有界分页和允许的 owner/status 过滤；密钥 hash/secret、私有支付策略、任务 payload、租约和存储键不会返回。
 
 `POST /management/credits/:ownerId/grants` 另需 `credit:grant`、受信 Origin 和稳定 Idempotency-Key。仅接收正整数 amount、发放 description 和可选 expiresAt；actor 从认证上下文获得。canonical lot/balance/journal/operation receipt 与 actor 审计处于一个 PostgreSQL 事务，失败全回滚，不使用旧 CreditService 的仅余额写入。没有新增负调整或冻结接口。
 
-`GET /management/connections` 需 `config:query`，共用实际 SDK 工厂的不可变 `RUNTIME_ENVIRONMENT`，仅检查本地配置来源、缺项与 SDK/解析可用性，不验证外部凭据或发送请求。`/management/connection-settings` 返回可保存 descriptor 与 stored/applied revision，写操作另需 `config:update`、可信 Origin 与 expectedRevision。独立配置加密密钥保护数据库值；保存不会热替换 SDK，重启 Server 后应用。账户/任务邮件仍使用实际配置与固定模板，不把旧内存模板服务当作可持久编辑功能。
+`GET /management/connections` 需 `config:query`，共用实际 SDK 工厂的不可变 `RUNTIME_ENVIRONMENT`，仅检查本地配置来源、缺项与 SDK/解析可用性，不验证外部凭据或发送请求。`/management/connection-settings` 返回可保存 descriptor 与 stored/applied revision，写操作另需 `config:update`、可信 Origin 与 expectedRevision。独立配置加密密钥保护数据库值；保存不会热替换 SDK，重启 Server 后应用。各项附带稳定的 `labelKey`/`categoryKey`/`descriptionKey` 供后台翻译；新订单记录已应用的 `payment-*` 配置修订（`configRevision`）。账户/任务邮件仍使用实际配置与固定模板，不把旧内存模板服务当作可持久编辑功能。
+
+## 套餐、权益、用户订阅、额度与邮件后台
+
+`SubscriptionsModule` 与 `MailModule` 按 `docs/back-office-rfc.md` §8 装配 Framework 机制：
+
+- 公开：`GET /billing/plans[?currency=USD]`（已上架套餐与价格列表；每个价格的 `purchasable`/`offerId`/`providers` 表示已启用渠道能否售卖该价格）、`GET /billing/entitlements/catalog`（附 `labelKey`）；登录：`GET /billing/entitlements/me`。
+- 管理：`/management/plans`（`plans:*`）、`/management/subscriptions`（`subscriptions:query|update`，用户套餐订阅；支付渠道订阅记录改为 `/management/billing-subscriptions`）、`/management/quota-usage`、`/management/quota-reservations`（`quota:query|update`）、`/management/email-templates`、`/management/email-logs`（`mail:query|update`）。
+- 功能目录在 `src/subscriptions/entitlement-catalog.ts`，是**产品自己的示例**：替换为本应用的功能、计数器与文案。套餐内容保存在 `subscription_plans`，价格保存在 `subscription_plan_prices`（月/年/一次性/终身 × 币种，金额为精确十进制文本）与 `subscription_plan_price_refs`（各渠道商品引用，全局唯一），每次写入按目录校验；`PUT` 可带 `expectedRevision` 防止并发覆盖。
+- 套餐即商品：结账 `offerId` 为 `plan:<planId>:<interval>:<currency>` 时价格取自当时的套餐并冻结快照到订单；月/年走渠道订阅（需渠道能证明计费周期），一次性/终身为单次支付；套餐订单不发放积分。`BILLING_CATALOG_JSON` 仅作套餐种子：被套餐认领（同 slug）的订阅商品不再单独出售，未认领的订阅商品仍是纯积分订阅。
+- `SubscriptionsService.chargeResource(userId, feature, { type, id }, work, { tx? })` 对计量功能按资源、按计数器只计一次：首次成功确认、失败释放、同一资源后续使用免费；另一请求正在使用同一资源时返回 409 `in_progress`；过期未清扫的预留在下次计费时转为 EXPIRED。`-1` 不限额度仍记录用量。计数器周期使用 `ENTITLEMENT_TIME_ZONE`（默认 UTC，仅在周期边界修改），预留有效期 `ENTITLEMENT_RESERVATION_TTL_MS`（默认 900000，须长于计量工作本身）。
+- 支付回写：`SubscriptionsModule` 向 `BillingService` 注册套餐商品来源与履约钩子（`usePlanOffers`/`useFulfillmentHooks`，billing 不引用套餐代码）；在订单/周期履约事务内按订单冻结的 `planId` 写入 `user_subscription_payments` 与用户订阅，并写 `billing.plan-term-changed` outbox 事件。24 小时内的未结清套餐订单或仍在计费的套餐渠道订阅使后台修改期限返回 409，并给出阻塞的订单/订阅；撤销（`EXPIRED`）与取消只被渠道订阅阻止，撤销之后才付款的旧订单只记账（`revoked`）不复活期限。下单前拒绝付款后不会改善期限的购买（409，`result.details.refusal`），同一套餐的一次性期限叠加；渠道价格（Stripe Price、PayPal 订阅计划）与套餐价格不一致时下单返回 409。已付款但未改变期限的套餐支付写入 `billing.plan-payment-unapplied` outbox 事件，需在渠道后台退款。终身订阅不能取消，只能以 `EXPIRED` 撤销。套餐订单的退款需在渠道后台处理，退款不会自动收回套餐期限。迁移 `20261109000000_back_office` 末尾的幂等数据步骤为升级库补齐后台权限行与新启动菜单。
+- `pnpm account:admin` 首次初始化时把 `BILLING_CATALOG_JSON` 的订阅商品写成上架套餐（一个月付价格与该商品的渠道引用；无功能、无额度，待后台编辑）；之后不覆盖已存在的 slug。初始化同时补齐套餐、用户订阅、额度用量/预留、邮件模板/记录菜单与对应权限行。
+- 邮件：账户邮件与 `MailService` 共用一个 `SmtpTransport`（连接配置 `account-email`）；`MailService` 使用 `email_templates`（`htmlContentEn` 必填、`htmlContentZh` 可选）与 `email_logs`；未配置时不发送。AI 模型目录（`createAIModelAdminController`）未接入：本模板通过运行时连接配置管理 AI，没有 `aiModels` 表与 `AIModelCatalogService`。
+- 反向代理：设置 `TRUST_PROXY`（跳数或代理地址/CIDR），否则所有客户端共享代理地址的每 IP 限流；生产环境未设置时启动会告警。
+- 迁移 `20261109000000_back_office` 新增上述表与 `billing_orders.configRevision`，允许额度 `limit = -1`，并用可空唯一列 `quota_reservations.activeResourceKey`（仅 RESERVED/CONFIRMED 行有值）替换原资源唯一约束，使失败释放或过期后可重新计费。PostgreSQL 验证见 `test/back-office.persistent.e2e-spec.ts`，后台表与 `schema.prisma` 的一致性由 `test/schema-drift.persistent.e2e-spec.ts` 守护。
 
 ## Refund requests and credit holds (local integration)
 

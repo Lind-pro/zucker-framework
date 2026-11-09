@@ -92,6 +92,9 @@ run('real PostgreSQL content through the Web browser', () => {
         ZuckerRateLimiterModule.forRoot({
           limiters: {
             accounts: { points: 5000, duration: 60 },
+            'session-refresh': { points: 5000, duration: 60 },
+            'session-refresh-network': { points: 5000, duration: 60 },
+            'session-read': { points: 5000, duration: 60 },
             'api-default': { points: 5000, duration: 60 },
           },
         }),

@@ -6,6 +6,7 @@ import type { HostedCheckoutOffer, HostedCheckoutOrder, SubscriptionCyclePersist
 import { ApplicationDatabase, type ApplicationTransaction } from '../database';
 import { createCreditLedger, validateCreditFulfillmentPolicy } from './ledger';
 import { refundCycleGrant } from './refunds/refunds.grant';
+import { assertPlanFulfillment, type BillingExtensions } from './billing-extensions';
 
 export const SUBSCRIPTION_RECONCILE_EVENT = 'billing.subscription-reconcile';
 export type SubscriptionExecutionFence = (transaction: ApplicationTransaction) => Promise<void>;
@@ -55,7 +56,8 @@ function entitlementBinding(row: BillingSubscription): SubscriptionEntitlementBi
 }
 
 /** Real account locking, cycle uniqueness and one transaction for receipt, ledger and outbox. */
-export function createSubscriptionCyclePersistence(database: ApplicationDatabase, fence?: SubscriptionExecutionFence): SubscriptionCyclePersistence {
+export function createSubscriptionCyclePersistence(database: ApplicationDatabase, fence?: SubscriptionExecutionFence,
+  extensions?: Pick<BillingExtensions, 'cycleFulfilled'>): SubscriptionCyclePersistence {
   const coordinator = new PostgresCreditOperationCoordinator(), ledger = createCreditLedger(database);
   return { transaction: (bindingId, ownerId, work) => database.transaction(async tx => {
     await fence?.(tx);
@@ -112,6 +114,9 @@ export function createSubscriptionCyclePersistence(database: ApplicationDatabase
           await tx.model('billingFulfillments').create({ data: { orderId: subscription.initialOrderId,
             ownerId, credits: allowance.credits, policy } });
         }
+        // Registered integrations (plan entitlement write-back) commit with the receipt and credit grant.
+        if (extensions) await extensions.cycleFulfilled(tx, { ownerId, subscription, receipt });
+        else assertPlanFulfillment(subscription.offer.fulfillmentData, false);
         await tx.model('billingOutbox').create({ data: { kind: 'billing.subscription-credit-fulfilled', aggregateId: receipt.id,
           payload: { subscriptionId: subscription.id, cycleId: receipt.id, ownerId, credits: allowance.credits,
             suppressedCredits: allowance.suppressedCredits,

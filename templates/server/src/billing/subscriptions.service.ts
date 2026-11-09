@@ -4,6 +4,7 @@ import type { Money, SubscriptionAdapter, SubscriptionCancelMode, SubscriptionCy
   SubscriptionDetails, SubscriptionPaidPeriod, SubscriptionPaidReceipt, WebhookRequest } from '@zucker-framework/payment';
 import { ApplicationDatabase } from '../database';
 import type { BillingRefundsService } from './refunds/refunds.service';
+import type { BillingExtensions } from './billing-extensions';
 import { createSubscriptionCyclePersistence, SUBSCRIPTION_RECONCILE_EVENT, type BillingSubscription, type SubscriptionExecutionFence } from './subscription-persistence';
 
 const PAGE_SIZE = 20, MAX_PROVIDER_PAGES = 100, MAX_PROVIDER_RECEIPTS = 10000;
@@ -37,7 +38,7 @@ export class BillingSubscriptionsService {
   private readonly cycles: SubscriptionCycleService;
   private readonly returnUrl: string;
   constructor(private readonly database: ApplicationDatabase, adapters: readonly SubscriptionAdapter[], webUrl: string,
-    private readonly refunds?: Pick<BillingRefundsService, 'prepareCycle'>) {
+    private readonly refunds?: Pick<BillingRefundsService, 'prepareCycle'>, private readonly extensions?: BillingExtensions) {
     const base = new URL(webUrl);
     if (!['http:', 'https:'].includes(base.protocol) || base.username || base.password) throw new Error('Invalid subscription site URL');
     this.returnUrl = new URL('/billing/subscriptions', base).href;
@@ -45,7 +46,7 @@ export class BillingSubscriptionsService {
       if (!adapter.id || !adapter.accountScope || this.providers.has(adapter.id)) throw new Error('Subscription providers require unique IDs and account scopes');
       this.providers.set(adapter.id, adapter);
     }
-    this.cycles = new SubscriptionCycleService(createSubscriptionCyclePersistence(database));
+    this.cycles = new SubscriptionCycleService(createSubscriptionCyclePersistence(database, undefined, extensions));
   }
   private async owned(id: string, ownerId: string): Promise<BillingSubscription> {
     if (!id || !ownerId) throw new HostedCheckoutError('invalid_input', 'Subscription and owner are required');
@@ -165,7 +166,7 @@ export class BillingSubscriptionsService {
     for (const payment of payments) await this.refunds?.prepareCycle(row.id, ownerId, payment, fence);
     // A slow read cannot overwrite a later cancellation/refresh. No provider IO remains after this CAS.
     let expectedRevision = await this.observe(row, observation, fence);
-    const cycles = fence ? new SubscriptionCycleService(createSubscriptionCyclePersistence(this.database, fence)) : this.cycles;
+    const cycles = fence ? new SubscriptionCycleService(createSubscriptionCyclePersistence(this.database, fence, this.extensions)) : this.cycles;
     for (const payment of payments) {
       const applied = await cycles.apply({ bindingId: row.id, ownerId, providerId: adapter.id, accountScope: adapter.accountScope, payment });
       if (applied.granted && applied.receipt.initial) expectedRevision++;

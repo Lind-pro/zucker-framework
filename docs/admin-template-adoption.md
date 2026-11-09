@@ -4,7 +4,7 @@
 
 ## 复用边界
 
-当前仓库没有 `fe-table` 或 `fe-layout` 包。模板已经使用公开的 `@ant-design/pro-components`：`ProLayout` 负责布局，`PageContainer` 负责页面，`ProTable` 负责查询列表，`ModalForm`/`ProForm` 负责表单。继续复用这些组件，不另建同功能包。
+2026-11-09 起（[back-office RFC](back-office-rfc.md) §6），布局、表格、表单与通用管理页面由 `@zucker-framework/fe-admin`（Radix + Tailwind）提供，模板以 npm 版本依赖，不再使用 Ant Design / ProComponents。下文“核对起点”保留当时的历史事实。
 
 Framework 公开入口可直接复用：
 

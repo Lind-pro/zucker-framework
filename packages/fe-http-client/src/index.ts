@@ -8,6 +8,18 @@ export {
 
 export { HttpClient, createHttpClient, createCookieRefresh } from './http-client';
 export {
+  createKeepaliveCookieRefresh,
+  createRefreshExchange,
+  combineAbortSignals,
+  refreshErrorStatus,
+  RefreshTimeoutError,
+  DEFAULT_REFRESH_GRACE_MS,
+  DEFAULT_REFRESH_TIMEOUT_MS,
+  type RefreshTransport,
+  type RefreshExchangeOptions,
+  type KeepaliveCookieRefreshOptions,
+} from './cookie-refresh';
+export {
   connectSse,
   parseSseEventBlock,
   readSseStream,

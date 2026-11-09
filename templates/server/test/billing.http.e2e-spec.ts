@@ -75,7 +75,7 @@ run('billing HTTP contract with PostgreSQL', () => {
     const module = await Test.createTestingModule({ imports: [
       ZuckerCrudModule.forRootAsync({ useFactory: () => db }),
       ZuckerAuthModule.forRoot({ jwtSecret: 'synthetic-billing-http-secret-only-long', registerControllers: false }),
-      ZuckerRateLimiterModule.forRoot({ limiters: { accounts: { points: 2000, duration: 60 }, 'api-default': { points: 2000, duration: 60 }, billing: { points: 2000, duration: 60 } } }),
+      ZuckerRateLimiterModule.forRoot({ limiters: { accounts: { points: 2000, duration: 60 }, 'session-refresh': { points: 2000, duration: 60 }, 'session-refresh-network': { points: 2000, duration: 60 }, 'session-read': { points: 2000, duration: 60 }, 'api-default': { points: 2000, duration: 60 }, billing: { points: 2000, duration: 60 } } }),
       AccountModule, BillingModule,
     ], providers: [{ provide: APP_GUARD, useClass: AccountGuard }, { provide: APP_GUARD, useClass: PermissionsGuard }] })
       .overrideProvider(ACCOUNT_MAILER).useValue(mailer).overrideProvider(BILLING_OPTIONS).useValue(options).compile();

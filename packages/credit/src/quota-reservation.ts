@@ -1,3 +1,5 @@
+import { brandPortError, type PortErrorReason } from '@zucker-framework/fe-types/back-office';
+
 export type QuotaReservationState = 'RESERVED' | 'CONFIRMED' | 'RELEASED' | 'EXPIRED';
 
 export interface QuotaReservationIdentity {
@@ -33,10 +35,12 @@ export interface QuotaReservationStore<Tx, R extends QuotaReservationRecord, I e
   expire(tx: Tx, before: Date): Promise<number>;
 }
 
+export type QuotaReservationErrorReason = Extract<PortErrorReason, 'invalid' | 'not_found' | 'conflict' | 'inactive'>;
 export class QuotaReservationError extends Error {
-  constructor(readonly reason: 'invalid' | 'not_found' | 'conflict' | 'inactive') {
+  constructor(readonly reason: QuotaReservationErrorReason) {
     super(`Quota reservation ${reason}`);
     this.name = 'QuotaReservationError';
+    brandPortError(this);
   }
 }
 

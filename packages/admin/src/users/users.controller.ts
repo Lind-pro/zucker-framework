@@ -40,6 +40,13 @@ import {
 import { DATABASE_ADAPTER } from '@zucker-framework/crud';
 import { type DatabaseAdapter, ValidationException } from '@zucker-framework/core';
 import type { UserEntity } from '@zucker-framework/auth';
+import { adminPage, toAdminWhere, type AdminQueryFilterOptions } from '../query-filter';
+
+/**
+ * Filterable user fields (allow-list). Credentials, login metadata and every column added later stay
+ * unfilterable unless listed here.
+ */
+export const USER_FILTER: AdminQueryFilterOptions = { eq: ['id', 'username', 'name', 'status'], like: ['username', 'email', 'name'] };
 
 interface QueryRequest {
   pageIndex?: number;
@@ -78,26 +85,15 @@ export class UsersController {
   @Post('_query')
   @HttpCode(HttpStatus.OK)
   async query(@Body() body: QueryRequest): Promise<PageResult<Omit<UserEntity, 'password'>>> {
-    const pageIndex = body.pageIndex ?? 0;
-    const pageSize = body.pageSize ?? 10;
-    if (pageIndex < 0 || pageSize <= 0 || pageSize > 1000) {
-      throw new ValidationException(
-        { pageIndex: pageIndex < 0 ? ['Must be >= 0'] : [], pageSize: pageSize <= 0 || pageSize > 1000 ? ['Must be between 1 and 1000'] : [] },
-        'Invalid pagination parameters',
-      );
-    }
-    const filter = body.filter ?? {};
-
-    const [allUsers, total] = await Promise.all([
-      this.userService.findUsers(filter),
-      this.userService.countUsers(filter),
+    const { pageIndex, pageSize } = adminPage(body);
+    const filter = toAdminWhere(body.filter, USER_FILTER);
+    const users = this.db.model('users');
+    // Paged and ordered in the database; only one page of rows is read and serialized.
+    const [page, total] = await Promise.all([
+      users.findMany({ where: filter, orderBy: [{ id: 'asc' }], skip: pageIndex * pageSize, take: pageSize }) as Promise<UserEntity[]>,
+      users.count({ where: filter }),
     ]);
-
-    // Apply in-memory pagination when the DB adapter does not support skip/take
-    const start = pageIndex * pageSize;
-    const paged = allUsers.slice(start, start + pageSize);
-
-    const data = paged.map(({ password: _pw, ...rest }) => rest);
+    const data = page.map(({ password: _pw, ...rest }) => rest);
 
     return { data, total, pageIndex, pageSize };
   }
@@ -109,7 +105,7 @@ export class UsersController {
   @Post('_count')
   @HttpCode(HttpStatus.OK)
   async count(@Body() body: { filter?: Record<string, unknown> }): Promise<CountResult> {
-    const total = await this.userService.countUsers(body.filter ?? {});
+    const total = await this.userService.countUsers(toAdminWhere(body.filter, USER_FILTER));
     return { total };
   }
 

@@ -1,15 +1,18 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import {
-  chromium,
-  expect as browserExpect,
-  type Browser,
-  type Locator,
-  type Page,
-} from '@playwright/test';
-import { spawn, type ChildProcess } from 'node:child_process';
-import { resolve } from 'node:path';
+import { expect as browserExpect, type Browser, type Locator, type Page } from '@playwright/test';
 import request from 'supertest';
 import { connectionBrowserFixture } from './helpers/connection-browser-fixture';
+import {
+  artifact,
+  isolatedContext,
+  labeled,
+  launchBrowser,
+  login as signIn,
+  newPage,
+  noHorizontalOverflow,
+  startAdmin,
+  type AdminServer,
+} from './helpers/fe-admin-browser';
 import { AI_CONNECTIONS } from '../src/ai-connections/ai-connections.config';
 import {
   ConnectionSettingsService,
@@ -25,7 +28,7 @@ run('real Admin connection settings browser and PostgreSQL', () => {
   let f: Awaited<ReturnType<typeof connectionBrowserFixture>>,
     browser: Browser,
     page: Page,
-    vite: ChildProcess;
+    admin: AdminServer;
   const responseBodies: Promise<string>[] = [];
   const get = (id = 'identity-google') =>
     request(f.app.getHttpServer())
@@ -37,33 +40,35 @@ run('real Admin connection settings browser and PostgreSQL', () => {
       .set('Authorization', `Bearer ${f.admin.token}`)
       .set('Origin', origin)
       .send(body);
+  /** The visible table row (desktop) or card (narrow) whose connection name matches exactly. */
+  const row = (name: string, target = page) =>
+    target
+      .locator('table[aria-label] > tbody > tr, ul[aria-label] > li')
+      .filter({ has: target.getByText(name, { exact: true }) })
+      .filter({ visible: true });
   async function login(target: Page, username = 'connectionadmin') {
-    await target.goto('/login');
-    await target.getByPlaceholder('用户名', { exact: true }).fill(username);
-    await target.getByPlaceholder('密码', { exact: true }).fill(f.password);
-    await target.getByRole('button', { name: /登.*录/ }).click();
-    await browserExpect(target).not.toHaveURL(/\/login$/);
+    await signIn(target, username, f.password);
     await target.goto('/connections');
-    await browserExpect(target.getByRole('row').filter({ hasText: 'Google 登录' })).toBeVisible();
+    await browserExpect(row('Google 登录', target)).toBeVisible();
   }
   async function open(name = 'Google 登录', target = page) {
-    await target
-      .getByRole('row')
-      .filter({ has: target.getByRole('cell', { name, exact: true }) })
-      .getByRole('button', { name: /编辑配置|查看配置/ })
+    await row(name, target)
+      .getByRole('button', { name: /^(编辑配置|查看配置)$/ })
       .click();
     const dialog = target.getByRole('dialog');
     await browserExpect(dialog).toBeVisible();
     return dialog;
   }
-  async function select(dialog: Locator, label: string, option: string, target = page) {
-    await dialog.getByLabel(label, { exact: true }).press('ArrowDown');
-    await target.locator('.ant-select-dropdown:visible').getByText(option, { exact: true }).click();
-    await browserExpect(target.locator('.ant-select-dropdown:visible')).toHaveCount(0);
+  async function cancel(dialog: Locator) {
+    await dialog.getByRole('button', { name: /^(取消|关闭)$/ }).first().click();
+    await browserExpect(dialog).toHaveCount(0);
+  }
+  async function select(dialog: Locator, label: string, option: string) {
+    await labeled(dialog, label).selectOption({ label: option });
   }
   async function edit(dialog: Locator, label: string, value: string, secret = false) {
     await select(dialog, `${label}操作`, secret ? '替换密钥' : '修改值');
-    await dialog.getByLabel(`${label}新值`, { exact: true }).fill(value);
+    await labeled(dialog, `${label}新值`).fill(value);
   }
   async function save(dialog: Locator) {
     await dialog.getByRole('button', { name: '加密保存', exact: true }).click();
@@ -73,46 +78,9 @@ run('real Admin connection settings browser and PostgreSQL', () => {
     f = await connectionBrowserFixture(process.env.TEST_DATABASE_URL!, origin);
     const address = f.app.getHttpServer().address();
     if (!address || typeof address === 'string') throw new Error('API is not listening');
-    vite = spawn(
-      'pnpm',
-      ['exec', 'vite', '--host', 'localhost', '--port', '4323', '--strictPort'],
-      {
-        cwd: resolve('../admin'),
-        env: { ...process.env, API_PROXY_TARGET: `http://127.0.0.1:${address.port}` },
-        stdio: ['ignore', 'pipe', 'pipe'],
-      },
-    );
-    let output = '';
-    for (const stream of [vite.stdout, vite.stderr])
-      stream?.on('data', (chunk) => {
-        output = (output + String(chunk)).slice(-2000);
-      });
-    const deadline = Date.now() + 45_000;
-    let ready = false;
-    while (Date.now() < deadline) {
-      if (vite.exitCode !== null) throw new Error(`Admin startup failed: ${output}`);
-      try {
-        if ((await fetch(origin, { signal: AbortSignal.timeout(1500) })).ok) {
-          ready = true;
-          break;
-        }
-      } catch {}
-      await new Promise((resolve) => setTimeout(resolve, 250));
-    }
-    if (!ready) throw new Error(`Admin startup exceeded 45 seconds: ${output}`);
-    browser = await chromium.launch({ channel: 'chrome', headless: true });
-    const context = await browser.newContext({
-      baseURL: origin,
-      viewport: { width: 1440, height: 1000 },
-    });
-    await context.route('**/*', (route) =>
-      new URL(route.request().url()).origin === origin
-        ? route.continue()
-        : route.abort('blockedbyclient'),
-    );
-    page = await context.newPage();
-    page.setDefaultTimeout(7000);
-    page.setDefaultNavigationTimeout(15000);
+    admin = await startAdmin(4323, address.port);
+    browser = await launchBrowser();
+    page = await newPage(await isolatedContext(browser, origin));
     page.on('response', (response) => {
       if (response.url().includes('/api/management/connection-settings'))
         responseBodies.push(response.text().catch(() => ''));
@@ -122,7 +90,7 @@ run('real Admin connection settings browser and PostgreSQL', () => {
   afterEach(async (context) => {
     if (context.task.result?.state === 'fail' && page) {
       await page.screenshot({
-        path: '/private/tmp/zucker-connections-browser-failure.png',
+        path: artifact('connections-failure.png'),
         fullPage: true,
         animations: 'disabled',
       });
@@ -132,13 +100,7 @@ run('real Admin connection settings browser and PostgreSQL', () => {
   });
   afterAll(async () => {
     await browser?.close();
-    if (vite && vite.exitCode === null) {
-      vite.kill('SIGTERM');
-      await Promise.race([
-        new Promise((resolve) => vite.once('exit', resolve)),
-        new Promise((resolve) => setTimeout(resolve, 2500)),
-      ]);
-    }
+    await admin?.stop();
     await f?.close();
   });
   it('renders every actual profile and server-described fields, including public integrations and storage', async () => {
@@ -155,10 +117,8 @@ run('real Admin connection settings browser and PostgreSQL', () => {
         statuses.find((row) => row.id === profile.id)?.name ?? profile.name,
       );
       for (const field of profile.fields)
-        await browserExpect(
-          dialog.getByLabel(`${field.label}操作`, { exact: true }),
-        ).toBeAttached();
-      await dialog.getByRole('button', { name: /取\s*消/ }).click();
+        await browserExpect(labeled(dialog, `${field.label}操作`)).toBeAttached();
+      await cancel(dialog);
     }
     expect((await Promise.all(responseBodies)).join('\n')).not.toContain(
       f.env.GOOGLE_CLIENT_SECRET,
@@ -190,7 +150,7 @@ run('real Admin connection settings browser and PostgreSQL', () => {
     ).toBe(false);
     dialog = await open();
     await browserExpect(dialog.getByText('已配置，值不会显示', { exact: true })).toBeVisible();
-    await browserExpect(dialog.getByLabel('Client Secret新值', { exact: true })).toHaveCount(0);
+    await browserExpect(labeled(dialog, 'Client Secret新值')).toHaveCount(0);
     await edit(dialog, 'Client ID', 'synthetic-client-two');
     await save(dialog);
     expect(
@@ -219,9 +179,8 @@ run('real Admin connection settings browser and PostgreSQL', () => {
     expect(JSON.stringify([rows, audit, await Promise.all(responseBodies)])).not.toContain(
       replacementSecret,
     );
-    await browserExpect(
-      page.getByRole('row').filter({ hasText: 'Google 登录' }).getByText('运行 0 / 保存 4'),
-    ).toBeVisible();
+    await browserExpect(row('Google 登录').getByText('运行 0 / 保存 4')).toBeVisible();
+    await browserExpect(row('Google 登录').getByText('待重启 Server', { exact: true })).toBeVisible();
   });
   it('preserves non-secret drafts on real CAS conflict, clears entered secrets and explicitly rebases before retry', async () => {
     const dialog = await open();
@@ -237,16 +196,16 @@ run('real Admin connection settings browser and PostgreSQL', () => {
     );
     await dialog.getByRole('button', { name: '加密保存', exact: true }).click();
     expect((await conflictResponse).status()).toBe(409);
-    await browserExpect(dialog.getByLabel('Client ID新值', { exact: true })).toHaveValue(
+    await browserExpect(labeled(dialog, 'Client ID新值')).toHaveValue(
       'synthetic-conflict-preserved-draft',
     );
-    await browserExpect(dialog.getByLabel('Client ID新值', { exact: true })).toBeDisabled();
-    await browserExpect(dialog.getByLabel('Client Secret新值', { exact: true })).toHaveCount(0);
+    await browserExpect(labeled(dialog, 'Client ID新值')).toBeDisabled();
+    await browserExpect(labeled(dialog, 'Client Secret新值')).toHaveCount(0);
     await dialog.getByRole('button', { name: '重新读取配置', exact: true }).click();
-    await browserExpect(dialog.getByLabel('Client ID新值', { exact: true })).toHaveValue(
+    await browserExpect(labeled(dialog, 'Client ID新值')).toHaveValue(
       'synthetic-conflict-preserved-draft',
     );
-    await browserExpect(dialog.getByLabel('Client ID新值', { exact: true })).toBeEnabled();
+    await browserExpect(labeled(dialog, 'Client ID新值')).toBeEnabled();
     await save(dialog);
     const stored = (await get().expect(200)).body;
     expect(stored.storedRevision).toBe(6);
@@ -261,26 +220,17 @@ run('real Admin connection settings browser and PostgreSQL', () => {
     expect((await f.settings.environment()).GOOGLE_CLIENT_ID).toBe('synthetic-google-environment');
     await f.restart();
     await page.reload();
-    const row = page.getByRole('row').filter({ hasText: 'Google 登录' });
-    await browserExpect(row.getByText('运行 6 / 保存 6')).toBeVisible();
-    await browserExpect(row.getByText('待重启 Server', { exact: true })).toHaveCount(0);
+    const google = row('Google 登录');
+    await browserExpect(google.getByText('运行 6 / 保存 6')).toBeVisible();
+    await browserExpect(google.getByText('待重启 Server', { exact: true })).toHaveCount(0);
     expect((await f.settings.environment()).GOOGLE_CLIENT_ID).toBe(
       'synthetic-conflict-preserved-draft',
     );
     expect((await f.settings.environment()).GOOGLE_CLIENT_SECRET).toBeUndefined();
   });
   it('uses query-only permissions in the actual account session and exposes no mutation controls', async () => {
-    const context = await browser.newContext({
-      baseURL: origin,
-      viewport: { width: 1440, height: 1000 },
-    });
-    await context.route('**/*', (route) =>
-      new URL(route.request().url()).origin === origin
-        ? route.continue()
-        : route.abort('blockedbyclient'),
-    );
-    const readerPage = await context.newPage();
-    readerPage.setDefaultTimeout(7000);
+    const context = await isolatedContext(browser, origin);
+    const readerPage = await newPage(context);
     try {
       await login(readerPage, 'connectionreader');
       const dialog = await open('Google 登录', readerPage);
@@ -303,31 +253,24 @@ run('real Admin connection settings browser and PostgreSQL', () => {
     const dialog = await open('网站分析');
     await edit(dialog, 'GA4 Measurement ID', 'G-SYNTHETIC');
     await save(dialog);
-    await browserExpect(
-      page.getByRole('row').filter({ hasText: '网站分析' }).getByText('运行 0 / 保存 1'),
-    ).toBeVisible();
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
-      true,
-    );
+    await browserExpect(row('网站分析').getByText('运行 0 / 保存 1')).toBeVisible();
+    expect(await noHorizontalOverflow(page)).toBe(true);
     const mobileDialog = await open('网站分析');
     const box = await mobileDialog.boundingBox();
     expect(box).not.toBeNull();
     expect(box!.width).toBeLessThanOrEqual(390);
     await mobileDialog
-      .getByText('编辑连接配置 · 网站分析', { exact: true })
+      .getByRole('heading', { name: '编辑连接配置 · 网站分析', exact: true })
       .scrollIntoViewIfNeeded();
     await page.screenshot({
-      path: '/private/tmp/zucker-connections-mobile-20261024.png',
+      path: artifact('connections-mobile.png'),
       animations: 'disabled',
     });
-    await mobileDialog.getByRole('button', { name: /取\s*消/ }).click();
+    await cancel(mobileDialog);
   });
   it('renders six optional native AI profiles and saves the compatible connection through the real encrypted API', async () => {
     for (const definition of AI_CONNECTIONS) {
-      const row = page
-        .getByRole('row')
-        .filter({ has: page.getByRole('cell', { name: definition.name, exact: true }) });
-      await browserExpect(row.getByText('未启用', { exact: true })).toBeVisible();
+      await browserExpect(row(definition.name).getByText('未启用', { exact: true })).toBeVisible();
       const dialog = await open(definition.name);
       for (const label of [
         '启用',
@@ -337,8 +280,8 @@ run('real Admin connection settings browser and PostgreSQL', () => {
         '最大输出 Token',
         '超时（毫秒）',
       ])
-        await browserExpect(dialog.getByLabel(`${label}操作`, { exact: true })).toBeAttached();
-      await dialog.getByRole('button', { name: /取\s*消/ }).click();
+        await browserExpect(labeled(dialog, `${label}操作`)).toBeAttached();
+      await cancel(dialog);
     }
     const dialog = await open('OpenAI 兼容接口');
     await select(dialog, '启用操作', '修改值');
@@ -349,9 +292,7 @@ run('real Admin connection settings browser and PostgreSQL', () => {
     await edit(dialog, '最大输出 Token', '256');
     await edit(dialog, '超时（毫秒）', '3500');
     await save(dialog);
-    await browserExpect(
-      page.getByRole('row').filter({ hasText: 'OpenAI 兼容接口' }).getByText('运行 0 / 保存 1'),
-    ).toBeVisible();
+    await browserExpect(row('OpenAI 兼容接口').getByText('运行 0 / 保存 1')).toBeVisible();
     const result = (await get('ai-compatible').expect(200)).body;
     expect(result).toMatchObject({ storedRevision: 1, appliedRevision: 0, pendingRestart: true });
     expect(

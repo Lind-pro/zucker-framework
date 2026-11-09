@@ -16,3 +16,12 @@ export {
   type SessionKey,
   type SessionSnapshot,
 } from './session';
+export {
+  createCookieSession,
+  createSessionSummaryStorage,
+  type CookieSession,
+  type CookieSessionOptions,
+  type CookieSessionRestoreResult,
+  type SessionSummaryStorage,
+  type SessionSummaryStorageOptions,
+} from './cookie-session';

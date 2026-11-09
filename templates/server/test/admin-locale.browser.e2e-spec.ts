@@ -1,31 +1,24 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { chromium, expect as browserExpect, type Browser, type Page } from '@playwright/test';
-import { spawn, type ChildProcess } from 'node:child_process';
-import { resolve } from 'node:path';
+import { expect as browserExpect, type Browser, type Page } from '@playwright/test';
 import { connectionBrowserFixture } from './helpers/connection-browser-fixture';
-const run =
-  process.env.TEST_DATABASE_URL && process.env.RUN_ADMIN_LOCALE_BROWSER === '1'
-    ? describe
-    : describe.skip;
-const origin = 'http://localhost:4327';
+import { artifact, isolatedContext, launchBrowser, newPage, noHorizontalOverflow, record, startAdmin, type AdminServer } from './helpers/fe-admin-browser';
+import { loginAs, warmUp, type AdminLocale } from './helpers/admin-locale-browser';
+
+const run = process.env.TEST_DATABASE_URL && process.env.RUN_ADMIN_LOCALE_BROWSER === '1' ? describe : describe.skip;
+const port = 4327;
+
 run('Admin language switching through real authentication and generated descriptors', () => {
-  let f: Awaited<ReturnType<typeof connectionBrowserFixture>>,
-    browser: Browser,
-    page: Page,
-    vite: ChildProcess;
-  async function language(value: 'English' | '中文') {
-    await page.getByRole('combobox', { name: 'Language / 语言', exact: true }).press('ArrowDown');
-    await page.locator('.ant-select-dropdown:visible').getByText(value, { exact: true }).click();
-    await browserExpect(page.locator('html')).toHaveAttribute(
-      'lang',
-      value === 'English' ? 'en-US' : 'zh-CN',
-    );
+  let f: Awaited<ReturnType<typeof connectionBrowserFixture>>, admin: AdminServer, browser: Browser, page: Page;
+  const pageErrors: string[] = [];
+  /** Switch with whichever language select is visible (header on desktop, login page). */
+  async function language(value: AdminLocale) {
+    await page.getByRole('combobox', { name: /^(语言|Language)$/ }).selectOption(value);
+    await browserExpect(page.locator('html')).toHaveAttribute('lang', value);
   }
+  const sidebar = () => page.locator('aside nav');
   beforeAll(async () => {
-    f = await connectionBrowserFixture(process.env.TEST_DATABASE_URL!, origin);
-    await f.database
-      .model('menus')
-      .update({ where: { id: 'starter:users' }, data: { name: '用户工作台（自定义）' } });
+    f = await connectionBrowserFixture(process.env.TEST_DATABASE_URL!, `http://localhost:${port}`);
+    await f.database.model('menus').update({ where: { id: 'starter:users' }, data: { name: '用户工作台（自定义）' } });
     await f.database.model('menus').create({
       data: {
         id: 'locale-custom-order-name',
@@ -39,90 +32,51 @@ run('Admin language switching through real authentication and generated descript
     });
     const address = f.app.getHttpServer().address();
     if (!address || typeof address === 'string') throw new Error('API not listening');
-    vite = spawn(
-      'pnpm',
-      ['exec', 'vite', '--host', 'localhost', '--port', '4327', '--strictPort'],
-      {
-        cwd: resolve('../admin'),
-        env: { ...process.env, API_PROXY_TARGET: `http://127.0.0.1:${address.port}` },
-        stdio: ['ignore', 'pipe', 'pipe'],
-      },
-    );
-    let output = '';
-    for (const stream of [vite.stdout, vite.stderr])
-      stream?.on('data', (chunk) => {
-        output = (output + String(chunk)).slice(-2000);
-      });
-    const deadline = Date.now() + 45_000;
-    let ready = false;
-    while (Date.now() < deadline) {
-      if (vite.exitCode !== null) throw new Error(`Admin startup failed: ${output}`);
-      try {
-        if ((await fetch(origin, { signal: AbortSignal.timeout(1500) })).ok) {
-          ready = true;
-          break;
-        }
-      } catch {}
-      await new Promise((done) => setTimeout(done, 250));
-    }
-    if (!ready) throw new Error(`Admin startup exceeded 45 seconds: ${output}`);
-    browser = await chromium.launch({ channel: 'chrome', headless: true });
-    const context = await browser.newContext({
-      baseURL: origin,
-      viewport: { width: 1440, height: 1000 },
-    });
-    await context.route('**/*', (route) =>
-      new URL(route.request().url()).origin === origin
-        ? route.continue()
-        : route.abort('blockedbyclient'),
-    );
-    page = await context.newPage();
-    page.setDefaultTimeout(8000);
-    page.setDefaultNavigationTimeout(15000);
-    await page.goto('/login');
-    await page.getByPlaceholder('用户名', { exact: true }).fill('connectionadmin');
-    await page.getByPlaceholder('密码', { exact: true }).fill(f.password);
-    await page.getByRole('button', { name: /登.*录/ }).click();
+    admin = await startAdmin(port, address.port);
+    browser = await launchBrowser();
+    page = await newPage(await isolatedContext(browser, admin.origin));
+    page.on('pageerror', (error) => pageErrors.push(error.message));
+    await warmUp(page);
+    await loginAs(page, 'connectionadmin', f.password, 'zh-CN');
     await browserExpect(page).toHaveURL(/\/dashboard$/);
   }, 65_000);
   beforeEach(async () => {
     await page.goto('/dashboard');
-    await language('English');
+    // Session restore (cookie refresh) must settle before switching or navigating again.
+    await browserExpect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    await language('en-US');
   });
   afterEach(async (context) => {
     if (context.task.result?.state === 'fail' && page) {
-      await page.screenshot({
-        path: '/private/tmp/zucker-admin-locale-failure.png',
-        fullPage: true,
-        animations: 'disabled',
-      });
+      await page.screenshot({ path: artifact('admin-locale-failure.png'), fullPage: true, animations: 'disabled' });
+      console.info('Locale failure view:', page.url(), (await page.locator('body').ariaSnapshot()).slice(0, 4000));
     }
     await page?.unrouteAll({ behavior: 'ignoreErrors' });
   });
   afterAll(async () => {
     await browser?.close();
-    if (vite && vite.exitCode === null) {
-      vite.kill('SIGTERM');
-      await Promise.race([
-        new Promise((done) => vite.once('exit', done)),
-        new Promise((done) => setTimeout(done, 2500)),
-      ]);
-    }
+    await admin?.stop();
     await f?.close();
   });
+
   it('persists language and translates starter navigation while preserving customized menu names', async () => {
-    await language('English');
     await browserExpect(page).toHaveTitle('Administration');
     await browserExpect(page.getByText('Quick links', { exact: true })).toBeVisible();
-    await page.getByText('Users & access', { exact: true }).first().click();
-    await browserExpect(page.getByText('用户工作台（自定义）', { exact: true })).toBeVisible();
-    await page.getByText('Billing & credits', { exact: true }).first().click();
-    await browserExpect(page.getByText('订单', { exact: true })).toBeVisible();
+    await sidebar().getByText('Users & access', { exact: true }).click();
+    await browserExpect(sidebar().getByRole('link', { name: '用户工作台（自定义）', exact: true })).toBeVisible();
+    await sidebar().getByText('Billing & credits', { exact: true }).click();
+    await browserExpect(sidebar().getByRole('link', { name: '订单', exact: true })).toBeVisible();
+    // An unchanged starter page keeps its translated title next to the customized records.
+    await browserExpect(sidebar().getByRole('link', { name: 'Orders', exact: true })).toBeVisible();
     await page.reload();
     await browserExpect(page.locator('html')).toHaveAttribute('lang', 'en-US');
     await browserExpect(page.getByText('Quick links', { exact: true })).toBeVisible();
-    expect(await page.evaluate(() => localStorage.getItem('zucker-admin-locale'))).toBe('en');
+    expect(await page.evaluate(() => localStorage.getItem('zucker-admin-locale'))).toBe('en-US');
+    await language('zh-CN');
+    await browserExpect(page.getByText('常用入口', { exact: true })).toBeVisible();
+    await browserExpect(page).toHaveTitle('管理后台');
   });
+
   it('keeps an unsaved site form and its business text across language switches without refetching', async () => {
     let reads = 0;
     await page.route('**/api/content/manage/settings', (route) => {
@@ -142,162 +96,156 @@ run('Admin language switching through real authentication and generated descript
         }),
       });
     });
-    try {
-      await page.goto('/config');
-      await page.getByLabel('Site name', { exact: true }).fill('用户自己的站点名');
-      const initialReads = reads;
-      await language('中文');
-      await browserExpect(page.getByLabel('网站名称', { exact: true })).toHaveValue(
-        '用户自己的站点名',
-      );
-      await language('English');
-      await browserExpect(page.getByLabel('Site name', { exact: true })).toHaveValue(
-        '用户自己的站点名',
-      );
-      expect(reads).toBe(initialReads);
-      await browserExpect(
-        page.getByRole('button', { name: 'Save site settings', exact: true }),
-      ).toBeVisible();
-    } finally {
-      await page.unroute('**/api/content/manage/settings');
-    }
+    await page.goto('/config');
+    await page.getByRole('textbox', { name: 'Site name', exact: true }).fill('用户自己的站点名');
+    const initialReads = reads;
+    await language('zh-CN');
+    await browserExpect(page.getByRole('textbox', { name: '网站名称', exact: true })).toHaveValue('用户自己的站点名');
+    await language('en-US');
+    await browserExpect(page.getByRole('textbox', { name: 'Site name', exact: true })).toHaveValue('用户自己的站点名');
+    expect(reads).toBe(initialReads);
+    await browserExpect(page.getByRole('button', { name: 'Save site settings', exact: true })).toBeVisible();
   });
-  it('localizes all connection descriptors and keeps protocol values and secret controls intact', async () => {
+
+  it('opens every connection profile with English controls and leaves secrets and saves disabled until edited', async () => {
     await page.goto('/connections');
     const profiles = (await f.settings.list()).profiles;
     expect(profiles.length).toBe(16);
-    await browserExpect(page.locator('tr[data-row-key="identity-google"]')).toContainText(
-      'Google sign-in',
-    );
-    expect(await page.getByRole('table').innerText()).not.toMatch(/[\u4e00-\u9fff]/);
-    for (const profile of profiles) {
-      await page
-        .locator(`tr[data-row-key="${profile.id}"]`)
-        .getByRole('button', { name: 'Edit configuration', exact: true })
-        .click();
-      const dialog = page.getByRole('dialog');
+    const table = page.getByRole('table', { name: 'Connections', exact: true });
+    await browserExpect(table.getByRole('columnheader', { name: 'Configuration source', exact: true })).toBeVisible();
+    const open = table.getByRole('button', { name: /^(Edit|View) settings$/ });
+    // Every saved-settings profile has exactly one editor action (rows merge status and profiles by id).
+    await browserExpect(open).toHaveCount(profiles.length);
+    const secrets = profiles.flatMap((profile) => profile.fields.filter((item) => item.type === 'secret' && item.value));
+    for (let index = 0; index < profiles.length; index++) {
+      await open.nth(index).click();
+      const dialog = page.getByRole('dialog', { name: /^(Edit|View) connection · / });
       await browserExpect(dialog).toBeVisible();
-      expect(await dialog.innerText()).not.toMatch(/[\u4e00-\u9fff]/);
-      await browserExpect(
-        dialog.getByRole('button', { name: 'Save encrypted settings', exact: true }),
-      ).toBeDisabled();
-      await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+      await browserExpect(dialog.getByText(/^Saved revision \d+; running revision \d+$/)).toBeVisible();
+      const save = dialog.getByRole('button', { name: 'Save encrypted', exact: true });
+      if (await save.count()) await browserExpect(save).toBeDisabled();
+      // Secrets are never echoed back into the editor.
+      const text = await dialog.innerText();
+      for (const secret of secrets) expect(text).not.toContain(String(secret.value));
+      await dialog.getByRole('button', { name: /^(Cancel|Close)$/ }).last().click();
+      await browserExpect(dialog).toHaveCount(0);
     }
   });
+
+  it('localizes server-provided connection descriptor text (names, categories, field labels, notes) in English', async () => {
+    const cjk = /[㐀-鿿（）；，、。]/;
+    await page.goto('/connections');
+    const table = page.getByRole('table', { name: 'Connections', exact: true });
+    const google = table.getByRole('row').filter({ has: page.getByText('Google sign-in', { exact: true }) });
+    await browserExpect(google).toBeVisible();
+    await browserExpect(google.getByRole('cell', { name: 'Sign-in', exact: true })).toBeVisible();
+    await browserExpect(table.getByText('Site ads, referrals and support', { exact: true })).toBeVisible();
+    await browserExpect(table.getByText('OpenAI-compatible API', { exact: true })).toBeVisible();
+    await browserExpect(table.getByText(/^Only local configuration and dependencies are checked\./).first()).toBeVisible();
+    // Every server-provided name, category and note in the table has an English translation.
+    expect(await table.innerText()).not.toMatch(cjk);
+    const open = table.getByRole('button', { name: /^(Edit|View) settings$/ });
+    const profiles = (await f.settings.list()).profiles;
+    await browserExpect(open).toHaveCount(profiles.length);
+    for (let index = 0; index < profiles.length; index++) {
+      await open.nth(index).click();
+      const dialog = page.getByRole('dialog', { name: /^(Edit|View) connection · / });
+      await browserExpect(dialog).toBeVisible();
+      // Field labels and descriptions, the dialog title and the action selects are all English.
+      expect(await dialog.innerText()).not.toMatch(cjk);
+      await dialog.getByRole('button', { name: /^(Cancel|Close)$/ }).last().click();
+      await browserExpect(dialog).toHaveCount(0);
+    }
+    await google.getByRole('button', { name: 'Edit settings', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Edit connection · Google sign-in', exact: true });
+    await browserExpect(dialog.getByRole('combobox', { name: 'OAuth sign-in action', exact: true })).toBeVisible();
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    // Switching back shows the server text unchanged.
+    await language('zh-CN');
+    await browserExpect(page.getByRole('table', { name: '连接配置', exact: true }).getByText('Google 登录', { exact: true })).toBeVisible();
+  });
+
   it('uses English CRUD, pagination and required-field validation while preserving stored names', async () => {
     await page.goto('/users');
-    await browserExpect(page.getByRole('button', { name: /Create user/ })).toBeVisible();
-    await browserExpect(page.locator('.ant-pagination-total-text')).toContainText('of');
-    await page.getByRole('button', { name: /Create user/ }).click();
-    const dialog = page.getByRole('dialog');
-    await dialog.getByRole('button', { name: /^(OK|Submit|Confirm)$/ }).click();
-    await browserExpect(dialog.locator('.ant-form-item-explain-error').first()).toContainText(
-      'Please enter Username',
-    );
-    await dialog.getByLabel('Username', { exact: true }).fill('localecreateduser');
-    await dialog.getByLabel('Email', { exact: true }).fill('localecreateduser@example.invalid');
-    await dialog.getByLabel('Name', { exact: true }).fill('保留用户姓名');
-    await dialog.getByLabel('Password', { exact: true }).fill(f.password);
+    await browserExpect(page.getByRole('button', { name: 'Create user', exact: true })).toBeVisible();
+    await browserExpect(page.getByText(/^Page 1 of 1, \d+ records$/)).toBeVisible();
+    await page.getByRole('button', { name: 'Create user', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Create user', exact: true });
+    await dialog.getByRole('button', { name: 'Save', exact: true }).click();
+    await browserExpect(dialog.getByText('Username is required', { exact: true })).toBeVisible();
+    await dialog.getByRole('textbox', { name: 'Username', exact: true }).fill('localecreateduser');
+    await dialog.getByRole('textbox', { name: 'Email', exact: true }).fill('localecreateduser@example.invalid');
+    await dialog.getByRole('textbox', { name: 'Name', exact: true }).fill('保留用户姓名');
+    await dialog.getByRole('textbox', { name: 'Password', exact: true }).fill(f.password);
     await page.route('**/api/users', (route) =>
       route.request().method() === 'POST'
-        ? route.fulfill({
-            status: 503,
-            contentType: 'application/json',
-            body: JSON.stringify({ message: 'Synthetic create failure' }),
-          })
+        ? route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ message: 'Synthetic create failure' }) })
         : route.continue(),
     );
-    await dialog.getByRole('button', { name: /^(OK|Submit|Confirm)$/ }).click();
-    await browserExpect(
-      page.getByText(
-        'User save was not confirmed. Check the account, access and connection, then retry. Your draft is kept.',
-        { exact: true },
-      ),
-    ).toBeVisible();
-    await browserExpect(dialog.getByLabel('Username', { exact: true })).toHaveValue(
-      'localecreateduser',
-    );
-    await browserExpect(dialog.getByLabel('Name', { exact: true })).toHaveValue('保留用户姓名');
+    await dialog.getByRole('button', { name: 'Save', exact: true }).click();
+    await browserExpect(dialog.getByText(/^The save was not confirmed\. .*Your draft is kept\.$/)).toBeVisible();
+    await browserExpect(dialog.getByRole('textbox', { name: 'Username', exact: true })).toHaveValue('localecreateduser');
+    await browserExpect(dialog.getByRole('textbox', { name: 'Name', exact: true })).toHaveValue('保留用户姓名');
     await page.unroute('**/api/users');
-    const retryCreate = dialog.getByRole('button', { name: /OK$/ });
-    await browserExpect(retryCreate).not.toHaveClass(/ant-btn-loading/);
-    await retryCreate.click();
+    await dialog.getByRole('button', { name: 'Save', exact: true }).click();
     await browserExpect(dialog).toHaveCount(0);
-    await browserExpect(page.getByText('保留用户姓名', { exact: true })).toBeVisible();
+    await browserExpect(record(page, 'localecreateduser')).toContainText('保留用户姓名');
     const created = (await f.database
       .model('users')
       .findFirst({ where: { username: 'localecreateduser' }, select: { id: true, typeId: true } })) as { id: string; typeId: string };
     expect(created.typeId).toBe('member');
-    await f.database
-      .model('users')
-      .update({ where: { id: created.id }, data: { typeId: 'consumer-special' } });
+    await f.database.model('users').update({ where: { id: created.id }, data: { typeId: 'consumer-special' } });
     await page.reload();
-    await page
-      .getByRole('row')
-      .filter({ hasText: 'localecreateduser' })
-      .getByText('Edit', { exact: true })
-      .click();
-    const editor = page.getByRole('dialog');
-    await browserExpect(editor.getByLabel('Username', { exact: true })).toBeDisabled();
-    await editor.getByLabel('Name', { exact: true }).fill('用户编辑后的姓名');
-    await editor.getByRole('button', { name: /^(OK|Submit|Confirm)$/ }).click();
+    await record(page, 'localecreateduser').getByRole('button', { name: 'Edit', exact: true }).click();
+    const editor = page.getByRole('dialog', { name: 'Edit user', exact: true });
+    await browserExpect(editor.getByRole('textbox', { name: 'Username', exact: true })).toBeDisabled();
+    await editor.getByRole('textbox', { name: 'Name', exact: true }).fill('用户编辑后的姓名');
+    await editor.getByRole('button', { name: 'Save', exact: true }).click();
     await browserExpect(editor).toHaveCount(0);
-    expect(
-      await f.database
-        .model('users')
-        .findUnique({ where: { id: created.id }, select: { typeId: true, name: true } }),
-    ).toEqual({ typeId: 'consumer-special', name: '用户编辑后的姓名' });
+    expect(await f.database.model('users').findUnique({ where: { id: created.id }, select: { typeId: true, name: true } })).toEqual({
+      typeId: 'consumer-special',
+      name: '用户编辑后的姓名',
+    });
   });
+
   it('shows translated profile failures and recovers real data after Retry in both languages', async () => {
     await page.route('**/api/authorize/me', (route) =>
-      route.fulfill({
-        status: 503,
-        contentType: 'application/json',
-        body: JSON.stringify({ message: 'Synthetic profile read failure' }),
-      }),
+      route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ message: 'Synthetic profile read failure' }) }),
     );
-    await page.goto('/profile');
-    await browserExpect(
-      page.getByText('Could not load your profile', { exact: true }),
-    ).toBeVisible();
-    await language('中文');
-    await browserExpect(page.getByText('个人资料读取失败', { exact: true })).toBeVisible();
+    // Navigate inside the app: a full reload would also fail session restore on the same endpoint.
+    await page.getByRole('button', { name: 'Account menu', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Profile', exact: true }).click();
+    await browserExpect(page.getByText(/^Could not load your profile/)).toBeVisible();
+    await language('zh-CN');
+    await browserExpect(page.getByText(/^个人资料读取失败/)).toBeVisible();
     await page.unroute('**/api/authorize/me');
-    await page.getByRole('button', { name: /重\s*试/ }).click();
-    await browserExpect(
-      page.getByText('connectionadmin@example.invalid', { exact: true }),
-    ).toBeVisible();
-    await language('English');
-    await browserExpect(page.getByText('Could not load your profile', { exact: true })).toHaveCount(
-      0,
-    );
+    await page.getByRole('button', { name: '重试', exact: true }).click();
+    await browserExpect(page.getByText('connectionadmin@example.invalid')).toBeVisible();
+    await language('en-US');
+    await browserExpect(page.getByText(/^Could not load your profile/)).toHaveCount(0);
+    await browserExpect(page.getByRole('tab', { name: 'Basic information', exact: true })).toBeVisible();
   });
+
   it('localizes read-only management, credit and refund page headings at a narrow viewport', async () => {
     await page.route('**/api/billing/refunds?*', (route) =>
-      route.fulfill({
-        contentType: 'application/json',
-        body: JSON.stringify({ data: [], total: 0, page: 1, pageSize: 20 }),
-      }),
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: [], total: 0, page: 1, pageSize: 20 }) }),
     );
     await page.setViewportSize({ width: 390, height: 844 });
-    for (const [path, title] of [
-      ['/credit', 'Credit transactions'],
-      ['/records/orders', 'Orders'],
-      ['/refunds', 'Refunds'],
-    ] as const) {
-      await page.goto(path);
-      await browserExpect(page.getByText(title, { exact: true }).last()).toBeVisible();
-      await browserExpect(page.getByRole('button', { name: /Query|Search/ }).first()).toBeVisible();
-      expect(
-        await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 2),
-      ).toBe(true);
+    try {
+      for (const [path, title] of [
+        ['/credit', 'Credits'],
+        ['/records/orders', 'Orders'],
+        ['/refunds', 'Refunds'],
+      ] as const) {
+        await page.goto(path);
+        await browserExpect(page.getByRole('heading', { level: 1, name: title, exact: true })).toBeVisible();
+        await browserExpect(page.getByRole('button', { name: 'Search', exact: true }).first()).toBeVisible();
+        await browserExpect.poll(() => noHorizontalOverflow(page)).toBe(true);
+      }
+      await page.screenshot({ path: artifact('admin-locale-mobile.png'), fullPage: true, animations: 'disabled' });
+    } finally {
+      await page.setViewportSize({ width: 1440, height: 1000 });
     }
-    await page.screenshot({
-      path: '/private/tmp/zucker-admin-locale-mobile.png',
-      fullPage: true,
-      animations: 'disabled',
-    });
-    await page.unroute('**/api/billing/refunds?*');
-    await page.setViewportSize({ width: 1440, height: 1000 });
+    expect(pageErrors).toEqual([]);
   });
 });

@@ -125,7 +125,9 @@ run('actual application health and durable HTTP audit composition', () => {
         await request(app.getHttpServer()).get(`/api/authorize/${path}`)
           .set('Authorization', `Bearer ${authenticated.body.token}`).expect(200);
       }
-      expect(consume.mock.calls.filter(([name, key]) => name === 'api-default' && key === userId)).toHaveLength(25);
+      // `me` is read on every page load and has its own per-user budget (src/rate-limits.ts).
+      expect(consume.mock.calls.filter(([name, key]) => name === 'api-default' && key === userId)).toHaveLength(20);
+      expect(consume.mock.calls.filter(([name, key]) => name === 'session-read' && key === userId)).toHaveLength(5);
       expect(consume.mock.calls.filter(([name]) => name === 'accounts')).toHaveLength(1);
       await login().expect(200);
       expect(consume.mock.calls.filter(([name]) => name === 'accounts')).toHaveLength(2);

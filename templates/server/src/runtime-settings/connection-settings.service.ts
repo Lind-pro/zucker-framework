@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, ServiceUnavailableException } f
 import { ConfigScopeManager, ConfigService } from '@zucker-framework/config';
 import { SecretCipher } from '@zucker-framework/core';
 import { ApplicationDatabase, type ApplicationTransaction } from '../database';
-import { CONNECTION_PROFILES, connectionProfile, validateConnection, validateField, type ConnectionProfile } from './connection-settings.descriptors';
+import { CONNECTION_PROFILES, connectionLabelKeys, connectionProfile, validateConnection, validateField, type ConnectionProfile } from './connection-settings.descriptors';
 
 import { appliedPublicSiteConfiguration } from './site-public.config';
 
@@ -54,6 +54,14 @@ export class ConnectionSettingsService {
       if (value === null) delete env[key]; else env[key] = value;
     }
   }
+  /**
+   * Applied revisions of the profiles whose id starts with `prefix`, as `id@revision` pairs (for
+   * example the payment configuration a new order is created with). Null before `environment()`.
+   */
+  appliedRevision(prefix: string): string | null {
+    const entries = [...this.applied].filter(([id]) => id.startsWith(prefix)).sort(([a], [b]) => a.localeCompare(b));
+    return entries.length ? entries.map(([id, revision]) => `${id}@${revision}`).join(',') : null;
+  }
   /** All providers receive this one immutable startup snapshot. A failed load never falls back to process.env. */
   environment(): Promise<Readonly<NodeJS.ProcessEnv>> {
     this.snapshot ??= this.database.transaction(async tx => {
@@ -71,13 +79,15 @@ export class ConnectionSettingsService {
   }
   private projection(profile: ConnectionProfile, stored: StoredProfile) {
     const appliedRevision = this.applied.get(profile.id) ?? 0;
-    return { id: profile.id, name: profile.name, category: profile.category, storedRevision: stored.revision, appliedRevision,
+    const keys = connectionLabelKeys(profile);
+    return { id: profile.id, name: profile.name, labelKey: keys.labelKey, category: profile.category, categoryKey: keys.categoryKey,
+      storedRevision: stored.revision, appliedRevision,
       pendingRestart: stored.revision !== appliedRevision, canSave: this.hasKey(), saveUnavailableReason: this.hasKey() ? null : 'encryption_key_required',
       fields: profile.fields.map(field => {
         const owned = Object.hasOwn(stored.values, field.key), saved = stored.values[field.key], environment = this.base[field.key];
         const source = owned ? saved === null ? 'cleared' : 'saved' : environment !== undefined && environment !== '' ? 'environment' : field.defaultValue !== undefined ? 'default' : 'unset';
         const value = owned ? saved ?? field.defaultValue ?? null : environment || field.defaultValue || null;
-        return { ...field, configured: value !== null && value !== '', source, ...(field.type === 'secret' ? {} : { value }) };
+        return { ...field, ...keys.field(field), configured: value !== null && value !== '', source, ...(field.type === 'secret' ? {} : { value }) };
       }),
       validation: 'local-assembly-only' as const, externalRequests: false as const };
   }

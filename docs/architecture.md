@@ -34,7 +34,7 @@
 ```
 Layer 5: 模板应用 (templates/)
   ├── server (NestJS API)
-  ├── admin  (React + Ant Design)
+  ├── admin  (React + @zucker-framework/fe-admin：Radix + Tailwind)
   └── web    (Next.js)
 
 Layer 4: 高级能力

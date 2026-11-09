@@ -39,6 +39,13 @@ it('confirms historical payment without depending on a currently active or uncha
   expect(await f.adapter.retrieve('I-SUB')).toMatchObject({ state: 'paid', dueMoney: undefined, paidMoney: { amount: '29.00', currency: 'USD' } });
   expect(f.getSubscriptionPlan).not.toHaveBeenCalled();
 });
+it('quotes the PayPal plan price for subscriptions only, without creating anything', async () => {
+  const f = fixture();
+  expect(await f.adapter.quote!(f.order.offer)).toEqual({ money: { amount: '29.00', currency: 'USD' }, mode: 'subscription' });
+  expect(await f.adapter.quote!({ ...f.order.offer, mode: 'payment' })).toBeNull();
+  expect(f.getSubscriptionPlan).toHaveBeenCalledTimes(1);
+  expect(f.createSubscription).not.toHaveBeenCalled();
+});
 it('rejects plan-price mismatch, trials and setup fees before dispatch', async () => {
   const f = fixture();
   await expect(f.adapter.create({ ...f.order, offer: { ...f.order.offer, money: { amount: '19.00', currency: 'USD' } } })).rejects.toThrow('frozen offer');

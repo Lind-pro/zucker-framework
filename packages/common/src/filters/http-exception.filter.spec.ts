@@ -166,6 +166,25 @@ describe('HttpExceptionFilter', () => {
       expect(body.code).toBe('CLAIM_MAPPING_VERSION_CONFLICT');
     });
 
+    it('should keep the reason, issues and details of a domain port error', () => {
+      const { statusCode, body } = catchAndGetResponse(
+        filter,
+        new HttpException(
+          { statusCode: 409, message: 'Blocked', code: 'pending_payment', reason: 'pending_payment',
+            details: { blocking: { kind: 'order', id: 'o1', state: 'pending' } }, internal: 'not forwarded' },
+          HttpStatus.CONFLICT,
+        ),
+      );
+      expect(statusCode).toBe(409);
+      expect(body.code).toBe('pending_payment');
+      expect(body.result).toEqual({ reason: 'pending_payment', details: { blocking: { kind: 'order', id: 'o1', state: 'pending' } } });
+      const invalid = catchAndGetResponse(
+        filter,
+        new HttpException({ message: 'Invalid plan', code: 'invalid', reason: 'invalid', issues: ['slug is required', 7] }, 400),
+      );
+      expect(invalid.body.result).toEqual({ reason: 'invalid', issues: ['slug is required'] });
+    });
+
     it('should handle 429 TooManyRequests with retryAfter', () => {
       const { statusCode, body, setHeader } = catchAndGetResponse(
         filter,

@@ -4,6 +4,7 @@ export { CreditTransactionType, CreditService, CREDIT_EVENT_TOPICS } from './cre
 export { QuotaReservationService, QuotaReservationError } from './quota-reservation';
 export type {
   QuotaReservationState,
+  QuotaReservationErrorReason,
   QuotaReservationIdentity,
   QuotaReservationInput,
   QuotaReservationRecord,
@@ -78,3 +79,41 @@ export type {
   CreditLotHoldStatus, CreditLotHoldRecord, CreditLotHoldAllocation, CreditLotHold,
   CreateCreditLotHold, SettleCreditLotHold, CreditLotHoldResult, CreditLotHoldStore,
 } from './credit-lot-hold';
+
+export {
+  UNLIMITED_QUOTA,
+  EntitlementService,
+  EntitlementValidationError,
+  validateEntitlementCatalog,
+  validatePlanGrant,
+  meteredCounters,
+  counterLimit,
+  isActiveTerm,
+  periodKey,
+  resolveEntitlements,
+  counterSnapshot,
+} from './entitlement';
+export type {
+  EntitlementCounterPeriod,
+  EntitlementFeatureCategory,
+  EntitlementFeatureDefinition,
+  EntitlementCounterDefinition,
+  EntitlementCatalog,
+  PlanGrant,
+  SubscriptionTerm,
+  ResolvedEntitlements,
+  CounterSnapshot,
+  EntitlementServiceOptions,
+} from './entitlement';
+
+export { ResourceChargeService, ResourceChargeError } from './resource-charge';
+export type {
+  ResourceChargeInput,
+  ResourceChargeRecord,
+  ResourceChargeQuery,
+  ActiveResourceChargeState,
+  ResourceChargeCallOptions,
+  ResourceChargeLookup,
+  ResourceCharge,
+  ResourceChargeOptions,
+} from './resource-charge';

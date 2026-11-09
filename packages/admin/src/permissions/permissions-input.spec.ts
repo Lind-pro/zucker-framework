@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import type { DatabaseAdapter } from '@zucker-framework/core';
 import type { PermissionService, PermissionSyncService } from '@zucker-framework/auth';
 import { PermissionsController } from './permissions.controller';
@@ -23,6 +23,13 @@ describe('permission definition input contract', () => {
     expect(f.create).toHaveBeenCalledWith({ data: { id: 'sample:read', name: 'Sample', description: 'Display metadata', actions: [{ action: 'read', name: 'Read' }], status: true } });
     await f.controller.update('sample:read', { id: 'sample:read', name: 'Renamed', properties: { color: 'blue' } });
     expect(f.update).toHaveBeenCalledWith({ where: { id: 'sample:read' }, data: { name: 'Renamed', properties: { color: 'blue' } } });
+  });
+
+  it('reports a duplicate permission code as 409 instead of a server error', async () => {
+    const f = fixture();
+    f.create.mockRejectedValueOnce(Object.assign(new Error('Unique constraint failed'), { code: 'P2002' }));
+    await expect(f.controller.create({ id: 'sample:read', name: 'Sample' })).rejects.toBeInstanceOf(ConflictException);
+    expect(f.invalidatePermissionCache).not.toHaveBeenCalled();
   });
 
   it('rejects unsupported fields before invoking persistence', async () => {

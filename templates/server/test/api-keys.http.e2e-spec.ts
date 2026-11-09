@@ -35,7 +35,7 @@ run('account API key HTTP and persistence boundary', () => {
     const module = await Test.createTestingModule({
       imports: [ZuckerCrudModule.forRootAsync({ useFactory: () => new ApplicationDatabase(scopedUrl) }),
         ZuckerAuthModule.forRoot({ jwtSecret: 'synthetic-api-key-test-secret-only-long', registerControllers: false }),
-        ZuckerRateLimiterModule.forRoot({ limiters: { accounts: { points: 2000, duration: 60 }, 'api-default': { points: 2000, duration: 60 }, 'api-key': { points: 60, duration: 60, blockDuration: 0 } } }),
+        ZuckerRateLimiterModule.forRoot({ limiters: { accounts: { points: 2000, duration: 60 }, 'session-refresh': { points: 2000, duration: 60 }, 'session-refresh-network': { points: 2000, duration: 60 }, 'session-read': { points: 2000, duration: 60 }, 'api-default': { points: 2000, duration: 60 }, 'api-key': { points: 60, duration: 60, blockDuration: 0 } } }),
         AccountModule, AccountApiKeysModule],
       controllers: [AdminProbeController],
       providers: [{ provide: APP_GUARD, useClass: AccountGuard }, { provide: APP_GUARD, useClass: PermissionsGuard }],

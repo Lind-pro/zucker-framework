@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { PostgresCreditOperationCoordinator, QuotaCapacity, QuotaCapacityExceededError } from '@zucker-framework/credit';
+import { PostgresCreditOperationCoordinator, QuotaCapacity, QuotaCapacityExceededError, QuotaReservationError } from '@zucker-framework/credit';
 import type { QuotaCapacityKey, QuotaCapacityStore, QuotaReservationInput, QuotaReservationRecord, QuotaReservationStore, QuotaReservationState } from '@zucker-framework/credit';
 import type { ApplicationDatabase, ApplicationTransaction } from '../database';
 
@@ -11,6 +11,20 @@ export interface CapturedQuotaInput extends QuotaReservationInput {
   id: string; period: string; limit: number; policyVersion: string; resourceType: string; resourceId: string;
 }
 const coordinator = new PostgresCreditOperationCoordinator(), capacity = new QuotaCapacity();
+
+/**
+ * Storage key of a RESERVED/CONFIRMED reservation: sha256 of the length-prefixed UTF-8 parts. The
+ * migration backfill computes the same value in SQL; keep both in sync.
+ */
+export function activeResourceKey(identity: { subjectId: string; counter: string; resourceType: string; resourceId: string }): string {
+  const parts = [identity.subjectId, identity.counter, identity.resourceType, identity.resourceId];
+  return createHash('sha256').update(parts.map(part => `${Buffer.byteLength(part)}:${part}`).join(''), 'utf8').digest('hex');
+}
+function uniqueViolation(error: unknown): boolean {
+  const value = error as { code?: unknown; cause?: { code?: unknown } } | null;
+  const code = typeof value?.code === 'string' ? value.code : value?.cause?.code;
+  return code === 'P2002' || code === '23505' || (error instanceof Error && /Unique constraint/i.test(error.message));
+}
 function lock(tx: ApplicationTransaction, identity: { subjectId: string; counter: string }) {
   return coordinator.lockAccount(tx, `quota:${createHash('sha256').update(JSON.stringify([identity.subjectId, identity.counter])).digest('hex')}`);
 }
@@ -42,10 +56,22 @@ QuotaReservationStore<ApplicationTransaction, StoredQuotaReservation, CapturedQu
       const snapshot = await capacity.check(capacityStore(tx), { ...input, now: new Date() });
       if (!snapshot.allowed) throw new QuotaCapacityExceededError(snapshot, input.amount);
     },
-    insert: async (tx, input) => await tx.model('quotaReservation').create({ data: { ...input, status: 'RESERVED' } }) as StoredQuotaReservation,
+    insert: async (tx, input) => {
+      try {
+        return await tx.model('quotaReservation').create({ data: { ...input, status: 'RESERVED',
+          activeResourceKey: activeResourceKey(input) } }) as StoredQuotaReservation;
+      } catch (error) {
+        // Another live reservation holds this resource on this counter (all writers of the key hold
+        // the subject/counter lock, so this means a row written outside the reservation path).
+        if (uniqueViolation(error)) throw new QuotaReservationError('conflict');
+        throw error;
+      }
+    },
     transition: async (tx, id, from, to, options) => (await tx.model('quotaReservation').updateMany({
       where: { id, status: from, ...(options.expiresAfter ? { expiresAt: { gt: options.expiresAfter } } : {}) },
-      data: { status: to, updatedAt: options.at, finishedAt: options.at, reason: options.reason ?? null },
+      // RELEASED/EXPIRED free the resource key so a later attempt can charge it again.
+      data: { status: to, updatedAt: options.at, finishedAt: options.at, reason: options.reason ?? null,
+        ...(to === 'RELEASED' || to === 'EXPIRED' ? { activeResourceKey: null } : {}) },
     })).count === 1,
     charge: async (tx, reservation) => {
       // An active reservation already owns capacity. Converting it to usage keeps used+reserved
@@ -58,7 +84,8 @@ QuotaReservationStore<ApplicationTransaction, StoredQuotaReservation, CapturedQu
     },
     expire: async (tx, before) => (await tx.model('quotaReservation').updateMany({
       where: { ...(expiryId ? { id: expiryId } : {}), status: 'RESERVED', expiresAt: { lt: before } },
-      data: { status: 'EXPIRED' satisfies QuotaReservationState, finishedAt: before, updatedAt: before, reason: 'reservation-expired' },
+      data: { status: 'EXPIRED' satisfies QuotaReservationState, finishedAt: before, updatedAt: before, reason: 'reservation-expired',
+        activeResourceKey: null },
     })).count,
   };
 }

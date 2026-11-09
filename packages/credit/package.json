@@ -1,6 +1,6 @@
 {
   "name": "@zucker-framework/credit",
-  "version": "1.0.17",
+  "version": "1.0.18",
   "description": "Credit lifecycle services and PostgreSQL idempotent operation coordination for Zucker applications",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -55,5 +55,8 @@
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
+  },
+  "dependencies": {
+    "@zucker-framework/fe-types": "workspace:*"
   }
 }

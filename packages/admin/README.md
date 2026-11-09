@@ -6,6 +6,8 @@ For persistent audit management, use `createAccessLogAdminController` and `creat
 
 `createReadOnlyAdminController` exposes only `GET /` and `GET /:id` for a configured database model. Pagination executes in the database and is capped at 100 records by default. Only configured equality filters and the record ID are accepted. Both plain query parameters and the Framework frontend's `filters={"field$eq":"value"}` encoding are supported; arbitrary operators, fields and model names are not forwarded to storage. Business mutations such as credit or reservation transitions belong to their business APIs.
 
+Set `projection` for any model with private columns. A list keeps field names; a record maps response keys to model fields (`{ userId: 'subjectId' }`). With a projection only those columns are selected, the response uses the response keys, and filters/`id` refer to response keys (each configured filter must be projected; `id` is filterable only when the projection includes it, so composite-key models such as quota usage never send an `id` filter to storage). Without it the whole record is returned as before. `createReadOnlyRecordReader` exposes the same bounded reader for composing custom controllers.
+
 Controller factories use `JwtAuthGuard` and `PermissionsGuard` by default. Hosts with equivalent global guards can pass `guards: []`; route permission metadata remains present and is enforced by those global guards. Do not register unguarded generated controllers in an application without global authentication and authorization.
 
 ## Configured catalogs and AI models
@@ -59,9 +61,26 @@ Item payloads use `text`/`ordinal`; former `label`/`name` and `sortIndex` payloa
 The dictionary service maps these to the existing canonical schema. Duplicate values in one
 dictionary return 409, missing records return 404, and failed writes are not returned as success.
 See `templates/server/test/dictionary.persistent.e2e-spec.ts` for the actual PostgreSQL/HTTP checks.
+## List filters
+
+The users, roles and permissions `_query`/`_count` endpoints translate `filter` with `toAdminWhere`, which is an allow-list on both sides: `USER_FILTER`, `ROLE_FILTER` and `PERMISSION_FILTER` name the fields that accept exact matching (`field` / `field$eq`) and the text fields that accept `field$like` (case-insensitive substring). Any other key — credential or login-metadata columns, columns added later, relation names, ORM combinators such as `AND`/`OR`/`NOT`, object values or other operators — is rejected with 400. Pages are read with `skip`/`take` and a stable `id` order in the database (`adminPage` bounds `pageIndex`/`pageSize`); substring search is a sequential scan, so large user tables should add a trigram index (`CREATE EXTENSION pg_trgm; CREATE INDEX … USING GIN (username gin_trgm_ops)`) where the database allows that extension.
+
 ## Permission definition input
 
 Permission create/update accept only definition metadata: identifier (create or unchanged on edit),
 name, description, status, actions, optionalFields, parents and properties. Unsupported fields are
 rejected before persistence. Membership writes remain in the separate user/role authorization
 operations; changing a definition does not accept nested membership commands.
+
+## Back office: plans, subscriptions, quota and mail logs
+
+These factories implement the shared back-office contract (`docs/back-office-rfc.md` §8.2–8.5, §8.8). Paths and permission codes default to the RFC and can be overridden. Business rules live behind injected structural ports (`…Port`) so this package keeps no dependency on `@zucker-framework/payment`; request/response types come from `@zucker-framework/fe-types/back-office`. `mapPortError`/`viaPort` translate only errors branded with `PORT_ERROR` (PlanCatalogError, SubscriptionAssignmentError, QuotaReservationError, ResourceChargeError): `invalid` → 400 (with `issues`), `not_found` → 404, `conflict` / `referenced` / `pending_payment` / `inactive` / `in_progress` → 409, `unavailable` → 503, with the body `{ statusCode, message, code, reason, issues?, details? }`. Every other error — including a third-party error that merely has a `reason` property — propagates.
+
+| Factory | Routes | Permissions | Port |
+| --- | --- | --- | --- |
+| `createPlanAdminController({ service })` | `GET/POST /management/plans`, `GET/PUT/DELETE /:id`, `PATCH /:id/status {status}` | `plans:query/add/update/delete` | `PlanAdminPort` — `PlanCatalogService` from payment satisfies it |
+| `createUserSubscriptionAdminController({ service })` | `GET /management/subscriptions?userId&status&active&planSlug&page&pageSize`, `GET/PUT/DELETE /:userId` | `subscriptions:query/update` | `UserSubscriptionAdminPort` (host composes `SubscriptionAssignmentService`, user summary and quota snapshots) |
+| `createQuotaAdminControllers({ reservations })` | `GET /management/quota-usage?userId&counter&period`; `GET /management/quota-reservations?userId&counter&status&resourceType`, `GET /:id`, `POST /:id/release {reason?}`, `POST /:id/confirm` | `quota:query/update` | `QuotaReservationAdminPort` — `QuotaReservationService` from credit satisfies it |
+| `createMailLogAdminController()` | `GET /management/email-logs?to&status&template&userId` | `mail:query` | `MailHistoryService` |
+
+Plan writes (`SubscriptionPlanWriteBody`: `prices[]`, optional `expectedRevision`) are validated by the port (features/quotas against the host's entitlement catalog, price list, slug and provider-reference uniqueness); deletion is refused while a subscription, payment or open billing record references the plan. Subscription assignment validates the body (`planSlug`, `billingCycle` MONTHLY/YEARLY/ONE_TIME/LIFETIME, `status` ACTIVE/CANCELED/EXPIRED, ISO `startDate`/`endDate`) and passes the acting administrator ID; the port refuses changes while a plan payment is pending or a provider subscription controls the term (409 with `details.blocking`). The list filter `active=active|inactive` uses the derived validity (expiry is not swept into the stored status). Quota lists use the default projections `DEFAULT_QUOTA_USAGE_PROJECTION` / `DEFAULT_QUOTA_RESERVATION_PROJECTION` (response `userId` ← `subjectId`; internal policy metadata omitted). Release/confirm go through the reservation state machine and return `{ id, changed }`; confirming charges usage and releasing a live job's reservation makes that job's later confirmation fail as inactive. Mail log rows exclude provider metadata (`MAIL_LOG_FIELDS`). Use `createMailTemplateAdminController` with `mail:query` / `mail:update` for `/management/email-templates`.

@@ -60,3 +60,51 @@ Holds have no TTL. Unknown provider outcomes must not be resolved by automatical
 Persist original allocation amounts, monotonic settled/expired amounts and immutable expiry evidence. The store's allocation update is an exact old-value CAS and its settlement is `HELD` to terminal CAS; a rejected write is not success. The consuming transaction must roll back receipts, allocation changes, balances and journal together on failure. Provider I/O belongs outside that transaction. Cash-to-credit conversion, source selection, refund authority and cash payment state remain consumer policy.
 
 When holds are configured, every stored frozen credit must have a matching active lot allocation. `CreditHoldMigrationRequiredError` explicitly refuses legacy unallocated freezing; the package does not guess its source or hide mismatches by clamping balances. Migrate/reconcile such accounts before enabling the port. The template enables the port for its canonical ledger and rejects inconsistent read projections as well. Total available plus frozen credit is bounded to the supported integer range, preserving headroom for a later full release.
+
+## Plan entitlements
+
+`EntitlementService` (and the underlying functions) holds no product data: the consumer declares an
+`EntitlementCatalog` of features (`metered` with a `counter`, or `benefit`) and counters
+(`month` / `day` / `lifetime`) in code. `validatePlanGrant` accepts boolean features and quotas of
+`-1` (unlimited) or non-negative integers, all keys declared. `counterLimit` treats a metered counter
+missing from a plan as no allowance and any other missing counter as unlimited. `isActiveTerm`
+accepts ACTIVE/CANCELED terms that have started and have a future end, and ACTIVE LIFETIME terms with
+no end. `periodKey` formats `YYYY-MM` / `YYYY-MM-DD` in an IANA time zone (default UTC) or
+`lifetime`. `resolveEntitlements` turns a plan grant and term into catalog-wide features and limits
+(inactive → everything off, limits 0); `counterSnapshot` builds the `{limit, used, reserved,
+remaining, period}` presentation where `-1` stays unlimited. `QuotaCapacity` still never interprets
+negative limits: consumers skip the capacity check for `-1` explicitly.
+
+## Charge once per resource
+
+`ResourceChargeService` wraps `QuotaReservationService` so one resource (for example a project)
+consumes each counter once. The charge identity is `(subject, counter, resourceType, resourceId)`:
+the same project metered by `projects` and by `exports` is charged once on each counter. Its
+`ResourceChargeLookup` port runs on the reservation transaction after the subject/counter lock:
+
+- `expireStale(tx, query)` moves RESERVED rows of exactly that identity whose `expiresAt` has passed
+  to EXPIRED (never confirming them), so a crashed or overlong use cannot block the resource;
+- `findActiveCharge(tx, query)` returns `'CONFIRMED'`, `'RESERVED'` (live) or `null`.
+
+A CONFIRMED charge makes the use free (`{ reservation: null, free: true }`). A live reservation of
+another request rejects with `ResourceChargeError('in_progress')` (409 through admin's port mapping)
+instead of a free use, so a first use that later fails can never leave a second successful use
+uncharged; retry after it settles. A reused reservation ID that names another resource rejects
+with `ResourceChargeError('conflict')`. Otherwise `begin` reserves; `complete` confirms after the
+first successful use and `fail` releases so a later attempt can charge again. `run(input, work)`
+composes the three: a work failure releases and rethrows (release failures go to
+`onReleaseError`); a confirmation failure after successful work (reservation expired because the
+work outlived its TTL, an administrator released it, storage failed) is reported to
+`onConfirmError` and the work's result is returned uncharged — keep the TTL longer than the work.
+Every method accepts `{ tx }` to join a caller transaction (for example a task insert and its charge
+in one commit); inside a caller transaction a confirmation failure is rethrown.
+
+Storage must allow a new reservation for a resource whose earlier charge was released or expired,
+and must hold at most one RESERVED/CONFIRMED row per identity. The server template keeps a nullable
+`activeResourceKey` (`@unique`; set while RESERVED/CONFIRMED, cleared by the terminal transition,
+guarded by a CHECK constraint), which Prisma can represent — avoid partial unique indexes, which
+`prisma migrate diff` cannot model. PostgreSQL behavior is covered by
+`templates/server/test/back-office.persistent.e2e-spec.ts`.
+
+Domain errors (`QuotaReservationError`, `ResourceChargeError`) are branded port errors whose `reason`
+belongs to `PortErrorReason` from `@zucker-framework/fe-types/back-office`.

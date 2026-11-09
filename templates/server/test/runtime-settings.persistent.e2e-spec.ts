@@ -64,7 +64,7 @@ run('encrypted connection settings PostgreSQL and administrator HTTP contracts',
     url.searchParams.set('schema', schema); scopedUrl = url.href; database = new ApplicationDatabase(scopedUrl);
     const module = await Test.createTestingModule({ imports: [EventEmitterModule.forRoot(), ZuckerCrudModule.forRootAsync({ useFactory: () => database }),
       ZuckerAuthModule.forRoot({ jwtSecret: env.JWT_SECRET!, registerControllers: false }), ZuckerConfigModule.forRoot(), ZuckerAdminModule.forRoot({ features: ['config'] }),
-      ZuckerRateLimiterModule.forRoot({ limiters: { accounts: { points: 3000, duration: 60 }, 'api-default': { points: 3000, duration: 60 } } }), RuntimeSettingsModule, AccountModule, BillingModule, OAuthModule, DeliveryModule],
+      ZuckerRateLimiterModule.forRoot({ limiters: { accounts: { points: 3000, duration: 60 }, 'session-refresh': { points: 3000, duration: 60 }, 'session-refresh-network': { points: 3000, duration: 60 }, 'session-read': { points: 3000, duration: 60 }, 'api-default': { points: 3000, duration: 60 } } }), RuntimeSettingsModule, AccountModule, BillingModule, OAuthModule, DeliveryModule],
       providers: [{ provide: APP_GUARD, useClass: AccountGuard }, { provide: APP_GUARD, useClass: PermissionsGuard }] })
       .overrideProvider(RUNTIME_SETTINGS_BASE_ENV).useValue(env).overrideProvider(ACCOUNT_MAILER).useValue(mailer).compile();
     app = module.createNestApplication(); app.setGlobalPrefix('api'); app.useGlobalFilters(new HttpExceptionFilter()); await app.listen(0, '127.0.0.1');
@@ -131,7 +131,7 @@ run('encrypted connection settings PostgreSQL and administrator HTTP contracts',
     const restartedDatabase = new ApplicationDatabase(scopedUrl);
     const restarted = await Test.createTestingModule({ imports: [ZuckerCrudModule.forRootAsync({ useFactory: () => restartedDatabase }),
       ZuckerAuthModule.forRoot({ jwtSecret: env.JWT_SECRET!, registerControllers: false }),
-      ZuckerRateLimiterModule.forRoot({ limiters: { accounts: { points: 100, duration: 60 }, 'api-default': { points: 100, duration: 60 }, billing: { points: 100, duration: 60 } } }),
+      ZuckerRateLimiterModule.forRoot({ limiters: { accounts: { points: 100, duration: 60 }, 'session-refresh': { points: 100, duration: 60 }, 'session-refresh-network': { points: 100, duration: 60 }, 'session-read': { points: 100, duration: 60 }, 'api-default': { points: 100, duration: 60 }, billing: { points: 100, duration: 60 } } }),
       RuntimeSettingsModule, BillingModule, OAuthModule, DeliveryModule, AccountModule] }).overrideProvider(RUNTIME_SETTINGS_BASE_ENV).useValue(env).compile();
     try {
       expect(restarted.get<BillingOptions>(BILLING_OPTIONS).providers.map(row => row.id)).toEqual(['creem']);
@@ -221,7 +221,7 @@ run('encrypted connection settings PostgreSQL and administrator HTTP contracts',
       restartedDatabase = new ApplicationDatabase(scopedUrl);
       const module = await Test.createTestingModule({ imports: [ZuckerCrudModule.forRootAsync({ useFactory: () => restartedDatabase! }),
         ZuckerAuthModule.forRoot({ jwtSecret: env.JWT_SECRET!, registerControllers: false }),
-        ZuckerRateLimiterModule.forRoot({ limiters: { accounts: { points: 100, duration: 60 }, 'api-default': { points: 1, duration: 60 } } }), RuntimeSettingsModule, AccountModule],
+        ZuckerRateLimiterModule.forRoot({ limiters: { accounts: { points: 100, duration: 60 }, 'session-refresh': { points: 100, duration: 60 }, 'session-refresh-network': { points: 100, duration: 60 }, 'session-read': { points: 100, duration: 60 }, 'api-default': { points: 1, duration: 60 } } }), RuntimeSettingsModule, AccountModule],
         providers: [{ provide: APP_GUARD, useClass: AccountGuard }, { provide: APP_GUARD, useClass: PermissionsGuard }] })
         .overrideProvider(RUNTIME_SETTINGS_BASE_ENV).useValue(env).overrideProvider(ACCOUNT_MAILER).useValue(mailer).compile();
       restarted = module.createNestApplication(); restarted.setGlobalPrefix('api'); restarted.useGlobalFilters(new HttpExceptionFilter()); await restarted.listen(0, '127.0.0.1');

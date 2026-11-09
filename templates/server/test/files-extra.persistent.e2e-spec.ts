@@ -79,7 +79,7 @@ run('private file listing, short downloads, constrained import and avatar protec
     for (const controller of [FilesController, FilesDownloadController]) Reflect.defineMetadata(ACCESS_LOGGER_KEY, { describe: 'Synthetic file verification', module: 'files-extra-test', logParameters: true, logResult: true }, controller);
     const module = await Test.createTestingModule({ imports: [EventEmitterModule.forRoot(), ZuckerCrudModule.forRootAsync({ useFactory: () => database }),
       ZuckerAuthModule.forRoot({ jwtSecret: 'synthetic-extra-files-long-test-secret', registerControllers: false }),
-      ZuckerRateLimiterModule.forRoot({ limiters: { accounts: { points: 4000, duration: 60 }, 'api-default': { points: 4000, duration: 60 } } }),
+      ZuckerRateLimiterModule.forRoot({ limiters: { accounts: { points: 4000, duration: 60 }, 'session-refresh': { points: 4000, duration: 60 }, 'session-refresh-network': { points: 4000, duration: 60 }, 'session-read': { points: 4000, duration: 60 }, 'api-default': { points: 4000, duration: 60 } } }),
       ZuckerLoggingModule.forRoot({ persistence: {}, rejectedRequests: {}, captureParameters: false, captureResults: false }),
       ZuckerStorageModule.forRoot({ provider: 'local', basePath: directory }), AccountModule, FilesModule, AccountAvatarModule],
       providers: [{ provide: APP_GUARD, useClass: AccountGuard }, { provide: APP_GUARD, useClass: PermissionsGuard }] })

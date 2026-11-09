@@ -38,6 +38,7 @@
     "@zucker-framework/notification": "workspace:*",
     "@zucker-framework/payment": "workspace:*",
     "@zucker-framework/fe-site": "workspace:*",
+    "@zucker-framework/fe-types": "workspace:*",
     "@zucker-framework/fe-analytics": "workspace:*",
     "@zucker-framework/provider": "workspace:*",
     "@zucker-framework/rate-limiter": "workspace:*",

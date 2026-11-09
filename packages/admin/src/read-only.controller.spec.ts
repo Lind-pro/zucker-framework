@@ -80,4 +80,43 @@ describe('read-only admin records', () => {
       'findOne',
     ]);
   });
+  it('selects and renames only projected fields, including filters and lookup', async () => {
+    const model = {
+      findMany: vi.fn().mockResolvedValue([{ key: 'one', ownerId: 'u1', secret: 'PRIVATE' }]),
+      count: vi.fn().mockResolvedValue(1),
+      findUnique: vi.fn().mockResolvedValue({ key: 'one', ownerId: 'u1' }),
+    };
+    const Controller = createReadOnlyAdminController({
+      path: 'records',
+      model: 'entries',
+      resource: { id: 'records', name: 'Records' },
+      filters: ['userId'],
+      orderBy: { key: 'asc' },
+      projection: { id: 'key', userId: 'ownerId' },
+    });
+    const controller = new Controller({ model: () => model }) as {
+      findAll(query: Record<string, unknown>): Promise<{ data: unknown[] }>;
+      findOne(id: string): Promise<unknown>;
+    };
+    const page = await controller.findAll({ filters: JSON.stringify({ userId$eq: 'u1', id$eq: 'one' }) });
+    expect(model.findMany).toHaveBeenCalledWith({
+      where: { key: 'one', ownerId: 'u1' },
+      skip: 0,
+      take: 20,
+      orderBy: { key: 'asc' },
+      select: { key: true, ownerId: true },
+    });
+    expect(page.data).toEqual([{ id: 'one', userId: 'u1' }]);
+    expect(await controller.findOne('one')).toEqual({ id: 'one', userId: 'u1' });
+    expect(model.findUnique).toHaveBeenCalledWith({ where: { key: 'one' }, select: { key: true, ownerId: true } });
+    model.findUnique.mockResolvedValue(null);
+    expect(await controller.findOne('missing')).toBeNull();
+  });
+  it('rejects projections that hide a configured filter', () => {
+    const base = { path: 'r', model: 'm', resource: { id: 'r', name: 'R' }, orderBy: {} };
+    expect(() => createReadOnlyAdminController({ ...base, filters: ['state'], projection: ['id'] })).toThrow(
+      'Filter state must be projected',
+    );
+    expect(() => createReadOnlyAdminController({ ...base, filters: [], projection: {} })).toThrow('Projection must contain fields');
+  });
 });

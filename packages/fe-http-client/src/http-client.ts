@@ -836,12 +836,13 @@ export function createHttpClient(config: HttpClientConfig = {}): HttpClient {
 }
 
 /** Refresh through an HttpOnly cookie without exposing a refresh token to the caller. */
-export function createCookieRefresh(url: string): () => Promise<{ access_token: string }> {
-  return async () => {
-    const response = await axios.post(url, {}, { withCredentials: true });
+export function createCookieRefresh(url: string): (signal?: AbortSignal) => Promise<{ access_token: string }> {
+  return async (signal) => {
+    const response = await axios.post(url, {}, signal ? { withCredentials: true, signal } : { withCredentials: true });
     const payload = response.data?.result ?? response.data;
     if (typeof payload?.access_token !== 'string' || !payload.access_token) {
-      throw new Error('Invalid access-token refresh response');
+      // An HTTP answer arrived: carry its status so callers know nothing is still in flight.
+      throw Object.assign(new Error('Invalid access-token refresh response'), { status: response.status });
     }
     return { access_token: payload.access_token };
   };

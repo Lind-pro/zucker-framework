@@ -54,6 +54,11 @@ export class HostedCheckoutService {
       const providerOffer = structuredClone(offer);
       delete providerOffer.fulfillmentData;
       provider.validate(providerOffer);
+      // Provider price drift (an administrator edited the catalog amount) fails before anything is payable.
+      const quoted = provider.quote ? await provider.quote(structuredClone(providerOffer)) : null;
+      if (quoted && (canonicalMoney(quoted.money) !== canonicalMoney(offer.money) || (quoted.mode !== undefined && quoted.mode !== offer.mode))) {
+        throw new HostedCheckoutError('conflict', 'The provider price differs from the offer; this offer is unavailable until the catalog is corrected');
+      }
       const urls = this.options.returnUrls(selection.orderId);
       const key = createHash('sha256').update(JSON.stringify([provider.id, provider.accountScope, selection.orderId])).digest('hex').slice(0, 32);
       const time = this.now();

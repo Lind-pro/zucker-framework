@@ -42,6 +42,8 @@ model users {
   oauthProofs accountOAuthProofs[]
   apiKeys accountApiKeys[]
   apiKeyUsage accountApiKeyUsage[]
+  subscription userSubscriptions?
+  subscriptionPayments userSubscriptionPayments[]
 }
 
 model accountSessions {
@@ -929,6 +931,9 @@ model billingOrders {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @default(now()) @updatedAt
   revision      Int      @default(0)
+  /// Revision of the payment connection configuration this order was created with (hot reload;
+  /// callbacks, queries and refunds of this order must resolve credentials by it). NULL = unknown/legacy.
+  configRevision String?
   owner         users    @relation(fields: [ownerId], references: [id], onDelete: Restrict)
   fulfillment   billingFulfillments?
   subscriptionBinding billingSubscriptions?
@@ -1501,7 +1506,10 @@ model quotaReservation {
   updatedAt DateTime @default(now()) @db.Timestamptz(3)
   finishedAt DateTime? @db.Timestamptz(3)
   reason String?
-  @@unique([subjectId, counter, resourceType, resourceId])
+  /// sha256 of (subjectId, counter, resourceType, resourceId) while RESERVED or CONFIRMED, NULL once
+  /// RELEASED or EXPIRED (written by the quota store; a CHECK constraint enforces it). The unique
+  /// index charges a resource once per counter while still allowing a retry after a release/expiry.
+  activeResourceKey String? @unique
   @@index([subjectId, counter, period, status])
   @@index([status, expiresAt])
   @@map("quota_reservations")
@@ -1640,4 +1648,142 @@ model accountAvatarChanges {
   @@unique([userId, idempotencyKey])
   @@index([userId, createdAt])
   @@map("account_avatar_changes")
+}
+
+// ─── Back office: plans, subscriptions, mail ─────────────────────────────────
+// Plans are the single source of what is sold and at what price. `features`/`quotas` are validated
+// against the application's entitlement catalog (src/subscriptions/entitlement-catalog.ts).
+model subscriptionPlans {
+  id            String   @id @default(cuid())
+  slug          String   @unique
+  name          String
+  description   String?
+  status        Boolean  @default(false)
+  order         Int      @default(0)
+  features      Json     @default("{}")
+  quotas        Json     @default("{}")
+  /// Incremented by every write; checkout snapshots and optimistic edits refer to it.
+  revision      Int      @default(0)
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  prices        subscriptionPlanPrices[]
+  subscriptions userSubscriptions[]
+  payments      userSubscriptionPayments[]
+
+  @@index([status, order])
+  @@map("subscription_plans")
+}
+
+/// One price of a plan: interval month | year | one_time | lifetime, exact decimal amount.
+model subscriptionPlanPrices {
+  id        String   @id @default(cuid())
+  planId    String
+  interval  String
+  currency  String
+  /// Exact decimal in major units; formatted for the currency by the API.
+  amount    String
+  /// Days of access for one_time; NULL otherwise.
+  termDays  Int?
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  plan      subscriptionPlans @relation(fields: [planId], references: [id], onDelete: Cascade)
+  refs      subscriptionPlanPriceRefs[]
+
+  @@unique([planId, interval, currency])
+  @@map("subscription_plan_prices")
+}
+
+/// Provider catalog reference (Stripe Price ID, PayPal plan, Creem product) that sells one price.
+model subscriptionPlanPriceRefs {
+  id        String @id @default(cuid())
+  priceId   String
+  provider  String
+  reference String
+  price     subscriptionPlanPrices @relation(fields: [priceId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, reference])
+  @@unique([priceId, provider])
+  @@map("subscription_plan_price_refs")
+}
+
+model userSubscriptions {
+  id                String    @id @default(cuid())
+  userId            String    @unique
+  planId            String
+  status            String    @default("ACTIVE")
+  billingCycle      String    @default("MONTHLY")
+  startDate         DateTime  @db.Timestamptz(3)
+  endDate           DateTime? @db.Timestamptz(3)
+  cancelAtPeriodEnd Boolean   @default(false)
+  canceledAt        DateTime? @db.Timestamptz(3)
+  source            String    @default("admin")
+  /// Reference of the payment evidence that defines the current term; NULL for admin terms.
+  paymentReference  String?
+  createdAt         DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime  @default(now()) @updatedAt @db.Timestamptz(3)
+  user              users             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan              subscriptionPlans @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  @@index([planId])
+  @@index([status, endDate])
+  @@index([updatedAt])
+  @@map("user_subscriptions")
+}
+
+/// Payment ledger of plan terms: one row per verified payment reference (idempotency and audit).
+model userSubscriptionPayments {
+  id           String    @id @default(cuid())
+  reference    String    @unique
+  userId       String
+  planId       String
+  billingCycle String
+  periodStart  DateTime  @db.Timestamptz(3)
+  periodEnd    DateTime? @db.Timestamptz(3)
+  orderId      String?
+  createdAt    DateTime  @default(now()) @db.Timestamptz(3)
+  user         users             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan         subscriptionPlans @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  @@index([userId, periodStart])
+  @@index([planId])
+  @@map("user_subscription_payments")
+}
+
+/// Editable mail templates for MailService; built-in templates remain the fallback.
+model emailTemplates {
+  id            String   @id @default(cuid())
+  key           String   @unique
+  name          String
+  description   String?
+  subject       String?
+  htmlContentEn String
+  htmlContentZh String?
+  variables     Json?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+
+  @@map("email_templates")
+}
+
+/// Final delivery history written by MailService.
+model emailLogs {
+  id           String   @id @default(cuid())
+  userId       String?
+  recipient    String
+  subject      String
+  template     String?
+  provider     String?
+  messageId    String?
+  status       String
+  errorMessage String?
+  metadata     Json?
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([status, createdAt])
+  @@index([recipient])
+  @@index([userId])
+  @@index([template, status, userId, createdAt])
+  @@index([createdAt])
+  @@map("email_logs")
 }

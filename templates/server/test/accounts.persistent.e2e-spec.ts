@@ -41,7 +41,7 @@ run('persistent template accounts over HTTP', () => {
       imports: [
         ZuckerCrudModule.forRootAsync({ useFactory: () => db }),
         ZuckerAuthModule.forRoot({ jwtSecret: 'synthetic-account-test-secret-only', registerControllers: false }),
-        ZuckerRateLimiterModule.forRoot({ limiters: { accounts: { points: 500, duration: 60 }, 'api-default': { points: 500, duration: 60 } } }),
+        ZuckerRateLimiterModule.forRoot({ limiters: { accounts: { points: 500, duration: 60 }, 'session-refresh': { points: 500, duration: 60 }, 'session-refresh-network': { points: 500, duration: 60 }, 'session-read': { points: 500, duration: 60 }, 'api-default': { points: 500, duration: 60 } } }),
       ],
       controllers: [AccountController],
       providers: [AccountService, AccountGuard, { provide: ACCOUNT_MAILER, useValue: mailer },

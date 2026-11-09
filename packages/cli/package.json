@@ -1,6 +1,6 @@
 {
   "name": "@zucker-framework/cli",
-  "version": "1.0.17",
+  "version": "1.0.18",
   "description": "CLI tool for Zucker Framework — scaffolding, diagnostics, and module management",
   "bin": {
     "zucker": "./dist/index.js"

@@ -115,6 +115,25 @@ describe('hosted checkout durable initial fulfillment', () => {
     expect(f.adapter.create).not.toHaveBeenCalled();
   });
 
+  it('refuses a provider price that drifted from the offer before any order or payable checkout exists', async () => {
+    const f = fixture();
+    const quote = vi.fn(async () => ({ money: { amount: '25.00', currency: 'USD' }, mode: 'payment' as const }));
+    const service = new HostedCheckoutService({ ...f.options, providers: [{ ...f.adapter, quote }] });
+    await expect(service.create(selection)).rejects.toMatchObject({ code: 'conflict', message: expect.stringContaining('provider price') });
+    expect(quote).toHaveBeenCalledWith(expect.objectContaining({ catalogReference: 'catalog-1', money: offer.money }));
+    expect(quote.mock.calls[0]).not.toHaveProperty('0.fulfillmentData');
+    expect(f.store.create).not.toHaveBeenCalled();
+    expect(f.adapter.create).not.toHaveBeenCalled();
+    quote.mockResolvedValueOnce({ money: { amount: '29', currency: 'USD' }, mode: 'subscription' as const });
+    await expect(service.create(selection)).rejects.toMatchObject({ code: 'conflict' });
+    // Equal money (any notation) or an unknown provider price proceeds.
+    quote.mockResolvedValueOnce({ money: { amount: '29', currency: 'USD' }, mode: 'payment' as const });
+    expect(await service.create(selection)).toMatchObject({ creationState: 'created' });
+    const unknown = fixture();
+    const silent = new HostedCheckoutService({ ...unknown.options, providers: [{ ...unknown.adapter, quote: vi.fn(async () => null) }] });
+    expect(await silent.create(selection)).toMatchObject({ creationState: 'created' });
+  });
+
   it('persists owner, immutable quote and stable keys before contacting provider', async () => {
     const f = fixture();
     vi.mocked(f.adapter.create).mockImplementation(async (order) => {

@@ -1,0 +1,3 @@
+/* Tailwind v4 entry: the fe-admin stylesheet adds its theme tokens and scans the package's components. */
+@import "tailwindcss";
+@import "@zucker-framework/fe-admin/styles.css";

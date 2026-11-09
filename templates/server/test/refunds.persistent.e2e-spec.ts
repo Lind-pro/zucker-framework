@@ -84,7 +84,7 @@ run('refund cash, receipt and exact credit-hold PostgreSQL HTTP contract', () =>
   async function startApp() {
     const db = new ApplicationDatabase(scopedUrl);
     const module = await Test.createTestingModule({ imports: [ZuckerCrudModule.forRootAsync({ useFactory: () => db }), ZuckerAuthModule.forRoot({ jwtSecret: 'synthetic-refunds-contract-only-long-secret', registerControllers: false }),
-      ZuckerRateLimiterModule.forRoot({ limiters: { accounts: { points: 3000, duration: 60 }, 'api-default': { points: 3000, duration: 60 }, billing: { points: 3000, duration: 60 } } }), AccountModule],
+      ZuckerRateLimiterModule.forRoot({ limiters: { accounts: { points: 3000, duration: 60 }, 'session-refresh': { points: 3000, duration: 60 }, 'session-refresh-network': { points: 3000, duration: 60 }, 'session-read': { points: 3000, duration: 60 }, 'api-default': { points: 3000, duration: 60 }, billing: { points: 3000, duration: 60 } } }), AccountModule],
       controllers: [BillingController, BillingRefundsController], providers: [BillingService, { provide: BILLING_OPTIONS, useValue: options }, { provide: APP_GUARD, useClass: AccountGuard }, { provide: APP_GUARD, useClass: PermissionsGuard }] })
       .overrideProvider(ACCOUNT_MAILER).useValue(mailer).compile();
     const instance = module.createNestApplication({ rawBody: true }); instance.setGlobalPrefix('api'); instance.useGlobalFilters(new HttpExceptionFilter()); await instance.listen(0, '127.0.0.1');

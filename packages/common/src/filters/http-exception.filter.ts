@@ -127,6 +127,16 @@ export class HttpExceptionFilter implements ExceptionFilter {
           message = exception.message;
         }
 
+        // Domain port errors (`@zucker-framework/admin` mapPortError) carry a machine-readable
+        // reason, validation issues and client-safe details; keep them for the client.
+        if (typeof resp.reason === 'string' && ('issues' in resp || 'details' in resp || 'code' in resp)) {
+          result = {
+            reason: resp.reason,
+            ...(Array.isArray(resp.issues) ? { issues: resp.issues.filter((item) => typeof item === 'string') } : {}),
+            ...(resp.details && typeof resp.details === 'object' && !Array.isArray(resp.details) ? { details: resp.details } : {}),
+          };
+        }
+
         // Forward extra fields (e.g. retryAfter from TooManyRequestsException)
         if ('retryAfter' in resp) {
           result = { retryAfter: resp.retryAfter };

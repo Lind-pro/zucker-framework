@@ -36,9 +36,9 @@ export type {
 } from './tenant/tenant.store';
 
 // ─── Controllers (for testing or extending) ─────────────────────────────────
-export { UsersController } from './users/users.controller';
-export { RolesController } from './roles/roles.controller';
-export { PermissionsController } from './permissions/permissions.controller';
+export { UsersController, USER_FILTER } from './users/users.controller';
+export { RolesController, ROLE_FILTER } from './roles/roles.controller';
+export { PermissionsController, PERMISSION_FILTER } from './permissions/permissions.controller';
 export { DictionaryController } from './dictionary/dictionary.controller';
 export { ConfigController } from './config/config.controller';
 export { CreditController } from './credit/credit.controller';
@@ -59,8 +59,13 @@ export {
   createOperationLogAdminController,
 } from './logging/log-management.controller';
 export type { LogManagementOptions } from './logging/log-management.controller';
-export { createReadOnlyAdminController } from './read-only.controller';
-export type { ReadOnlyAdminOptions } from './read-only.controller';
+export { createReadOnlyAdminController, createReadOnlyRecordReader } from './read-only.controller';
+export type {
+  ReadOnlyAdminOptions,
+  ReadOnlyProjection,
+  ReadOnlyRecordOptions,
+  ReadOnlyPage,
+} from './read-only.controller';
 export { createLogQueryController } from './logging/log-query.controller';
 export type { LogQueryControllerOptions } from './logging/log-query.controller';
 export { createMailTemplateAdminController } from './notification/mail-template.controller';
@@ -74,3 +79,41 @@ export * from './notification/resend-webhook.controller';
 export * from './ai/model.controller';
 
 export * from './catalog.controller';
+
+// ─── Back office: plans, user subscriptions, quota and mail logs (RFC 8.2–8.5) ─
+export { mapPortError, viaPort } from './port-errors';
+export { toAdminWhere, adminPage } from './query-filter';
+export type { AdminQueryFilterOptions } from './query-filter';
+export { createPlanAdminController } from './billing/plan.controller';
+export type {
+  AdminPlanRecord,
+  PlanAdminPort,
+  PlanAdminOptions,
+  PlanAdminController,
+} from './billing/plan.controller';
+export {
+  createUserSubscriptionAdminController,
+  USER_SUBSCRIPTION_STATUSES,
+  USER_SUBSCRIPTION_CYCLES,
+} from './billing/subscription.controller';
+export type {
+  UserSubscriptionAdminPort,
+  UserSubscriptionAdminOptions,
+  UserSubscriptionAdminController,
+  UserSubscriptionListQuery,
+  UserSubscriptionAssignment,
+} from './billing/subscription.controller';
+export {
+  createQuotaAdminControllers,
+  DEFAULT_QUOTA_USAGE_PROJECTION,
+  DEFAULT_QUOTA_RESERVATION_PROJECTION,
+  QUOTA_RESERVATION_STATUSES,
+} from './credit/quota.controller';
+export type {
+  QuotaAdminOptions,
+  QuotaReservationAdminPort,
+  QuotaUsageAdminController,
+  QuotaReservationAdminController,
+} from './credit/quota.controller';
+export { createMailLogAdminController, MAIL_LOG_FIELDS } from './notification/mail-log.controller';
+export type { MailLogAdminOptions, MailLogAdminController } from './notification/mail-log.controller';

@@ -32,7 +32,8 @@ import {
   MANAGEMENT_CONNECTION_ENV,
 } from '../../src/management/connections.service';
 
-export async function managementFixture(databaseUrl: string, origin = 'http://localhost:4320', billingOptions?: BillingOptions) {
+export async function managementFixture(databaseUrl: string, origin = 'http://localhost:4320', billingOptions?: BillingOptions,
+  extraImports: NonNullable<Parameters<typeof Test.createTestingModule>[0]['imports']> = []) {
   const url = new URL(databaseUrl);
   if (!/(?:_dev|_test|_tests)$/.test(url.pathname))
     throw new Error('Use an isolated development/test database');
@@ -84,6 +85,9 @@ export async function managementFixture(databaseUrl: string, origin = 'http://lo
       ZuckerRateLimiterModule.forRoot({
         limiters: {
           accounts: { points: 5000, duration: 60 },
+          'session-refresh': { points: 5000, duration: 60 },
+          'session-refresh-network': { points: 5000, duration: 60 },
+          'session-read': { points: 5000, duration: 60 },
           billing: { points: 5000, duration: 60 },
           'api-default': { points: 5000, duration: 60 },
         },
@@ -91,6 +95,7 @@ export async function managementFixture(databaseUrl: string, origin = 'http://lo
       AccountModule,
       ContentModule,
       ...(billingOptions ? [BillingModule] : []),
+      ...extraImports,
     ],
     controllers: [MenuController, ManagementController],
     providers: [

@@ -68,7 +68,7 @@ run('site content publication and management PostgreSQL HTTP contract', () => {
     url.searchParams.set('schema', schema); database = new ApplicationDatabase(url.href);
     const module = await Test.createTestingModule({ imports: [ZuckerCrudModule.forRootAsync({ useFactory: () => database }),
       ZuckerAuthModule.forRoot({ jwtSecret: 'synthetic-content-http-only-long-secret', registerControllers: false }),
-      ZuckerConfigModule.forRoot(), ZuckerRateLimiterModule.forRoot({ limiters: { accounts: { points: 5000, duration: 60 }, 'api-default': { points: 5000, duration: 60 } } }),
+      ZuckerConfigModule.forRoot(), ZuckerRateLimiterModule.forRoot({ limiters: { accounts: { points: 5000, duration: 60 }, 'session-refresh': { points: 5000, duration: 60 }, 'session-refresh-network': { points: 5000, duration: 60 }, 'session-read': { points: 5000, duration: 60 }, 'api-default': { points: 5000, duration: 60 } } }),
       AccountModule, ContentModule], providers: [{ provide: APP_GUARD, useClass: AccountGuard }, { provide: APP_GUARD, useClass: PermissionsGuard }] })
       .overrideProvider(ACCOUNT_MAILER).useValue(mailer).overrideProvider(CONTENT_OPTIONS).useValue({ siteUrl: origin, origins: [origin] }).compile();
     app = module.createNestApplication(); app.setGlobalPrefix('api'); app.useGlobalFilters(new HttpExceptionFilter()); await app.listen(0, '127.0.0.1');

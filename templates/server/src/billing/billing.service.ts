@@ -11,16 +11,26 @@ import { BillingSubscriptionsService } from './subscriptions.service';
 import { readCreditBalance } from '../credits/credits.service';
 import { BillingRefundsService } from './refunds/refunds.service';
 import { readOrderRefundSummary } from './refunds/refunds.projection';
+import { BillingExtensions, type BillingFulfillmentHooks, type BillingPlanOffers } from './billing-extensions';
 
 export const BILLING_OPTIONS = Symbol('BILLING_OPTIONS');
 export interface BillingOptions {
   providers: readonly HostedCheckoutAdapter[];
   subscriptionProviders?: readonly SubscriptionAdapter[];
   refundProviders?: readonly RefundAdapter[];
+  /** Static offers: credit packs, credit-only subscriptions and the seed of subscription plans. */
   catalogJson?: string;
   webUrl: string;
   referralProviders?: readonly ReferralProvider[];
+  /** Revision of the payment connection configuration in effect; recorded on each new order. */
+  configRevision?: string | null;
 }
+/**
+ * BILLING_OPTIONS may be a value or a resolver. With a resolver, the static catalog and the config
+ * revision recorded on new orders follow the resolver on every call; provider SDK instances are
+ * still built once (hot provider swapping is the runtime-settings Phase 1 work).
+ */
+export type BillingOptionsSource = BillingOptions | (() => BillingOptions);
 export function billingOptionsFromEnvironment(env: NodeJS.ProcessEnv): BillingOptions {
   const referrals = (env.BILLING_REFERRAL_PROVIDERS ?? '').split(',').map(value => value.trim()).filter(Boolean);
   if (referrals.some(value => value !== 'affonso' && value !== 'promotekit')) throw new Error('Unsupported billing referral provider');
@@ -35,16 +45,29 @@ export class BillingService {
   readonly catalog: BillingCatalog;
   readonly subscriptions: BillingSubscriptionsService;
   readonly refunds: BillingRefundsService;
+  /** Plan offers and fulfillment hooks registered by other modules (see {@link usePlanOffers}). */
+  readonly extensions = new BillingExtensions();
   constructor(@Inject(DATABASE_ADAPTER) private readonly database: ApplicationDatabase,
-    @Inject(BILLING_OPTIONS) options: BillingOptions) {
+    @Inject(BILLING_OPTIONS) source: BillingOptionsSource) {
+    const current = typeof source === 'function' ? source : () => source;
+    const options = current();
     const base = new URL(options.webUrl);
     if (!['http:', 'https:'].includes(base.protocol) || base.username || base.password) throw new Error('Invalid billing site URL');
-    this.catalog = new BillingCatalog(readBillingCatalog(options.catalogJson), options.providers, options.referralProviders, options.subscriptionProviders);
+    let parsed: { json: string | undefined; items: ReturnType<typeof readBillingCatalog> } | null = null;
+    const items = () => {
+      const json = current().catalogJson;
+      if (!parsed || parsed.json !== json) parsed = { json, items: readBillingCatalog(json) };
+      return parsed.items;
+    };
+    items(); // fail fast on an invalid catalog
+    this.catalog = new BillingCatalog(items, options.providers, options.referralProviders, options.subscriptionProviders,
+      () => this.extensions.planOffers);
     this.refunds = new BillingRefundsService(database, options.refundProviders ?? []);
-    this.subscriptions = new BillingSubscriptionsService(database, options.subscriptionProviders ?? [], options.webUrl, this.refunds);
+    this.subscriptions = new BillingSubscriptionsService(database, options.subscriptionProviders ?? [], options.webUrl, this.refunds, this.extensions);
     this.checkout = new HostedCheckoutService({
-      persistence: createCheckoutPersistence(database), providers: options.providers,
-      resolveOffer: async selection => this.catalog.resolve(selection),
+      persistence: createCheckoutPersistence(database, { extensions: this.extensions, configRevision: () => current().configRevision ?? null }),
+      providers: options.providers,
+      resolveOffer: selection => this.catalog.resolve(selection),
       prepareFulfillment: (order, observation) => this.refunds.prepareCheckout(order, observation),
       returnUrls: orderId => {
         const success = new URL('/billing/return', base), cancel = new URL('/billing/return', base);
@@ -54,6 +77,14 @@ export class BillingService {
       },
     });
   }
+  /** Registers the plan catalog as the source of plan offers (called by SubscriptionsModule). */
+  usePlanOffers(offers: BillingPlanOffers): void {
+    if (this.extensions.planOffers && this.extensions.planOffers !== offers) throw new Error('Plan offers are already registered');
+    this.extensions.planOffers = offers;
+  }
+  /** Adds same-transaction fulfillment hooks (for example plan entitlement write-back). */
+  useFulfillmentHooks(hooks: BillingFulfillmentHooks): void { this.extensions.register(hooks); }
+
   async present(order: HostedCheckoutOrder) {
     const refund = await readOrderRefundSummary(this.database, order);
     if (order.offer.mode !== 'subscription') return { ...publicCheckoutOrder(order), refund };

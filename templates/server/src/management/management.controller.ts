@@ -59,7 +59,8 @@ export class ManagementController {
   ) {
     return result(() => this.management.list('orders', query));
   }
-  @Get('subscriptions')
+  // Provider-billed subscription records. `/management/subscriptions` is user plan subscriptions (RFC 8.3).
+  @Get('billing-subscriptions')
   @Permissions('billing:query')
   @Header('Cache-Control', 'private, no-store')
   subscriptions(@Query() query: Record<string, unknown>) {

@@ -34,6 +34,26 @@ function stripeFixture() {
 }
 
 describe('Stripe hosted catalog protocol', () => {
+  it('quotes the Stripe Price read-only when the client exposes prices', async () => {
+    const f = stripeFixture();
+    expect(f.adapter.quote).toBeUndefined();
+    const prices = { retrieve: vi.fn(async () => ({ id: 'catalog-1', livemode: false, active: true, currency: 'usd', unit_amount: 2900, type: 'one_time' })) };
+    const client = { checkout: { sessions: { create: f.create, retrieve: f.retrieve } }, webhooks: { constructEvent: f.constructEvent }, prices } as unknown as Pick<Stripe, 'checkout' | 'webhooks' | 'prices'>;
+    const adapter = createStripeHostedCheckoutAdapter({ client, accountScope: 'stripe:test:merchant', livemode: false });
+    const offer = { version: 'v1', catalogReference: 'catalog-1', mode: 'payment' as const, money: { amount: '29.00', currency: 'USD' }, description: 'x' };
+    expect(await adapter.quote!(offer)).toEqual({ money: { amount: '29.00', currency: 'USD' }, mode: 'payment' });
+    expect(prices.retrieve).toHaveBeenCalledWith('catalog-1');
+    prices.retrieve.mockResolvedValueOnce({ id: 'catalog-1', livemode: false, active: true, currency: 'usd', unit_amount: 1990, type: 'recurring' });
+    expect(await adapter.quote!(offer)).toEqual({ money: { amount: '19.90', currency: 'USD' }, mode: 'subscription' });
+    prices.retrieve.mockResolvedValueOnce({ id: 'catalog-1', livemode: false, active: true, currency: 'usd', unit_amount: null as unknown as number, type: 'one_time' });
+    expect(await adapter.quote!(offer)).toBeNull();
+    prices.retrieve.mockResolvedValueOnce({ id: 'catalog-1', livemode: false, active: false, currency: 'usd', unit_amount: 2900, type: 'one_time' });
+    await expect(adapter.quote!(offer)).rejects.toMatchObject({ code: 'conflict' });
+    prices.retrieve.mockResolvedValueOnce({ id: 'catalog-1', livemode: true, active: true, currency: 'usd', unit_amount: 2900, type: 'one_time' });
+    await expect(adapter.quote!(offer)).rejects.toMatchObject({ code: 'verification_failed' });
+    expect(f.create).not.toHaveBeenCalled();
+  });
+
   it('forwards server-side price, fixed returns and persisted idempotency without rebuilding price_data', async () => {
     const f = stripeFixture(); await f.adapter.create(order);
     expect(f.create).toHaveBeenCalledWith({ mode: 'payment', client_reference_id: 'order-1',

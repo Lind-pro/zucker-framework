@@ -13,4 +13,10 @@ describe('cookie refresh transport', () => {
     vi.spyOn(axios, 'post').mockResolvedValue({ data: { result: {} } });
     await expect(createCookieRefresh('/auth/refresh')()).rejects.toThrow('Invalid access-token');
   });
+  it('attaches the HTTP status to a malformed 200 and forwards the abort signal', async () => {
+    const post = vi.spyOn(axios, 'post').mockResolvedValue({ status: 200, data: { result: {} } });
+    const controller = new AbortController();
+    await expect(createCookieRefresh('/auth/refresh')(controller.signal)).rejects.toMatchObject({ status: 200 });
+    expect(post).toHaveBeenCalledWith('/auth/refresh', {}, { withCredentials: true, signal: controller.signal });
+  });
 });

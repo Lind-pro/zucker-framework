@@ -85,7 +85,7 @@ run('subscription HTTP and durable reconciliation contract', () => {
     const module = await Test.createTestingModule({ imports: [
       ZuckerCrudModule.forRootAsync({ useFactory: () => db }),
       ZuckerAuthModule.forRoot({ jwtSecret: 'synthetic-subscription-http-secret-long-only', registerControllers: false }),
-      ZuckerRateLimiterModule.forRoot({ limiters: { accounts: { points: 2000, duration: 60 }, 'api-default': { points: 2000, duration: 60 }, billing: { points: 2000, duration: 60 } } }), AccountModule,
+      ZuckerRateLimiterModule.forRoot({ limiters: { accounts: { points: 2000, duration: 60 }, 'session-refresh': { points: 2000, duration: 60 }, 'session-refresh-network': { points: 2000, duration: 60 }, 'session-read': { points: 2000, duration: 60 }, 'api-default': { points: 2000, duration: 60 }, billing: { points: 2000, duration: 60 } } }), AccountModule,
     ], controllers: [BillingSubscriptionsController], providers: [{ provide: BillingService, useValue: { subscriptions } },
       { provide: APP_GUARD, useClass: AccountGuard }, { provide: APP_GUARD, useClass: PermissionsGuard }] })
       .overrideProvider(ACCOUNT_MAILER).useValue(mailer).compile();

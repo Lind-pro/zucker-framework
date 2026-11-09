@@ -24,11 +24,16 @@ import {
   UseGuards,
   Logger,
   BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import { NotFoundException } from '@zucker-framework/core';
 import { JwtAuthGuard, PermissionsGuard, Permissions, PermissionService, PermissionSyncService } from '@zucker-framework/auth';
 import { DATABASE_ADAPTER } from '@zucker-framework/crud';
 import type { DatabaseAdapter } from '@zucker-framework/core';
+import { adminPage, toAdminWhere, type AdminQueryFilterOptions } from '../query-filter';
+
+/** Filterable permission fields (allow-list). */
+export const PERMISSION_FILTER: AdminQueryFilterOptions = { eq: ['id', 'name', 'status'], like: ['id', 'name', 'description'] };
 
 /** Flat DB record for a permission (not the interface with runtime methods). */
 interface PermissionRecord {
@@ -111,15 +116,13 @@ export class PermissionsController {
   @Post('_query')
   @HttpCode(HttpStatus.OK)
   async query(@Body() body: QueryRequest): Promise<PageResult<PermissionRecord>> {
-    const pageIndex = body.pageIndex ?? 0;
-    const pageSize = body.pageSize ?? 10;
-    const filter = body.filter ?? {};
-
-    const allRecords = await this.loadAll(filter);
-    const total = allRecords.length;
-    const start = pageIndex * pageSize;
-    const data = allRecords.slice(start, start + pageSize);
-
+    const { pageIndex, pageSize } = adminPage(body);
+    const filter = toAdminWhere(body.filter, PERMISSION_FILTER);
+    const permissions = this.db.model('permissions');
+    const [data, total] = await Promise.all([
+      permissions.findMany({ where: filter, orderBy: [{ id: 'asc' }], skip: pageIndex * pageSize, take: pageSize }) as Promise<PermissionRecord[]>,
+      permissions.count({ where: filter }),
+    ]);
     return { data, total, pageIndex, pageSize };
   }
 
@@ -129,8 +132,7 @@ export class PermissionsController {
   @Post('_count')
   @HttpCode(HttpStatus.OK)
   async count(@Body() body: { filter?: Record<string, unknown> }): Promise<CountResult> {
-    const records = await this.loadAll(body.filter ?? {});
-    return { total: records.length };
+    return { total: await this.db.model('permissions').count({ where: toAdminWhere(body.filter, PERMISSION_FILTER) }) };
   }
 
   /**
@@ -183,9 +185,14 @@ export class PermissionsController {
   @Permissions('permissions:add')
   async create(@Body() body: unknown): Promise<PermissionRecord> {
     const input = permissionInput(body);
-    const created = await this.db
-      .model('permissions')
-      .create({ data: { actions: [], status: true, ...input } });
+    let created: unknown;
+    try {
+      created = await this.db.model('permissions').create({ data: { actions: [], status: true, ...input } });
+    } catch (error) {
+      // The permission code is the primary key; a duplicate is a client conflict, not a server fault.
+      if ((error as { code?: unknown })?.code === 'P2002') throw new ConflictException(`Permission ${String(input.id)} already exists`);
+      throw error;
+    }
 
     // Invalidate permission cache so new permissions are immediately effective
     this.permissionService.invalidatePermissionCache();
