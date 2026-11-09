@@ -1,5 +1,12 @@
 # @zucker-framework/fe-auth
 
+## 1.0.17
+
+### Patch Changes
+
+- Add session binding for browser clients: `jwtSessionKey(claims)` identifies a session by application-chosen JWT claims, `acceptsSessionToken` accepts token rotation only within the same session, `sessionIdentity` exposes the comparison key, and `createSessionRequestScope` aborts in-flight requests when the user or session changes while keeping them alive across token rotation. Extracted from Zucker Copyright, where admin and landing previously carried their own copy.
+- @zucker-framework/fe-storage@1.0.17
+
 ## 1.0.16
 
 ### Patch Changes

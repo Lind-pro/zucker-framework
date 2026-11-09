@@ -1,10 +1,9 @@
 #!/bin/sh
-# 推送 main 之前的本地门。main 的 CI 不再重复 test / lint / 持久化契约（见 docs/package-release.md），
-# 所以这里是它们唯一的执行点：任一失败即拒绝推送。
+# 推送 main 之前的本地门。main 的 CI 不再重复 test / lint（见 docs/package-release.md），
+# 所以这里是它们唯一的执行点：任一失败即拒绝推送。持久化契约（PostgreSQL/Redis）由
+# pull request 的 pr-checks.yml 运行，也可手动执行 scripts/verify-nas-integration.mjs，不阻塞推送。
 #
 # 可选环境变量：
-#   ZUCKER_NAS_ENV_FILE  含 NAS_TEST_ADMIN_DATABASE_URL / NAS_TEST_REDIS_URL 的私密文件，
-#                        默认 ~/.config/zucker-framework/nas.env；缺失时明确失败，不静默跳过。
 #   ZUCKER_SKIP_PREPUSH  只允许用于纯文档/流程提交（见 package-release.md 的记录要求）。
 set -eu
 
@@ -22,7 +21,6 @@ fi
 
 root="$(git rev-parse --show-toplevel)"
 cd "$root"
-nas_env="${ZUCKER_NAS_ENV_FILE:-$HOME/.config/zucker-framework/nas.env}"
 
 step() { printf '\n▶ pre-push: %s\n' "$1" >&2; }
 
@@ -39,12 +37,6 @@ pnpm test
 step "lint"
 pnpm lint
 
-step "durable runtime contracts (NAS)"
-if [ ! -r "$nas_env" ]; then
-  echo "pre-push: 找不到 NAS 配置 $nas_env（可用 ZUCKER_NAS_ENV_FILE 指定）。持久化契约必须在本地跑过才能推 main。" >&2
-  exit 1
-fi
-node scripts/verify-nas-integration.mjs --env-file "$nas_env"
 
 step "package artifacts (same check as CI)"
 # 该脚本拒绝覆盖已有输出目录，每次用新目录，保留旧的评审产物。

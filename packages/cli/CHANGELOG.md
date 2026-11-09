@@ -1,5 +1,11 @@
 # @zucker-framework/cli
 
+## 1.0.17
+
+### Patch Changes
+
+- @zucker-framework/ai-access@1.0.17
+
 ## 1.0.16
 
 ### Patch Changes

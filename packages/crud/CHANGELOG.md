@@ -1,5 +1,13 @@
 # @zucker-framework/crud
 
+## 1.0.17
+
+### Patch Changes
+
+- @zucker-framework/cache@1.0.17
+  - @zucker-framework/core@1.0.17
+  - @zucker-framework/event@1.0.17
+
 ## 1.0.16
 
 ### Patch Changes

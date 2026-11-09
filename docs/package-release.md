@@ -57,14 +57,15 @@ second SDK merely because a consumer uses the reliability wrapper.
    verification, bundle upload). Skipped jobs, PR runs and other commits do not
    satisfy this requirement. The publisher validates job completion through
    GitHub’s API for the current attempt.
-   Unit tests, lint and the PostgreSQL/Redis durable-runtime contracts are **not**
-   part of the main-branch pipeline. They run locally in `.githooks/pre-push`
-   before any push to `main` (build, legal/content checks, `pnpm test`, `pnpm lint`,
-   `verify-nas-integration.mjs` against the designated NAS, and the same
-   `verify-package-artifacts` check CI performs) and are repeated on pull requests
-   by `pr-checks.yml`. The hook refuses the push when any check fails or when the
-   NAS configuration file is missing; `ZUCKER_SKIP_PREPUSH=1` is permitted only
+   Unit tests and lint are **not** part of the main-branch pipeline. They run
+   locally in `.githooks/pre-push` before any push to `main` (build, legal/content
+   checks, `pnpm test`, `pnpm lint`, and the same `verify-package-artifacts` check
+   CI performs) and are repeated on pull requests by `pr-checks.yml`. The hook
+   refuses the push when any check fails; `ZUCKER_SKIP_PREPUSH=1` is permitted only
    for commits that change no package bytes, and must be noted in the commit.
+   The PostgreSQL/Redis durable-runtime contracts no longer gate a `main` push
+   (maintainer decision, 2026-11-09): they run on pull requests in `pr-checks.yml`
+   and can be run manually against the NAS (see below).
 3. The npm account has permission to publish to the `zucker-framework` organization. The
    current target is public packages at `https://registry.npmjs.org/`, retaining
    `@zucker-framework/*`. Owning a GitHub namespace does not establish npm scope permission.
@@ -88,10 +89,9 @@ job retains the verified tarballs and consumer report under
 `zucker-framework-ci-<run-id>-<attempt>`. The preparation and publication workflows
 download these artifacts; neither rebuilds the framework or repacks the packages.
 The existing CI-only PostgreSQL/Redis services remain isolated from application
-databases and are used only by `pr-checks.yml`. Before a `main` push the same
-contract suites run against the designated NAS through the pre-push hook
-(`scripts/verify-nas-integration.mjs`, private `--env-file` under
-`~/.config/zucker-framework/nas.env` or `ZUCKER_NAS_ENV_FILE`).
+databases and are used only by `pr-checks.yml`. The same contract suites can be
+run manually against the designated NAS with `scripts/verify-nas-integration.mjs`
+and a private `--env-file`; they do not gate a `main` push.
 
 The following commands remain useful for local review:
 
@@ -371,7 +371,8 @@ runtime contracts.
 
 ## NAS integration verification
 
-Local integration validation must use the user's designated NAS
+This verification is optional and manual; it is not part of the pre-push gate.
+When it is run, local integration validation must use the user's designated NAS
 services and approved test database/schema and Redis namespace. Do not create
 replacement local services or point destructive test fixtures at an application
 database. A skipped integration test is not evidence for NAS compatibility.
