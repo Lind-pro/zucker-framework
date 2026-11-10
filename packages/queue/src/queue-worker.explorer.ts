@@ -38,6 +38,10 @@ export class QueueWorkerExplorer implements OnApplicationBootstrap {
   ) {}
 
   onApplicationBootstrap(): void {
+    // Collect and validate everything first: registering starts workers, so a duplicate found
+    // halfway through would otherwise leave earlier workers running after bootstrap failed.
+    const found: Array<DiscoveredQueueWorker & { run: (job: QueueWorkerJob<unknown>) => Promise<unknown> }> = [];
+    const seenInstances = new Map<object, Set<string>>();
     for (const wrapper of this.discoveryService.getProviders()) {
       const instance = wrapper.instance as Record<string, unknown> | undefined;
       if (!instance || typeof instance !== 'object' || wrapper.isNotMetatype) continue;
@@ -48,20 +52,68 @@ export class QueueWorkerExplorer implements OnApplicationBootstrap {
         if (typeof method !== 'function') continue;
         const options = this.reflector.get<QueueWorkerOptions | undefined>(QUEUE_WORKER_KEY, method);
         if (!options) continue;
+        // The same instance reachable through several wrappers (aliases) is one worker.
+        const methods = seenInstances.get(instance) ?? new Set<string>();
+        if (methods.has(methodName)) continue;
+        methods.add(methodName);
+        seenInstances.set(instance, methods);
         const target = `${instance.constructor?.name ?? 'provider'}.${methodName}`;
-        this.discovered.push({ queue: options.queue, concurrency: options.concurrency, target });
-        if (!this.workerHost) {
-          this.logger.warn(
-            `@QueueWorker("${options.queue}") on ${target} will not run: no BullMqWorkerHost configured (ZuckerQueueModule.forRoot({ workerHost })).`,
-          );
-          continue;
+        const existing = found.find((w) => w.queue === options.queue);
+        if (existing) {
+          const message =
+            `Duplicate @QueueWorker("${options.queue}"): ${existing.target} and ${target}` +
+            (existing.target === target ? ' (the provider is instantiated in more than one module)' : '') +
+            '. Each queue may have one worker method.';
+          // Without a worker host nothing runs (as before, only warn); with one it is fatal.
+          if (!this.workerHost) {
+            this.logger.warn(message);
+            continue;
+          }
+          throw new Error(message);
         }
-        this.workerHost.register({
-          queueName: options.queue,
+        found.push({
+          queue: options.queue,
           concurrency: options.concurrency,
-          handler: (job: QueueWorkerJob<unknown>) =>
-            (method as (job: QueueWorkerJob<unknown>) => Promise<unknown>).call(instance, job),
+          target,
+          run: (job) => (method as (job: QueueWorkerJob<unknown>) => Promise<unknown>).call(instance, job),
         });
+      }
+    }
+    this.warnAboutControllers();
+
+    for (const worker of found) {
+      this.discovered.push({ queue: worker.queue, concurrency: worker.concurrency, target: worker.target });
+      if (!this.workerHost) {
+        this.logger.warn(
+          `@QueueWorker("${worker.queue}") on ${worker.target} will not run: no BullMqWorkerHost configured (ZuckerQueueModule.forRoot({ workerHost })).`,
+        );
+        continue;
+      }
+      this.workerHost.register({
+        queueName: worker.queue,
+        concurrency: worker.concurrency,
+        handler: worker.run,
+      });
+    }
+  }
+
+  /** `@QueueWorker` is only honoured on providers; say so instead of ignoring controller methods. */
+  private warnAboutControllers(): void {
+    const getControllers = (this.discoveryService as { getControllers?: () => Array<{ instance?: unknown }> })
+      .getControllers;
+    if (typeof getControllers !== 'function') return;
+    for (const wrapper of getControllers.call(this.discoveryService)) {
+      const instance = wrapper.instance as Record<string, unknown> | undefined;
+      if (!instance || typeof instance !== 'object') continue;
+      const prototype = Object.getPrototypeOf(instance) as object | null;
+      if (!prototype) continue;
+      for (const methodName of this.metadataScanner.getAllMethodNames(prototype)) {
+        const method = instance[methodName];
+        if (typeof method !== 'function') continue;
+        if (!this.reflector.get<QueueWorkerOptions | undefined>(QUEUE_WORKER_KEY, method)) continue;
+        this.logger.warn(
+          `@QueueWorker on controller method ${instance.constructor?.name ?? 'controller'}.${methodName} is ignored: move it to a provider.`,
+        );
       }
     }
   }

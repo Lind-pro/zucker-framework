@@ -202,13 +202,21 @@ export function AIModelsPage() {
             autoComplete: 'new-password',
           },
           { name: 'baseUrl', label: t('ai.baseUrl'), maxLength: 500 },
-          // The catalog cannot clear a stored number (it rejects null), so once set the field stays
-          // required on edit instead of being dropped from the PUT while the dialog says "saved".
-          { name: 'temperature', label: t('ai.temperature'), type: 'number', min: 0, max: 2, required: record?.temperature != null },
-          { name: 'maxTokens', label: t('ai.maxTokens'), type: 'integer', min: 1, required: record?.maxTokens != null },
+          // Clearing a stored number on edit sends null, which the catalog accepts since 1.0.19.
+          { name: 'temperature', label: t('ai.temperature'), type: 'number', min: 0, max: 2 },
+          { name: 'maxTokens', label: t('ai.maxTokens'), type: 'integer', min: 1 },
           { name: 'isEnabled', label: t('ai.enabled'), type: 'switch' },
           { name: 'description', label: t('common.description'), type: 'textarea', wide: true },
         ]}
+        validate={(values) => {
+          // The catalog refuses to keep the stored key when the destination changes (it would
+          // send the key to a new host), so ask for it here instead of failing with a 400.
+          if (!record || (typeof values.apiKey === 'string' && values.apiKey)) return {};
+          const destinationChanged =
+            values.provider !== record.provider ||
+            (String(values.baseUrl ?? '').trim() || null) !== (record.baseUrl || null);
+          return destinationChanged ? { apiKey: t('ai.apiKeyReenter') } : {};
+        }}
         onSubmit={async (values) => {
           const body: Record<string, unknown> = {
             name: String(values.name).trim(),
@@ -218,8 +226,14 @@ export function AIModelsPage() {
             description: String(values.description ?? ''),
             isEnabled: values.isEnabled === true,
           };
-          if (values.temperature !== '' && values.temperature != null) body.temperature = Number(values.temperature);
-          if (values.maxTokens !== '' && values.maxTokens != null) body.maxTokens = Number(values.maxTokens);
+          const numberOrClear = (value: unknown, stored: unknown): number | null | undefined => {
+            if (value !== '' && value != null) return Number(value);
+            return record && stored != null ? null : undefined;
+          };
+          const temperature = numberOrClear(values.temperature, record?.temperature);
+          const maxTokens = numberOrClear(values.maxTokens, record?.maxTokens);
+          if (temperature !== undefined) body.temperature = temperature;
+          if (maxTokens !== undefined) body.maxTokens = maxTokens;
           // An empty key on edit keeps the stored secret; it is never echoed back into the form.
           if (typeof values.apiKey === 'string' && values.apiKey) body.apiKey = values.apiKey;
           if (record) await api.put(`${path}/${enc(record.id)}`, body);

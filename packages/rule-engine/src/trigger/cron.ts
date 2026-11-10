@@ -9,8 +9,18 @@
  * Each field accepts `*`, `?` (day fields), numbers, ranges `a-b`, steps `* /n` / `a-b/n` / `a/n`
  * and comma lists. Month and day-of-week accept English three-letter names; day-of-week accepts
  * 0-7 (0 and 7 = Sunday). When both day-of-month and day-of-week are restricted, a day matches
- * if either matches (Vixie cron semantics). Anything else (`L`, `W`, `#`) is rejected rather
- * than silently approximated.
+ * if either matches (Vixie cron semantics). As in Vixie cron, a day field whose text starts with
+ * `*` (including steps such as `* /2`) counts as unrestricted for that rule, so `0 0 * /2 * 1`
+ * means "Mondays". Name ranges must ascend (`MON-FRI`); wrap-around ranges such as `FRI-SUN` are
+ * rejected (write `FRI-SAT,SUN`). Anything else (`L`, `W`, `#`) is rejected rather than silently
+ * approximated.
+ *
+ * Daylight-saving transitions (Vixie cron semantics) for fixed-time schedules, i.e. when neither
+ * the minute nor the hour field starts with `*`:
+ * - a local time that occurs twice (clocks go back) fires only on its first occurrence;
+ * - a local time skipped by a forward jump fires once, at the first instant after the jump.
+ * Schedules with a wildcard minute or hour (`* /5 * * * *`, `0 * * * *`) simply follow elapsed
+ * local time and are not adjusted.
  */
 export interface CronSchedule {
   readonly expression: string;
@@ -57,7 +67,9 @@ function parseValue(raw: string, spec: FieldSpec): number {
 function parseField(raw: string, spec: FieldSpec, allowQuestion: boolean): ParsedField {
   if (raw === '?' && allowQuestion) raw = '*';
   const values = new Set<number>();
-  const wildcard = raw === '*';
+  // Vixie cron: a field starting with `*` (`*`, `*/n`) is unrestricted for the day-of-month /
+  // day-of-week OR rule and marks a "wildcard" (interval) schedule for DST handling.
+  const wildcard = raw.startsWith('*');
   for (const part of raw.split(',')) {
     if (part === '') throw new Error(`Invalid cron ${spec.name} field: ${raw}`);
     const [rangePart, stepPart, extra] = part.split('/');
@@ -134,6 +146,13 @@ function makeClock(timezone?: string): (ms: number) => WallClock {
 }
 
 const MAX_SEARCH_MS = 5 * 366 * 24 * 3600 * 1000;
+/** Longest forward clock jump inspected for skipped fire times. */
+const MAX_GAP_MS = 4 * 3600 * 1000;
+
+/** Local wall-clock time as if it were UTC (milliseconds), for ordering and offsets. */
+function wallMs(c: WallClock): number {
+  return Date.UTC(c.year, c.month - 1, c.day, c.hour, c.minute, c.second);
+}
 
 export function parseCron(expression: string, timezone?: string): CronSchedule {
   if (typeof expression !== 'string' || expression.trim() === '') {
@@ -166,14 +185,64 @@ export function parseCron(expression: string, timezone?: string): CronSchedule {
     return domOk || dowOk;
   };
 
+  const timeMatches = (c: WallClock): boolean =>
+    hour.values.has(c.hour) && minute.values.has(c.minute) && second.values.has(c.second);
+  const fixedTime = !hour.wildcard && !minute.wildcard;
+  const offsetAt = (ms: number): number => wallMs(clock(ms)) - ms;
+
+  /** First whole second in (lo, hi] whose UTC offset differs from `loOffset`. */
+  const transitionAt = (lo: number, hi: number, loOffset: number): number => {
+    while (hi - lo > 1000) {
+      const mid = lo + Math.floor((hi - lo) / 2000) * 1000;
+      if (offsetAt(mid) === loOffset) lo = mid;
+      else hi = mid;
+    }
+    return hi;
+  };
+
+  /** Whether a matching local time later than `afterWall` was skipped by the jump at `jumpAt`. */
+  const skippedMatch = (jumpAt: number, afterWall: number): boolean => {
+    const from = wallMs(clock(jumpAt - 1000)) + 1000;
+    const to = Math.min(wallMs(clock(jumpAt)), from + MAX_GAP_MS);
+    for (let w = from; w < to; w += 1000) {
+      if (w <= afterWall) continue;
+      const d = new Date(w);
+      const c: WallClock = {
+        year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate(),
+        hour: d.getUTCHours(), minute: d.getUTCMinutes(), second: d.getUTCSeconds(), dow: d.getUTCDay(),
+      };
+      if (dayMatches(c) && timeMatches(c)) return true;
+    }
+    return false;
+  };
+
   return {
     expression,
     next(after: Date): Date | undefined {
+      const afterMs = Math.floor(after.getTime() / 1000) * 1000;
+      const afterWall = wallMs(clock(afterMs));
       // Start at the next whole second.
-      let t = Math.floor(after.getTime() / 1000) * 1000 + 1000;
+      let t = afterMs + 1000;
+      let prevT = afterMs;
+      let prevOffset = afterWall - afterMs;
       const limit = t + MAX_SEARCH_MS;
       while (t <= limit) {
         const c = clock(t);
+        const wall = wallMs(c);
+        const offset = wall - t;
+        if (fixedTime && offset > prevOffset) {
+          // Clocks jumped forward between prevT and t: fire once right after the jump if a
+          // matching local time fell into the skipped interval.
+          const jumpAt = transitionAt(prevT, t, prevOffset);
+          if (skippedMatch(jumpAt, afterWall)) return new Date(jumpAt);
+        }
+        prevT = t;
+        prevOffset = offset;
+        if (fixedTime && wall <= afterWall) {
+          // Clocks went back: this local time already occurred (and was handled) before `after`.
+          t += afterWall - wall + 1000;
+          continue;
+        }
         const secondsIntoDay = c.hour * 3600 + c.minute * 60 + c.second;
         if (!dayMatches(c)) {
           // Skip to (about) the next local midnight; keep an hour of slack for DST days.

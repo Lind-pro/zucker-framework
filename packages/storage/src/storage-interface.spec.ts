@@ -40,3 +40,16 @@ describe('isFileDenied', () => {
     expect(isFileDenied('shell.png ', undefined, { allowExtensions: ['png'] })).toBe(true);
   });
 });
+
+describe('DANGEROUS_EXTENSIONS additions', () => {
+  it.each(['html', 'htm', 'xhtml', 'shtml', 'mjs', 'hta', 'swf', 'xml'])('denies .%s by default', (ext) => {
+    expect(isFileDenied(`file.${ext}`, undefined, {})).toBe(true);
+    expect(isFileDenied(`FILE.${ext.toUpperCase()}`, undefined, {})).toBe(true);
+  });
+
+  it('allowDangerousExtensions: ["html"] allows .html but not other dangerous types', () => {
+    expect(isFileDenied('page.html', 'text/html', { allowDangerousExtensions: ['html'] })).toBe(false);
+    expect(isFileDenied('page.htm', 'text/html', { allowDangerousExtensions: ['html'] })).toBe(true);
+    expect(isFileDenied('a.exe', undefined, { allowDangerousExtensions: ['html'] })).toBe(true);
+  });
+});

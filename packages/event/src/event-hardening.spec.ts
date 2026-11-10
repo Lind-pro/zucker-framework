@@ -5,7 +5,7 @@ import { DefaultTopicEventBus, matchesTopic } from './topic-event-bus';
 import { vetoEvent, isEventVeto } from './event-veto';
 import { UnifiedEventBus } from './unified-event-bus';
 import { CreatorEventListener } from './entity-event-listener';
-import { createEntityEvent, EntityEventPhase, EntityEventType } from './entity-events';
+import { createEntityEvent, EntityEventPhase, EntityEventType, ENTITY_IS_NEW, markEntityIsNew, isNewSaveEntity } from './entity-events';
 import { RedisReplayEventBus, type ReplayEventRedisClient } from './redis-replay-event-bus';
 
 describe('DefaultTopicEventBus error policy', () => {
@@ -75,6 +75,49 @@ describe('CreatorEventListener (L6)', () => {
     const created: Record<string, unknown> = { creatorId: 'imported' };
     await listener.onEvent(createEntityEvent(EntityEventType.CREATE, EntityEventPhase.PREPARE, 'row', created));
     expect(created.creatorId).toBe('imported');
+  });
+});
+
+describe('SAVE new-row marker (N-M9)', () => {
+  const user = () => ({ id: 'me', name: 'Me' });
+  const prepare = (entity: unknown) => createEntityEvent(EntityEventType.SAVE, EntityEventPhase.PREPARE, 'row', entity);
+
+  it('markEntityIsNew is non-enumerable and isNewSaveEntity reads it, falling back to !id', () => {
+    const entity: Record<string, unknown> = { id: 'client-id', name: 'a' };
+    expect(isNewSaveEntity(entity)).toBe(false); // no marker, has an id: update
+    expect(isNewSaveEntity({ name: 'b' })).toBe(true); // no marker, no id: create
+    markEntityIsNew(entity, true);
+    expect(isNewSaveEntity(entity)).toBe(true);
+    expect(Object.keys(entity)).toEqual(['id', 'name']);
+    expect(JSON.stringify(entity)).toBe('{"id":"client-id","name":"a"}');
+    expect(Object.getOwnPropertySymbols(entity)).toEqual([ENTITY_IS_NEW]);
+    markEntityIsNew(entity, false);
+    expect(isNewSaveEntity(entity)).toBe(false);
+    expect(ENTITY_IS_NEW).toBe(Symbol.for('zucker.entity.isNew'));
+  });
+
+  it('fills creator fields for a marked-new entity with a client-generated id and only modifier fields for existing rows', async () => {
+    const listener = new CreatorEventListener(user);
+    const fresh: Record<string, unknown> = { id: 'new', creatorId: 'victim' };
+    const existing: Record<string, unknown> = { id: 'existing', creatorId: 'victim', createdAt: new Date(0) };
+    markEntityIsNew(fresh, true);
+    markEntityIsNew(existing, false);
+    await listener.onEvent(prepare([fresh, existing]));
+
+    expect(fresh).toMatchObject({ creatorId: 'me', creatorName: 'Me' });
+    expect(fresh.createdAt).toBeInstanceOf(Date);
+    expect(existing).not.toHaveProperty('creatorId');
+    expect(existing).not.toHaveProperty('createdAt');
+    expect(existing.modifierId).toBe('me');
+  });
+
+  it('without a marker an entity with an id is an update and one without an id is a create', async () => {
+    const listener = new CreatorEventListener(user);
+    const withId: Record<string, unknown> = { id: 'x' };
+    const withoutId: Record<string, unknown> = {};
+    await listener.onEvent(prepare([withId, withoutId]));
+    expect(withId).not.toHaveProperty('creatorId');
+    expect(withoutId.creatorId).toBe('me');
   });
 });
 

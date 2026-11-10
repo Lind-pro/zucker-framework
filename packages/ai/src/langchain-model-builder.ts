@@ -16,8 +16,23 @@ export interface LangChainProviderDefaults {
 
 const OFFICIAL_OPENAI_PROVIDERS = new Set(['openai']);
 
+let warnedMissingProvider = false;
+
 function assertEndpointForProvider(provider: string | undefined, baseURL: string | undefined): void {
-  if (!provider || baseURL?.trim()) return;
+  if (baseURL?.trim()) return;
+  if (!provider) {
+    // Opt-in in 1.0.19: without `provider` the key's owner is unknown, so a key for another
+    // provider would be sent to api.openai.com. Warn once; `provider` becomes required later.
+    if (!warnedMissingProvider) {
+      warnedMissingProvider = true;
+      console.warn(
+        '[@zucker-framework/ai] An OpenAI-compatible LangChain model was created without baseURL and without ' +
+          '`provider`; it targets api.openai.com. Pass `provider` so a non-OpenAI key is refused instead. ' +
+          '`provider` will be required in the next minor version.',
+      );
+    }
+    return;
+  }
   if (OFFICIAL_OPENAI_PROVIDERS.has(provider.toLowerCase())) return;
   throw new Error(
     `Provider '${provider}' requires an explicit baseURL; refusing to default to api.openai.com`,

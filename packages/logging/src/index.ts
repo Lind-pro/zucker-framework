@@ -76,6 +76,8 @@ export * from './http-error-logger.interceptor';
 export * from './rejected-request-logger.middleware';
 export { HttpRequestObservationMiddleware, HTTP_REQUEST_OBSERVATION_OPTIONS } from './http-request-observation.middleware';
 export type { HttpRequestObservation, HttpRequestObservationOptions } from './http-request-observation.middleware';
+export { RejectedLogRateLimiter } from './rejected-log-limiter';
+export type { RejectedLogRateLimitOptions, SuppressedRejections } from './rejected-log-limiter';
 
 export { CORRELATION_ID_OPTIONS } from './correlation-id';
 export type { CorrelationIdOptions } from './correlation-id';

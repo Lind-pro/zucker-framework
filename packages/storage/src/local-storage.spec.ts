@@ -351,4 +351,90 @@ describe('LocalFileStorage', () => {
     await expect(storage.uploadStream(failing, 's/bad.txt')).rejects.toThrow('source failed');
     expect(fs.readdirSync(path.join(tmpDir, 's'))).toEqual(['ok.txt']);
   });
+
+  describe('round-2 hardening', () => {
+    const walk = (dir: string): string[] =>
+      fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+        e.isDirectory() ? walk(path.join(dir, e.name)) : [path.join(dir, e.name)],
+      );
+    const tempFiles = (dir: string) => walk(dir).filter((f) => /\.upload-.*\.tmp$/.test(path.basename(f)));
+
+    it('uploads and streams a file whose basename is 255 bytes', async () => {
+      const { Readable } = await import('node:stream');
+      const name = '\u4e2d'.repeat(80) + '.txt'; // 80 * 3 + 4 = 244 bytes
+      expect(Buffer.byteLength(name)).toBe(244);
+      const long = 'a'.repeat(251) + '.txt'; // 255 bytes
+      expect(Buffer.byteLength(long)).toBe(255);
+      for (const base of [name, long]) {
+        expect((await storage.upload(Buffer.from('x'), `u/${base}`)).size).toBe(1);
+        expect((await storage.uploadStream(Readable.from([Buffer.from('yy')]), `s/${base}`)).size).toBe(2);
+        expect(fs.readFileSync(path.join(tmpDir, 's', base), 'utf8')).toBe('yy');
+      }
+      expect(tempFiles(tmpDir)).toEqual([]);
+    });
+
+    it('leaves no temp file after a failing stream', async () => {
+      const { Readable } = await import('node:stream');
+      const failing = new Readable({
+        read() {
+          this.push(Buffer.from('partial'));
+          this.destroy(new Error('boom'));
+        },
+      });
+      await expect(storage.uploadStream(failing, 'f/bad.txt')).rejects.toThrow('boom');
+      expect(tempFiles(tmpDir)).toEqual([]);
+      expect(fs.existsSync(path.join(tmpDir, 'f/bad.txt'))).toBe(false);
+    });
+
+    it('does not list the temp file of an in-flight uploadStream', async () => {
+      const { Readable } = await import('node:stream');
+      const source = new Readable({ read() {} });
+      source.push(Buffer.from('first'));
+      const pending = storage.uploadStream(source, 'p/slow.txt');
+      for (let i = 0; i < 200 && tempFiles(tmpDir).length === 0; i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      expect(tempFiles(tmpDir)).toHaveLength(1);
+      expect((await storage.list('p')).map((f) => f.key)).toEqual([]);
+      source.push(null);
+      await pending;
+      expect((await storage.list('p')).map((f) => path.basename(f.key))).toEqual(['slow.txt']);
+      expect(tempFiles(tmpDir)).toEqual([]);
+    });
+
+    async function failingChunkedComplete() {
+      const uploadId = await storage.initChunkedUpload!('c/final.txt', 2);
+      await storage.uploadChunk!(uploadId, 0, Buffer.from('aa'));
+      await storage.uploadChunk!(uploadId, 1, Buffer.from('bb'));
+      const chunk1 = walk(tmpDir).find((f) => path.basename(f) === 'chunk-1');
+      expect(chunk1).toBeDefined();
+      fs.rmSync(chunk1!);
+      await expect(storage.completeChunkedUpload!(uploadId)).rejects.toThrow();
+      // Let the already-dispatched temp-file open settle before teardown removes the directory.
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+
+    it('completeChunkedUpload with a deleted chunk file throws and leaves no file under the final key', async () => {
+      await failingChunkedComplete();
+      expect(fs.existsSync(path.join(tmpDir, 'c/final.txt'))).toBe(false);
+      expect((await storage.list('c')).map((f) => f.key)).toEqual([]);
+    });
+
+    // IMPLEMENTATION BUG (round 2): the write stream's open races the cleanup rm in
+    // completeChunkedUpload, so a failed assembly can leave an orphan `.upload-*.tmp`.
+    it('completeChunkedUpload failure leaves no temp file on disk', async () => {
+      await failingChunkedComplete();
+      expect(tempFiles(tmpDir)).toEqual([]);
+    });
+
+    it('downloadRange on an empty file: position 0 is an empty range, position 1 is a RangeError', async () => {
+      await storage.upload(Buffer.alloc(0), 'empty.txt');
+      const { stream, size } = await storage.downloadRange!('empty.txt', 0);
+      expect(size).toBe(0);
+      const parts: Buffer[] = [];
+      for await (const part of stream) parts.push(Buffer.from(part));
+      expect(Buffer.concat(parts).length).toBe(0);
+      await expect(storage.downloadRange!('empty.txt', 1)).rejects.toThrow(RangeError);
+    });
+  });
 });

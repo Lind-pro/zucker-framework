@@ -29,6 +29,23 @@ function isUniqueViolation(error: unknown): boolean {
   return code === 'P2002' || code === '23505' || /unique constraint/i.test(String((error as Error)?.message));
 }
 
+/**
+ * Which unique key a violation names, from Prisma `meta.target` / `meta.constraint`, a PostgreSQL
+ * error's `constraint` / `detail`, or the message: 'session' for the order's `stripeSessionId`,
+ * 'other' for any other named key, 'unknown' when the error does not say.
+ */
+function uniqueViolationTarget(error: unknown): 'session' | 'other' | 'unknown' {
+  const e = (error ?? {}) as { meta?: { target?: unknown; constraint?: unknown }; constraint?: unknown; detail?: unknown; message?: unknown };
+  const named = [e.meta?.target, e.meta?.constraint, e.constraint, e.detail]
+    .flat()
+    .filter((value): value is string => typeof value === 'string' && value.length > 0);
+  const fromMessage = /fields?:\s*\(([^)]*)\)|constraint\s+"([^"]+)"/i.exec(String(e.message ?? ''));
+  if (fromMessage) named.push(fromMessage[1] ?? fromMessage[2] ?? '');
+  const texts = named.filter(Boolean);
+  if (!texts.length) return 'unknown';
+  return texts.some((text) => /stripe_?session_?id/i.test(text)) ? 'session' : 'other';
+}
+
 // 浏览器扩展变现服务端核心：激活码授权（激活/权益/撤销/补发）、免费额度账本、
 // Stripe webhook 发码、授权邮件、运营统计。产品维度全部参数化：
 // 产品信息先查 ExtensionProduct 表，未登记时用 options.fallbackProducts 兜底。
@@ -42,6 +59,12 @@ export class ExtensionCore {
   ) {
     if (!options.licenseSecret) {
       throw new Error('ExtensionCore requires a non-empty licenseSecret');
+    }
+    if (options.stripeWebhookSecret && !options.checkout) {
+      this.logger.warn(
+        'Stripe webhook is configured without options.checkout: every paid Checkout session on this Stripe account mints a licence. '
+        + 'Set checkout.allowedPaymentLinks / allowedProducts / accept, or override acceptsCheckout.',
+      );
     }
   }
 
@@ -343,7 +366,9 @@ export class ExtensionCore {
         return created;
       });
     } catch (error) {
-      if (isUniqueViolation(error)) {
+      // Only a conflict on the order's stripeSessionId is a duplicate delivery. Any other unique key
+      // (e.g. a licence codeHash collision) recorded nothing: rethrow so Stripe retries the event.
+      if (isUniqueViolation(error) && (await this.isDuplicateSession(error, sessionId))) {
         return { received: true, duplicated: true };
       }
       throw error;
@@ -375,6 +400,16 @@ export class ExtensionCore {
       });
 
     return { received: true };
+  }
+
+  private async isDuplicateSession(error: unknown, sessionId: string): Promise<boolean> {
+    const target = uniqueViolationTarget(error);
+    if (target !== 'unknown') return target === 'session';
+    // The error does not name its key: the committed order row decides.
+    const order = await this.store.extensionOrder
+      .findUnique({ where: { stripeSessionId: sessionId } })
+      .catch(() => null);
+    return !!order;
   }
 
   protected async acceptsCheckout(session: Record<string, any>, product: string): Promise<boolean> {
@@ -528,9 +563,19 @@ export class ExtensionCore {
     }
 
     await this.inTransaction(async (store) => {
-      if (previous && previous.id !== license.id) {
+      // Lock the order (same-value update) and re-read it: a concurrent resend may have repointed it
+      // to its own replacement since `previous` was read. That licence is revoked too, so exactly one
+      // licence of this order stays active.
+      await store.extensionOrder.update({ where: { id }, data: { id } });
+      const current = await store.extensionOrder.findUnique({ where: { id } });
+      const superseded = new Set(
+        [previous?.id, current?.licenseId].filter(
+          (licenseId): licenseId is string => typeof licenseId === 'string' && !!licenseId && licenseId !== license.id,
+        ),
+      );
+      for (const licenseId of superseded) {
         await store.extensionLicense.update({
-          where: { id: previous.id },
+          where: { id: licenseId },
           data: { status: 'revoked' },
         });
       }

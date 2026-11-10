@@ -15,13 +15,20 @@ export interface TimerTriggerConfig {
  * 增加执行次数追踪和验证
  *
  * Fires at the actual cron occurrences (honouring `timezone`). A tick that arrives while the
- * previous handler run is still in flight is skipped, so slow handlers never stack up.
+ * previous handler run is still in flight is skipped, so slow handlers never stack up — also
+ * across `reload()`/`start()`: a run started under the previous configuration still blocks
+ * overlapping ticks of the new one.
+ *
+ * The trigger is process-local: in a cluster every node running the rule fires. Gate the handler
+ * on `ClusterManager.isLeader()` (or take a distributed lock) when a run must happen once per
+ * cluster.
  */
 export class TimerTrigger {
   private readonly logger = new Logger(TimerTrigger.name);
   private timer?: ReturnType<typeof setTimeout>;
   private running = false;
-  private inFlight = false;
+  /** The handler run in progress (kept across generations so a reload cannot overlap it). */
+  private inFlight?: Promise<void>;
   private executionCount = 0;
   private lastExecutionTime?: Date;
   private config?: TimerTriggerConfig;
@@ -42,7 +49,6 @@ export class TimerTrigger {
       `Timer trigger started: cron=${config.cron}${config.timezone ? ` tz=${config.timezone}` : ''}`,
     );
     this.running = true;
-    this.inFlight = false;
     this.executionCount = 0;
     const generation = ++this.generation;
     this.scheduleNext(generation, handler);
@@ -84,23 +90,22 @@ export class TimerTrigger {
     }
     this.executionCount++;
     this.lastExecutionTime = new Date();
-    this.inFlight = true;
     let result: void | Promise<void>;
     try {
       result = handler();
     } catch (error) {
-      this.inFlight = false;
       this.logger.error(`Timer trigger handler error: ${error}`);
       this.afterRun(generation);
       return;
     }
-    Promise.resolve(result)
+    const run: Promise<void> = Promise.resolve(result)
       .catch((error: unknown) => {
         this.logger.error(`Timer trigger handler error: ${error}`);
       })
       .finally(() => {
-        if (generation === this.generation) this.inFlight = false;
+        if (this.inFlight === run) this.inFlight = undefined;
       });
+    this.inFlight = run;
     this.afterRun(generation);
   }
 

@@ -3,6 +3,18 @@ import type { TwoFactorValidator, TwoFactorValidatorProvider } from './two-facto
 import type { VerificationAttemptStore } from '../verification-code';
 
 /**
+ * Shared key/value store for two-factor state (an `ICache` from @zucker-framework/cache fits;
+ * `ttlMs` is milliseconds). With it, the replay guard (last accepted time step) and successful
+ * validations are visible to every instance. Replay protection is read-then-write, so two
+ * replicas receiving the same code at the same instant may both accept it; use a store with
+ * atomic semantics if that matters.
+ */
+export interface TwoFactorStateStore {
+  get(key: string): Promise<unknown>;
+  set(key: string, value: unknown, ttlMs?: number): Promise<void>;
+}
+
+/**
  * TOTP (Time-based One-Time Password) validator.
  * Compatible with Google Authenticator (RFC 6238).
  *
@@ -19,6 +31,7 @@ export class TotpValidator implements TwoFactorValidatorProvider {
   private readonly maxAttempts: number;
   private readonly lockMs: number;
   private readonly attemptStore?: VerificationAttemptStore;
+  private readonly stateStore?: TwoFactorStateStore;
   private secretResolver: (userId: string) => Promise<string | null>;
 
   constructor(options?: {
@@ -32,6 +45,12 @@ export class TotpValidator implements TwoFactorValidatorProvider {
     lockMs?: number;
     /** Shared attempt store (e.g. CacheVerificationAttemptStore) for multi-instance deployments. */
     attemptStore?: VerificationAttemptStore;
+    /**
+     * Shared store for validations and the replay guard (multi-instance deployments). Without
+     * it both are per-process: a code can be replayed on another replica within its window and
+     * a validation on one replica is unknown to the others.
+     */
+    stateStore?: TwoFactorStateStore;
   }) {
     this.period = options?.period ?? 30;
     this.digits = options?.digits ?? 6;
@@ -40,6 +59,7 @@ export class TotpValidator implements TwoFactorValidatorProvider {
     this.maxAttempts = options?.maxAttempts ?? 5;
     this.lockMs = options?.lockMs ?? 15 * 60 * 1000;
     this.attemptStore = options?.attemptStore;
+    this.stateStore = options?.stateStore;
   }
 
   getProvider(): string {
@@ -55,20 +75,16 @@ export class TotpValidator implements TwoFactorValidatorProvider {
         const secret = await this.secretResolver(userId);
         if (!secret) return false;
         const counter = this.matchCounter(code, secret);
-        if (counter === null || counter <= (this.lastCounter.get(userId) ?? -1)) {
+        if (counter === null || counter <= (await this.getLastCounter(userId))) {
           await this.recordFailure(userId);
           return false;
         }
-        this.lastCounter.set(userId, counter);
+        await this.setLastCounter(userId, counter);
         await this.clearFailures(userId);
-        this.pruneValidations();
-        this.validatedUntil.set(cacheKey, Date.now() + timeout);
+        await this.setValidatedUntil(cacheKey, Date.now() + timeout, timeout);
         return true;
       },
-      expired: () => {
-        const expiresAt = this.validatedUntil.get(cacheKey) ?? 0;
-        return expiresAt <= Date.now();
-      },
+      expired: async () => (await this.getValidatedUntil(cacheKey)) <= Date.now(),
     };
   }
 
@@ -135,6 +151,41 @@ export class TotpValidator implements TwoFactorValidatorProvider {
   private async clearFailures(userId: string): Promise<void> {
     if (this.attemptStore) await this.attemptStore.clearFailures(`totp:${userId}`);
     else this.failures.delete(userId);
+  }
+
+  private async getLastCounter(userId: string): Promise<number> {
+    if (this.stateStore) {
+      const value = await this.stateStore.get(`totp:counter:${userId}`);
+      return typeof value === 'number' ? value : -1;
+    }
+    return this.lastCounter.get(userId) ?? -1;
+  }
+
+  private async setLastCounter(userId: string, counter: number): Promise<void> {
+    if (this.stateStore) {
+      // Only steps inside the acceptance window can be replayed; keep the guard that long.
+      const ttlMs = (this.window * 2 + 2) * this.period * 1000;
+      await this.stateStore.set(`totp:counter:${userId}`, counter, ttlMs);
+      return;
+    }
+    this.lastCounter.set(userId, counter);
+  }
+
+  private async setValidatedUntil(cacheKey: string, expiresAt: number, timeout: number): Promise<void> {
+    if (this.stateStore) {
+      if (timeout > 0) await this.stateStore.set(`totp:validated:${cacheKey}`, expiresAt, timeout);
+      return;
+    }
+    this.pruneValidations();
+    this.validatedUntil.set(cacheKey, expiresAt);
+  }
+
+  private async getValidatedUntil(cacheKey: string): Promise<number> {
+    if (this.stateStore) {
+      const value = await this.stateStore.get(`totp:validated:${cacheKey}`);
+      return typeof value === 'number' ? value : 0;
+    }
+    return this.validatedUntil.get(cacheKey) ?? 0;
   }
 
   private pruneValidations(): void {

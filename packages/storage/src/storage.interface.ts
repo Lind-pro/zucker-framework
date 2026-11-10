@@ -75,7 +75,8 @@ export const DANGEROUS_EXTENSIONS: readonly string[] = [
   'dll', 'so', 'dylib',
   'class', 'jar', 'war',
   'htaccess', 'htpasswd',
-  'svg',
+  // Active content a browser renders from the storage origin (stored XSS via a public bucket).
+  'svg', 'html', 'htm', 'xhtml', 'shtml', 'mjs', 'hta', 'swf', 'xml',
 ];
 
 /**

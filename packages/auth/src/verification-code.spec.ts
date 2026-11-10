@@ -1,3 +1,4 @@
+import { describe, it, expect, vi } from 'vitest';
 import { VerificationCodeService, CacheVerificationAttemptStore, VerificationCodeError } from './verification-code';
 import type { VerificationCodeStore } from './verification-code';
 

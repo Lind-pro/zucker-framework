@@ -10,6 +10,7 @@ import {
   HttpStatus,
   Type,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { ApiResponse, ApiOperation } from '@nestjs/swagger';
 import type { CrudEntity } from './crud-entity';
@@ -116,7 +117,15 @@ export interface BaseControllerOptions {
   writePolicy?: CrudWritePolicy;
   /** Max items per createMany / save request (default 1000). */
   maxBatchItems?: number;
+  /**
+   * Max rows a single `PUT batch` / `DELETE batch` may touch. When set, the matching rows are
+   * counted first (with the service's required constraints) and the request fails with 400 above
+   * the limit. Default: no limit (the routes are opt-in).
+   */
+  maxBatchRows?: number;
 }
+
+const WRITE_ROUTES: readonly BaseControllerMethod[] = ['create', 'createMany', 'save', 'saveOrUpdate', 'update', 'updateMany'];
 export function BaseController<T extends CrudEntity>(
   EntityClass: Type<T>,
   options: BaseControllerOptions = {},
@@ -253,7 +262,8 @@ export function BaseController<T extends CrudEntity>(
       @Body('where') where: Record<string, unknown>,
       @Body('data') data: Partial<T>,
     ): Promise<{ count: number }> {
-      const safeWhere = assertSafeBatchWhere(where);
+      const safeWhere = assertSafeBatchWhere(where, this.service.callerQueryPolicy());
+      await this.assertBatchSize(safeWhere);
       return this.service.updateMany(safeWhere, sanitizeWriteBody<T>(data, writePolicy, 'update'));
     }
 
@@ -264,7 +274,17 @@ export function BaseController<T extends CrudEntity>(
     @ApiOperation({ summary: '批量删除记录' })
     @ApiResponse({ status: HttpStatus.OK })
     async deleteMany(@Body('where') where: Record<string, unknown>): Promise<{ count: number }> {
-      return this.service.deleteMany(assertSafeBatchWhere(where));
+      const safeWhere = assertSafeBatchWhere(where, this.service.callerQueryPolicy());
+      await this.assertBatchSize(safeWhere);
+      return this.service.deleteMany(safeWhere);
+    }
+
+    async assertBatchSize(where: Record<string, unknown>): Promise<void> {
+      if (options.maxBatchRows === undefined) return;
+      const matched = await this.service.count(where);
+      if (matched > options.maxBatchRows) {
+        throw new BadRequestException(`Batch matches ${matched} rows; at most ${options.maxBatchRows} allowed`);
+      }
     }
 
     // ===================== Save Routes  =====================
@@ -330,7 +350,7 @@ export function BaseController<T extends CrudEntity>(
   const prototype = BaseControllerHostImpl.prototype;
   const verbs = { GET: Get, POST: Post, PUT: Put, PATCH: Patch, DELETE: Delete };
   for (const name of Object.getOwnPropertyNames(prototype)) {
-    if (name === 'constructor') continue;
+    if (name === 'constructor' || name === 'assertBatchSize') continue;
     const key = name as BaseControllerMethod;
     const route = options.routes?.[key];
     const enabled = options.only
@@ -361,6 +381,15 @@ export function BaseController<T extends CrudEntity>(
   bodyDto('create', (dto) => [dto], options.createDto);
   bodyDto('update', (dto) => [String, dto], options.updateDto);
   bodyDto('saveOrUpdate', (dto) => [dto], options.updateDto ?? options.createDto);
+
+  const writeRoutes = WRITE_ROUTES.filter((key) => Object.hasOwn(prototype, key));
+  if (writeRoutes.length > 0 && !writePolicy.writableFields && !writePolicy.deniedFields?.length && !options.createDto && !options.updateDto) {
+    new Logger('BaseController').warn(
+      `${EntityClass.name}: write routes [${writeRoutes.join(', ')}] accept every non-audit scalar field ` +
+        '(ownerId, tenantId, role, status, ...). Configure writePolicy.writableFields, writePolicy.deniedFields ' +
+        'or createDto/updateDto with a whitelisting ValidationPipe.',
+    );
+  }
 
   return BaseControllerHostImpl as unknown as Type<BaseControllerHost<T>>;
 }

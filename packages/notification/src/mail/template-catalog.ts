@@ -1,5 +1,6 @@
 import { BadRequestException, Logger, NotFoundException } from '@nestjs/common';
 import {
+  escapeHtml,
   parseTemplate,
   parseTemplateWithMapper,
   safeHtmlLinkHref,
@@ -8,8 +9,25 @@ import {
 } from '@zucker-framework/core';
 
 /** Placeholder at the start of a URL-valued attribute (href/src/action/formaction/xlink:href). */
-const URL_ATTRIBUTE_VARIABLE = /(\b(?:href|src|action|formaction|xlink:href)\s*=\s*["']?\s*)\{\{(\w+)\}\}/gi;
+const URL_ATTRIBUTE_VARIABLE = /(\b(href|src|action|formaction|xlink:href)\s*=\s*["']?\s*)\{\{(\w+)\}\}/gi;
 const URL_MARKER = '__zucker_url_attr__';
+const SRC_MARKER = '__zucker_src_attr__';
+const HREF_MARKER = '__zucker_href_attr__';
+/** Inline raster image (no SVG: it is a document format) for `src`. */
+const SAFE_DATA_IMAGE = /^data:image\/(?:png|jpeg|gif|webp);base64,[A-Za-z0-9+/=\s]+$/i;
+
+/**
+ * Scheme check for a variable that starts a URL attribute. Every attribute accepts what
+ * `safeHtmlLinkHref` accepts (http, https, mailto); `href` also accepts `tel:`, and `src` accepts
+ * `cid:` (inline MIME parts) and base64 raster `data:image/` values. Anything else renders `#`.
+ */
+function safeUrlAttribute(kind: 'src' | 'href' | 'other', value: string): string {
+  const trimmed = value.trim();
+  if (kind === 'href' && /^tel:[0-9+().\-\s]+$/i.test(trimmed)) return escapeHtml(trimmed);
+  if (kind === 'src' && (/^cid:[^\s"'<>]+$/i.test(trimmed) || SAFE_DATA_IMAGE.test(trimmed)))
+    return escapeHtml(trimmed);
+  return safeHtmlLinkHref(value);
+}
 
 export type ResolvedTemplate = Record<string, string | null>;
 export interface BuiltInMailTemplate {
@@ -140,13 +158,19 @@ export class MailTemplateCatalog {
   interpolate(html: string, data: Record<string, unknown>): string {
     const missing = new Set<string>();
     // A variable that starts a URL attribute decides the scheme, so it is restricted to HTTP(S)/mailto
-    // (safeHtmlLinkHref). Variables in text or later in a URL only need HTML escaping.
-    const marked = html.replace(URL_ATTRIBUTE_VARIABLE, `$1{{${URL_MARKER}$2}}`);
+    // (plus tel: for href, cid:/data:image for src; see safeUrlAttribute). Variables in text or later
+    // in a URL only need HTML escaping.
+    const marked = html.replace(URL_ATTRIBUTE_VARIABLE, (_match, prefix: string, attribute: string, key: string) => {
+      const name = attribute.toLowerCase();
+      const marker = name === 'src' ? SRC_MARKER : name === 'href' ? HREF_MARKER : URL_MARKER;
+      return `${prefix}{{${marker}${key}}}`;
+    });
     const result = parseTemplateWithMapper(
       marked,
       (placeholder) => {
-        const urlContext = placeholder.startsWith(URL_MARKER);
-        const key = urlContext ? placeholder.slice(URL_MARKER.length) : placeholder;
+        const marker = [SRC_MARKER, HREF_MARKER, URL_MARKER].find(prefix => placeholder.startsWith(prefix));
+        const urlContext = marker !== undefined;
+        const key = marker ? placeholder.slice(marker.length) : placeholder;
         if (!/^\w+$/.test(key)) return `{{${key}}}`;
         if (!Object.hasOwn(data, key)) {
           missing.add(key);
@@ -155,7 +179,7 @@ export class MailTemplateCatalog {
         const raw = data[key];
         if (raw == null) return '';
         const text = String(raw);
-        if (urlContext) return safeHtmlLinkHref(text);
+        if (urlContext) return safeUrlAttribute(marker === SRC_MARKER ? 'src' : marker === HREF_MARKER ? 'href' : 'other', text);
         return parseTemplate('${value}', { value: text }, { escapeHtml: true });
       },
       { startSymbol: '{{', endSymbol: '}}' },

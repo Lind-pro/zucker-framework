@@ -1,4 +1,4 @@
-import { EntityEvent, EntityEventPhase, EntityEventType } from './entity-events';
+import { EntityEvent, EntityEventPhase, EntityEventType, isNewSaveEntity } from './entity-events';
 
 export interface EntityEventListener<T = unknown> {
   onEvent(event: EntityEvent<T>): void | Promise<void>;
@@ -31,7 +31,7 @@ export interface CreatorEventListenerOptions {
  * 创建者监听器 - Prepare 阶段自动填充创建人/修改人信息
  *
  * - CREATE: 以当前用户覆盖 creatorId / creatorName（不信任调用方传入值），createdAt 未设置时填充
- * - SAVE: 无 id 的实体按创建处理；有 id 的实体（可能是已有记录）只填充修改人
+ * - SAVE: 新记录（save 探测标记，或无 id）按创建处理；已有记录只填充修改人
  * - MODIFY/UPDATE: 填充 modifierId, modifierName, updatedAt，并移除 creatorId/creatorName/createdAt
  * - 无当前用户（系统任务）时不修改实体
  * - order 为最高优先级（HIGHEST_PRECEDENCE）
@@ -59,9 +59,9 @@ export class CreatorEventListener implements EntityEventListener {
       const rec = entity as Record<string, unknown>;
 
       const isCreate = event.type === EntityEventType.CREATE
-        || (event.type === EntityEventType.SAVE && !rec.id);
+        || (event.type === EntityEventType.SAVE && isNewSaveEntity(rec));
       const isModify = (event.type as string) === EntityEventType.MODIFY
-        || (event.type === EntityEventType.SAVE && !!rec.id);
+        || (event.type === EntityEventType.SAVE && !isNewSaveEntity(rec));
 
       if (isCreate) {
         if (trust) {

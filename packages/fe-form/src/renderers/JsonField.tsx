@@ -4,6 +4,7 @@ import type { FormRule as Rule } from 'antd';
 import type { FieldDefinition } from '../types';
 import { toAntdRules } from '../validators';
 import { useFormMessages } from '../messages';
+import { parseJsonFieldText } from '../values';
 
 interface Props {
   field: FieldDefinition;
@@ -13,13 +14,11 @@ export function JsonField({ field }: Props) {
   const messages = useFormMessages();
   const jsonValidator: Rule = {
     validator(_, value: string) {
-      if (!value) return Promise.resolve();
-      try {
-        JSON.parse(value);
-        return Promise.resolve();
-      } catch {
-        return Promise.reject(new Error(messages.invalidJsonText));
-      }
+      if (!value || !value.trim()) return Promise.resolve();
+      // Objects and arrays only: a bare `123` or `"x"` would fail the server's JSON check.
+      return parseJsonFieldText(value).ok
+        ? Promise.resolve()
+        : Promise.reject(new Error(messages.invalidJsonText));
     },
   };
   const rules = [

@@ -24,8 +24,16 @@ export interface WithLockOptions {
   renewIntervalMs?: number;
 }
 
+/**
+ * Key-based methods (`acquire`, `release`, `renew`, `isHeldByMe`, `tryAcquire`) keep one
+ * acquisition per key per process: two callers in one process using the same key name can
+ * release or renew each other's lock. Prefer `withLock` (or the token API of
+ * `RedisDistributedLock`) for new code.
+ */
 export interface DistributedLock {
+  /** @deprecated Key-based; prefer `withLock` or `RedisDistributedLock.acquireToken`. */
   acquire(key: string, ttl: number): Promise<boolean>;
+  /** @deprecated Key-based; prefer `withLock` or `RedisDistributedLock.releaseToken`. */
   release(key: string): Promise<void>;
   isLocked(key: string): Promise<boolean>;
   withLock<T>(
@@ -35,7 +43,10 @@ export interface DistributedLock {
     options?: WithLockOptions,
   ): Promise<T>;
 
-  /** 检查当前进程是否持有指定 key 的锁（同步） */
+  /**
+   * 检查当前进程是否持有指定 key 的锁（同步）。Local view only: false once the TTL of the last
+   * acquisition/renewal has lapsed, but it cannot see a key deleted or taken over in Redis.
+   */
   isHeldByMe(key: string): boolean;
 
   /** 续期锁 TTL — 仅在当前进程持有时有效，返回是否续期成功 */
@@ -82,13 +93,13 @@ export class RedisDistributedLock implements DistributedLock, OnModuleDestroy {
   private redis: RedisLike | null = null;
   private lockPrefix = 'zucker:lock:';
   /** key -> token of the most recent acquisition through the key-based API. */
-  private lockValues = new Map<string, string>();
+  private lockValues = new Map<string, { token: string; expiresAt: number }>();
   private warnedNoEval = false;
 
   async onModuleDestroy(): Promise<void> {
     // Release all locks held by this process on shutdown
     const entries = [...this.lockValues.entries()];
-    for (const [key, token] of entries) {
+    for (const [key, { token }] of entries) {
       try {
         await this.releaseToken(key, token);
       } catch {
@@ -118,9 +129,11 @@ export class RedisDistributedLock implements DistributedLock, OnModuleDestroy {
     const redis = this.requireRedis();
     const lockKey = `${this.lockPrefix}${key}`;
     const token = randomUUID();
+    const sentAt = performance.now();
     const result = await redis.set(lockKey, token, 'PX', ttl, 'NX');
     if (!result) return null;
-    this.lockValues.set(key, token);
+    // Measured from before the request: the key may have been set at any point after it.
+    this.lockValues.set(key, { token, expiresAt: sentAt + ttl });
     this.logger.debug(`Lock acquired: ${key}`);
     return token;
   }
@@ -130,7 +143,7 @@ export class RedisDistributedLock implements DistributedLock, OnModuleDestroy {
    * token is always cleared. Returns whether the Redis key was deleted.
    */
   async releaseToken(key: string, token: string): Promise<boolean> {
-    if (this.lockValues.get(key) === token) this.lockValues.delete(key);
+    if (this.lockValues.get(key)?.token === token) this.lockValues.delete(key);
     if (!this.redis) return false;
     const lockKey = `${this.lockPrefix}${key}`;
     const released = await this.compareAndRun(lockKey, token, RELEASE_LOCK_SCRIPT, []);
@@ -143,8 +156,13 @@ export class RedisDistributedLock implements DistributedLock, OnModuleDestroy {
     if (!this.redis) return false;
     if (!ttlMs || ttlMs <= 0) return false;
     const lockKey = `${this.lockPrefix}${key}`;
+    const sentAt = performance.now();
     const renewed = await this.compareAndRun(lockKey, token, RENEW_LOCK_SCRIPT, [ttlMs]);
-    if (!renewed && this.lockValues.get(key) === token) this.lockValues.delete(key);
+    const entry = this.lockValues.get(key);
+    if (entry?.token === token) {
+      if (renewed) entry.expiresAt = sentAt + ttlMs;
+      else this.lockValues.delete(key);
+    }
     return renewed;
   }
 
@@ -153,9 +171,9 @@ export class RedisDistributedLock implements DistributedLock, OnModuleDestroy {
   }
 
   async release(key: string): Promise<void> {
-    const token = this.lockValues.get(key);
-    if (!token) return;
-    await this.releaseToken(key, token);
+    const entry = this.lockValues.get(key);
+    if (!entry) return;
+    await this.releaseToken(key, entry.token);
   }
 
   async isLocked(key: string): Promise<boolean> {
@@ -167,13 +185,19 @@ export class RedisDistributedLock implements DistributedLock, OnModuleDestroy {
   }
 
   isHeldByMe(key: string): boolean {
-    return this.lockValues.has(key);
+    const entry = this.lockValues.get(key);
+    if (!entry) return false;
+    if (performance.now() >= entry.expiresAt) {
+      this.lockValues.delete(key);
+      return false;
+    }
+    return true;
   }
 
   async renew(key: string, ttlMs: number): Promise<boolean> {
-    const token = this.lockValues.get(key);
-    if (!token) return false;
-    return this.renewToken(key, token, ttlMs);
+    const entry = this.lockValues.get(key);
+    if (!entry) return false;
+    return this.renewToken(key, entry.token, ttlMs);
   }
 
   /**
@@ -188,6 +212,7 @@ export class RedisDistributedLock implements DistributedLock, OnModuleDestroy {
     fn: (signal: AbortSignal) => Promise<T>,
     options: WithLockOptions = {},
   ): Promise<T> {
+    const requestedAt = performance.now();
     const token = await this.acquireToken(key, ttl);
     if (!token) {
       throw new BusinessException(`无法获取锁: ${key}`, 'LOCK_ACQUIRE_FAILED', 409);
@@ -198,20 +223,35 @@ export class RedisDistributedLock implements DistributedLock, OnModuleDestroy {
     if (options.watchdog !== false) {
       const interval = Math.max(10, options.renewIntervalMs ?? Math.floor(ttl / 3));
       let renewing = false;
+      // Monotonic time at which the key was last known to be ours (taken before the request
+      // was sent, so the real expiry is never earlier than lastConfirmedAt + ttl).
+      let lastConfirmedAt = requestedAt;
+      const lapsed = (): boolean => {
+        if (controller.signal.aborted || performance.now() - lastConfirmedAt < ttl) return false;
+        this.logger.warn(`Lock lost while running critical section: ${key} (renewal failed past TTL)`);
+        controller.abort(new Error(`Lock lost: ${key} (renewal failed past TTL)`));
+        if (timer) clearInterval(timer);
+        return true;
+      };
       timer = setInterval(() => {
-        if (renewing || controller.signal.aborted) return;
+        if (controller.signal.aborted || lapsed() || renewing) return;
         renewing = true;
+        const sentAt = performance.now();
         this.renewToken(key, token, ttl)
           .then((ok) => {
-            if (!ok) {
-              this.logger.warn(`Lock lost while running critical section: ${key}`);
-              controller.abort(new Error(`Lock lost: ${key}`));
-              if (timer) clearInterval(timer);
+            if (ok) {
+              lastConfirmedAt = sentAt;
+              return;
             }
+            this.logger.warn(`Lock lost while running critical section: ${key}`);
+            controller.abort(new Error(`Lock lost: ${key}`));
+            if (timer) clearInterval(timer);
           })
           .catch((err: unknown) => {
-            // Transient Redis error: keep trying until the TTL actually lapses.
+            // Transient Redis error: keep trying, but once the TTL has lapsed since the last
+            // confirmed renewal another node may hold the key, so the signal is aborted.
             this.logger.warn(`Lock renewal failed for ${key}: ${err instanceof Error ? err.message : String(err)}`);
+            lapsed();
           })
           .finally(() => {
             renewing = false;

@@ -140,3 +140,40 @@ describe('LangChain model construction', () => {
     expect(calls.embeddings.mock.calls[0][0]).toMatchObject({ maxRetries: 0, configuration: { maxRetries: 0, fetch } });
   });
 });
+
+describe('missing provider handling', () => {
+  const base = { protocol: 'openai-compatible' as const, apiKey: 'synthetic', model: 'm', maxTokens: 100, maxRetries: 0 };
+
+  it('warns once when both provider and baseURL are missing', async () => {
+    vi.resetModules();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const fresh = await import('./langchain-model-builder');
+      await fresh.createLangChainChatModel({ ...base });
+      await fresh.createLangChainChatModel({ ...base });
+      await fresh.createLangChainChatModel({ ...base });
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0][0])).toContain('provider');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('does not warn when provider or baseURL is supplied', async () => {
+    vi.resetModules();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const fresh = await import('./langchain-model-builder');
+      await fresh.createLangChainChatModel({ ...base, provider: 'openai' });
+      await fresh.createLangChainChatModel({ ...base, baseURL: 'https://gw.test/v1' });
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("throws for provider 'deepseek' without baseURL and accepts provider 'openai'", async () => {
+    await expect(createLangChainChatModel({ ...base, provider: 'deepseek' })).rejects.toThrow('explicit baseURL');
+    await expect(createLangChainChatModel({ ...base, provider: 'openai' })).resolves.toBeDefined();
+  });
+});

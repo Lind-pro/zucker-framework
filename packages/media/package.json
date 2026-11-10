@@ -75,7 +75,8 @@
     "@rdkit/rdkit": "2025.3.4-1.0.0",
     "vega": "^6.4.0",
     "vega-lite": "^6.4.3",
-    "@types/node": "20.19.43"
+    "@types/node": "20.19.43",
+    "parse5": "8.0.1"
   },
   "dependencies": {
     "fast-xml-parser": "^5.11.1"

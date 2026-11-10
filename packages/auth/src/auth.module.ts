@@ -62,6 +62,13 @@ export interface ZuckerAuthModuleAsyncOptions {
    * Defaults to true for backwards compatibility.
    */
   registerControllers?: boolean;
+  /**
+   * Injection token of the shared ICache used for token revocation and session activity.
+   * Registered as `{ provide: TOKEN_CACHE, useExisting: cacheProvider }`, so Nest instantiates
+   * it before TokenService regardless of module import order. Takes precedence over an
+   * options-level `cacheProvider` returned by `useFactory`.
+   */
+  cacheProvider?: string | symbol;
   useFactory?: (...args: unknown[]) => ZuckerAuthModuleOptions | Promise<ZuckerAuthModuleOptions>;
   useClass?: Type<ZuckerAuthModuleOptionsFactory>;
   useExisting?: Type<ZuckerAuthModuleOptionsFactory>;
@@ -73,6 +80,10 @@ export interface ZuckerAuthModuleOptionsFactory {
 }
 
 const AUTH_MODULE_OPTIONS = Symbol('AUTH_MODULE_OPTIONS');
+
+/** Internal holder of the async auth options (see `ZuckerAuthModule.forRootAsync`). */
+@Module({})
+class ZuckerAuthOptionsModule {}
 
 /**
  * Resolve the JWT secret from options, enforcing explicit configuration
@@ -214,16 +225,30 @@ export class ZuckerAuthModule {
       // --- TokenService with optional cache ---
       {
         provide: TokenService,
-        useFactory: (opts: ZuckerAuthModuleOptions, cache: ICache | null, jwtSvc: JwtService) => {
+        useFactory: (opts: ZuckerAuthModuleOptions, cache: ICache | null, jwtSvc: JwtService, moduleRef: ModuleRef) => {
           const svc = new TokenService(cache || undefined, jwtSvc);
           svc.configure({
             ...(opts.maxActiveSessions ? { maxActiveSessions: opts.maxActiveSessions } : {}),
             ...(opts.allopatricLoginMode !== undefined ? { allopatricLoginMode: opts.allopatricLoginMode } : {}),
             ...(opts.tokenBlacklistTtlMs !== undefined ? { blacklistTtlMs: opts.tokenBlacklistTtlMs } : {}),
+            ...(opts.enforceSessionInactivity !== undefined ? { enforceSessionInactivity: opts.enforceSessionInactivity } : {}),
           });
+          if (!cache && opts.cacheProvider) {
+            // forRootAsync with an options-level cacheProvider: the token could not be injected
+            // statically. Resolve it once every singleton exists (onApplicationBootstrap); a
+            // ModuleRef.get at factory time is order-dependent and may return an unbuilt instance.
+            const cacheToken = opts.cacheProvider;
+            svc.setCacheResolver(() => {
+              try {
+                return moduleRef.get<ICache>(cacheToken, { strict: false });
+              } catch {
+                return undefined;
+              }
+            });
+          }
           return svc;
         },
-        inject: [optionsToken, TOKEN_CACHE, JwtService],
+        inject: [optionsToken, TOKEN_CACHE, JwtService, ModuleRef],
       },
 
       // --- User / Role / Authorization ---
@@ -390,32 +415,38 @@ export class ZuckerAuthModule {
   }
 
   static forRootAsync(asyncOptions: ZuckerAuthModuleAsyncOptions): DynamicModule {
-    const asyncProviders = this.createAsyncProviders(asyncOptions);
+    // The options live in their own module, imported both here and by JwtModule.registerAsync:
+    // a provider declared on ZuckerAuthModule is not visible inside JwtModule's scope. The same
+    // DynamicModule object is imported twice, so Nest builds the options factory once.
+    const optionsModule: DynamicModule = {
+      module: ZuckerAuthOptionsModule,
+      imports: [...(asyncOptions.imports ?? [])],
+      providers: this.createAsyncProviders(asyncOptions),
+      exports: [AUTH_MODULE_OPTIONS],
+    };
 
     return {
       module: ZuckerAuthModule,
       global: true,
       imports: [
         ...(asyncOptions.imports ?? []),
+        optionsModule,
         DiscoveryModule,
         PassportModule.register({ defaultStrategy: 'jwt' }),
         JwtModule.registerAsync({
+          imports: [optionsModule],
           useFactory: (opts: ZuckerAuthModuleOptions) => jwtModuleOptions(opts),
           inject: [AUTH_MODULE_OPTIONS],
         }),
       ],
       controllers: asyncOptions.registerControllers === false ? [] : MODULE_CONTROLLERS,
       providers: [
-        ...asyncProviders,
         ...this.buildProviders(AUTH_MODULE_OPTIONS),
-        // Resolve the configured cacheProvider once the async options are known, so the
-        // token blacklist / revocation watermark is shared across processes.
-        {
-          provide: TOKEN_CACHE,
-          useFactory: (opts: ZuckerAuthModuleOptions, moduleRef: ModuleRef) =>
-            opts.cacheProvider ? moduleRef.get(opts.cacheProvider, { strict: false }) : null,
-          inject: [AUTH_MODULE_OPTIONS, ModuleRef],
-        },
+        // A top-level cacheProvider is injected statically (instantiated before TokenService).
+        // Otherwise TokenService resolves an options-level cacheProvider at bootstrap.
+        asyncOptions.cacheProvider
+          ? { provide: TOKEN_CACHE, useExisting: asyncOptions.cacheProvider }
+          : { provide: TOKEN_CACHE, useValue: null },
       ],
       exports: MODULE_EXPORTS,
     };

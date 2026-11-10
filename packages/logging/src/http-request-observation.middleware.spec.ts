@@ -104,3 +104,41 @@ describe('complete HTTP observations', () => {
     expect(onComplete).toHaveBeenCalledOnce();
   });
 });
+
+describe('detail URL redaction and suppression summary', () => {
+  function build(options: Partial<HttpRequestObservationOptions>, logs: AccessLogService) {
+    const middleware = new HttpRequestObservationMiddleware({ onComplete: vi.fn().mockResolvedValue(true), ...options }, logs);
+    return (url: string, statusCode: number) => {
+      const request = { path: url.split('?')[0], url, method: 'GET', ip: '192.0.2.5', headers: {} } as ObservedHttpRequest & Record<string, unknown>;
+      const response = new Response();
+      response.statusCode = statusCode;
+      middleware.use(request as never, response, () => {});
+      response.emit('finish');
+    };
+  }
+
+  it('redacts code, state, otp, captcha and ticket in the stored requestUrl', () => {
+    const log = vi.fn().mockResolvedValue(undefined);
+    build({}, { log } as unknown as AccessLogService)('/cb?code=c1&state=s1&otp=o1&captcha=k1&ticket=t1&page=2', 403);
+    const stored = log.mock.calls[0][0].requestUrl as string;
+    for (const raw of ['c1', 's1', 'o1', 'k1', 't1']) expect(stored).not.toContain(raw);
+    for (const key of ['code', 'state', 'otp', 'captcha', 'ticket']) expect(stored).toContain(`${key}=[REDACTED]`);
+    expect(stored).toContain('page=2');
+  });
+
+  it('writes an http:suppressed row on the first finish after a suppressed window closes', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2030-01-01T00:00:00Z'));
+    const log = vi.fn().mockResolvedValue(undefined);
+    const hit = build({ detailRateLimit: { maxPerKey: 1, windowMs: 1000 } }, { log } as unknown as AccessLogService);
+    hit('/a', 404);
+    hit('/a', 404);
+    hit('/a', 404);
+    expect(log.mock.calls.filter(([row]) => row.action === 'http:suppressed')).toHaveLength(0);
+    vi.advanceTimersByTime(1000);
+    hit('/a', 404);
+    const summaries = log.mock.calls.filter(([row]) => row.action === 'http:suppressed');
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0][0].describe).toBe('2 rejected requests not persisted');
+  });
+});

@@ -3,7 +3,7 @@ import { Form, Button, Spin, Alert, Row, Col } from 'antd';
 import type { FormDefinition, FieldOption } from './types';
 import { DynamicFormField } from './DynamicFormField';
 import { useFormDefinition, type FormDefinitionFetcher } from './useFormDefinition';
-import { definitionInitialValues, normalizeFormValues, type FormFileUploader } from './values';
+import { definitionInitialValues, FormValueError, normalizeFormValues, type FormFileUploader } from './values';
 import {
   FormMessagesContext,
   resolveFormMessages,
@@ -69,7 +69,18 @@ function FormContent({
   const submit = async (values: Record<string, unknown>) => {
     setSubmitting(true);
     try {
-      await onFinish(await normalizeFormValues(definition, values, uploadFile));
+      let normalized: Record<string, unknown>;
+      try {
+        normalized = await normalizeFormValues(definition, values, uploadFile);
+      } catch (error) {
+        // Show conversion errors on the field instead of an unhandled rejection.
+        if (error instanceof FormValueError) {
+          form.setFields([{ name: error.fieldKey, errors: [messages.invalidJsonText] }]);
+          return;
+        }
+        throw error;
+      }
+      await onFinish(normalized);
     } finally {
       setSubmitting(false);
     }

@@ -16,6 +16,9 @@ import {
   encodeKeyPath,
 } from './storage.interface';
 
+/** Temp files written next to the target by atomic writes (see `tempPathFor`). */
+const TEMP_UPLOAD_NAME = /^\.upload-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.tmp$/;
+
 @Injectable()
 export class LocalFileStorage implements FileManager {
   private readonly logger = new Logger(LocalFileStorage.name);
@@ -129,7 +132,8 @@ export class LocalFileStorage implements FileManager {
 
     const entries = fs.readdirSync(dirPath, { withFileTypes: true });
     return entries
-      .filter((e) => e.isFile())
+      // In-flight temp files of upload/uploadStream/completeChunkedUpload are not objects.
+      .filter((e) => e.isFile() && !TEMP_UPLOAD_NAME.test(e.name))
       .map((e) => {
         const filePath = path.join(dirPath, e.name);
         const stat = fs.statSync(filePath);
@@ -148,6 +152,10 @@ export class LocalFileStorage implements FileManager {
   ): Promise<{ stream: ReadStream; size: number }> {
     const filePath = this.resolvePath(key);
     const stat = fs.statSync(filePath);
+    // Position 0 of an empty file is a valid (empty) range, as before 1.0.19.
+    if (position === 0 && stat.size === 0 && (length === undefined || (Number.isSafeInteger(length) && length > 0))) {
+      return { stream: createReadStream(filePath), size: 0 };
+    }
     if (!Number.isSafeInteger(position) || position < 0 || position >= stat.size) {
       throw new RangeError(`Range start ${position} is outside the file (size ${stat.size})`);
     }
@@ -256,19 +264,40 @@ export class LocalFileStorage implements FileManager {
     const filePath = this.resolvePath(state.key);
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
 
-    const writeStream = fs.createWriteStream(filePath);
-    for (let i = 0; i < state.totalChunks; i++) {
-      const chunkPath = path.join(this.chunksDir(uploadId), `chunk-${i}`);
-      const chunkData = fs.readFileSync(chunkPath);
-      writeStream.write(chunkData);
-    }
-    writeStream.end();
-
-    // Wait for write to complete
-    await new Promise<void>((resolve, reject) => {
-      writeStream.on('finish', resolve);
-      writeStream.on('error', reject);
+    // Assemble into a temp file and rename, so a missing/unreadable chunk never leaves a
+    // partial file under the final key.
+    const tempPath = this.tempPathFor(filePath);
+    const writeStream = fs.createWriteStream(tempPath);
+    const finished = new Promise<void>((resolve, reject) => {
+      writeStream.once('finish', resolve);
+      writeStream.once('error', reject);
     });
+    // Observed on every path: when the loop throws first, a later stream error (ENOSPC, ...)
+    // must not become an unhandled rejection.
+    finished.catch(() => {});
+    try {
+      for (let i = 0; i < state.totalChunks; i++) {
+        const chunkPath = path.join(this.chunksDir(uploadId), `chunk-${i}`);
+        const chunkData = fs.readFileSync(chunkPath);
+        writeStream.write(chunkData);
+      }
+      writeStream.end();
+      await finished;
+      fs.renameSync(tempPath, filePath);
+    } catch (error) {
+      // The file is opened asynchronously: wait until the stream has closed its descriptor,
+      // otherwise the open can recreate the temp file after it was removed.
+      await new Promise<void>((resolve) => {
+        if (writeStream.closed) {
+          resolve();
+          return;
+        }
+        writeStream.once('close', () => resolve());
+        writeStream.destroy();
+      });
+      fs.rmSync(tempPath, { force: true });
+      throw error;
+    }
 
     // Cleanup chunks
     fs.rmSync(this.chunksDir(uploadId), { recursive: true, force: true });
@@ -321,8 +350,12 @@ export class LocalFileStorage implements FileManager {
     return dir;
   }
 
+  /**
+   * Temp name independent of the target name: a target basename near the 255-byte limit
+   * (for example ~80 CJK characters) must not overflow it.
+   */
   private tempPathFor(filePath: string): string {
-    return path.join(path.dirname(filePath), `.${path.basename(filePath)}.${randomUUID()}.tmp`);
+    return path.join(path.dirname(filePath), `.upload-${randomUUID()}.tmp`);
   }
 
   /**

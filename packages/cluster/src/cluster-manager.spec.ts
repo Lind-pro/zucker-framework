@@ -57,7 +57,8 @@ function createFakeRedis() {
   return redis;
 }
 
-const opts = (nodeId: string) => ({ nodeId, host: 'h', port: 1, heartbeatInterval: 60_000, heartbeatTimeout: 50 });
+// heartbeatInterval must be < heartbeatTimeout (L2); tests that need a "paused" node stub heartbeat().
+const opts = (nodeId: string) => ({ nodeId, host: 'h', port: 1, heartbeatInterval: 40, heartbeatTimeout: 50 });
 
 describe('RedisClusterManager (regression: H3)', () => {
   const managers: RedisClusterManager[] = [];
@@ -103,6 +104,8 @@ describe('RedisClusterManager (regression: H3)', () => {
     expect((await a.getLeader())?.id).toBe('b');
 
     // b is paused (no heartbeat renewal); after the lease expires a takes over.
+    vi.spyOn(b, 'heartbeat').mockResolvedValue(undefined);
+    vi.spyOn(a, 'heartbeat').mockResolvedValue(undefined);
     await new Promise((r) => setTimeout(r, 70));
     expect(await a.isLeader()).toBe(true);
     expect(await b.isLeader()).toBe(false);
@@ -125,6 +128,83 @@ describe('RedisClusterManager (regression: H3)', () => {
     m.configure(opts('late'), redis);
     await vi.waitFor(() => expect(m.getCurrentNode().status).toBe('online'));
     expect(redis.hashes.get('zucker:cluster:nodes')?.has('late')).toBe(true);
+  });
+});
+
+describe('RedisClusterManager round 2 (L2)', () => {
+  const managers: RedisClusterManager[] = [];
+  afterEach(async () => {
+    for (const m of managers.splice(0)) await m.onModuleDestroy();
+  });
+  const make = (id: string, redis: any, extra: Record<string, unknown> = {}) => {
+    const m = new RedisClusterManager();
+    m.configure({ ...opts(id), ...extra }, redis);
+    managers.push(m);
+    return m;
+  };
+
+  it('configure throws when heartbeatInterval >= heartbeatTimeout', () => {
+    const redis = createFakeRedis();
+    const m = new RedisClusterManager();
+    expect(() => m.configure({ nodeId: 'x', host: 'h', port: 1, heartbeatInterval: 50, heartbeatTimeout: 50 }, redis)).toThrow(/heartbeatInterval/);
+    expect(() => m.configure({ nodeId: 'x', host: 'h', port: 1, heartbeatInterval: 60, heartbeatTimeout: 50 }, redis)).toThrow();
+    expect(() => m.configure({ nodeId: 'x', host: 'h', port: 1, heartbeatInterval: 40, heartbeatTimeout: 50 }, redis)).not.toThrow();
+  });
+
+  it('leave() waits for an in-flight heartbeat so the node is absent afterwards', async () => {
+    const redis = createFakeRedis();
+    const m = make('a', redis);
+    await m.join();
+
+    // Make the next HSET (the in-flight heartbeat) slow.
+    const realHset = redis.hset.bind(redis);
+    let releaseHset!: () => void;
+    const gate = new Promise<void>((r) => { releaseHset = r; });
+    redis.hset = async (...args: unknown[]) => {
+      await gate;
+      return (realHset as (...a: unknown[]) => unknown)(...args);
+    };
+    const beat = m.heartbeat(); // blocked inside hset
+    const leaving = m.leave();
+    await new Promise((r) => setTimeout(r, 10));
+    releaseHset();
+    await Promise.all([beat, leaving]);
+
+    expect(redis.hashes.get('zucker:cluster:nodes')?.has('a') ?? false).toBe(false);
+  });
+
+  it('a corrupt node field is HDELed', async () => {
+    const redis = createFakeRedis();
+    const m = make('a', redis);
+    await m.join();
+    const nodes = redis.hashes.get('zucker:cluster:nodes');
+    nodes.set('corrupt', '{not json');
+    const list = await m.getNodes();
+    expect(list.map((n: { id: string }) => n.id)).toEqual(['a']);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(nodes.has('corrupt')).toBe(false);
+  });
+
+  it('two managers with the same nodeId produce one leader', async () => {
+    const redis = createFakeRedis();
+    const first = make('same', redis);
+    const second = make('same', redis);
+    await first.join();
+    await second.join();
+    const leaders = [await first.isLeader(), await second.isLeader()];
+    expect(leaders.filter(Boolean)).toHaveLength(1);
+  });
+
+  it('a legacy bare-id lease is resolved by getLeader()', async () => {
+    const redis = createFakeRedis();
+    redis.kv.set('zucker:cluster:leader', { value: 'legacy', expiresAt: Date.now() + 10_000 });
+    redis.hashes.set('zucker:cluster:nodes', new Map([
+      ['legacy', JSON.stringify({ id: 'legacy', host: 'old', port: 1, status: 'online', lastHeartbeat: new Date() })],
+    ]));
+    const m = make('b', redis, { heartbeatInterval: 4000, heartbeatTimeout: 5000 });
+    await m.join();
+    expect((await m.getLeader())?.id).toBe('legacy');
+    expect(await m.isLeader()).toBe(false);
   });
 });
 

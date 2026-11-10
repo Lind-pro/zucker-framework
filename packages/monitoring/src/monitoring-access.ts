@@ -40,11 +40,18 @@ export interface MonitoringModuleOptions {
    */
   alerts?: boolean;
   /**
-   * Additional host authorization, evaluated after the authenticated-user check for session-protected
-   * endpoints. Return false to reject with 403. Use it when the host has no PermissionsGuard that
-   * enforces the permission metadata.
+   * Host authorization for the session-protected endpoints, evaluated after the
+   * authenticated-user check. Return anything but `true` to reject with 403. `access` is
+   * `'metrics'`, `'alerts:read'` (GET) or `'alerts:write'` (POST/PUT/DELETE).
    */
   authorize?: (request: unknown, access: MonitoringAccess) => boolean | Promise<boolean>;
+  /**
+   * `'host-guard'` asserts that the host registers a global (`APP_GUARD`) permissions guard that
+   * enforces the `monitoring:query` / `monitoring:update` metadata on these controllers.
+   * `forRoot` refuses `metrics: true` or `alerts: true` unless this or `authorize` is given,
+   * because the module's own guard only checks for a signed-in user.
+   */
+  permissions?: 'host-guard';
 }
 
 export const MONITORING_MODULE_OPTIONS = Symbol('MONITORING_MODULE_OPTIONS');
@@ -56,9 +63,12 @@ interface AuthenticatedRequest {
 }
 
 /**
- * Fails closed: the monitoring controllers are unusable unless the host's authentication has
- * populated `request.user` (and, when configured, `authorize` approves). Permission codes are
- * still enforced by the host's PermissionsGuard through the metadata above.
+ * Rejects anonymous callers (401) and, when configured, callers that `authorize` refuses (403).
+ * On its own it does NOT check permissions: any signed-in user passes. Permission codes are
+ * enforced only by a host permissions guard reading the metadata above, which is why `forRoot`
+ * requires `authorize` or `permissions: 'host-guard'`. The host's authentication must run
+ * before this guard (a global guard); a controller-level auth guard elsewhere never sets
+ * `request.user` here, so every call would return 401.
  */
 @Injectable()
 export class MonitoringAccessGuard implements CanActivate {

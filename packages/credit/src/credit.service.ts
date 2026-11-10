@@ -116,7 +116,13 @@ interface ReceiptRow {
   accountId: string;
   operationType: string;
   amount: number;
+  resourceType?: string | null;
+  resourceId?: string | null;
 }
+
+/** Receipts store `amount` in a 32-bit integer column (`assets/credit-runtime.prisma`). */
+const MAX_RECEIPT_AMOUNT = 2_147_483_647;
+const RECEIPT_RESOURCE_TYPE = 'credit-service';
 
 interface PendingEvent {
   type: CreditEventPayload['type'];
@@ -389,13 +395,14 @@ export class CreditService {
     await this.ensureAccount(toUserId);
 
     const result = await this.db.$transaction(async (dbTx: DatabaseAdapter) => {
-      // Lock both rows in a stable order so opposite transfers cannot deadlock.
-      const locked = new Map<string, CreditAccount>();
+      // Lock both rows in a stable order so opposite transfers cannot deadlock, and read only after
+      // both locks are held: under REPEATABLE READ (MySQL) the first read fixes the snapshot, so
+      // reading A before waiting for B's lock would see a stale B.
       for (const userId of [fromUserId, toUserId].sort()) {
-        locked.set(userId, await this.lockAccount(dbTx, userId));
+        await this.lockAccountRow(dbTx, userId);
       }
-      const fromAccount = locked.get(fromUserId)!;
-      const toAccount = locked.get(toUserId)!;
+      const fromAccount = await this.readLockedAccount(dbTx, fromUserId);
+      const toAccount = await this.readLockedAccount(dbTx, toUserId);
 
       if (fromAccount.balance < amount) {
         throw new BusinessException(
@@ -532,10 +539,11 @@ export class CreditService {
   /**
    * Expire due grants. Only the unspent remainder of each grant is removed: the account ledger is
    * replayed with earliest-expiring credits spent first, so credits that never expire (paid
-   * top-ups, refunds, transfers) are never taken by an expiry. Each grant is claimed with a
-   * conditional `expired: false -> true` update inside the account lock, so concurrent runs cannot
-   * expire it twice. A grant that fails is logged and skipped for the rest of this run; it does
-   * not block later grants.
+   * top-ups, refunds, transfers, unfreezes) are never taken by an expiry. Due grants are grouped
+   * per account: one transaction per account takes the account lock, claims each grant with a
+   * conditional `expired: false -> true` update (so concurrent runs cannot expire it twice) and
+   * replays the ledger once for all of them. An account that fails is logged and its grants are
+   * skipped for the rest of this run; it does not block other accounts.
    *
    * @returns number of grants that actually removed credits in this run
    */
@@ -559,17 +567,21 @@ export class CreditService {
       })) as CreditTransactionRecord[];
       if (!candidates.length) break;
 
+      const byAccount = new Map<string, CreditTransactionRecord[]>();
       for (const grant of candidates) {
+        const grants = byAccount.get(grant.userId) ?? [];
+        grants.push(grant);
+        byAccount.set(grant.userId, grants);
+      }
+      for (const [userId, grants] of byAccount) {
         try {
-          const event = await this.expireGrant(grant);
-          if (event) {
-            events.push(event);
-            count++;
-          }
+          const expired = await this.expireAccountGrants(userId, grants);
+          events.push(...expired);
+          count += expired.length;
         } catch (error) {
-          failed.push(grant.id);
+          failed.push(...grants.map(grant => grant.id));
           this.logger.error(
-            `过期积分处理失败: txId=${grant.id}, userId=${grant.userId}, error=${error instanceof Error ? error.message : String(error)}`,
+            `过期积分处理失败: userId=${userId}, txIds=${grants.map(grant => grant.id).join(',')}, error=${error instanceof Error ? error.message : String(error)}`,
           );
         }
       }
@@ -583,65 +595,69 @@ export class CreditService {
     return count;
   }
 
-  private async expireGrant(grant: CreditTransactionRecord): Promise<PendingEvent | null> {
-    const description = `积分过期扣除 (原交易: ${grant.id})`;
+  /** Expire one account's due grants in one transaction with a single ledger replay. */
+  private async expireAccountGrants(userId: string, grants: CreditTransactionRecord[]): Promise<PendingEvent[]> {
     const existing = (await this.db.model('creditAccount').findUnique({
-      where: { userId: grant.userId },
+      where: { userId },
     })) as CreditAccount | null;
 
     return this.db.$transaction(async (dbTx: DatabaseAdapter) => {
-      const account = existing ? await this.lockAccount(dbTx, grant.userId) : null;
-      // Claim the grant; a concurrent run that already expired it makes this a no-op.
-      const claimed = await dbTx.model('creditTransaction').updateMany({
-        where: { id: grant.id, expired: false },
-        data: { expired: true },
-      });
-      if (claimed.count !== 1) return null;
-
-      if (!account) return null;
-      if (!Number.isFinite(grant.amount) || grant.amount <= 0) {
-        this.logger.warn(`Invalid GRANT amount: txId=${grant.id}, amount=${grant.amount}`);
-        return null;
+      const account = existing ? await this.lockAccount(dbTx, userId) : null;
+      const claimedGrants: CreditTransactionRecord[] = [];
+      for (const grant of grants) {
+        // Claim the grant; a concurrent run that already expired it makes this a no-op.
+        const claimed = await dbTx.model('creditTransaction').updateMany({
+          where: { id: grant.id, expired: false },
+          data: { expired: true },
+        });
+        if (claimed.count !== 1) continue;
+        if (!Number.isFinite(grant.amount) || grant.amount <= 0) {
+          this.logger.warn(`Invalid GRANT amount: txId=${grant.id}, amount=${grant.amount}`);
+          continue;
+        }
+        claimedGrants.push(grant);
       }
+      if (!account || !claimedGrants.length) return [];
 
-      const remaining = await this.unspentRemainder(dbTx, grant);
-      if (remaining <= 0) return null;
-      const deduction = Math.max(0, Math.min(remaining, account.balance));
-
-      const newBalance = account.balance - deduction;
-      if (deduction > 0) await this.writeAccount(dbTx, account, { balance: newBalance });
-      // A zero-amount row is still written when an unspent remainder could not be deducted
-      // (e.g. it is frozen), so later replays retire this grant at this point.
-      await this.appendTransaction(dbTx, {
-        userId: grant.userId,
-        type: CreditTransactionType.EXPIRE,
-        amount: deduction ? -deduction : 0,
-        balance: newBalance,
-        description,
-        // The expired grant id; lets later replays attribute this deduction to its lot.
-        orderId: grant.id,
-      });
-      if (deduction <= 0) return null;
-
-      return {
-        type: 'expired',
-        topic: CREDIT_EVENT_TOPICS.EXPIRED,
-        userId: grant.userId,
-        amount: deduction,
-        balance: newBalance,
-        description,
-      };
+      // One replay serves every claimed grant: an EXPIRE row never takes more than its own lot's
+      // remainder, so expiring one grant does not change another grant's unspent part.
+      const remainders = await this.unspentRemainders(dbTx, userId);
+      const events: PendingEvent[] = [];
+      let balance = account.balance;
+      for (const grant of claimedGrants) {
+        const remaining = remainders.get(grant.id) ?? 0;
+        if (remaining <= 0) continue;
+        const description = `积分过期扣除 (原交易: ${grant.id})`;
+        const deduction = Math.max(0, Math.min(remaining, balance));
+        balance -= deduction;
+        // A zero-amount row is still written when an unspent remainder could not be deducted
+        // (e.g. it is frozen), so later replays retire this grant at this point.
+        await this.appendTransaction(dbTx, {
+          userId,
+          type: CreditTransactionType.EXPIRE,
+          amount: deduction ? -deduction : 0,
+          balance,
+          description,
+          // The expired grant id; lets later replays attribute this deduction to its lot.
+          orderId: grant.id,
+        });
+        if (deduction > 0) {
+          events.push({ type: 'expired', topic: CREDIT_EVENT_TOPICS.EXPIRED, userId, amount: deduction, balance, description });
+        }
+      }
+      if (balance !== account.balance) await this.writeAccount(dbTx, account, { balance });
+      return events;
     });
   }
 
   /**
-   * Replay the account ledger and return how much of `grant` is still unspent.
+   * Replay the account ledger and return the unspent part of every credit lot, by transaction id.
    * Debits are taken from the earliest-expiring credit first (never-expiring credits last);
    * EXPIRE rows are charged to the grant they reference.
    */
-  private async unspentRemainder(dbTx: DatabaseAdapter, grant: CreditTransactionRecord): Promise<number> {
+  private async unspentRemainders(dbTx: DatabaseAdapter, userId: string): Promise<Map<string, number>> {
     const rows = (await dbTx.model('creditTransaction').findMany({
-      where: { userId: grant.userId },
+      where: { userId },
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     })) as CreditTransactionRecord[];
 
@@ -695,7 +711,7 @@ export class CreditService {
       debt += drain(-amount);
     }
 
-    return Math.max(0, lots.get(grant.id)?.remaining ?? 0);
+    return new Map([...lots].map(([id, lot]) => [id, Math.max(0, lot.remaining)]));
   }
 
   /**
@@ -755,39 +771,64 @@ export class CreditService {
     apply: (tx: DatabaseAdapter, account: CreditAccount) => Promise<PendingEvent>,
   ): Promise<PendingEvent | null> {
     const idempotencyKey = this.validateIdempotencyKey(options.idempotencyKey);
+    if (idempotencyKey && (!Number.isSafeInteger(amount) || amount > MAX_RECEIPT_AMOUNT)) {
+      throw new ValidationException(
+        { amount: [`With an idempotency key the amount must be an integer from 1 to ${MAX_RECEIPT_AMOUNT}`] },
+        'Invalid credit amount for an idempotent operation',
+      );
+    }
+    const expected = { accountId: userId, operationType, amount, resourceId: resourceId ?? null };
     await this.ensureAccount(userId);
-    return this.db.$transaction(async (tx: DatabaseAdapter) => {
-      const account = await this.lockAccount(tx, userId);
-      if (idempotencyKey) {
-        // The account lock serializes retries of the same key for the same account.
-        const existing = (await tx.model(RECEIPT_MODEL).findUnique({
-          where: { idempotencyKey },
-        })) as ReceiptRow | null;
-        if (existing) {
-          if (existing.accountId !== userId || existing.operationType !== operationType
-            || Number(existing.amount) !== amount) {
-            throw new BusinessException(
-              `Credit operation key ${idempotencyKey} was reused with different parameters`,
-              'CREDIT_IDEMPOTENCY_CONFLICT',
-              409,
-            );
-          }
-          return null;
+    try {
+      return await this.db.$transaction(async (tx: DatabaseAdapter) => {
+        const account = await this.lockAccount(tx, userId);
+        if (idempotencyKey) {
+          // The account lock serializes retries of the same key for the same account.
+          const existing = (await tx.model(RECEIPT_MODEL).findUnique({
+            where: { idempotencyKey },
+          })) as ReceiptRow | null;
+          if (existing) return this.replayReceipt(idempotencyKey, existing, expected);
+          await tx.model(RECEIPT_MODEL).create({
+            data: {
+              idempotencyKey,
+              ...expected,
+              resourceType: RECEIPT_RESOURCE_TYPE,
+              createdAt: new Date(),
+            },
+          });
         }
-        await tx.model(RECEIPT_MODEL).create({
-          data: {
-            idempotencyKey,
-            accountId: userId,
-            operationType,
-            amount,
-            resourceType: 'credit-service',
-            resourceId: resourceId ?? null,
-            createdAt: new Date(),
-          },
-        });
-      }
-      return apply(tx, account);
-    });
+        return apply(tx, account);
+      });
+    } catch (error) {
+      // The same key used concurrently on another account is not serialized by the account lock:
+      // the losing insert fails on the unique key (and aborts the PostgreSQL transaction). The
+      // committed receipt decides between replay and 409 instead of a raw database error.
+      if (!idempotencyKey || error instanceof BusinessException || error instanceof ValidationException) throw error;
+      const committed = (await this.db.model(RECEIPT_MODEL).findUnique({
+        where: { idempotencyKey },
+      }).catch(() => null)) as ReceiptRow | null;
+      if (!committed) throw error;
+      return this.replayReceipt(idempotencyKey, committed, expected);
+    }
+  }
+
+  /** A stored receipt: same parameters replay as a no-op (null), anything else is a 409. */
+  private replayReceipt(
+    idempotencyKey: string,
+    existing: ReceiptRow,
+    expected: { accountId: string; operationType: string; amount: number; resourceId: string | null },
+  ): null {
+    if (existing.accountId !== expected.accountId || existing.operationType !== expected.operationType
+      || Number(existing.amount) !== expected.amount
+      || (existing.resourceType != null && existing.resourceType !== RECEIPT_RESOURCE_TYPE)
+      || (existing.resourceId ?? null) !== expected.resourceId) {
+      throw new BusinessException(
+        `Credit operation key ${idempotencyKey} was reused with different parameters`,
+        'CREDIT_IDEMPOTENCY_CONFLICT',
+        409,
+      );
+    }
+    return null;
   }
 
   /**
@@ -795,13 +836,22 @@ export class CreditService {
    * and read the balance after it, so the read sees every previously committed mutation.
    */
   private async lockAccount(tx: DatabaseAdapter, userId: string): Promise<CreditAccount> {
+    await this.lockAccountRow(tx, userId);
+    return this.readLockedAccount(tx, userId);
+  }
+
+  private async lockAccountRow(tx: DatabaseAdapter, userId: string): Promise<void> {
     const locked = await tx.model('creditAccount').updateMany({
       where: { userId },
       data: { userId },
     });
-    const account = locked.count
-      ? ((await tx.model('creditAccount').findUnique({ where: { userId } })) as CreditAccount | null)
-      : null;
+    if (!locked.count) {
+      throw new BusinessException(`Credit account for ${userId} not found`, 'CREDIT_ACCOUNT_NOT_FOUND', 404);
+    }
+  }
+
+  private async readLockedAccount(tx: DatabaseAdapter, userId: string): Promise<CreditAccount> {
+    const account = (await tx.model('creditAccount').findUnique({ where: { userId } })) as CreditAccount | null;
     if (!account) {
       throw new BusinessException(`Credit account for ${userId} not found`, 'CREDIT_ACCOUNT_NOT_FOUND', 404);
     }

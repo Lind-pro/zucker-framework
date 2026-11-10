@@ -5,6 +5,9 @@ export {
   type EntityEvent,
   createEntityEvent,
   getEntityEventName,
+  ENTITY_IS_NEW,
+  markEntityIsNew,
+  isNewSaveEntity,
 } from './entity-events';
 
 export {
@@ -93,5 +96,10 @@ export type { ClusterTransport } from './unified-event-bus';
 
 export { OperationHookRegistry } from './operation-hooks';
 export type { OperationContext, HookHandler, HookPhase } from './operation-hooks';
-export { ReplayEventBus, type ReplayEventBusOptions } from './replay-event-bus';
+export {
+  ReplayEventBus,
+  DEFAULT_TERMINAL_RETENTION_MS,
+  type ReplayEventBusOptions,
+  type ReplayStreamOptions,
+} from './replay-event-bus';
 export { RedisReplayEventBus, type RedisReplayEventBusOptions, type ReplayEventRedisClient } from './redis-replay-event-bus';

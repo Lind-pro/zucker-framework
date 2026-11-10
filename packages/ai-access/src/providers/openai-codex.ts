@@ -190,8 +190,11 @@ export class CodexSubscriptionCredentialManager {
     // Shared per (store, profile) so managers created per request still coalesce, and not
     // bound to any single caller's abort signal: one caller cancelling must not fail the
     // other waiters. Each caller still stops waiting when its own signal aborts.
+    // Forced and non-forced runs are coalesced separately: a caller that just got a 401 must
+    // not join a non-forced check and receive the same rejected token back. Both still
+    // serialize through runExclusive.
     const pending = this.profile.inFlightRefreshes();
-    const key = this.profile.id;
+    const key = `${this.profile.id}:${forceRefresh ? 'force' : 'check'}`;
     let shared = pending.get(key);
     if (!shared) {
       shared = this.profile

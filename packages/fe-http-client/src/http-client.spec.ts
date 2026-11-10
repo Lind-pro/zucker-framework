@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Mock } from 'vitest';
 import { HttpClient } from './http-client';
 

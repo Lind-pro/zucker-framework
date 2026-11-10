@@ -1,10 +1,15 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { randomBytes } from 'crypto';
 import { BusinessException } from '@zucker-framework/core';
 import { type BufferSettings, DEFAULT_BUFFER_SETTINGS } from './buffer-settings';
 
 export type FlushHandler<T> = (items: T[]) => Promise<void>;
+
+/** Instance ids of live buffers in this process (their claims must not be reclaimed). */
+const liveInstances = new Set<string>();
+const CLAIM_SUFFIX = '.processing';
 
 /**
  * 持久化缓冲 — 批量写入工具
@@ -22,6 +27,10 @@ export type FlushHandler<T> = (items: T[]) => Promise<void>;
  * - 多个 handler 时，某个 handler 失败重试只会从失败的 handler 开始，已成功的不会重复执行。
  * - 文件队列默认目录为 `os.tmpdir()/zucker-buffer/<name>`（name 默认为 'default'）。
  *   生产环境请通过 `fileQueueDir` 指定应用私有目录，并为每个 buffer 设置不同的 `name`。
+ * - 多个进程共享同一目录时，文件在处理前通过 rename 认领（`<file>.<pid>-<id>.processing`），
+ *   每个文件只由一个进程处理；已退出进程遗留的认领文件和临时文件会在下次刷新时回收。
+ * - 目录必须是当前用户所有、非符号链接且不可被组/其他用户写入，否则文件队列被拒绝使用
+ *   （溢出条目进入死信队列并触发 onError）。
  */
 export class PersistenceBuffer<T> {
   private buffer: T[] = [];
@@ -35,6 +44,9 @@ export class PersistenceBuffer<T> {
   private readonly maxPending: number;
   private readonly maxDeadLetterSize: number;
   private disposed = false;
+  private readonly instanceId = `${process.pid}-${randomBytes(4).toString('hex')}`;
+  private reclaimed = false;
+  private dirChecked = false;
   /** Optional error callback for non-fatal flush failures */
   onError?: (err: unknown) => void;
 
@@ -48,6 +60,7 @@ export class PersistenceBuffer<T> {
       this.settings.maxPending ?? Math.max(this.settings.bufferSize * 10, 10_000),
     );
     this.maxDeadLetterSize = Math.max(0, this.settings.maxDeadLetterSize ?? 10_000);
+    liveInstances.add(this.instanceId);
   }
 
   /**
@@ -83,9 +96,13 @@ export class PersistenceBuffer<T> {
       clearInterval(this.flushTimer);
       this.flushTimer = null;
     }
-    do {
-      await this.flush();
-    } while (this.buffer.length > 0 || this.flushPromise);
+    try {
+      do {
+        await this.flush();
+      } while (this.buffer.length > 0 || this.flushPromise);
+    } finally {
+      liveInstances.delete(this.instanceId);
+    }
   }
 
   /**
@@ -138,6 +155,12 @@ export class PersistenceBuffer<T> {
     while (this.flushPromise) {
       await this.flushPromise.catch(() => undefined);
     }
+    // Reclaim stale claims of dead processes before deciding there is nothing to do: an idle
+    // buffer would otherwise only notice them once new work arrives.
+    if (!this.reclaimed) {
+      this.reclaimed = true;
+      this.reclaimStale();
+    }
     if (this.buffer.length === 0 && !this.hasFileQueue()) return;
     const run = this.runFlush();
     this.flushPromise = run;
@@ -155,10 +178,17 @@ export class PersistenceBuffer<T> {
   private async runFlush(): Promise<void> {
     // 先处理文件队列中的数据（较早写入），每个文件处理完再删除
     for (const file of this.listFileQueue()) {
-      const items = this.readFileQueueFile(file);
+      // Claim the file first: another process sharing the directory may be reading it too.
+      const claimed = `${file}.${this.instanceId}${CLAIM_SUFFIX}`;
+      try {
+        fs.renameSync(file, claimed);
+      } catch {
+        continue; // claimed (or already handled) by someone else
+      }
+      const items = this.readFileQueueFile(claimed);
       if (items === null) continue;
       if (items.length > 0) await this.processChunk(items);
-      try { fs.unlinkSync(file); } catch (err) { if (this.onError) this.onError(err); }
+      try { fs.unlinkSync(claimed); } catch (err) { if (this.onError) this.onError(err); }
     }
 
     // 取出当前缓冲区的数据
@@ -227,7 +257,8 @@ export class PersistenceBuffer<T> {
   }
 
   private pushDeadLetters(items: T[]): void {
-    this.deadLetterQueue.push(...items);
+    // No spread: very large chunks would exceed the argument limit.
+    for (const item of items) this.deadLetterQueue.push(item);
     const overflow = this.deadLetterQueue.length - this.maxDeadLetterSize;
     if (overflow > 0) {
       this.deadLetterQueue.splice(0, overflow);
@@ -243,6 +274,7 @@ export class PersistenceBuffer<T> {
     if (!items || items.length === 0) return;
     try {
       fs.mkdirSync(this.fileQueueDir, { recursive: true, mode: 0o700 });
+      this.assertSafeDir();
       const base = `buffer-${Date.now()}-${process.pid}-${Math.random().toString(36).slice(2)}`;
       const tmp = path.join(this.fileQueueDir, `${base}.tmp`);
       fs.writeFileSync(tmp, JSON.stringify(items), { mode: 0o600 });
@@ -258,9 +290,66 @@ export class PersistenceBuffer<T> {
     return this.listFileQueue().length > 0;
   }
 
+  /**
+   * Refuses a queue directory another user could plant or read files in: it must be a real
+   * directory (not a symlink), owned by this user and not group/world-writable.
+   */
+  private assertSafeDir(): void {
+    if (this.dirChecked) return;
+    const st = fs.lstatSync(this.fileQueueDir);
+    if (!st.isDirectory() || st.isSymbolicLink()) {
+      throw new Error(`Buffer file queue path is not a directory: ${this.fileQueueDir}`);
+    }
+    const uid = typeof process.getuid === 'function' ? process.getuid() : undefined;
+    if (uid !== undefined && st.uid !== uid) {
+      throw new Error(`Buffer file queue directory is owned by another user: ${this.fileQueueDir}`);
+    }
+    if (uid !== undefined && (st.mode & 0o022) !== 0) {
+      throw new Error(`Buffer file queue directory is group/world-writable: ${this.fileQueueDir}`);
+    }
+    this.dirChecked = true;
+  }
+
+  /**
+   * Returns claim files (`*.processing`) of processes that are gone (or of buffers of this
+   * process that no longer exist) to the queue, and removes their orphaned `.tmp` files.
+   */
+  private reclaimStale(): void {
+    let names: string[];
+    try {
+      if (!fs.existsSync(this.fileQueueDir)) return;
+      this.assertSafeDir();
+      names = fs.readdirSync(this.fileQueueDir);
+    } catch (err) {
+      if (this.onError) this.onError(err);
+      return;
+    }
+    for (const name of names) {
+      if (!name.startsWith('buffer-')) continue;
+      const full = path.join(this.fileQueueDir, name);
+      try {
+        if (name.endsWith(CLAIM_SUFFIX)) {
+          const m = /^(buffer-.+\.json)\.((\d+)-[0-9a-f]+)\.processing$/.exec(name);
+          if (!m) continue;
+          const [, original, owner, pid] = m;
+          const ownerGone = Number(pid) === process.pid ? !liveInstances.has(owner) : !isProcessAlive(Number(pid));
+          if (ownerGone) fs.renameSync(full, path.join(this.fileQueueDir, original));
+        } else if (name.endsWith('.tmp')) {
+          // buffer-<ts>-<pid>-<rand>.tmp; spillToFile writes and renames synchronously, so a .tmp of
+          // this pid seen here is left over from an earlier process that had the same pid.
+          const m = /^buffer-\d+-(\d+)-[^.]+\.tmp$/.exec(name);
+          if (m && (Number(m[1]) === process.pid || !isProcessAlive(Number(m[1])))) fs.unlinkSync(full);
+        }
+      } catch (err) {
+        if (this.onError) this.onError(err);
+      }
+    }
+  }
+
   private listFileQueue(): string[] {
     try {
       if (!fs.existsSync(this.fileQueueDir)) return [];
+      this.assertSafeDir();
       return fs
         .readdirSync(this.fileQueueDir)
         .filter((f) => f.startsWith('buffer-') && f.endsWith('.json'))
@@ -282,6 +371,17 @@ export class PersistenceBuffer<T> {
       try { fs.unlinkSync(filePath); } catch { /* best-effort cleanup */ }
       return null;
     }
+  }
+}
+
+function isProcessAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    // EPERM: the process exists but belongs to someone else.
+    return (err as NodeJS.ErrnoException).code === 'EPERM';
   }
 }
 

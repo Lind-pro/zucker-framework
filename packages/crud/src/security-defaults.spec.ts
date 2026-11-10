@@ -9,7 +9,7 @@ import {
   type GenericEntity,
   type TreeSortSupportEntity,
 } from '@zucker-framework/core';
-import { DefaultTopicEventBus } from '@zucker-framework/event';
+import { DefaultTopicEventBus, type TopicPayload } from '@zucker-framework/event';
 import type { ICache } from '@zucker-framework/cache';
 import { CrudService } from './base.service';
 import { BaseController } from './base.controller';
@@ -133,7 +133,7 @@ describe('H3 write bodies', () => {
   });
 
   it('applies the policy in generated create routes', async () => {
-    const Controller = BaseController(class Entity {});
+    const Controller = BaseController(class Entity { id!: string });
     const service = { create: vi.fn(async (data) => data) };
     const controller = new (Controller as never as new (s: unknown) => { create(body: unknown): Promise<unknown> })(service);
     await controller.create({ name: 'a', creatorId: 'victim', createdAt: 'then' });
@@ -160,11 +160,11 @@ describe('H3 write bodies', () => {
 
 describe('H4 batch routes', () => {
   it('declares static batch routes before :id and keeps them opt-in', () => {
-    const Default = BaseController(class Entity {});
+    const Default = BaseController(class Entity { id!: string });
     expect(Reflect.get(Default.prototype, 'updateMany')).toBeUndefined();
     expect(Reflect.get(Default.prototype, 'deleteMany')).toBeUndefined();
 
-    const Enabled = BaseController(class Entity {}, { only: ['update', 'delete', 'updateMany', 'deleteMany'] });
+    const Enabled = BaseController(class Entity { id!: string }, { only: ['update', 'delete', 'updateMany', 'deleteMany'] });
     const names = Object.getOwnPropertyNames(Enabled.prototype);
     expect(names.indexOf('updateMany')).toBeLessThan(names.indexOf('update'));
     expect(names.indexOf('deleteMany')).toBeLessThan(names.indexOf('delete'));
@@ -224,7 +224,7 @@ describe('H5 entity validation is fail-closed', () => {
 
   it('honours cancel() from the PREPARE phase', async () => {
     const { bus, service } = setup();
-    bus.subscribe('entity/rows/create/prepare', (msg) => (msg.payload as { cancel(r: string): void }).cancel('no'));
+    bus.subscribe('entity/rows/create/prepare', (msg: TopicPayload) => (msg.payload as { cancel(r: string): void }).cancel('no'));
     await expect(service.create({ id: 'r3', name: 'x' })).rejects.toBeInstanceOf(OperationCancelledException);
   });
 });
@@ -311,6 +311,6 @@ describe('L1 CrudControllerFactory', () => {
     const args = Reflect.getMetadata(ROUTE_ARGS_METADATA, Controller, 'update');
     expect(Object.keys(args ?? {})).toHaveLength(2);
     expect(marker).toHaveBeenCalled();
-    expect(Reflect.getMetadata(METHOD_METADATA, (Controller.prototype as Record<string, unknown>).update)).toBeDefined();
+    expect(Reflect.getMetadata(METHOD_METADATA, (Controller.prototype as unknown as Record<string, object>).update)).toBeDefined();
   });
 });

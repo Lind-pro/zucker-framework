@@ -9,6 +9,7 @@ import { Injectable, Optional, Inject } from '@nestjs/common';
 import {
   type EntityEvent,
   type TopicPayload,
+  isNewSaveEntity,
   EntityEventPhase,
   type TopicEventBus,
   TOPIC_EVENT_BUS,
@@ -100,9 +101,10 @@ export class CreatorEventListener {
   }
 
   /**
-   * SAVE is an upsert: entities without an id are creates; entities with an id may update an
-   * existing row, so only modifier fields are written for them (creator fields are left untouched
-   * rather than rewritten to the current user / now).
+   * SAVE is an upsert. `CrudService.save` / `saveOrUpdate` mark each entity after their existence
+   * probe (`ENTITY_IS_NEW`): new rows get creator fields even with a client-generated id; existing
+   * rows only get modifier fields (creator fields are left untouched). Without the marker an
+   * entity with an id is treated as an update.
    */
   private handleSave(event: EntityEvent): void {
     if (event.phase !== EntityEventPhase.PREPARE) return;
@@ -110,8 +112,9 @@ export class CreatorEventListener {
     const userName = this.userProvider?.getCurrentUserName();
     const now = new Date();
     for (const rec of this.records(event)) {
-      if (rec.id) this.fillModifier(rec, userId, userName);
-      else this.fillCreator(rec, userId, userName, now);
+      // The save existence probe marks new rows (client-generated ids included).
+      if (isNewSaveEntity(rec)) this.fillCreator(rec, userId, userName, now);
+      else this.fillModifier(rec, userId, userName);
     }
   }
 

@@ -86,3 +86,55 @@ describe('AccessLoggerInterceptor hardening', () => {
     expect(JSON.stringify(payload)).not.toMatch(/secret|raw-api-key|raw-auth-token|123456/);
   });
 });
+
+describe('AccessLoggerInterceptor URL redaction', () => {
+  function urlSetup(url: string, query: Record<string, unknown>, options: Record<string, unknown> = {}) {
+    function handler() {}
+    class CallbackController {}
+    Reflect.defineMetadata(ACCESS_LOGGER_KEY, { action: 'callback', ...options }, handler);
+    const request = {
+      method: 'GET',
+      url,
+      ip: '192.0.2.10',
+      headers: { 'content-type': 'application/json' },
+      query,
+    };
+    const context = {
+      getClass: () => CallbackController,
+      getHandler: () => handler,
+      switchToHttp: () => ({ getRequest: () => request, getResponse: () => ({ statusCode: 200 }) }),
+    } as unknown as ExecutionContext;
+    const access = { log: vi.fn().mockResolvedValue(undefined) };
+    const interceptor = new AccessLoggerInterceptor(
+      new Reflector(),
+      new EventEmitter2(),
+      { publish: async () => undefined },
+      undefined,
+      access as unknown as AccessLogService,
+    );
+    return { context, access, interceptor };
+  }
+
+  it('redacts ?code= in the stored URL and in parameters.query together', async () => {
+    const { interceptor, context, access } = urlSetup('/cb?code=x&page=2', { code: 'x', page: '2' });
+    await lastValueFrom(interceptor.intercept(context, { handle: () => of({ ok: true }) }));
+    const payload = access.log.mock.calls[0][0];
+    expect(payload.requestUrl).toContain('code=[REDACTED]');
+    expect(payload.requestUrl).toContain('page=2');
+    expect(payload.requestUrl).not.toContain('code=x');
+    expect(payload.parameters.query.code).toBe('[REDACTED]');
+  });
+
+  it('applies excludeFields to the URL as well', async () => {
+    const { interceptor, context, access } = urlSetup(
+      '/cb?ticketNo=T-99&page=2',
+      { ticketNo: 'T-99', page: '2' },
+      { excludeFields: ['ticketNo'] },
+    );
+    await lastValueFrom(interceptor.intercept(context, { handle: () => of({ ok: true }) }));
+    const payload = access.log.mock.calls[0][0];
+    expect(payload.requestUrl).toContain('ticketNo=[REDACTED]');
+    expect(payload.requestUrl).not.toContain('T-99');
+    expect(payload.parameters.query.ticketNo).toBe('[REDACTED]');
+  });
+});

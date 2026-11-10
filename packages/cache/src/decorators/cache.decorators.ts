@@ -1,4 +1,5 @@
 import type { ICache } from '../cache.interface';
+import { Logger } from '@nestjs/common';
 
 const CACHE_METADATA = Symbol('CACHE_METADATA');
 
@@ -70,11 +71,30 @@ function defaultCacheKey(cacheName: string, propertyKey: string | symbol, args: 
  * `@CacheEvict({ allEntries: true })` removes them too.
  */
 const customKeyRegistry = new WeakMap<object, Map<string, Set<string>>>();
+/**
+ * Bound per cache name. Beyond it the oldest remembered key is forgotten (it then expires by
+ * TTL only and is not removed by `allEntries`), so a high-cardinality custom key cannot grow
+ * process memory without limit.
+ */
+export const MAX_REMEMBERED_CUSTOM_KEYS = 10_000;
+const overflowWarned = new Set<string>();
 function rememberCustomKey(cache: ICache, cacheName: string, key: string): void {
   let byName = customKeyRegistry.get(cache);
   if (!byName) customKeyRegistry.set(cache, (byName = new Map()));
   let keys = byName.get(cacheName);
   if (!keys) byName.set(cacheName, (keys = new Set()));
+  if (keys.has(key)) return;
+  if (keys.size >= MAX_REMEMBERED_CUSTOM_KEYS) {
+    const oldest = keys.values().next().value;
+    if (oldest !== undefined) keys.delete(oldest);
+    if (!overflowWarned.has(cacheName)) {
+      overflowWarned.add(cacheName);
+      new Logger('Cacheable').warn(
+        `Cache "${cacheName}": more than ${MAX_REMEMBERED_CUSTOM_KEYS} custom keys; the oldest are evicted by TTL only. ` +
+          'Prefer keys under the cache-name prefix for allEntries eviction.',
+      );
+    }
+  }
   keys.add(key);
 }
 function takeCustomKeys(cache: ICache, cacheName: string): string[] {

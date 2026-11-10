@@ -291,9 +291,11 @@ export class MailCampaignService implements OnModuleInit, OnModuleDestroy {
         // failedSamples 仅采样前 50 条；真实失败数用 attempted - sent 推导
         totals.failed = totals.attempted - totals.sent;
 
-        // 每批回写一次进度
-        await this.campaigns.update({
-          where: { id: campaignId },
+        // 每批回写一次进度。Conditional on `running`: BullMQ re-delivers the job when this worker
+        // loses its lock while still alive (blocked event loop, Redis pause), and the re-delivery
+        // marks the campaign failed. This sender then stops before the next batch.
+        const progress = await this.campaigns.updateMany({
+          where: { id: campaignId, status: 'running' },
           data: {
             attempted: totals.attempted,
             sent: totals.sent,
@@ -301,21 +303,29 @@ export class MailCampaignService implements OnModuleInit, OnModuleDestroy {
             failed: totals.failed,
           },
         });
+        if (progress.count === 0) {
+          this.logger.warn(`群发任务已不再处于 running（可能被重投标记为中断），停止发送: campaignId=${campaignId}`);
+          return;
+        }
         if (batch.length < this.options.batchSize) break;
         cursor = batch[batch.length - 1].id;
       }
 
-      await this.campaigns.update({
-        where: { id: campaignId },
+      const completed = await this.campaigns.updateMany({
+        where: { id: campaignId, status: 'running' },
         data: { status: 'completed', finishedAt: new Date() },
       });
+      if (completed.count === 0) {
+        this.logger.warn(`群发任务已不再处于 running，未标记 completed: campaignId=${campaignId}`);
+        return;
+      }
       this.logger.log(
         `群发完成: campaignId=${campaignId}, attempted=${totals.attempted}, sent=${totals.sent}, failed=${totals.failed}, skipped=${totals.skipped}`,
       );
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
-      await this.campaigns.update({
-        where: { id: campaignId },
+      await this.campaigns.updateMany({
+        where: { id: campaignId, status: 'running' },
         data: { status: 'failed', finishedAt: new Date(), error: reason },
       });
       this.logger.error(`群发任务异常终止: campaignId=${campaignId} - ${reason}`);

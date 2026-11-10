@@ -10,7 +10,8 @@ export interface ExpressionCondition {
  * Expressions run in the hardened `@zucker-framework/script` sandbox: rule data is copied
  * into a separate realm (no host-realm objects are reachable, so the
  * `x.constructor.constructor('return process')()` family of escapes does not work), string
- * code generation is disabled and the timeout also bounds promise jobs.
+ * code generation is disabled and the timeout also bounds promise jobs. Rule data is copied as
+ * data only: methods of class instances in the data are not callable (`exposeMethods: false`).
  *
  * SECURITY NOTE: `node:vm` is still NOT a security boundary (no memory limit, engine bugs).
  * Only trusted operators should author expressions; untrusted authors need an isolate or
@@ -24,6 +25,7 @@ export class ExpressionEvaluator {
     timeout: ExpressionEvaluator.EVAL_TIMEOUT_MS,
     allowedModules: [],
     name: 'rule-expression',
+    exposeMethods: false,
   });
 
   evaluate(data: Record<string, unknown>, condition: ExpressionCondition): boolean {

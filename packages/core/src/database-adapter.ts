@@ -51,6 +51,17 @@ export interface GroupByArgs {
 }
 
 /**
+ * Field metadata of a model, as reported by {@link DatabaseAdapter.getModelFields}.
+ * `kind` follows Prisma's runtime data model: `scalar` / `enum` columns, `object` relations,
+ * `unsupported` native types.
+ */
+export interface ModelFieldInfo {
+  name: string;
+  kind: 'scalar' | 'enum' | 'object' | 'unsupported';
+  isList: boolean;
+}
+
+/**
  * Database adapter interface — provides model access and transaction support.
  * Implementations wrap specific ORMs (e.g., Prisma) behind this abstraction.
  */
@@ -68,6 +79,13 @@ export interface DatabaseAdapter {
    * - rollback 后执行 afterRollback 回调
    */
   $transaction<T>(fn: (adapter: DatabaseAdapter) => Promise<T>): Promise<T>;
+
+  /**
+   * Optional field metadata for a model (the name passed to {@link model}). Used by the CRUD
+   * query policy to reject relation and unknown fields in caller-supplied select / sort / filter
+   * input. Return `undefined` when the metadata is not available.
+   */
+  getModelFields?(model: string): readonly ModelFieldInfo[] | undefined;
 }
 
 /**

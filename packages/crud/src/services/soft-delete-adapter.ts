@@ -62,5 +62,6 @@ export function activeAdapter(db: DatabaseAdapter, modelName: string): DatabaseA
   return markTransactionRoot<DatabaseAdapter>({
     model: name => name === modelName ? wrap(db.model(name)) : db.model(name),
     $transaction: fn => db.$transaction(tx => fn(activeAdapter(tx, modelName))),
+    ...(db.getModelFields ? { getModelFields: (name: string) => db.getModelFields!(name) } : {}),
   }, db);
 }

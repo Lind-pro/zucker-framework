@@ -75,7 +75,12 @@ export class RedisClusterManager implements ClusterManager, OnModuleInit, OnModu
   private heartbeatTimer?: ReturnType<typeof setInterval>;
   private joined = false;
   private initialized = false;
-  private heartbeatRunning = false;
+  private heartbeatRunning?: Promise<void>;
+  /**
+   * Value stored in the leader lease: node id plus a per-process random suffix, so two processes
+   * misconfigured with the same `nodeId` cannot both consider themselves leader.
+   */
+  private readonly leaseSuffix = randomBytes(6).toString('hex');
 
   private options: Required<ClusterManagerOptions>;
   private redis: RedisLike | null = null;
@@ -94,9 +99,17 @@ export class RedisClusterManager implements ClusterManager, OnModuleInit, OnModu
 
   configure(options: ClusterManagerOptions, redis: RedisLike): void {
     const heartbeatTimeout = options.heartbeatTimeout ?? 30000;
+    const heartbeatInterval = options.heartbeatInterval ?? 10000;
+    if (!(heartbeatInterval > 0) || !(heartbeatTimeout > heartbeatInterval)) {
+      // The leader lease (heartbeatTimeout) is renewed once per heartbeat: with interval >= timeout
+      // it lapses between heartbeats and leadership flaps.
+      throw new Error(
+        `Cluster heartbeatInterval (${heartbeatInterval}ms) must be positive and less than heartbeatTimeout (${heartbeatTimeout}ms)`,
+      );
+    }
     this.options = {
       ...options,
-      heartbeatInterval: options.heartbeatInterval ?? 10000,
+      heartbeatInterval,
       redisPrefix: options.redisPrefix ?? 'zucker:cluster:',
       nodeId: options.nodeId || defaultNodeId(),
       heartbeatTimeout,
@@ -129,6 +142,16 @@ export class RedisClusterManager implements ClusterManager, OnModuleInit, OnModu
     return `${this.options.redisPrefix}leader`;
   }
 
+  private get leaseValue(): string {
+    return `${this.options.nodeId}#${this.leaseSuffix}`;
+  }
+
+  /** Node id from a lease value (values written by 1.0.18 nodes are the bare node id). */
+  private static leaseNodeId(value: string): string {
+    const i = value.lastIndexOf('#');
+    return i > 0 ? value.slice(0, i) : value;
+  }
+
   async join(): Promise<void> {
     if (!this.redis || this.joined) return;
 
@@ -146,6 +169,8 @@ export class RedisClusterManager implements ClusterManager, OnModuleInit, OnModu
 
     this.stopHeartbeat();
     this.joined = false;
+    // An in-flight heartbeat could otherwise re-HSET this node after the HDEL below.
+    await this.heartbeatRunning;
     try {
       await this.compareAndRun(this.leaderKey, RELEASE_LEADER_SCRIPT, []);
     } catch (err) {
@@ -172,7 +197,8 @@ export class RedisClusterManager implements ClusterManager, OnModuleInit, OnModu
           throw new Error('invalid node entry');
         }
       } catch {
-        this.logger.warn(`Ignoring corrupt cluster node entry: ${field}`);
+        this.logger.warn(`Removing corrupt cluster node entry: ${field}`);
+        stale.push(field);
         continue;
       }
 
@@ -191,7 +217,7 @@ export class RedisClusterManager implements ClusterManager, OnModuleInit, OnModu
 
     if (stale.length > 0) {
       this.redis.hdel(this.nodesKey, ...stale).catch((err: unknown) => {
-        this.logger.warn(`Failed to prune stale cluster nodes: ${errorMessage(err)}`);
+        this.logger.warn(`Failed to prune stale or corrupt cluster nodes: ${errorMessage(err)}`);
       });
     }
 
@@ -207,14 +233,15 @@ export class RedisClusterManager implements ClusterManager, OnModuleInit, OnModu
       leaderId = await this.redis.get(this.leaderKey);
     }
     if (!leaderId) return undefined;
+    const leaderNodeId = RedisClusterManager.leaseNodeId(leaderId);
     const nodes = await this.getNodes();
-    return nodes.find((n) => n.id === leaderId);
+    return nodes.find((n) => n.id === leaderNodeId);
   }
 
   async isLeader(): Promise<boolean> {
     if (!this.redis || !this.joined) return false;
     const leaderId = await this.redis.get(this.leaderKey);
-    if (leaderId === this.options.nodeId) return true;
+    if (leaderId === this.leaseValue) return true;
     if (leaderId) return false;
     return this.refreshLeadership();
   }
@@ -235,7 +262,7 @@ export class RedisClusterManager implements ClusterManager, OnModuleInit, OnModu
     const lease = this.options.heartbeatTimeout;
     const renewed = await this.compareAndRun(this.leaderKey, RENEW_LEADER_SCRIPT, [lease]);
     if (renewed) return true;
-    const acquired = await this.redis.set(this.leaderKey, this.options.nodeId, 'PX', lease, 'NX');
+    const acquired = await this.redis.set(this.leaderKey, this.leaseValue, 'PX', lease, 'NX');
     if (acquired) {
       this.logger.log(`Node became cluster leader: ${this.options.nodeId}`);
       return true;
@@ -257,14 +284,19 @@ export class RedisClusterManager implements ClusterManager, OnModuleInit, OnModu
   /** One heartbeat tick. Never throws: a Redis outage must not crash the process. */
   async heartbeat(): Promise<void> {
     if (!this.redis || !this.joined || this.heartbeatRunning) return;
-    this.heartbeatRunning = true;
+    const run = (async () => {
+      try {
+        await this.writeHeartbeat();
+        await this.refreshLeadership();
+      } catch (err) {
+        this.logger.warn(`Cluster heartbeat failed: ${errorMessage(err)}`);
+      }
+    })();
+    this.heartbeatRunning = run;
     try {
-      await this.writeHeartbeat();
-      await this.refreshLeadership();
-    } catch (err) {
-      this.logger.warn(`Cluster heartbeat failed: ${errorMessage(err)}`);
+      await run;
     } finally {
-      this.heartbeatRunning = false;
+      this.heartbeatRunning = undefined;
     }
   }
 
@@ -286,7 +318,7 @@ export class RedisClusterManager implements ClusterManager, OnModuleInit, OnModu
 
   private async compareAndRun(key: string, script: string, extraArgs: number[]): Promise<boolean> {
     const redis = this.redis!;
-    const me = this.options.nodeId;
+    const me = this.leaseValue;
     if (typeof redis.eval === 'function') {
       return Number(await redis.eval(script, 1, key, me, ...extraArgs)) === 1;
     }

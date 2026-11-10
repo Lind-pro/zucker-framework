@@ -167,7 +167,15 @@ export class AuthorizationController {
       if (!jwtService) throw new Error('JwtService is required to issue access tokens');
       // typ/jti: bind the token to the access-token audience and make each login revocable
       // on its own even when two logins happen within the same second.
-      const jwt = jwtService.sign({ sub: user.id, username: user.username, typ: 'access', jti: randomUUID() });
+      // issueClaims: marks the token as session-tracked (shared inactivity record) and embeds the
+      // current revocation watermark, so a re-login in the second of a revocation is accepted.
+      const jwt = jwtService.sign({
+        sub: user.id,
+        username: user.username,
+        typ: 'access',
+        jti: randomUUID(),
+        ...(await this.tokenService.issueClaims(user.id)),
+      });
       const tokenInfo = await this.tokenService.signIn(
         user.id,
         jwt,

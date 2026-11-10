@@ -353,3 +353,49 @@ describe('DurableNotificationWorker', () => {
     ).resolves.toEqual({ kind: 'idle' });
   });
 });
+
+describe('DELIVERED commit backoff bounded by the lease (N9)', () => {
+  it('retries the commit after 200 ms and 1 s and reports delivered without redelivering', async () => {
+    vi.useFakeTimers();
+    try {
+      const context = await setup({ leaseMs: 60_000 });
+      const original = context.repository.markDelivered.bind(context.repository);
+      const markDelivered = vi
+        .spyOn(context.repository, 'markDelivered')
+        .mockRejectedValueOnce(new Error('connection reset'))
+        .mockRejectedValueOnce(new Error('connection reset'))
+        .mockImplementation(original);
+      const result = context.worker.runOnce({ workerId: 'worker-1', now: T0 });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(markDelivered).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(199);
+      expect(markDelivered).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(markDelivered).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(1_000);
+      await expect(result).resolves.toEqual({ kind: 'delivered', deliveryId: 'delivery-1' });
+      expect(markDelivered).toHaveBeenCalledTimes(3);
+      expect(context.handler.deliver).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not wait when the lease is nearly expired: one attempt, then the error propagates', async () => {
+    vi.useFakeTimers();
+    try {
+      const context = await setup({ leaseMs: 150 });
+      // Claim at T0 gives a lease until T0+150; at T0+100 less than the 100 ms margin remains.
+      context.setClock(new Date(T0.getTime() + 100));
+      const markDelivered = vi.spyOn(context.repository, 'markDelivered').mockRejectedValue(new Error('database down'));
+      const result = context.worker.runOnce({ workerId: 'worker-1', now: T0 });
+      const settled = expect(result).rejects.toThrow('database down');
+      // No timers are advanced: a backoff wait would leave the promise pending forever.
+      await settled;
+      expect(markDelivered).toHaveBeenCalledTimes(1);
+      expect(context.handler.deliver).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

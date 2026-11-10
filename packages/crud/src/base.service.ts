@@ -11,6 +11,7 @@ import {
   createEntityEvent,
   getEntityEventName,
   isEntityEventEnabled,
+  markEntityIsNew,
   isDoFireEvent,
   type EntityEvent,
   type TopicEventBus,
@@ -70,6 +71,15 @@ export abstract class CrudService<T extends CrudEntity> {
    * default (`ZuckerCrudModule.forRoot({ queryPolicy })`). See {@link CrudQueryPolicy}.
    */
   protected get queryPolicy(): CrudQueryPolicy | undefined { return undefined; }
+
+  /**
+   * The policy applied to caller input for this model (module default + {@link queryPolicy} +
+   * adapter field metadata). Used by generated routes that validate caller input outside
+   * dynamic queries, e.g. the batch `where`.
+   */
+  callerQueryPolicy(): CrudQueryPolicy {
+    return this.dynamicQuery.callerPolicy(this.modelName, this.queryPolicy);
+  }
 
   private findManyScoped<R = unknown>(
     model: string,
@@ -160,12 +170,19 @@ export abstract class CrudService<T extends CrudEntity> {
    * @returns 保存后的完整实体
    */
   async saveOrUpdate(data: Partial<T>): Promise<T> {
+    // Existence probe before PREPARE, so listeners know whether a client-generated id is a
+    // create (creator fields) or an update (modifier fields only).
+    const id = data.id;
+    const exists = id
+      ? !!(await this.db.model(this.modelName).findUnique({ where: this.scopeWhere({ id }) }))
+      : false;
+    if (data && typeof data === 'object') markEntityIsNew(data, !exists);
+
     // PREPARE / BEFORE 阶段（save 语义）
     await this.emitPrepareAndBefore(EntityEventType.SAVE, data);
 
-    const id = data.id;
     let result: T;
-    if (id) {
+    if (id && exists) {
       // update 路径 — 跳过 update 自身的事件（已在 save 层级发出）
       try {
         result = (await this.db.model(this.modelName).update({
@@ -326,7 +343,11 @@ export abstract class CrudService<T extends CrudEntity> {
     // 支持 pageIndex (0-based) 和 page (1-based)
     const resolvedPage = param.pageIndex !== undefined ? param.pageIndex + 1 : (param.page ?? 1);
     const page = Math.max(1, Math.floor(resolvedPage));
-    const pageSize = Math.max(1, Math.floor(param.pageSize ?? 10));
+    // Clamp like findMany does, so page bounds (rePaging) are computed with the real page size.
+    const pageSize = Math.min(
+      this.dynamicQuery.maxPageSizeFor(this.queryPolicy),
+      Math.max(1, Math.floor(param.pageSize ?? 10)),
+    );
 
     // total 复用：前端传了 total 就跳过 count 查询
     let total: number;
@@ -373,13 +394,8 @@ export abstract class CrudService<T extends CrudEntity> {
   async save(entities: Partial<T>[]): Promise<{ created: number; updated: number; total: number }> {
     if (!entities || entities.length === 0) return { created: 0, updated: 0, total: 0 };
 
-    // PREPARE / BEFORE 阶段（save 语义）
-    await this.emitPrepareAndBefore(EntityEventType.SAVE, entities);
-
-    let created = 0;
-    let updated = 0;
-
-    // Batch existence check: collect all IDs and query once to avoid N+1
+    // Batch existence check before PREPARE (one query, no N+1), so listeners fill creator
+    // fields for new rows with client-generated ids.
     const idsToCheck = entities.map((e) => e.id).filter((id): id is string => !!id);
     const existingIds = new Set<string>();
     if (idsToCheck.length > 0) {
@@ -391,6 +407,15 @@ export abstract class CrudService<T extends CrudEntity> {
         existingIds.add(record.id);
       }
     }
+    for (const entity of entities) {
+      if (entity && typeof entity === 'object') markEntityIsNew(entity, !(entity.id && existingIds.has(entity.id)));
+    }
+
+    // PREPARE / BEFORE 阶段（save 语义）
+    await this.emitPrepareAndBefore(EntityEventType.SAVE, entities);
+
+    let created = 0;
+    let updated = 0;
 
     const results: T[] = [];
     for (const entity of entities) {
@@ -499,7 +524,8 @@ export abstract class CrudService<T extends CrudEntity> {
         if (result.count === 0) {
           // 版本冲突：记录已被其他事务修改
           try {
-            const current = await this.db.model(this.modelName).findUnique({ where: { id } });
+            // Scoped: a foreign row (other owner / tenant) must not be returned as a conflict.
+          const current = await this.db.model(this.modelName).findUnique({ where: this.scopeWhere({ id }) });
             if (current) {
               failed.push(current as T);
             }
@@ -514,7 +540,8 @@ export abstract class CrudService<T extends CrudEntity> {
         if (!hasErrorCode(error, 'P2025')) throw error;
         this.logger.warn(`乐观锁更新失败 id=${id}: ${(error as Error).message}`);
         try {
-          const current = await this.db.model(this.modelName).findUnique({ where: { id } });
+          // Scoped: a foreign row (other owner / tenant) must not be returned as a conflict.
+          const current = await this.db.model(this.modelName).findUnique({ where: this.scopeWhere({ id }) });
           if (current) {
             failed.push(current as T);
           }

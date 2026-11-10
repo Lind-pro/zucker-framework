@@ -47,6 +47,12 @@ export const DEFAULT_TENANT_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 export const TENANT_MODULE_OPTIONS = Symbol('TENANT_MODULE_OPTIONS');
 /** Request property holding the tenant ID resolved by `TenantGuard`, reused by the interceptor. */
 export const RESOLVED_TENANT_KEY = '__zuckerResolvedTenant';
+/**
+ * Set by `TenantGuard` on a `@TenantAware` request it could not decide yet (the tenant depends
+ * on `request.user`, which a later controller-level auth guard sets). `TenantInterceptor`, which
+ * runs after every guard, then requires a tenant (403 otherwise).
+ */
+export const TENANT_REQUIRED_KEY = '__zuckerTenantRequired';
 
 export function isValidTenantId(value: unknown, pattern: RegExp = DEFAULT_TENANT_ID_PATTERN): value is string {
   return typeof value === 'string' && pattern.test(value);

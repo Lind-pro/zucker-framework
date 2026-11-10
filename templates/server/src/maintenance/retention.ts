@@ -17,8 +17,10 @@ export interface RetentionOptions {
   maintenanceJobDays: number;
   /** Minimum time between purge runs. */
   intervalMs: number;
-  /** Rows deleted per table per run (bounded lock time). */
+  /** Rows deleted per batch; each batch is its own transaction (bounded lock time). */
   batchSize: number;
+  /** Batches per table per run; a run stops early when a batch returns fewer than `batchSize` rows. */
+  maxBatchesPerRun: number;
 }
 /** Jobs that only exist to poll/repair state; user-visible jobs and their results are never purged. */
 export const PURGEABLE_JOB_KINDS: readonly string[] = [SUBSCRIPTION_RECONCILE_JOB, QUOTA_RECONCILE_JOB];
@@ -29,6 +31,12 @@ function days(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
   if (!Number.isSafeInteger(value) || value < 0 || value > 36500) throw new Error(`${name} must be 0 (keep forever) or a number of days up to 36500`);
   return value;
 }
+function positive(env: NodeJS.ProcessEnv, name: string, fallback: number, max: number): number {
+  const raw = env[name]?.trim();
+  const value = raw === undefined || raw === '' ? fallback : Number(raw);
+  if (!Number.isSafeInteger(value) || value < 1 || value > max) throw new Error(`${name} must be an integer from 1 to ${max}`);
+  return value;
+}
 export function retentionOptionsFromEnvironment(env: NodeJS.ProcessEnv): RetentionOptions {
   return {
     apiKeyUsageDays: days(env, 'RETENTION_API_KEY_USAGE_DAYS', 90),
@@ -36,7 +44,8 @@ export function retentionOptionsFromEnvironment(env: NodeJS.ProcessEnv): Retenti
     sessionDays: days(env, 'RETENTION_SESSION_DAYS', 30),
     maintenanceJobDays: days(env, 'RETENTION_MAINTENANCE_JOB_DAYS', 30),
     intervalMs: 60 * 60_000,
-    batchSize: 1000,
+    batchSize: positive(env, 'RETENTION_BATCH_SIZE', 1000, 50_000),
+    maxBatchesPerRun: positive(env, 'RETENTION_MAX_BATCHES_PER_RUN', 50, 10_000),
   };
 }
 
@@ -44,8 +53,10 @@ export interface RetentionResult { apiKeyUsage: number; accessLogs: number; sess
 
 /**
  * Bounded purge of append-only operational tables, driven by the single durable Jobs host
- * (no private timer). Each run deletes at most `batchSize` rows per table and runs at most once per
- * `intervalMs` per process; concurrent processes are harmless (deletes are idempotent).
+ * (no private timer). Each run deletes batches of `batchSize` rows per table, one transaction per
+ * batch, until a batch comes back short or `maxBatchesPerRun` is reached (defaults: 1000 x 50, up to
+ * 50,000 rows per table per run). Runs happen at most once per `intervalMs` per process; concurrent
+ * processes are harmless (deletes are idempotent).
  */
 @Injectable()
 export class RetentionService implements OnModuleInit {
@@ -67,8 +78,19 @@ export class RetentionService implements OnModuleInit {
   async purge(now = new Date()): Promise<RetentionResult> {
     const cutoff = (window: number) => new Date(now.getTime() - window * 86_400_000);
     const limit = this.options.batchSize;
-    const run = (window: number, work: (tx: ApplicationTransaction, before: Date) => Promise<{ rows: unknown[] }>) =>
-      window ? this.database.transaction(async tx => (await work(tx, cutoff(window))).rows.length) : Promise.resolve(0);
+    const maxBatches = Math.max(1, this.options.maxBatchesPerRun ?? 1);
+    const run = async (window: number, work: (tx: ApplicationTransaction, before: Date) => Promise<{ rows: unknown[] }>) => {
+      if (!window) return 0;
+      const before = cutoff(window);
+      let removed = 0;
+      for (let batch = 0; batch < maxBatches; batch++) {
+        // One transaction per batch keeps each lock short; a backlog is drained over several batches.
+        const deleted = await this.database.transaction(async tx => (await work(tx, before)).rows.length);
+        removed += deleted;
+        if (deleted < limit) break;
+      }
+      return removed;
+    };
     return {
       apiKeyUsage: await run(this.options.apiKeyUsageDays, (tx, before) => tx.query(`DELETE FROM account_api_key_usage WHERE id IN (
         SELECT id FROM account_api_key_usage WHERE "timestamp" < $1 ORDER BY "timestamp" LIMIT $2) RETURNING id`, [before, limit])),

@@ -1,15 +1,51 @@
-import { IsOptional, IsString, IsNumber, Min, Max, IsArray, IsObject, IsBoolean } from 'class-validator';
+import {
+  IsOptional,
+  IsString,
+  IsNumber,
+  Min,
+  Max,
+  IsArray,
+  IsObject,
+  IsBoolean,
+  Validate,
+  ValidatorConstraint,
+  type ValidatorConstraintInterface,
+} from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
+import type { Term } from '@zucker-framework/core';
 
+/** `filters` arrives as a JSON string (GET) or as an object (POST body). */
+@ValidatorConstraint({ name: 'stringOrObject', async: false })
+class StringOrObjectConstraint implements ValidatorConstraintInterface {
+  validate(value: unknown): boolean {
+    return typeof value === 'string' || (typeof value === 'object' && value !== null && !Array.isArray(value));
+  }
+
+  defaultMessage(): string {
+    return 'filters must be a JSON string or an object';
+  }
+}
+
+/**
+ * Runtime query DTO for the generated query routes (GET query strings and POST bodies). Every
+ * caller-facing field of {@link DynamicQueryParam} is declared, so a whitelisting
+ * `ValidationPipe` does not strip filters (which would widen the result to the whole table).
+ * Field names, operators and values are validated later by the query policy.
+ */
 export class QueryParamDto {
   @ApiProperty({
     required: false,
-    description: 'JSON格式的查询条件，例如: {"name$like":"example","age$gte":18}',
+    description: 'JSON格式的查询条件（GET 为字符串，POST 可为对象），例如: {"name$like":"example","age$gte":18}',
   })
   @IsOptional()
-  @IsString()
-  filters?: string;
+  @Validate(StringOrObjectConstraint)
+  filters?: string | Record<string, unknown>;
+
+  @ApiProperty({ required: false, type: [Object], description: '结构化 Term 条件（POST），由查询策略校验' })
+  @IsOptional()
+  @IsArray()
+  terms?: Term[];
 
   @ApiProperty({ required: false, description: '排序字段，例如: "age desc, createdAt asc"' })
   @IsOptional()

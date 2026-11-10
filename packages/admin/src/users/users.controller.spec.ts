@@ -22,7 +22,7 @@ async function harness(options = {}, hooks?: AdminUserHooks) {
   await db.model('userPermissions').create({ data: { userId: 'editor', permissionId: 'users:update' } });
   for (const code of ['users:update', 'users:authorize'])
     await db.model('userPermissions').create({ data: { userId: 'authorizer', permissionId: code } });
-  return { db, users, permissions };
+  return { db, users, permissions, userService };
 }
 
 describe('UsersController write boundaries (H3)', () => {
@@ -109,5 +109,83 @@ describe('UsersController write boundaries (H3)', () => {
     });
     await h.users.remove('target', as('authorizer'));
     expect(await h.db.model('users').findUnique({ where: { id: 'target' } })).toBeNull();
+  });
+});
+
+describe('UsersController privileged grants (N1)', () => {
+  const asRoot = as('root');
+
+  it('refuses a users:authorize operator granting superadmin to itself or others', async () => {
+    const h = await harness();
+    await expect(h.users.setUserRoles('authorizer', { roleIds: ['super-role'] }, as('authorizer'))).rejects.toMatchObject({ status: 403 });
+    await expect(h.users.setUserRoles('target', { roleIds: ['super-role'] }, as('authorizer'))).rejects.toMatchObject({ status: 403 });
+    expect(await h.db.model('userRoles').findMany({ where: { userId: 'authorizer' } })).toEqual([]);
+    expect(await h.permissions.hasPermission('authorizer', ['config:update'])).toBe(false);
+  });
+
+  it('refuses a role whose parentId chain reaches a role named superadmin', async () => {
+    const h = await harness();
+    await h.db.model('roles').create({ data: { id: 'mid', name: 'mid', parentId: 'super-role' } });
+    await h.db.model('roles').create({ data: { id: 'leaf', name: 'leaf', parentId: 'mid' } });
+    await expect(h.users.setUserRoles('target', { roleIds: ['leaf'] }, as('authorizer'))).rejects.toMatchObject({ status: 403 });
+    expect(await h.db.model('userRoles').findMany({ where: { userId: 'target' } })).toEqual([]);
+    await expect(h.users.setUserRoles('target', { roleIds: ['leaf'] }, asRoot)).resolves.toEqual({ roleIds: ['leaf'] });
+  });
+
+  it('refuses a role linked to the * wildcard permission', async () => {
+    const h = await harness();
+    await h.db.model('roles').create({ data: { id: 'wild', name: 'wild' } });
+    await h.db.model('rolePermissions').create({ data: { roleId: 'wild', permissionId: '*' } });
+    await expect(h.users.setUserRoles('target', { roleIds: ['wild'] }, as('authorizer'))).rejects.toMatchObject({ status: 403 });
+  });
+
+  it('refuses direct superadmin and * permission ids from a non-superadmin', async () => {
+    const h = await harness();
+    for (const permissionIds of [['superadmin'], ['*'], ['users:query', '*']])
+      await expect(h.users.setUserPermissions('target', { permissionIds }, as('authorizer'))).rejects.toMatchObject({ status: 403 });
+    expect(await h.db.model('userPermissions').findMany({ where: { userId: 'target' } })).toEqual([]);
+  });
+
+  it('lets a superadmin grant superadmin roles and permissions', async () => {
+    const h = await harness();
+    await expect(h.users.setUserRoles('target', { roleIds: ['super-role'] }, asRoot)).resolves.toEqual({ roleIds: ['super-role'] });
+    await expect(h.users.setUserPermissions('target', { permissionIds: ['superadmin', '*'] }, asRoot))
+      .resolves.toEqual({ permissionIds: ['superadmin', '*'] });
+  });
+
+  it('still lets users:authorize assign ordinary roles and permissions', async () => {
+    const h = await harness();
+    await h.db.model('roles').create({ data: { id: 'ordinary', name: 'ordinary' } });
+    await expect(h.users.setUserRoles('target', { roleIds: ['ordinary'] }, as('authorizer'))).resolves.toEqual({ roleIds: ['ordinary'] });
+    await expect(h.users.setUserPermissions('target', { permissionIds: ['users:query'] }, as('authorizer')))
+      .resolves.toEqual({ permissionIds: ['users:query'] });
+  });
+
+  it('refuses privileged grants when there is no acting user', async () => {
+    const h = await harness();
+    await expect(h.users.setUserRoles('target', { roleIds: ['super-role'] })).rejects.toMatchObject({ status: 403 });
+    await expect(h.users.setUserRoles('target', { roleIds: ['super-role'] }, { user: {} })).rejects.toMatchObject({ status: 403 });
+    await expect(h.users.setUserPermissions('target', { permissionIds: ['*'] })).rejects.toMatchObject({ status: 403 });
+  });
+});
+
+describe('UsersController update edge cases (N17)', () => {
+  it('treats an empty email form value as unchanged when the stored email is null', async () => {
+    const h = await harness();
+    await h.db.model('users').update({ where: { id: 'target' }, data: { email: null } });
+    await expect(h.users.update('target', { name: 'Renamed', email: '' }, as('editor'))).resolves.toMatchObject({ name: 'Renamed' });
+  });
+
+  it('fails without re-inserting when the user is deleted between the read and the write', async () => {
+    const h = await harness();
+    const row = await h.userService.findById('target');
+    const spy = vi.spyOn(h.userService, 'findById').mockImplementationOnce(async () => {
+      await h.db.model('users').delete({ where: { id: 'target' } });
+      return row;
+    });
+    await expect(h.users.update('target', { name: 'Ghost' }, as('editor'))).rejects.toBeInstanceOf(Error);
+    spy.mockRestore();
+    expect(await h.db.model('users').findUnique({ where: { id: 'target' } })).toBeNull();
+    expect(await h.db.model('users').findMany({ where: { name: 'Ghost' } })).toEqual([]);
   });
 });

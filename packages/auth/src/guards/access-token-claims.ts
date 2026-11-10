@@ -1,7 +1,11 @@
-import type { AccessTokenClaims } from '../services/token.service';
+import {
+  REVOCATION_WATERMARK_CLAIM,
+  SESSION_TRACKED_CLAIM,
+  type AccessTokenClaims,
+} from '../services/token.service';
 
 /**
- * Read `sub` / `iat` from a JWT whose signature Passport has already verified.
+ * Read `sub` / `iat` / `rva` / the session-tracking marker from a JWT whose signature Passport has already verified.
  * Returns an empty object for anything that is not a well-formed compact JWS.
  */
 export function readAccessTokenClaims(token: string): AccessTokenClaims {
@@ -10,8 +14,14 @@ export function readAccessTokenClaims(token: string): AccessTokenClaims {
   try {
     const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')) as unknown;
     if (!payload || typeof payload !== 'object') return {};
-    const { sub, iat } = payload as Record<string, unknown>;
+    const record = payload as Record<string, unknown>;
+    const { sub, iat } = record;
+    const rva = record[REVOCATION_WATERMARK_CLAIM];
     return {
+      ...(typeof rva === 'number' && Number.isFinite(rva) ? { rva } : {}),
+      ...(record[SESSION_TRACKED_CLAIM] !== undefined && record[SESSION_TRACKED_CLAIM] !== null && record[SESSION_TRACKED_CLAIM] !== false
+        ? { sessionTracked: true }
+        : {}),
       ...(typeof sub === 'string' && sub ? { sub } : typeof sub === 'number' ? { sub: String(sub) } : {}),
       ...(typeof iat === 'number' && Number.isFinite(iat) ? { iat } : {}),
     };

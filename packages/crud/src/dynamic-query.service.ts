@@ -1,5 +1,5 @@
 import { Injectable, Inject, Logger, Optional, BadRequestException } from '@nestjs/common';
-import { type DatabaseAdapter, type Term } from '@zucker-framework/core';
+import { type DatabaseAdapter, type ModelFieldInfo, type Term } from '@zucker-framework/core';
 import { FilterOperatorFactory, normalizeOperatorType } from './operators';
 import {
   CRUD_QUERY_POLICY,
@@ -12,6 +12,9 @@ import {
   resolveMaxFilterDepth,
   resolveMaxPageSize,
   resolveMaxUnpagedRows,
+  modelFieldsOf,
+  stripRelationLikeIncludes,
+  withModelFields,
 } from './query/query-policy';
 import { resolvePageTotal, type PaginatedResult } from './pagination';
 import { DATABASE_ADAPTER } from './crud.module';
@@ -35,8 +38,8 @@ export type QueryTerm = Term;
  * ```
  */
 export interface DynamicQueryParam {
-  /** JSON-encoded filter map (e.g., '{"name$like":"value"}') */
-  filters?: string;
+  /** JSON-encoded filter map (e.g., '{"name$like":"value"}'); POST bodies may send the object. */
+  filters?: string | Record<string, unknown>;
   /** Raw where clause string */
   where?: string;
   /** Structured filter object */
@@ -185,7 +188,8 @@ export class DynamicQueryParamService {
       const dollarIdx = fieldKey.indexOf('$');
       const field = dollarIdx >= 0 ? fieldKey.slice(0, dollarIdx) : fieldKey;
       const op = dollarIdx >= 0 ? fieldKey.slice(dollarIdx + 1) : 'eq';
-      if (!field) continue;
+      // Malformed keys (`$nest` with a non-object, `$foo$bar`, `$eq`) are rejected, not skipped.
+      if (!field) throw new BadRequestException(`Invalid filter key: ${key.slice(0, 64)}`);
 
       const result = this.applyUserFilter(field, op || 'eq', value, policy);
       if (result && Object.keys(result).length > 0) {
@@ -332,7 +336,16 @@ export class DynamicQueryParamService {
       return { select };
     }
     if (excluded.size > 0) {
-      return { omit: Object.fromEntries([...excluded].map((field) => [field, true])) };
+      // omit only accepts scalar columns; with metadata, drop excluded names that are not.
+      const fields = modelFieldsOf(policy);
+      const omitted = fields
+        ? [...excluded].filter((field) => {
+            const info = fields.get(field);
+            return info && (info.kind === 'scalar' || info.kind === 'enum');
+          })
+        : [...excluded];
+      if (omitted.length === 0) return {};
+      return { omit: Object.fromEntries(omitted.map((field) => [field, true])) };
     }
     return {};
   }
@@ -411,15 +424,59 @@ export class DynamicQueryParamService {
 export class DynamicQueryService {
   private readonly logger = new Logger(DynamicQueryService.name);
 
+  /** model → field metadata (null: adapter has none). */
+  private readonly modelFieldCache = new Map<string, ReadonlyMap<string, ModelFieldInfo> | null>();
+  private readonly strippedWarned = new Set<string>();
+
   constructor(
     @Inject(DATABASE_ADAPTER) private readonly db: DatabaseAdapter,
     private readonly dynamicQueryParam: DynamicQueryParamService,
     @Optional() @Inject(CRUD_QUERY_POLICY) private readonly defaultPolicy?: CrudQueryPolicy,
   ) {}
 
+  /** Effective `pageSize` upper bound for a service policy merged over the module default. */
+  maxPageSizeFor(policy?: CrudQueryPolicy): number {
+    return resolveMaxPageSize(mergeQueryPolicy(this.defaultPolicy, policy));
+  }
+
+  /** Field metadata for `model` from the adapter, resolved once per model. */
+  private fieldsFor(model: string): ReadonlyMap<string, ModelFieldInfo> | undefined {
+    if (!this.modelFieldCache.has(model)) {
+      let fields: readonly ModelFieldInfo[] | undefined;
+      try {
+        fields = this.db.getModelFields?.(model);
+      } catch (error) {
+        this.logger.warn(`getModelFields(${model}) failed: ${(error as Error).message}`);
+      }
+      this.modelFieldCache.set(model, fields?.length ? new Map(fields.map((field) => [field.name, field])) : null);
+    }
+    return this.modelFieldCache.get(model) ?? undefined;
+  }
+
+  /** Effective caller policy for `model`: module default + service policy + field metadata. */
+  callerPolicy(model: string, policy?: CrudQueryPolicy): CrudQueryPolicy {
+    return this.effectivePolicy(model, policy);
+  }
+
+  private effectivePolicy(model: string, policy?: CrudQueryPolicy): CrudQueryPolicy {
+    return withModelFields(mergeQueryPolicy(this.defaultPolicy, policy), this.fieldsFor(model));
+  }
+
+  /** Without metadata, drop relation-like included values (secure default for `includes`). */
+  private stripIncludes<T>(model: string, rows: T[], includes: string[] | undefined, policy: CrudQueryPolicy): T[] {
+    return stripRelationLikeIncludes(rows, includes, policy, (fields) => {
+      if (this.strippedWarned.has(model) || this.strippedWarned.size > 1000) return;
+      this.strippedWarned.add(model);
+      this.logger.warn(
+        `${model}: removed non-scalar values of included fields [${fields.join(', ')}]. Relations (and JSON columns, ` +
+          'when the adapter has no field metadata) must be listed in queryPolicy.selectableFields to be returned.',
+      );
+    });
+  }
+
   /** Resolve the user WHERE from any of the four caller filter representations. */
-  parseUserWhere(queryParam: DynamicQueryParam, policy?: CrudQueryPolicy): Record<string, unknown> {
-    const effective = mergeQueryPolicy(this.defaultPolicy, policy);
+  parseUserWhere(queryParam: DynamicQueryParam, policy?: CrudQueryPolicy, model?: string): Record<string, unknown> {
+    const effective = model ? this.effectivePolicy(model, policy) : mergeQueryPolicy(this.defaultPolicy, policy);
     const { filters, filter, where: whereExpr, terms } = queryParam;
     // Resolve user WHERE: terms > whereExpr > filter object > filters JSON string
     if (terms !== undefined && terms !== null && !Array.isArray(terms)) {
@@ -480,7 +537,7 @@ export class DynamicQueryService {
     requiredWhere?: Record<string, unknown>,
     options?: DynamicQueryOptions,
   ): Promise<PaginatedResult<T>> {
-    const policy = mergeQueryPolicy(this.defaultPolicy, options?.policy);
+    const policy = this.effectivePolicy(model, options?.policy);
     const normalized = normalizeDynamicQueryParam(queryParam);
     const {
       orderBy, pageSize,
@@ -492,7 +549,7 @@ export class DynamicQueryService {
       ? normalized.pageIndex + 1
       : normalized.page;
 
-    const userWhere = this.parseUserWhere(normalized, options?.policy);
+    const userWhere = this.parseUserWhere(normalized, options?.policy, model);
 
     // Merge DataAccess filterConditions into WHERE (trusted terms: operator parsing only)
     const accessWhere = dataAccessTerms
@@ -519,13 +576,14 @@ export class DynamicQueryService {
     // No-paging mode: when both page and pageSize are absent
     if (page === undefined && pageSize === undefined) {
       const limit = resolveMaxUnpagedRows(policy);
-      const data = await modelOps.findMany({
+      const data = this.stripIncludes(model, await modelOps.findMany({
         where,
         orderBy: sort,
         ...(Number.isFinite(limit) ? { take: limit } : {}),
         ...projection,
-      }) as T[];
-      if (Number.isFinite(limit) && data.length >= limit) {
+      }) as T[], includes, policy);
+      const truncated = Number.isFinite(limit) && data.length >= limit;
+      if (truncated) {
         this.logger.warn(`Unpaged ${model} query reached the ${limit}-row limit; result may be truncated`);
       }
 
@@ -536,6 +594,7 @@ export class DynamicQueryService {
         pageSize: data.length,
         totalPages: 1,
         pageIndex: 0,
+        ...(truncated ? { truncated: true } : {}),
       };
     }
 
@@ -545,12 +604,12 @@ export class DynamicQueryService {
 
     // total 复用：前端传了 total 就跳过 count 查询
     if (clientTotal !== undefined && clientTotal >= 0) {
-      const data = await modelOps.findMany({
+      const data = this.stripIncludes(model, await modelOps.findMany({
         where,
         orderBy: sort,
         ...pagination,
         ...projection,
-      }) as T[];
+      }) as T[], includes, policy);
 
       return {
         data,
@@ -564,7 +623,7 @@ export class DynamicQueryService {
 
     // 并行分页：count 和 findMany 并发执行
     if (parallelPager) {
-      const [total, data] = await Promise.all([
+      const [total, rows] = await Promise.all([
         modelOps.count({ where }),
         modelOps.findMany({
           where,
@@ -573,6 +632,7 @@ export class DynamicQueryService {
           ...projection,
         }) as Promise<T[]>,
       ]);
+      const data = this.stripIncludes(model, rows, includes, policy);
 
       return {
         data,
@@ -585,9 +645,9 @@ export class DynamicQueryService {
     }
 
     if (normalized.inferTotal) {
-      const data = await modelOps.findMany({
+      const data = this.stripIncludes(model, await modelOps.findMany({
         where, orderBy: sort, ...pagination, ...projection,
-      }) as T[];
+      }) as T[], includes, policy);
       const total = await resolvePageTotal(data.length, pagination, () => modelOps.count({ where }));
       return { data, total, page: safePage, pageSize: safePageSize,
         totalPages: Math.ceil(total / safePageSize), pageIndex: safePage - 1 };
@@ -595,12 +655,12 @@ export class DynamicQueryService {
 
     // 默认：先 count 再 findMany
     const total = await modelOps.count({ where });
-    const data = await modelOps.findMany({
+    const data = this.stripIncludes(model, await modelOps.findMany({
       where,
       orderBy: sort,
       ...pagination,
       ...projection,
-    }) as T[];
+    }) as T[], includes, policy);
 
     return {
       data,
@@ -622,14 +682,16 @@ export class DynamicQueryService {
     excludes?: string[],
     options?: DynamicQueryOptions,
   ) {
-    const policy = mergeQueryPolicy(this.defaultPolicy, options?.policy);
+    const policy = this.effectivePolicy(model, options?.policy);
+    const includeList = toFieldList('includes', includes);
     const projection = this.dynamicQueryParam.parseProjection(
-      toFieldList('includes', includes), toFieldList('excludes', excludes), policy,
+      includeList, toFieldList('excludes', excludes), policy,
     );
 
-    return this.db.model(model).findUnique({
+    const row = await this.db.model(model).findUnique({
       where: { id },
       ...projection,
     });
+    return row ? this.stripIncludes(model, [row], includeList, policy)[0] : row;
   }
 }

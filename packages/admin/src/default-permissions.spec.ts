@@ -102,13 +102,17 @@ describe('default admin authorization boundaries', () => {
       expect(await h.guard.canActivate(context(UsersController, method, 'editor'))).toBe(false);
     }
     expect(await h.permissions.hasPermission('member', ['config:update'])).toBe(false);
-    await h.invoke(UsersController, 'setUserRoles', 'authorizer', () => h.users.setUserRoles('member', { roleIds: ['super-role'] }));
+    // N1: users:authorize alone cannot grant superadmin (it would be a path to outrank everyone).
+    await expect(h.invoke(UsersController, 'setUserRoles', 'authorizer',
+      () => h.users.setUserRoles('member', { roleIds: ['super-role'] }, { user: { id: 'authorizer' } }))).rejects.toMatchObject({ status: 403 });
+    expect(await h.permissions.hasPermission('member', ['config:update'])).toBe(false);
+    await h.db.model('userRoles').create({ data: { userId: 'other', roleId: 'super-role' } });
+    h.permissions.invalidatePermissionCache('other');
+    await h.users.setUserRoles('member', { roleIds: ['super-role'] }, { user: { id: 'other' } });
     expect(await h.permissions.hasPermission('member', ['config:update'])).toBe(true);
     // The member now outranks the authorizer: only a superadmin may change it again.
     await expect(h.invoke(UsersController, 'setUserRoles', 'authorizer', () => h.users.setUserRoles('member', { roleIds: [] }, { user: { id: 'authorizer' } })))
       .rejects.toMatchObject({ status: 403 });
-    await h.db.model('userRoles').create({ data: { userId: 'other', roleId: 'super-role' } });
-    h.permissions.invalidatePermissionCache('other');
     await h.users.setUserRoles('member', { roleIds: [] }, { user: { id: 'other' } });
     expect(await h.permissions.hasPermission('member', ['config:update'])).toBe(false);
     expect(await h.guard.canActivate(context(UsersController, 'update', 'authorizer'))).toBe(false);

@@ -796,6 +796,9 @@ importers:
       mermaid:
         specifier: 11.17.2
         version: 11.17.2
+      parse5:
+        specifier: 8.0.1
+        version: 8.0.1
       vega:
         specifier: ^6.4.0
         version: 6.4.0

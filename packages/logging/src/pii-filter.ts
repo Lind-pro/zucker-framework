@@ -22,6 +22,11 @@ export interface PiiPattern {
   type: string;
   regex: RegExp;
   replacement: string;
+  /**
+   * Optional check on each match (must be O(match length)). A match for which it returns
+   * false is kept unchanged, e.g. a 16-digit order number that fails the Luhn checksum.
+   */
+  validate?: (match: string) => boolean;
 }
 
 export interface PiiFilterOptions {
@@ -52,12 +57,25 @@ export interface PiiFilterOptions {
 const BUILTIN_PATTERNS: PiiPattern[] = [
   {
     type: 'url_password',
-    regex: /((?:postgres(?:ql)?|redis|rediss|https?|amqps?|mongodb(?:\+srv)?|mysql):\/\/[^:\s/@]{1,256}:)[^@\s/]{1,1024}@/gi,
+    // The user part may be empty (`redis://:password@host`).
+    regex: /((?:postgres(?:ql)?|redis|rediss|https?|amqps?|mongodb(?:\+srv)?|mysql):\/\/[^:\s/@]{0,256}:)[^@\s/]{1,1024}@/gi,
     replacement: '$1[REDACTED]@',
   },
   { type: 'phone_cn', regex: /(?<!\d)1[3-9]\d{9}(?!\d)/g, replacement: '[PHONE]' },
-  { type: 'idcard_cn', regex: /(?<!\d)\d{17}[\dXx](?![\dXx])/g, replacement: '[IDCARD]' },
-  { type: 'credit_card', regex: /\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b/g, replacement: '[CARD]' },
+  // Only numbers with a valid check digit are redacted, so 18-digit snowflake ids and
+  // 16-digit order numbers stay readable in logs.
+  {
+    type: 'idcard_cn',
+    regex: /(?<!\d)\d{17}[\dXx](?![\dXx])/g,
+    replacement: '[IDCARD]',
+    validate: isValidChineseIdChecksum,
+  },
+  {
+    type: 'credit_card',
+    regex: /\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b/g,
+    replacement: '[CARD]',
+    validate: isLuhnValid,
+  },
   { type: 'ip_v4', regex: /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g, replacement: '[IP]' },
   {
     type: 'jwt',
@@ -174,6 +192,18 @@ const SENSITIVE_FIELD_SUFFIXES = [
   'pincode',
 ];
 
+/**
+ * A field whose name only matches a *fragment* (not an exact name or a secret suffix) is kept
+ * when the name says it describes the secret rather than holding it: `hasApiKey`,
+ * `passwordChangedAt`, `authorizationUrl`, `credentialId`, `cookieConsent`. Checked on the
+ * original spelling so the camelCase / snake_case word boundary is required.
+ */
+const NON_SECRET_DESCRIPTOR_SUFFIX =
+  /(?:[a-z0-9](?:At|Time|Date|Timestamp|Count|Length|Url|URL|Uri|URI|Type|Policy|Consent|Enabled|Required|Id|ID|Ids|IDs|Status)|[_.-](?:at|time|date|timestamp|count|length|url|uri|type|policy|consent|enabled|required|id|ids|status))$/;
+const NON_SECRET_FLAG_PREFIX = /^(?:has|is|should|requires|can)(?:[A-Z]|[_.-][a-z])/;
+/** Normalized suffixes that describe a price or quota per token rather than a token. */
+const NON_SECRET_SUFFIX_EXCEPTIONS = ['pertoken', 'pertokens'];
+
 /** Additional fragments applied to HTTP header names only; header names are a closed vocabulary. */
 const SENSITIVE_HEADER_FRAGMENTS = ['auth', 'token', 'secret', 'key', 'cookie', 'signature', 'session', 'credential', 'csrf', 'xsrf'];
 
@@ -240,18 +270,52 @@ export class PiiFilter {
     for (let index = 0; index < this.patterns.length; index += 1) {
       const pattern = this.patterns[index];
       pattern.regex.lastIndex = 0;
-      result = result.replace(pattern.regex, pattern.replacement);
+      const validate = pattern.validate;
+      result = validate
+        ? result.replace(pattern.regex, (match) => (validate(match) ? pattern.replacement : match))
+        : result.replace(pattern.regex, pattern.replacement);
       // Same order as before: URL credentials first, then emails, then the other patterns.
       if (index === 0) result = redactEmails(result);
     }
     return result;
   }
 
-  /** True when the field name (property, header or parameter) always holds a secret. */
+  /** True when the field name (property or parameter) always holds a secret. */
   isSensitiveField(fieldName: string): boolean {
     const normalized = normalizeFieldName(fieldName);
     if (!normalized || this.allowedFields.has(normalized)) return false;
-    return isSensitiveNormalizedName(normalized, this.sensitiveFields);
+    return isSensitiveFieldName(fieldName, normalized, this.sensitiveFields);
+  }
+
+  /**
+   * Redacts a request URL: the value of every query (and fragment) parameter whose name is a
+   * sensitive field, or one of `extraSensitive` (exact names, e.g. `code`, `state`), becomes
+   * `[REDACTED]`; then the usual value patterns run. Works on relative URLs and is linear in
+   * the URL length (no `URL` parsing).
+   */
+  sanitizeUrl(url: string, extraSensitive: readonly string[] = []): string {
+    if (typeof url !== 'string') return url;
+    const truncated = url.length > this.maxStringLength;
+    const bounded = truncated ? url.slice(0, this.maxStringLength) : url;
+    const query = bounded.indexOf('?');
+    const hash = bounded.indexOf('#');
+    const start = query >= 0 && (hash < 0 || query < hash) ? query : hash;
+    if (start < 0) return this.sanitize(url);
+    const extras = new Set(extraSensitive.map(normalizeFieldName));
+    const isSensitive = (name: string) =>
+      this.isSensitiveField(name) || extras.has(normalizeFieldName(name));
+    let rebuilt = bounded.slice(0, start);
+    // Walk `?query` then `#fragment` (implicit-flow callbacks put tokens in the fragment).
+    let cursor = start;
+    while (cursor < bounded.length) {
+      const separator = bounded[cursor];
+      const nextHash = separator === '?' ? bounded.indexOf('#', cursor + 1) : -1;
+      const sectionEnd = nextHash < 0 ? bounded.length : nextHash;
+      rebuilt += separator + redactParameters(bounded.slice(cursor + 1, sectionEnd), isSensitive);
+      cursor = sectionEnd;
+    }
+    const sanitized = this.sanitize(rebuilt);
+    return truncated && !sanitized.endsWith('[TRUNCATED]') ? `${sanitized}[TRUNCATED]` : sanitized;
   }
 
   /**
@@ -310,8 +374,12 @@ export class PiiFilter {
     // 白名单字段跳过
     if (normalized && this.allowedFields.has(normalized)) return value;
 
-    // 敏感字段直接替换
-    if (normalized && isSensitiveNormalizedName(normalized, this.sensitiveFields)) {
+    // 敏感字段直接替换. A boolean never holds the secret itself (`password: true` is a flag).
+    if (
+      normalized &&
+      typeof value !== 'boolean' &&
+      isSensitiveFieldName(fieldName, normalized, this.sensitiveFields)
+    ) {
       return '[REDACTED]';
     }
 
@@ -357,7 +425,13 @@ export class PiiFilter {
     const result: Record<string, unknown> = {};
     const entries = Object.entries(value as Record<string, unknown>);
     for (const [key, val] of entries.slice(0, this.maxObjectKeys)) {
-      result[key] = this.sanitizeDeep(val, key, depth + 1, state);
+      const sanitized = this.sanitizeDeep(val, key, depth + 1, state);
+      if (key === '__proto__') {
+        // Plain assignment would set the prototype instead of an own property.
+        Object.defineProperty(result, key, { value: sanitized, enumerable: true, writable: true, configurable: true });
+      } else {
+        result[key] = sanitized;
+      }
     }
     if (entries.length > this.maxObjectKeys) {
       result.__truncated__ = `${entries.length - this.maxObjectKeys} fields omitted`;
@@ -385,7 +459,14 @@ export class PiiFilter {
     if (redactPrivateKeys(bounded) !== bounded || redactEmails(bounded) !== bounded) return true;
     return this.patterns.some((p) => {
       p.regex.lastIndex = 0; // reset for global regex
-      return p.regex.test(bounded);
+      if (!p.validate) return p.regex.test(bounded);
+      const validate = p.validate;
+      let found = false;
+      bounded.replace(p.regex, (match) => {
+        if (!found && validate(match)) found = true;
+        return match;
+      });
+      return found;
     });
   }
 }
@@ -397,6 +478,75 @@ interface SanitizeState {
 
 function normalizeFieldName(fieldName: string): string {
   return fieldName.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+/** Field-name rule for properties and parameters (headers use the stricter header rule). */
+function isSensitiveFieldName(original: string, normalized: string, exact: ReadonlySet<string>): boolean {
+  if (exact.has(normalized)) return true;
+  for (const suffix of SENSITIVE_FIELD_SUFFIXES) {
+    if (normalized.endsWith(suffix)) {
+      return !NON_SECRET_SUFFIX_EXCEPTIONS.some((exception) => normalized.endsWith(exception));
+    }
+  }
+  if (!SENSITIVE_FIELD_FRAGMENTS.some((fragment) => normalized.includes(fragment))) return false;
+  return !NON_SECRET_DESCRIPTOR_SUFFIX.test(original) && !NON_SECRET_FLAG_PREFIX.test(original);
+}
+
+/** Redacts `name=value` pairs of one query/fragment section; linear in its length. */
+function redactParameters(section: string, isSensitive: (name: string) => boolean): string {
+  if (!section.includes('=')) return section;
+  let output = '';
+  let cursor = 0;
+  while (cursor <= section.length) {
+    let end = section.indexOf('&', cursor);
+    if (end < 0) end = section.length;
+    const pair = section.slice(cursor, end);
+    const equals = pair.indexOf('=');
+    if (equals > 0 && isSensitive(decodeParameterName(pair.slice(0, equals)))) {
+      output += `${pair.slice(0, equals)}=[REDACTED]`;
+    } else {
+      output += pair;
+    }
+    if (end < section.length) output += '&';
+    cursor = end + 1;
+  }
+  return output;
+}
+
+function decodeParameterName(name: string): string {
+  const spaced = name.replace(/\+/g, ' ');
+  try {
+    return decodeURIComponent(spaced);
+  } catch {
+    return spaced;
+  }
+}
+
+/** GB 11643 check digit (ISO 7064 MOD 11-2) of an 18-character resident ID number. */
+function isValidChineseIdChecksum(id: string): boolean {
+  const weights = [7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2];
+  let sum = 0;
+  for (let index = 0; index < 17; index += 1) sum += (id.charCodeAt(index) - 48) * weights[index];
+  const expected = '10X98765432'[sum % 11];
+  return id[17].toUpperCase() === expected;
+}
+
+/** Luhn checksum over the digits of a card-number match (separators ignored). */
+function isLuhnValid(match: string): boolean {
+  let sum = 0;
+  let double = false;
+  for (let index = match.length - 1; index >= 0; index -= 1) {
+    const code = match.charCodeAt(index) - 48;
+    if (code < 0 || code > 9) continue;
+    let digit = code;
+    if (double) {
+      digit *= 2;
+      if (digit > 9) digit -= 9;
+    }
+    sum += digit;
+    double = !double;
+  }
+  return sum % 10 === 0;
 }
 
 function isSensitiveNormalizedName(normalized: string, exact: ReadonlySet<string>): boolean {
@@ -425,6 +575,9 @@ function redactPrivateKeys(text: string): string {
     PRIVATE_KEY_END.lastIndex = Math.max(endSearchFrom, begin.index + begin[0].length);
     const end = PRIVATE_KEY_END.exec(text);
     if (!end) {
+      // No END line (cut by truncation or a budget): redact from BEGIN to the end of the text.
+      output += `${text.slice(cursor, begin.index)}[PRIVATE_KEY]`;
+      cursor = text.length;
       endExhausted = true;
       break;
     }

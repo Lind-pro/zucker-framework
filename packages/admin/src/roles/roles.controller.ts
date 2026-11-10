@@ -31,6 +31,7 @@ import { JwtAuthGuard, PermissionsGuard, Permissions, PermissionService, RoleHie
 import { DATABASE_ADAPTER } from '@zucker-framework/crud';
 import type { DatabaseAdapter } from '@zucker-framework/core';
 import { adminPage, toAdminWhere, type AdminQueryFilterOptions } from '../query-filter';
+import { isPrivilegedCode, isSuperadminUser, privilegedRoleCodes } from '../privileged-grants';
 
 /** Filterable role fields (allow-list). */
 export const ROLE_FILTER: AdminQueryFilterOptions = { eq: ['id', 'name', 'status', 'parentId', 'groupId'], like: ['name', 'description'] };
@@ -135,6 +136,7 @@ export class RolesController {
     const { permissionIds = [], ...roleData } = body;
 
     const created = await this.db.$transaction(async (tx) => {
+      await this.requireMayGrant(tx, request.user.id, body, undefined);
       const role = (await tx.model('roles').create({ data: roleData })) as RoleEntity;
       if (permissionIds.length > 0) await this.syncRolePermissions(tx, role.id, permissionIds);
       return role;
@@ -164,6 +166,7 @@ export class RolesController {
       // Sensitive comparisons must use the state observed after the parent row lock.
       await this.requireAuthorization(request.user.id, permissionIds !== undefined
         || body.parentId !== undefined || (body.name !== undefined && body.name !== existing.name));
+      await this.requireMayGrant(tx, request.user.id, body, existing);
       const updated = (await tx.model('roles').update({ where: { id }, data: updateData })) as RoleEntity;
       if (permissionIds !== undefined) {
         await this.syncRolePermissions(tx, id, permissionIds);
@@ -220,6 +223,23 @@ export class RolesController {
     if (changesAuthorization && !await this.permissionService.hasPermission(userId, ['roles:authorize'])) {
       throw new ForbiddenException('Role authorization permission is required');
     }
+  }
+
+  /**
+   * Making a role confer superadmin (renaming it to `superadmin`, parenting it under a superadmin
+   * role or linking `superadmin`/`*`) is a superadmin action; otherwise `roles:authorize` on a role
+   * the operator holds would be a path to superadmin.
+   */
+  private async requireMayGrant(
+    tx: DatabaseAdapter, actorId: string, body: Partial<CreateRoleDto>, existing: RoleEntity | undefined,
+  ): Promise<void> {
+    const parentId = typeof body.parentId === 'string' && body.parentId && body.parentId !== existing?.parentId
+      ? body.parentId : undefined;
+    const escalates = (body.name === 'superadmin' && existing?.name !== 'superadmin')
+      || !!body.permissionIds?.some(isPrivilegedCode)
+      || (!!parentId && (await privilegedRoleCodes(tx, [parentId])).length > 0);
+    if (escalates && !await isSuperadminUser(this.permissionService, actorId))
+      throw new ForbiddenException('Only a superadmin can grant superadmin through a role');
   }
 
   private async lockRole(tx: DatabaseAdapter, id: string): Promise<RoleEntity> {

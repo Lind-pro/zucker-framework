@@ -1,11 +1,11 @@
 import {
   AbstractTaskExecutor,
   RuleConstants,
-  type TaskExecutionContext,
   type TaskExecutor,
   type TaskExecutorProvider,
 } from '../core/task-executor';
-import { createRuleData, type RuleData } from '../core/rule-data';
+import type { RuleData } from '../core/rule-data';
+import type { ExecutionContext } from '../core/execution-context';
 
 /**
  * 延迟/暂停类型 — 对齐 jetlinks DelayTaskExecutorProvider.PauseType
@@ -93,7 +93,7 @@ class DelayTaskExecutor extends AbstractTaskExecutor {
   private rateWindowTimer?: ReturnType<typeof setInterval>;
   private inputCallback?: (data: RuleData) => void;
 
-  constructor(context: TaskExecutionContext) {
+  constructor(context: ExecutionContext) {
     super(context);
     this.loadConfig();
   }
@@ -103,7 +103,7 @@ class DelayTaskExecutor extends AbstractTaskExecutor {
   }
 
   validate(): void {
-    const cfg = this.context.getConfiguration() as unknown as DelayExecutorConfig;
+    const cfg = this.context.getJob().getConfiguration() as unknown as DelayExecutorConfig;
     if (!cfg.pauseType) {
       throw new Error('Delay pause type is required');
     }
@@ -154,7 +154,7 @@ class DelayTaskExecutor extends AbstractTaskExecutor {
       await this.delayAndForward(data, ms);
     },
     [DelayPauseType.DELAY_VARIABLE]: async (data) => {
-      const delayStr = (data.data as Record<string, unknown>)?.delay;
+      const delayStr = (data.getData() as Record<string, unknown>)?.delay;
       if (delayStr == null) return;
       const ms = typeof delayStr === 'number' ? delayStr : parseInt(String(delayStr), 10);
       if (isNaN(ms) || ms <= 0) return;
@@ -174,14 +174,14 @@ class DelayTaskExecutor extends AbstractTaskExecutor {
     },
   };
 
-  reload(): void {
+  async reload(): Promise<void> {
     this.clearTimers();
     this.loadConfig();
-    super.reload();
+    await super.reload();
   }
 
   private loadConfig(): void {
-    this.config = this.context.getConfiguration() as unknown as DelayExecutorConfig;
+    this.config = this.context.getJob().getConfiguration() as unknown as DelayExecutorConfig;
   }
 
   private delayAndForward(data: RuleData, ms: number): Promise<void> {
@@ -199,7 +199,7 @@ class DelayTaskExecutor extends AbstractTaskExecutor {
         if (idx >= 0) this.pendingTimers.splice(idx, 1);
 
         try {
-          const newData = this.context.newRuleDataFrom(data, data.data);
+          const newData = data.newData(data.getData());
           await this.context.fireEvent(RuleConstants.Event.result, newData);
         } catch (err) {
           await this.context.onError(
@@ -233,7 +233,7 @@ class DelayTaskExecutor extends AbstractTaskExecutor {
 
     if (this.rateWindowCount <= maxRate) {
       // Within rate limit — forward data
-      const newData = this.context.newRuleDataFrom(data, data.data);
+      const newData = data.newData(data.getData());
       this.context.fireEvent(RuleConstants.Event.result, newData).catch((err) => {
         this.context.onError(
           err instanceof Error ? err : new Error(String(err)),
@@ -272,7 +272,7 @@ export class DelayTaskExecutorProvider implements TaskExecutorProvider {
     return DelayTaskExecutorProvider.EXECUTOR;
   }
 
-  async createTask(context: TaskExecutionContext): Promise<TaskExecutor> {
+  async createTask(context: ExecutionContext): Promise<TaskExecutor> {
     return new DelayTaskExecutor(context);
   }
 }

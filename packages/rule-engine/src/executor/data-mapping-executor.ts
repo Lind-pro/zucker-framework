@@ -1,11 +1,11 @@
 import {
   AbstractTaskExecutor,
   RuleConstants,
-  type TaskExecutionContext,
   type TaskExecutor,
   type TaskExecutorProvider,
 } from '../core/task-executor';
 import type { RuleData } from '../core/rule-data';
+import type { ExecutionContext } from '../core/execution-context';
 
 /**
  * 字段映射定义 — 对齐 jetlinks DataMappingTaskExecutorProvider.Mapping
@@ -93,7 +93,7 @@ function resolveExpression(
 class DataMappingTaskExecutor extends AbstractTaskExecutor {
   private config!: DataMappingConfig;
 
-  constructor(context: TaskExecutionContext) {
+  constructor(context: ExecutionContext) {
     super(context);
     this.loadConfig();
   }
@@ -103,7 +103,7 @@ class DataMappingTaskExecutor extends AbstractTaskExecutor {
   }
 
   validate(): void {
-    const cfg = this.context.getConfiguration() as unknown as DataMappingConfig;
+    const cfg = this.context.getJob().getConfiguration() as unknown as DataMappingConfig;
     if (!cfg.mappings || !Array.isArray(cfg.mappings) || cfg.mappings.length === 0) {
       throw new Error('At least one mapping is required');
     }
@@ -125,7 +125,7 @@ class DataMappingTaskExecutor extends AbstractTaskExecutor {
    * 执行数据映射 — 对齐 jetlinks Config.mapping()
    */
   async execute(data: RuleData): Promise<void> {
-    const sourceData = data.data as Record<string, unknown>;
+    const sourceData = data.getData() as Record<string, unknown>;
     const newData: Record<string, unknown> = {};
 
     // 保留源数据 — 对齐 jetlinks keepSourceData
@@ -143,17 +143,17 @@ class DataMappingTaskExecutor extends AbstractTaskExecutor {
       }
     }
 
-    const ruleData = this.context.newRuleDataFrom(data, newData);
+    const ruleData = data.newData(newData);
     await this.context.fireEvent(RuleConstants.Event.result, ruleData);
   }
 
-  reload(): void {
+  async reload(): Promise<void> {
     this.loadConfig();
-    super.reload();
+    await super.reload();
   }
 
   private loadConfig(): void {
-    this.config = this.context.getConfiguration() as unknown as DataMappingConfig;
+    this.config = this.context.getJob().getConfiguration() as unknown as DataMappingConfig;
   }
 }
 
@@ -167,7 +167,7 @@ export class DataMappingExecutorProvider implements TaskExecutorProvider {
     return DataMappingExecutorProvider.EXECUTOR;
   }
 
-  async createTask(context: TaskExecutionContext): Promise<TaskExecutor> {
+  async createTask(context: ExecutionContext): Promise<TaskExecutor> {
     return new DataMappingTaskExecutor(context);
   }
 }

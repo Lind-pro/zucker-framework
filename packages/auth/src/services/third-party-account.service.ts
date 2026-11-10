@@ -196,7 +196,10 @@ export class ThirdPartyAccountService {
             username,
             name: profile.displayName || username,
             typeId: 'oauth',
-            email: profile.email,
+            // An unverified provider address is not stored on the user: it would occupy the
+            // unique email and block the real owner from registering or linking later. The
+            // claimed address stays on the binding row (profile email).
+            email: emailVerified && profile.email ? profile.email : null,
             emailVerified: Boolean(profile.email) && emailVerified,
             status: true,
           },
@@ -210,6 +213,10 @@ export class ThirdPartyAccountService {
       // A concurrent first login may have created the binding; return that user.
       const raced = await this.findAccount(provider, profile.providerAccountId);
       if (raced) return { userId: raced.userId, isNew: false };
+      if (isEmailUniqueViolation(error)) {
+        // Another account took the (verified) address concurrently.
+        throw new BusinessException('该邮箱已被其他账号使用，请先登录后再绑定', 'THIRD_PARTY_EMAIL_IN_USE', 409);
+      }
       throw error;
     }
 
@@ -230,4 +237,14 @@ export class ThirdPartyAccountService {
       select,
     }) as Promise<Array<{ provider: string; displayName?: string; email?: string }>>;
   }
+}
+
+/** Prisma-style unique violation (P2002) whose target includes the `email` column. */
+function isEmailUniqueViolation(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const { code, meta } = error as { code?: unknown; meta?: { target?: unknown } };
+  if (code !== 'P2002') return false;
+  const target = meta?.target;
+  if (Array.isArray(target)) return target.some((field) => typeof field === 'string' && /email/i.test(field));
+  return typeof target === 'string' && /email/i.test(target);
 }

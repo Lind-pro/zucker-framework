@@ -126,3 +126,51 @@ describe('evaluateTemplate', () => {
     expect(result).toBe('');
   });
 });
+
+describe('evaluate results are plain host data (M1)', () => {
+  it('a result carrying a function member has no callable map', () => {
+    const r = evaluate('({ map: f => f })') as { map?: unknown };
+    expect(typeof r.map).not.toBe('function');
+  });
+
+  it('object results have host prototypes', () => {
+    const r = evaluate('({a:[1]})') as { a: unknown[] };
+    expect(Object.getPrototypeOf(r)).toBe(Object.prototype);
+    expect(r.a).toBeInstanceOf(Array);
+    expect(r.a).toEqual([1]);
+  });
+
+  it('a Date result is a host Date with the same time', () => {
+    const r = evaluate('new Date(1700000000000)');
+    expect(r).toBeInstanceOf(Date);
+    expect((r as Date).getTime()).toBe(1700000000000);
+  });
+
+  it('a thenable result throws', () => {
+    expect(() => evaluate('({ then(r) { r(1) } })')).toThrow(/plain data/);
+  });
+
+  it('evaluateTemplate with a toString loop returns quickly', () => {
+    const t0 = Date.now();
+    try {
+      evaluateTemplate('v=${ (a => (a.toString = () => { for (;;) {} }, a))([]) }');
+    } catch {
+      // throwing (timeout) is acceptable; hanging is not
+    }
+    expect(Date.now() - t0).toBeLessThan(2000);
+  });
+
+  it('keeps the TypeError message of a failing expression', () => {
+    expect(() => evaluate('null.x')).toThrow(/null/);
+    try {
+      evaluate('null.x');
+    } catch (e) {
+      expect(String((e as Error).message)).toMatch(/TypeError|Cannot read properties of null/);
+    }
+  });
+
+  it('function and symbol results are undefined', () => {
+    expect(evaluate('(() => 1)')).toBeUndefined();
+    expect(evaluate('Symbol("s")')).toBeUndefined();
+  });
+});

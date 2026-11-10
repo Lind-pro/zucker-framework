@@ -259,6 +259,46 @@ describe('DistributedEventBus', () => {
       expect(shared.patterns.size).toBe(0);
     });
 
+    it('retries a failed psubscribe after subscribeRetryMs without a new subscribe() (L3)', async () => {
+      vi.useFakeTimers();
+      try {
+        const shared = createPatternRedis();
+        shared.psubscribeFails = true;
+        const bus = new DistributedEventBus(shared, new DefaultTopicEventBus(), { subscribeRetryMs: 100 });
+        bus.subscribe('/a', () => {});
+        await vi.advanceTimersByTimeAsync(0);
+        expect(shared.patterns.size).toBe(0);
+
+        shared.psubscribeFails = false; // Redis is back
+        await vi.advanceTimersByTimeAsync(99);
+        expect(shared.patterns.size).toBe(0); // not yet
+        await vi.advanceTimersByTimeAsync(2);
+        expect(shared.patterns.size).toBe(1); // retried without another subscribe()
+        await bus.destroy();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('destroy() cancels pending subscribe retries (L3)', async () => {
+      vi.useFakeTimers();
+      try {
+        const shared = createPatternRedis();
+        shared.psubscribeFails = true;
+        const bus = new DistributedEventBus(shared, new DefaultTopicEventBus(), { subscribeRetryMs: 100 });
+        bus.subscribe('/a', () => {});
+        await vi.advanceTimersByTimeAsync(0);
+        expect(vi.getTimerCount()).toBeGreaterThan(0); // retry pending
+        await bus.destroy();
+        shared.psubscribeFails = false;
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(shared.patterns.size).toBe(0);
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('unsubscribes the exact Redis channel when the last handler leaves (no psubscribe)', async () => {
       const sub = distributedBus.subscribe('/x', () => {});
       const channels = (redis as any)._subscribedChannels as Set<string>;

@@ -70,6 +70,13 @@ export class ZuckerMonitoringModule {
       controllers.push(PrometheusExporter);
     }
     if (options.alerts === true) controllers.push(AlertController);
+    const sessionProtected = options.metrics === true || options.alerts === true;
+    if (sessionProtected && typeof options.authorize !== 'function' && options.permissions !== 'host-guard') {
+      throw new Error(
+        "ZuckerMonitoringModule: metrics: true / alerts: true need `authorize` or `permissions: 'host-guard'` " +
+          '(the built-in guard only checks for a signed-in user)',
+      );
+    }
     return {
       module: ZuckerMonitoringModule,
       global: true,

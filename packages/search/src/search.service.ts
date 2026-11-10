@@ -153,8 +153,9 @@ export class SearchService implements OnModuleInit, OnModuleDestroy {
     if (!configured || this.readyAliases.has(index)) return;
     try {
       await this.ensureConfiguredAliases();
-    } catch {
-      throw new Error('Search alias is not initialized; write refused');
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new Error(`Search alias is not initialized; write refused: ${reason}`);
     }
     if (!this.readyAliases.has(index)) throw new Error('Search alias is not initialized; write refused');
   }
@@ -176,6 +177,19 @@ export class SearchService implements OnModuleInit, OnModuleDestroy {
     if (await indices.existsAlias({ name: definition.alias })) {
       this.readyAliases.add(definition.alias);
       return;
+    }
+    // A concrete index named like the alias (left by 1.0.18, which wrote to the alias name before
+    // the alias existed) makes alias creation fail forever: report it instead of a generic error.
+    if (await indices.exists({ index: definition.alias }).catch(() => false)) {
+      // `exists` is also true for an alias: another replica may have just created it.
+      if (await indices.existsAlias({ name: definition.alias }).catch(() => false)) {
+        this.readyAliases.add(definition.alias);
+        return;
+      }
+      throw new Error(
+        `Search alias "${definition.alias}" cannot be created: a concrete index with that name exists. ` +
+          'Reindex its documents into a new index (e.g. createIndexWithTimestamp), delete the old index, then restart.',
+      );
     }
     try {
       // 别名在建索引的同一请求中声明为写索引：原子完成，且并发启动的另一副本会因

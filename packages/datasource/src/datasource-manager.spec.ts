@@ -216,3 +216,81 @@ describe('DataSourceManager', () => {
     expect(v3.$disconnect).toHaveBeenCalledOnce();
   });
 });
+
+describe('DataSourceManager disposal (L9)', () => {
+  const withDisconnect = () => ({ ...makeAdapter(), $disconnect: vi.fn().mockResolvedValue(undefined) });
+  const flush = () => new Promise<void>((r) => setImmediate(r));
+
+  it('an adapter registered under two ids is not disconnected when one id is removed', async () => {
+    const manager = new DataSourceManager();
+    const shared = withDisconnect();
+    manager.register('a', shared, makeConfig('a'));
+    manager.register('b', shared, makeConfig('b'));
+    manager.remove('a');
+    await flush();
+    expect(shared.$disconnect).not.toHaveBeenCalled();
+    expect(manager.getDataSource('b')).toBe(shared);
+
+    manager.remove('b'); // last reference gone
+    await flush();
+    expect(shared.$disconnect).toHaveBeenCalledOnce();
+  });
+
+  it('an adapter replaced by an id that still points at it elsewhere is not released', async () => {
+    const manager = new DataSourceManager();
+    const shared = withDisconnect();
+    manager.register('a', shared);
+    manager.register('b', shared);
+    manager.register('a', withDisconnect()); // replace under id "a"; "b" still uses shared
+    await flush();
+    expect(shared.$disconnect).not.toHaveBeenCalled();
+  });
+
+  it('disposeOnReplace: false never disconnects', async () => {
+    const manager = new DataSourceManager();
+    manager.setDisposalOptions({ disposeOnReplace: false });
+    const v1 = withDisconnect();
+    manager.register('a', v1);
+    manager.register('a', withDisconnect());
+    manager.close('a');
+    manager.register('c', v1);
+    manager.remove('c');
+    await flush();
+    expect(v1.$disconnect).not.toHaveBeenCalled();
+  });
+
+  it('drainDelayMs delays the release (fake timers)', async () => {
+    vi.useFakeTimers();
+    try {
+      const manager = new DataSourceManager();
+      manager.setDisposalOptions({ drainDelayMs: 500 });
+      const v1 = withDisconnect();
+      manager.register('a', v1);
+      manager.remove('a');
+      await vi.advanceTimersByTimeAsync(499);
+      expect(v1.$disconnect).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(2);
+      expect(v1.$disconnect).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('an adapter registered again during the drain delay is not released', async () => {
+    vi.useFakeTimers();
+    try {
+      const manager = new DataSourceManager();
+      manager.setDisposalOptions({ drainDelayMs: 500 });
+      const v1 = withDisconnect();
+      manager.register('a', v1);
+      manager.remove('a');
+      await vi.advanceTimersByTimeAsync(100);
+      manager.register('a', v1);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(v1.$disconnect).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+

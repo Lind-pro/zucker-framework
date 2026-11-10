@@ -66,6 +66,7 @@ export {
   BatchCreditLedger,
   BatchCreditAmountError,
   BatchCreditInsufficientError,
+  CreditExpiryError,
 } from './batch-credit-ledger';
 export type {
   CreditLot,

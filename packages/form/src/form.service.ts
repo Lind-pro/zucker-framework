@@ -1,4 +1,5 @@
 import { Injectable, Inject, Logger } from '@nestjs/common';
+import { Script, createContext } from 'node:vm';
 import { ValidationException, type DatabaseAdapter } from '@zucker-framework/core';
 import type { FormDefinition, FieldDefinition } from './form-definition';
 import { FieldTypeRegistry } from './field-type';
@@ -16,8 +17,38 @@ const REGEX_CACHE_MAX_SIZE = 256;
 /** Stored patterns are admin-supplied; bound their size and the size of the tested value. */
 export const FORM_PATTERN_MAX_LENGTH = 512;
 export const FORM_PATTERN_MAX_INPUT_LENGTH = 10_000;
-/** A quantified group that itself ends in a quantifier, e.g. `(a+)+`, `(\w*)*`, `(x|y+){2,}`. */
-const NESTED_QUANTIFIER = /\((?:[^()\\]|\\.)*[+*}]\)\s*(?:[+*]|\{\d+,?\d*\})/;
+/**
+ * A quantified group that itself ends in a variable quantifier, e.g. `(a+)+`, `(\w*)*`, `(x|y+){2,}`.
+ * A fixed inner count (`(?:\d{4})+`) is not variable and is allowed.
+ */
+const NESTED_QUANTIFIER = /\((?:[^()\\]|\\.)*(?:[+*]|\{\d+,\d*\})\)\s*(?:[+*]|\{\d+,?\d*\})/;
+/**
+ * Upper bound for one pattern test. The static guard above misses cases such as `(a|a)*$` or
+ * `(.*a){20}`; the test runs in a `node:vm` context whose timeout interrupts a backtracking match.
+ */
+export const FORM_PATTERN_TIMEOUT_MS = 50;
+const patternContext = createContext({});
+const patternTest = new Script('pattern.test(value)');
+
+/**
+ * Tests `value` against a compiled form pattern with a time limit. Returns `false` for a value that
+ * does not match and `null` when the match was interrupted after {@link FORM_PATTERN_TIMEOUT_MS}.
+ */
+export function testFormPattern(pattern: RegExp, value: string): boolean | null {
+  pattern.lastIndex = 0;
+  const context = patternContext as { pattern?: RegExp; value?: string };
+  context.pattern = pattern;
+  context.value = value;
+  try {
+    return patternTest.runInContext(patternContext, { timeout: FORM_PATTERN_TIMEOUT_MS }) === true;
+  } catch (error) {
+    if ((error as { code?: unknown })?.code === 'ERR_SCRIPT_EXECUTION_TIMEOUT') return null;
+    throw error;
+  } finally {
+    context.pattern = undefined;
+    context.value = undefined;
+  }
+}
 
 /**
  * Compiles a stored validator pattern, or returns null when it is invalid, too long or has a nested
@@ -200,7 +231,13 @@ export class FormService {
             this.logger.warn('Form validator pattern is invalid or unsafe; value rejected');
             return `Does not match pattern`;
           }
-          if (value.length > FORM_PATTERN_MAX_INPUT_LENGTH || !regex.test(value)) return `Does not match pattern`;
+          if (value.length > FORM_PATTERN_MAX_INPUT_LENGTH) return `Does not match pattern`;
+          const matched = testFormPattern(regex, value);
+          if (matched === null) {
+            this.logger.warn(`Form validator pattern exceeded ${FORM_PATTERN_TIMEOUT_MS} ms; value rejected`);
+            return `Does not match pattern`;
+          }
+          if (!matched) return `Does not match pattern`;
         }
         break;
     }

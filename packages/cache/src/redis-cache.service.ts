@@ -21,8 +21,9 @@ export interface RedisCacheServiceOptions {
    */
   keyPrefix?: string;
   /**
-   * Maximum number of keys remembered for invalidation while Redis is degraded.
-   * They are deleted from Redis as soon as it is reachable again. Default 10_000.
+   * Maximum number of keys remembered while Redis is degraded (pending deletes and pending
+   * writes). On recovery, unexpired writes are replayed with their remaining TTL and the other
+   * keys are deleted. Default 10_000; keys beyond the bound rely on TTL expiry.
    */
   maxPendingInvalidations?: number;
 }
@@ -58,11 +59,17 @@ export class RedisCacheService implements OnModuleInit, OnModuleDestroy {
 
   private initialization?: Promise<void>;
   /**
-   * Keys whose Redis copy became stale while Redis was unreachable (delete/set fell back
-   * to memory). They are deleted before any other command once Redis is back, so an
-   * invalidation issued during an outage cannot be undone by the old Redis value.
+   * Keys whose Redis copy became stale while Redis was unreachable. A delete is replayed as DEL;
+   * a write (set that fell back to memory) is replayed as SET with its remaining TTL, so values
+   * written during an outage — e.g. token revocations — are not lost when reads return to
+   * Redis. Replay runs before any other command once Redis is back; the latest operation per key
+   * wins. Note: a value another instance wrote after recovery but before this replay is
+   * overwritten (last writer wins).
    */
-  private readonly pendingInvalidations = new Set<string>();
+  private readonly pendingInvalidations = new Map<
+    string,
+    { op: 'del' } | { op: 'set'; value: unknown; expiresAt: number }
+  >();
   private pendingOverflowWarned = false;
 
   constructor(private readonly options: RedisCacheServiceOptions = {}) {}
@@ -178,6 +185,22 @@ export class RedisCacheService implements OnModuleInit, OnModuleDestroy {
 
   /** Remember a key whose Redis value must not survive the current outage. */
   markStale(key: string): void {
+    this.remember(key, { op: 'del' });
+  }
+
+  /**
+   * Remember a write that could not reach Redis; it is replayed (SET with the remaining TTL)
+   * on recovery, or turned into a DEL if it expired meanwhile.
+   */
+  markPendingWrite<T>(key: string, value: T, ttlSeconds: number): void {
+    if (!Number.isFinite(ttlSeconds) || ttlSeconds <= 0) {
+      this.markStale(key);
+      return;
+    }
+    this.remember(key, { op: 'set', value, expiresAt: Date.now() + Math.ceil(ttlSeconds * 1000) });
+  }
+
+  private remember(key: string, entry: { op: 'del' } | { op: 'set'; value: unknown; expiresAt: number }): void {
     if (!this.options.url || this.shuttingDown) return;
     const max = this.options.maxPendingInvalidations ?? 10_000;
     if (this.pendingInvalidations.size >= max && !this.pendingInvalidations.has(key)) {
@@ -187,7 +210,9 @@ export class RedisCacheService implements OnModuleInit, OnModuleDestroy {
       }
       return;
     }
-    this.pendingInvalidations.add(key);
+    // Re-insert so iteration order follows the latest operation.
+    this.pendingInvalidations.delete(key);
+    this.pendingInvalidations.set(key, entry);
   }
 
   /** Number of invalidations waiting for Redis to recover (diagnostics and tests). */
@@ -197,11 +222,26 @@ export class RedisCacheService implements OnModuleInit, OnModuleDestroy {
 
   private async replayInvalidations(): Promise<void> {
     if (this.pendingInvalidations.size === 0 || !this.client) return;
-    const keys = [...this.pendingInvalidations];
-    for (let i = 0; i < keys.length; i += 500) {
-      const batch = keys.slice(i, i + 500);
+    const now = Date.now();
+    const deletes: string[] = [];
+    const writes: Array<[string, unknown, number]> = [];
+    for (const [key, entry] of this.pendingInvalidations) {
+      if (entry.op === 'set' && entry.expiresAt > now) writes.push([key, entry.value, entry.expiresAt - now]);
+      else deletes.push(key);
+    }
+    for (let i = 0; i < deletes.length; i += 500) {
+      const batch = deletes.slice(i, i + 500);
       await this.client.del(...batch.map((k) => this.prefixed(k)));
-      for (const k of batch) this.pendingInvalidations.delete(k);
+      for (const k of batch) {
+        // Keep a newer operation recorded while this replay was running.
+        if (this.pendingInvalidations.get(k)?.op === 'del') this.pendingInvalidations.delete(k);
+      }
+    }
+    const cache = this.cache<unknown>();
+    for (const [key, value, remainingMs] of writes) {
+      const entry = this.pendingInvalidations.get(key);
+      await cache.set(key, value, Math.max(1, remainingMs));
+      if (this.pendingInvalidations.get(key) === entry) this.pendingInvalidations.delete(key);
     }
     this.pendingOverflowWarned = false;
   }
@@ -240,7 +280,7 @@ export class RedisCacheService implements OnModuleInit, OnModuleDestroy {
    */
   async set<T>(key: string, value: T, ttlSeconds: number): Promise<void> {
     if (!this.isAvailable()) {
-      this.markStale(key);
+      this.markPendingWrite(key, value, ttlSeconds);
       return;
     }
     if (!Number.isFinite(ttlSeconds) || ttlSeconds <= 0) {
@@ -253,7 +293,7 @@ export class RedisCacheService implements OnModuleInit, OnModuleDestroy {
       await this.cache().set(key, value, ttlMs);
       return true;
     }, false);
-    if (!ok) this.markStale(key);
+    if (!ok) this.markPendingWrite(key, value, ttlSeconds);
   }
 
   /**

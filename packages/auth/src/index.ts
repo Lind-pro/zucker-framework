@@ -129,8 +129,14 @@ export { PermissionScannerService } from './services/permission-scanner.service'
 export type { ScannedPermission } from './services/permission-scanner.service';
 export { DimensionService } from './services/dimension.service';
 export { RoleHierarchyService } from './services/role-hierarchy.service';
-export { TokenService, TOKEN_CACHE } from './services/token.service';
-export type { TokenServiceOptions } from './services/token.service';
+export {
+  TokenService,
+  TOKEN_CACHE,
+  SESSION_TRACKED_CLAIM,
+  REVOCATION_WATERMARK_CLAIM,
+  tokenDigest,
+} from './services/token.service';
+export type { TokenServiceOptions, AccessTokenClaims, AccessTokenRejection } from './services/token.service';
 export { MenuService } from './services/menu.service';
 export type { MenuNode } from './services/menu.service';
 export { ThirdPartyAccountService } from './services/third-party-account.service';
@@ -223,7 +229,7 @@ export type {
   TwoFactorValidator,
   TwoFactorValidatorProvider,
 } from './two-factor/two-factor.interface';
-export { TotpValidator } from './two-factor/totp-validator';
+export { TotpValidator, type TwoFactorStateStore } from './two-factor/totp-validator';
 export { TwoFactorService, TWO_FACTOR_PROVIDERS } from './two-factor/two-factor.service';
 
 // Password

@@ -182,3 +182,46 @@ describe('legacy PayPal webhook refund mapping (M3)', () => {
     await expect(webhookFixture('COMPLETED')).resolves.toMatchObject({ state: 'unknown' });
   });
 });
+
+describe('legacy PayPal refund webhook without supplementary_data (N16)', () => {
+  const upLink = { rel: 'up', href: 'https://api-m.paypal.com/v2/payments/captures/CAP1' };
+  const event = (links?: unknown) => JSON.stringify({ event_type: 'PAYMENT.CAPTURE.REFUNDED', resource: { id: 'refund-1', ...(links ? { links } : {}) } });
+  function setup(captureStatus = 'PARTIALLY_REFUNDED') {
+    const { transport } = fixture({ id: 'order-1', status: 'COMPLETED',
+      purchaseUnits: [{ payments: { captures: [{ id: 'CAP1', status: captureStatus }] } }] });
+    const withCapture = Object.assign(transport, {
+      getCapturePayment: vi.fn().mockResolvedValue({ id: 'CAP1', supplementary_data: { related_ids: { order_id: 'order-1' } } }),
+    });
+    withCapture.verifyWebhookSignature.mockResolvedValue(true);
+    const adapter = createPayPalAdapter({ transport: withCapture as unknown as PayPalPaymentTransport, webhookId: 'wh' });
+    return { adapter, transport: withCapture };
+  }
+
+  it('resolves the order through the up link and derives the state from the capture status', async () => {
+    const { adapter, transport } = setup('PARTIALLY_REFUNDED');
+    await expect(adapter.parseWebhook({ headers: {}, rawBody: event([upLink]) }))
+      .resolves.toMatchObject({ providerRef: 'order-1', state: 'partially_refunded' });
+    expect(transport.getCapturePayment).toHaveBeenCalledExactlyOnceWith('CAP1');
+    expect(transport.getOrder).toHaveBeenCalledWith({ id: 'order-1' });
+    const full = setup('REFUNDED');
+    await expect(full.adapter.parseWebhook({ headers: {}, rawBody: event([upLink]) })).resolves.toMatchObject({ providerRef: 'order-1', state: 'refunded' });
+  });
+
+  it('reports unknown when the capture lookup fails', async () => {
+    const { adapter, transport } = setup();
+    transport.getCapturePayment.mockRejectedValueOnce(new Error('404'));
+    const result = await adapter.parseWebhook({ headers: {}, rawBody: event([upLink]) });
+    expect(result.state).toBe('unknown');
+    expect(result.providerRef).toBeUndefined();
+    expect(transport.getOrder).not.toHaveBeenCalled();
+  });
+
+  it('reports unknown without any lookup when there is no up link', async () => {
+    const { adapter, transport } = setup();
+    for (const links of [undefined, [], [{ rel: 'self', href: 'https://api-m.paypal.com/v2/payments/refunds/refund-1' }]]) {
+      const result = await adapter.parseWebhook({ headers: {}, rawBody: event(links) });
+      expect(result.state).toBe('unknown');
+    }
+    expect(transport.getCapturePayment).not.toHaveBeenCalled();
+  });
+});

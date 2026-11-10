@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { BatchCreditLedger } from './batch-credit-ledger';
+import { BatchCreditLedger, CreditExpiryError } from './batch-credit-ledger';
 import type { BatchCreditLedgerOptions } from './batch-credit-ledger';
 
 /** Port-level contracts only; these fakes do not prove database isolation. */
@@ -124,4 +124,36 @@ it('expires selected lots on the supplied fenced transaction without opening ano
   expect(f.models.lots.findFirst).toHaveBeenCalledTimes(2);
   expect(f.models.lots.findFirst).toHaveBeenCalledWith({ where: { id: 'due', owner: 'a', isExpired: false, remainingAmount: { gt: 0 }, expiresAt: { lte: now } } });
   expect(f.models.transactions.create).toHaveBeenCalledWith({ data: { type: 'EXPIRE', metadata: { task: 'owned-job' }, owner: 'a', amount: -3, balanceBefore: 10, balanceAfter: 7, lotIds: ['due'] } });
+});
+
+describe('expiry scan termination and error reporting (N8)', () => {
+  it('terminates after one pass when the scan ignores take and the cursor', async () => {
+    const f = fixture();
+    const page = Array.from({ length: 600 }, (_, i) => ({ id: `lot-${String(i).padStart(4, '0')}`, owner: 'a', remainingAmount: 1 }));
+    f.scan.findMany.mockResolvedValue(page);
+    f.models.lots.findFirst.mockImplementation(async (args: { where: { id: string } }) => ({ id: args.where.id, owner: 'a', remainingAmount: 1 }));
+    expect(await f.ledger.expire({ type: 'expire' })).toBe(600);
+    // 600 >= page size, so one more page is requested, but it holds nothing unseen and ends the sweep.
+    expect(f.scan.findMany.mock.calls.length).toBeLessThanOrEqual(2);
+    expect(f.models.lots.update).toHaveBeenCalledTimes(600);
+  });
+
+  it('throws CreditExpiryError carrying the credits expired for the other lots', async () => {
+    const f = fixture();
+    f.scan.findMany.mockResolvedValue([
+      { id: 'lot-1', owner: 'a', remainingAmount: 4 },
+      { id: 'lot-2', owner: 'broken', remainingAmount: 9 },
+      { id: 'lot-3', owner: 'a', remainingAmount: 6 },
+    ]);
+    f.models.lots.findFirst.mockImplementation(async (args: { where: { id: string } }) => ({
+      id: args.where.id, owner: args.where.id === 'lot-2' ? 'broken' : 'a',
+      remainingAmount: { 'lot-1': 4, 'lot-2': 9, 'lot-3': 6 }[args.where.id],
+    }));
+    f.lockAccount.mockImplementation(async (_tx: unknown, accountId: string) => { if (accountId === 'broken') throw new Error('needs migration'); });
+    const error = await f.ledger.expire({ type: 'expire' }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(CreditExpiryError);
+    expect(error).toBeInstanceOf(AggregateError);
+    expect((error as CreditExpiryError).expired).toBe(10);
+    expect((error as CreditExpiryError).errors).toHaveLength(1);
+  });
 });

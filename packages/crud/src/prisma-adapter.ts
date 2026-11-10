@@ -1,4 +1,9 @@
-import { type DatabaseAdapter, type ModelOperations, TransactionAwareDatabaseAdapter } from '@zucker-framework/core';
+import {
+  type DatabaseAdapter,
+  type ModelFieldInfo,
+  type ModelOperations,
+  TransactionAwareDatabaseAdapter,
+} from '@zucker-framework/core';
 
 /** Minimal interface for a Prisma-like client */
 interface PrismaLikeClient extends Record<string, unknown> {
@@ -72,9 +77,19 @@ export class PrismaAdapter extends TransactionAwareDatabaseAdapter {
     return model as unknown as ModelOperations;
   }
 
+  /**
+   * Field metadata from the generated client's runtime data model
+   * (`client._runtimeDataModel.models[Model].fields`). Returns undefined when the client does
+   * not expose it (custom clients, mocks), in which case the query policy falls back to
+   * stripping relation objects from included fields.
+   */
+  getModelFields(name: string): readonly ModelFieldInfo[] | undefined {
+    return prismaModelFields(this.prisma, name, this.aliases);
+  }
+
   protected async doTransaction<R>(fn: (adapter: DatabaseAdapter) => Promise<R>): Promise<R> {
     return this.prisma.$transaction(async (tx) => {
-      return fn(new PrismaTransactionAdapter(tx, this.aliases));
+      return fn(new PrismaTransactionAdapter(tx, this.aliases, this.prisma));
     });
   }
 }
@@ -87,7 +102,12 @@ class PrismaTransactionAdapter implements DatabaseAdapter {
   constructor(
     private readonly tx: Record<string, unknown>,
     private readonly aliases: Record<string, string>,
+    private readonly root?: Record<string, unknown>,
   ) {}
+
+  getModelFields(name: string): readonly ModelFieldInfo[] | undefined {
+    return prismaModelFields(this.root ?? this.tx, name, this.aliases);
+  }
 
   model(name: string): ModelOperations {
     const model = resolveModel(this.tx, name, this.aliases);
@@ -108,21 +128,58 @@ function resolveModel(
   name: string,
   aliases: Record<string, string>,
 ): unknown {
-  let model = client[name];
-  if (model) return model;
+  const key = resolveModelKey(client, name, aliases);
+  return key === undefined ? undefined : client[key];
+}
+
+/** The client property (delegate name) that `name` resolves to. */
+function resolveModelKey(
+  client: Record<string, unknown>,
+  name: string,
+  aliases: Record<string, string>,
+): string | undefined {
+  if (client[name]) return name;
 
   // 显式别名
   const alias = aliases[name];
-  if (alias) {
-    model = client[alias];
-    if (model) return model;
-  }
+  if (alias && client[alias]) return alias;
 
   // PascalCase acronym 自动派生（如 aiModels → aIModel）
   for (const candidate of deriveAcronymCandidates(name)) {
-    model = client[candidate];
-    if (model) return model;
+    if (client[candidate]) return candidate;
   }
 
   return undefined;
+}
+
+const FIELD_KINDS = new Set<ModelFieldInfo['kind']>(['scalar', 'enum', 'object', 'unsupported']);
+
+interface RuntimeDataModel {
+  models?: Record<string, { fields?: Array<{ name?: unknown; kind?: unknown; isList?: unknown }> }>;
+}
+
+function prismaModelFields(
+  client: Record<string, unknown>,
+  name: string,
+  aliases: Record<string, string>,
+): readonly ModelFieldInfo[] | undefined {
+  let dataModel: RuntimeDataModel | undefined;
+  try {
+    dataModel = (client as { _runtimeDataModel?: RuntimeDataModel })._runtimeDataModel;
+  } catch {
+    return undefined;
+  }
+  const models = dataModel?.models;
+  if (!models || typeof models !== 'object') return undefined;
+  const key = resolveModelKey(client, name, aliases) ?? name;
+  // Delegates are the model name with a lower-case first letter (`aIModel` → `AIModel`).
+  const modelName = Object.keys(models).find((candidate) => candidate.toLowerCase() === key.toLowerCase());
+  const fields = modelName ? models[modelName]?.fields : undefined;
+  if (!Array.isArray(fields)) return undefined;
+  const result: ModelFieldInfo[] = [];
+  for (const field of fields) {
+    if (typeof field?.name !== 'string' || !FIELD_KINDS.has(field.kind as ModelFieldInfo['kind'])) continue;
+    result.push({ name: field.name, kind: field.kind as ModelFieldInfo['kind'], isList: field.isList === true });
+  }
+  return result;
 }

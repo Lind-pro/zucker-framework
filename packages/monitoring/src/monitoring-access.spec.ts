@@ -31,7 +31,7 @@ describe('monitoring endpoint exposure', () => {
   });
 
   it('mounts metrics and alerts only when opted in', () => {
-    expect(ZuckerMonitoringModule.forRoot({ metrics: true, alerts: true }).controllers).toEqual([
+    expect(ZuckerMonitoringModule.forRoot({ metrics: true, alerts: true, permissions: 'host-guard' }).controllers).toEqual([
       PrometheusExporter,
       AlertController,
     ]);
@@ -118,6 +118,81 @@ describe('monitoring endpoint exposure', () => {
       severity: 'MEDIUM',
       enabled: true,
       notifyChannels: undefined,
+    });
+  });
+
+  describe('route protection requires an explicit authorization story', () => {
+    const routeHandlers = Object.getOwnPropertyNames(AlertController.prototype).filter(
+      (name) => name !== 'constructor' && typeof Reflect.getMetadata('method', AlertController.prototype[name as keyof AlertController]) === 'number',
+    );
+
+    it('refuses alerts: true or metrics: true without authorize or permissions', () => {
+      expect(() => ZuckerMonitoringModule.forRoot({ alerts: true })).toThrow(/authorize|host-guard/);
+      expect(() => ZuckerMonitoringModule.forRoot({ metrics: true })).toThrow(/authorize|host-guard/);
+      expect(() => ZuckerMonitoringModule.forRoot({ alerts: true, metrics: true })).toThrow();
+    });
+
+    it('accepts either authorize or permissions: host-guard', () => {
+      expect(ZuckerMonitoringModule.forRoot({ alerts: true, authorize: () => true }).controllers).toEqual([AlertController]);
+      expect(ZuckerMonitoringModule.forRoot({ metrics: true, permissions: 'host-guard' }).controllers).toEqual([
+        PrometheusExporter,
+      ]);
+    });
+
+    it('returns 403 on every alert route when authorize denies an authenticated user', async () => {
+      expect(routeHandlers.length).toBeGreaterThanOrEqual(6);
+      const guard = new MonitoringAccessGuard(new Reflector(), { authorize: () => false });
+      for (const handler of routeHandlers) {
+        await expect(
+          guard.canActivate(context({ user: { id: 'member' } }, AlertController, handler)),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+      }
+    });
+
+    it("passes 'alerts:read' for GET and 'alerts:write' for POST/PUT/DELETE", async () => {
+      const seen: Array<[string, string]> = [];
+      const guard = new MonitoringAccessGuard(new Reflector(), {
+        authorize: (_request, access) => {
+          seen.push([currentHandler, access]);
+          return true;
+        },
+      });
+      let currentHandler = '';
+      const GET = 0;
+      for (const handler of routeHandlers) {
+        currentHandler = handler;
+        await guard.canActivate(context({ user: { id: 'u' } }, AlertController, handler));
+      }
+      for (const [handler, access] of seen) {
+        const method = Reflect.getMetadata('method', AlertController.prototype[handler as keyof AlertController]);
+        expect(access, handler).toBe(method === GET ? 'alerts:read' : 'alerts:write');
+      }
+      expect(seen.some(([, access]) => access === 'alerts:read')).toBe(true);
+      expect(seen.some(([, access]) => access === 'alerts:write')).toBe(true);
+    });
+
+    it('passes the metrics access kind for the metrics exporter', async () => {
+      const seen: string[] = [];
+      const guard = new MonitoringAccessGuard(new Reflector(), {
+        authorize: (_request, access) => {
+          seen.push(access);
+          return true;
+        },
+      });
+      await guard.canActivate(context({ user: { id: 'u' } }, PrometheusExporter, 'getMetrics'));
+      expect(seen).toEqual(['metrics']);
+    });
+
+    it('keeps the metrics token path unchanged', () => {
+      const guard = new MetricsTokenGuard({ metrics: { token: TOKEN } });
+      const check = (authorization?: string) =>
+        guard.canActivate(context({ headers: { authorization } }, TokenPrometheusExporter, 'getMetrics'));
+      expect(() => check('Bearer wrong')).toThrow(UnauthorizedException);
+      expect(check(`Bearer ${TOKEN}`)).toBe(true);
+      expect(() => ZuckerMonitoringModule.forRoot({ metrics: { token: 'x'.repeat(31) } })).toThrow('at least 32');
+      expect(ZuckerMonitoringModule.forRoot({ metrics: { token: 'x'.repeat(32) } }).controllers).toEqual([
+        TokenPrometheusExporter,
+      ]);
     });
   });
 });

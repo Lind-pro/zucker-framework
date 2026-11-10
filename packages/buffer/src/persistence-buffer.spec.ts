@@ -268,3 +268,119 @@ describe('PersistenceBuffer', () => {
     expect(b.droppedDeadLetterCount).toBe(2);
   });
 });
+
+describe('PersistenceBuffer file queue across instances (L4)', () => {
+  let dir: string;
+  const make = (extra: Record<string, unknown> = {}) =>
+    new PersistenceBuffer<string>({
+      fileQueueDir: dir,
+      bufferSize: 1000,
+      flushTimeoutMs: 100_000,
+      maxRetries: 0,
+      parallelism: 1,
+      ...extra,
+    });
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zucker-buffer-l4-'));
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('two instances on one directory deliver each spilled item once', async () => {
+    const a = make();
+    const b = make();
+    const seenA: string[] = [];
+    const seenB: string[] = [];
+    a.onFlush(async (items) => { seenA.push(...items); });
+    b.onFlush(async (items) => { seenB.push(...items); });
+    const producer = make();
+    for (let i = 0; i < 6; i++) producer.spillToFile([`item-${i}`]);
+
+    await Promise.all([a.flush(), b.flush()]);
+
+    const all = [...seenA, ...seenB].sort();
+    expect(all).toEqual([0, 1, 2, 3, 4, 5].map((i) => `item-${i}`));
+    expect(fs.readdirSync(dir)).toEqual([]);
+  });
+
+  it('reclaims a .processing file whose owning pid is dead', async () => {
+    fs.writeFileSync(path.join(dir, 'buffer-1-1-x.json.2147483646-deadbeef.processing'), JSON.stringify(['orphan']));
+    const buf = make();
+    const seen: string[] = [];
+    buf.onFlush(async (items) => { seen.push(...items); });
+    buf.write('fresh'); // gives flush() work, so the first flush runs the reclaim pass
+    await buf.flush();
+    expect(seen.sort()).toEqual(['fresh', 'orphan']);
+    expect(fs.readdirSync(dir)).toEqual([]);
+  });
+
+  it('reclaims a .processing file of the own pid whose instance is gone', async () => {
+    fs.writeFileSync(path.join(dir, `buffer-1-1-y.json.${process.pid}-deadbeef.processing`), JSON.stringify(['mine-orphan']));
+    const buf = make();
+    const seen: string[] = [];
+    buf.onFlush(async (items) => { seen.push(...items); });
+    buf.write('fresh');
+    await buf.flush();
+    expect(seen.sort()).toEqual(['fresh', 'mine-orphan']);
+  });
+
+  // IMPLEMENTATION BUG (low): flush() returns early when memory and the *.json queue are empty
+  // (hasFileQueue ignores *.processing), so a stale claim is only reclaimed once other work arrives.
+  it('reclaims a stale .processing file even when the buffer is otherwise idle', async () => {
+    fs.writeFileSync(path.join(dir, 'buffer-1-1-w.json.2147483646-deadbeef.processing'), JSON.stringify(['stranded']));
+    const buf = make();
+    const seen: string[] = [];
+    buf.onFlush(async (items) => { seen.push(...items); });
+    await buf.flush();
+    expect(seen).toEqual(['stranded']);
+  });
+
+  it('does not reclaim a claim held by a live instance of this process', async () => {
+    const holder = make();
+    // Claim files of a live instance are named with its instanceId; simulate by reading the private id.
+    const id = (holder as unknown as { instanceId: string }).instanceId;
+    fs.writeFileSync(path.join(dir, `buffer-1-1-z.json.${id}.processing`), JSON.stringify(['held']));
+    const other = make();
+    const seen: string[] = [];
+    other.onFlush(async (items) => { seen.push(...items); });
+    await other.flush();
+    expect(seen).toEqual([]);
+    expect(fs.existsSync(path.join(dir, `buffer-1-1-z.json.${id}.processing`))).toBe(true);
+    await holder.stop();
+  });
+
+  it('removes an orphan .tmp file', async () => {
+    const tmp = path.join(dir, 'buffer-1-2147483646-abc.tmp');
+    fs.writeFileSync(tmp, '[');
+    fs.writeFileSync(path.join(dir, 'buffer-2-2147483646-def.json'), JSON.stringify(['real']));
+    const buf = make();
+    buf.onFlush(async () => undefined);
+    await buf.flush();
+    expect(fs.existsSync(tmp)).toBe(false);
+  });
+
+  it('refuses a directory with mode 0777 (dead-letter queue plus onError)', () => {
+    fs.chmodSync(dir, 0o777);
+    const buf = make();
+    const errors: unknown[] = [];
+    buf.onError = (e) => errors.push(e);
+    buf.spillToFile(['x', 'y']);
+    expect(buf.getDeadLetterQueue()).toEqual(['x', 'y']);
+    expect(errors).toHaveLength(1);
+    expect(String(errors[0])).toMatch(/writable/);
+    expect(fs.readdirSync(dir)).toEqual([]);
+  });
+
+  it('200k dead letters do not throw', async () => {
+    const buf = make({ bufferSize: 500_000, maxPending: 500_000, maxDeadLetterSize: 300_000 });
+    buf.onFlush(async () => { throw new Error('always fails'); });
+    buf.onError = () => undefined;
+    const items = Array.from({ length: 200_000 }, (_, i) => `i${i}`);
+    buf.writeMany(items);
+    await expect(buf.flush()).resolves.toBeUndefined();
+    expect(buf.getDeadLetterQueue()).toHaveLength(200_000);
+  });
+});
+

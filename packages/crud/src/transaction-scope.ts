@@ -12,7 +12,17 @@ import type { DatabaseAdapter } from '@zucker-framework/core';
  * The binding is set ONLY by `CrudService.transaction()`; plain `adapter.$transaction()` calls keep
  * their previous semantics (callers use the adapter passed to their callback).
  */
-const storage = new AsyncLocalStorage<ReadonlyMap<DatabaseAdapter, DatabaseAdapter>>();
+/**
+ * A bound transaction. `open` turns false once `root.$transaction` settles, so work started inside
+ * the transaction but not awaited (fire-and-forget dispatch, setImmediate) falls back to the root
+ * adapter instead of using a closed transaction client.
+ */
+interface Binding {
+  readonly tx: DatabaseAdapter;
+  open: boolean;
+}
+
+const storage = new AsyncLocalStorage<ReadonlyMap<DatabaseAdapter, Binding>>();
 const ROOT = Symbol.for('zucker.crud.transactionRoot');
 
 type Rooted = DatabaseAdapter & { [ROOT]?: DatabaseAdapter };
@@ -30,7 +40,8 @@ export function markTransactionRoot<T extends DatabaseAdapter>(view: T, base: Da
 
 /** The transaction adapter bound for `root` by an enclosing `CrudService.transaction()`, if any. */
 export function activeTransaction(root: DatabaseAdapter): DatabaseAdapter | undefined {
-  return storage.getStore()?.get(root);
+  const binding = storage.getStore()?.get(root);
+  return binding?.open ? binding.tx : undefined;
 }
 
 /**
@@ -41,18 +52,21 @@ export function transactionScoped(db: DatabaseAdapter): DatabaseAdapter {
   if ((db as Rooted)[ROOT]) return db;
   const root = db;
   return new Proxy(root, {
-    get(target, property, receiver) {
+    get(target, property) {
       if (property === ROOT) return root;
       if (property === 'model') {
         return (name: string) => (activeTransaction(root) ?? root).model(name);
       }
       if (property === '$transaction') {
-        return <R>(fn: (adapter: DatabaseAdapter) => Promise<R>): Promise<R> => {
+        return <R>(fn: (adapter: DatabaseAdapter) => Promise<R>, ...rest: unknown[]): Promise<R> => {
           const tx = activeTransaction(root);
-          return tx ? fn(tx) : root.$transaction(fn);
+          if (tx) return fn(tx);
+          // Forward extra arguments (e.g. transaction options) of adapters that accept them.
+          return (root.$transaction as (...args: unknown[]) => Promise<R>).call(root, fn, ...rest);
         };
       }
-      const value = Reflect.get(target, property, receiver);
+      // Receiver = target: getters of adapters with #private fields throw when `this` is the proxy.
+      const value = Reflect.get(target, property, target);
       return typeof value === 'function' ? value.bind(target) : value;
     },
   });
@@ -66,9 +80,16 @@ export async function runInServiceTransaction<R>(
   const root = transactionRoot(db);
   const current = activeTransaction(root);
   if (current) return fn(current);
-  return root.$transaction((tx) => {
-    const bindings = new Map(storage.getStore() ?? []);
-    bindings.set(root, tx);
-    return storage.run(bindings, () => fn(tx));
-  });
+  let binding: Binding | undefined;
+  try {
+    return await root.$transaction((tx) => {
+      if (binding) binding.open = false; // an adapter that retries the callback
+      binding = { tx, open: true };
+      const bindings = new Map(storage.getStore() ?? []);
+      bindings.set(root, binding);
+      return storage.run(bindings, () => fn(tx));
+    });
+  } finally {
+    if (binding) binding.open = false;
+  }
 }

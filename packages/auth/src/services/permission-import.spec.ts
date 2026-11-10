@@ -1,3 +1,4 @@
+import { describe, it, expect, vi } from 'vitest';
 import { PermissionService } from './permission.service';
 
 describe('permission import persistence', () => {

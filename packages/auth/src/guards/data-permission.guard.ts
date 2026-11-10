@@ -97,6 +97,11 @@ export class DataPermissionGuard implements CanActivate {
 
     // Get the user's permissions and find matching data access configs
     const permissions = auth.getPermissions();
+    if (permissions.length === 0) {
+      // Typical when no AuthenticationSupplier is registered (fromJwtUser carries no
+      // permissions): @DataPermission is then a no-op. Say so once per route.
+      this.warnNoPermissionsOnce(context, permissionId);
+    }
     const permission = permissions.find((p) => p.id === permissionId);
 
     if (!permission || !permission.dataAccesses || permission.dataAccesses.length === 0) {
@@ -161,6 +166,18 @@ export class DataPermissionGuard implements CanActivate {
       'getUser' in obj &&
       'getPermissions' in obj &&
       typeof (obj as Authentication).getUser === 'function'
+    );
+  }
+
+  private readonly warnedRoutes = new Set<string>();
+
+  private warnNoPermissionsOnce(context: ExecutionContext, permissionId: string): void {
+    const route = `${context.getClass()?.name ?? '?'}.${context.getHandler()?.name ?? '?'}`;
+    if (this.warnedRoutes.has(route) || this.warnedRoutes.size >= 1000) return;
+    this.warnedRoutes.add(route);
+    this.logger.warn(
+      `DataPermissionGuard: ${route} has @DataPermission (${permissionId}) but the Authentication carries no permissions; ` +
+        'the data scope is not evaluated. Register an AuthenticationSupplier that loads permissions with their dataAccesses.',
     );
   }
 

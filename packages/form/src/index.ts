@@ -17,7 +17,9 @@ export type {
 export { FormBuilder } from './form-builder';
 export type { FieldBuilderOptions, FieldCondition } from './form-builder';
 
-export { FormService, compileFormPattern, FORM_PATTERN_MAX_LENGTH, FORM_PATTERN_MAX_INPUT_LENGTH } from './form.service';
+export {
+  FormService, compileFormPattern, testFormPattern, FORM_PATTERN_MAX_LENGTH, FORM_PATTERN_MAX_INPUT_LENGTH, FORM_PATTERN_TIMEOUT_MS,
+} from './form.service';
 export type { FormValidationResult } from './form.service';
 
 export { ZuckerFormModule } from './form.module';

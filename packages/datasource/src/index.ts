@@ -1,4 +1,4 @@
-export { DataSourceManager } from './datasource-manager';
+export { DataSourceManager, type DataSourceDisposalOptions } from './datasource-manager';
 export type {
   DataSourceConfig,
   DatabaseAdapter,

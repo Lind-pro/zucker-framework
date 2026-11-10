@@ -13,5 +13,5 @@ export type { DynamicFormProps } from './DynamicForm';
 export type { DynamicFormMessages } from './messages';
 export { useFormDefinition, unwrapFormDefinition } from './useFormDefinition';
 export type { FormDefinitionFetcher, UseFormDefinitionOptions } from './useFormDefinition';
-export { normalizeFormValues, definitionInitialValues } from './values';
+export { normalizeFormValues, definitionInitialValues, FormValueError, parseJsonFieldText } from './values';
 export type { FormFileUploader, UploadedFileValue } from './values';

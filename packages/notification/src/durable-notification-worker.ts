@@ -30,8 +30,13 @@ export interface DurableNotificationWorkerOptions {
   observer?: NotificationDeliveryObserver;
 }
 
-/** Bounded re-tries of the DELIVERED commit after the provider accepted a message. */
-const DELIVERED_COMMIT_ATTEMPTS = 3;
+/**
+ * Waits before re-trying the DELIVERED commit after the provider accepted a message (3 attempts in
+ * total). Each wait is cut to the remaining lease minus {@link COMMIT_LEASE_MARGIN_MS}; a retry that
+ * cannot start before the lease ends is skipped.
+ */
+const DELIVERED_COMMIT_BACKOFF_MS = [200, 1_000] as const;
+const COMMIT_LEASE_MARGIN_MS = 100;
 
 /** Runs one durable attempt; process loops and concurrency stay application-owned. */
 export class DurableNotificationWorker {
@@ -86,6 +91,7 @@ export class DurableNotificationWorker {
       claim.id,
       claim.leaseToken,
       input.signal,
+      claim.leaseExpiresAt,
     );
 
     let delivered: { providerMessageId?: string } | undefined;
@@ -168,18 +174,28 @@ export class DurableNotificationWorker {
     }
     // The provider has accepted the message. A failure to record that is never turned into a
     // retry (that would send it again on channels without provider idempotency, e.g. SMS/SMTP):
-    // the commit is retried a bounded number of times under the same lease and otherwise the
+    // the commit is retried up to twice with a short backoff (200 ms, 1 s) bounded by the remaining lease, and otherwise the
     // error propagates and the lease is left to expire (at-least-once delivery semantics).
-    return this.commitDelivered(claim, delivered?.providerMessageId, startedAtMs);
+    return this.commitDelivered(claim, delivered?.providerMessageId, startedAtMs, heartbeat.leaseExpiresAt());
   }
 
   private async commitDelivered(
     claim: NotificationDeliveryClaim,
     providerMessageId: string | undefined,
     startedAtMs: number,
+    leaseExpiresAtMs: number,
   ): Promise<NotificationWorkerOutcome> {
     let lastError: unknown;
-    for (let attempt = 0; attempt < DELIVERED_COMMIT_ATTEMPTS; attempt += 1) {
+    // Remaining lease in wall-clock time, then measured with a monotonic clock while waiting.
+    const remainingAtStart = leaseExpiresAtMs - this.clock().getTime();
+    const waitStartedAt = performance.now();
+    for (let attempt = 0; attempt <= DELIVERED_COMMIT_BACKOFF_MS.length; attempt += 1) {
+      if (attempt > 0) {
+        const remaining = remainingAtStart - (performance.now() - waitStartedAt) - COMMIT_LEASE_MARGIN_MS;
+        const wait = Math.min(DELIVERED_COMMIT_BACKOFF_MS[attempt - 1], remaining);
+        if (!Number.isFinite(wait) || wait <= 0) break;
+        await new Promise(resolve => setTimeout(resolve, wait));
+      }
       try {
         await this.repository.markDelivered({
           id: claim.id,
@@ -230,14 +246,18 @@ export class DurableNotificationWorker {
     id: string,
     leaseToken: string,
     parentSignal?: AbortSignal,
+    initialLeaseExpiresAt?: Date,
   ): {
     signal: AbortSignal;
     stop: () => Promise<void>;
     failure: () => unknown;
+    /** Wall-clock end of the lease as last granted (claim or latest successful extension). */
+    leaseExpiresAt: () => number;
   } {
     const deliveryController = new AbortController();
     const heartbeatController = new AbortController();
     let heartbeatFailure: unknown;
+    let leaseExpiresAt = initialLeaseExpiresAt?.getTime() ?? this.clock().getTime() + this.options.leaseMs;
     const onParentAbort = () => {
       deliveryController.abort(parentSignal?.reason);
       heartbeatController.abort(parentSignal?.reason);
@@ -256,12 +276,14 @@ export class DurableNotificationWorker {
         )
       ) {
         try {
+          const now = this.clock();
           await this.repository.extendLease({
             id,
             leaseToken,
-            now: this.clock(),
+            now,
             leaseMs: this.options.leaseMs,
           });
+          leaseExpiresAt = now.getTime() + this.options.leaseMs;
         } catch (error) {
           heartbeatFailure = error;
           deliveryController.abort(error);
@@ -274,6 +296,7 @@ export class DurableNotificationWorker {
     return {
       signal: deliveryController.signal,
       failure: () => heartbeatFailure,
+      leaseExpiresAt: () => leaseExpiresAt,
       stop: async () => {
         if (!stopped) {
           stopped = true;

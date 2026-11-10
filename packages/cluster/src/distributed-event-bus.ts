@@ -17,8 +17,14 @@ export interface DistributedEventEnvelope {
 
 export interface DistributedEventBusOptions {
   channelPrefix?: string;
-  /** Unique id of this bus instance (default: random UUID). */
+  /**
+   * Unique id of this bus instance (default: random UUID). Must differ between processes:
+   * receivers drop envelopes carrying their own id, so two buses sharing an id silently drop
+   * each other's events.
+   */
   nodeId?: string;
+  /** First retry delay after a failed Redis (p)subscribe, doubled up to 30 s (default 1000 ms). */
+  subscribeRetryMs?: number;
   /**
    * What `publish` does when the Redis publish fails. Local delivery happens
    * either way. `'throw'` (default) rejects after local delivery so the caller
@@ -61,6 +67,10 @@ export class DistributedEventBus implements TopicEventBus {
   private patternSubscription: Promise<unknown> | null = null;
   /** Exact channels subscribed in the non-PSUBSCRIBE fallback. */
   private exactChannels = new Set<string>();
+  private readonly subscribeRetryMs: number;
+  private readonly retryTimers = new Set<ReturnType<typeof setTimeout>>();
+  private retryAttempt = 0;
+  private destroyed = false;
 
   constructor(
     private readonly redis: RedisLike,
@@ -70,6 +80,10 @@ export class DistributedEventBus implements TopicEventBus {
     this.channelPrefix = options.channelPrefix ?? 'zucker:events:';
     this.origin = options.nodeId ?? randomUUID();
     this.onRemotePublishError = options.onRemotePublishError ?? 'throw';
+    this.subscribeRetryMs = Math.max(10, options.subscribeRetryMs ?? 1000);
+    this.logger.log(
+      `Distributed event bus origin id: ${this.origin}${options.nodeId ? ' (configured; must be unique per process)' : ''}`,
+    );
     this.setupSubscriber();
   }
 
@@ -177,14 +191,20 @@ export class DistributedEventBus implements TopicEventBus {
     if (this.usePattern) {
       if (this.patternSubscription) return;
       const pattern = `${escapeRedisGlob(this.channelPrefix)}*`;
-      this.patternSubscription = subscriber.psubscribe!(pattern).catch((err: unknown) => {
-        // Allow the next subscribe() to retry.
-        this.patternSubscription = null;
-        this.logger.error(
-          `Failed to subscribe to Redis pattern "${pattern}"`,
-          err instanceof Error ? err.stack : String(err),
-        );
-      });
+      this.patternSubscription = subscriber.psubscribe!(pattern).then(
+        () => {
+          this.retryAttempt = 0;
+        },
+        (err: unknown) => {
+          // Allow the next subscribe() (or the scheduled retry) to try again.
+          this.patternSubscription = null;
+          this.logger.error(
+            `Failed to subscribe to Redis pattern "${pattern}"`,
+            err instanceof Error ? err.stack : String(err),
+          );
+          this.scheduleRetry(() => this.ensureRemoteSubscription(topicPattern));
+        },
+      );
       return;
     }
     if (/(^|\/)\*\*?(\/|$)|,/.test(topicPattern)) {
@@ -195,13 +215,39 @@ export class DistributedEventBus implements TopicEventBus {
     const channel = `${this.channelPrefix}${topicPattern}`;
     if (this.exactChannels.has(channel)) return;
     this.exactChannels.add(channel);
-    subscriber.subscribe(channel).catch((err: unknown) => {
-      this.exactChannels.delete(channel);
-      this.logger.error(
-        `Failed to subscribe to Redis channel "${channel}"`,
-        err instanceof Error ? err.stack : String(err),
-      );
-    });
+    subscriber.subscribe(channel).then(
+      () => {
+        this.retryAttempt = 0;
+      },
+      (err: unknown) => {
+        this.exactChannels.delete(channel);
+        this.logger.error(
+          `Failed to subscribe to Redis channel "${channel}"`,
+          err instanceof Error ? err.stack : String(err),
+        );
+        this.scheduleRetry(() => {
+          // Only while someone is still subscribed to this topic.
+          if (this.localHandlers.has(topicPattern)) this.ensureRemoteSubscription(topicPattern);
+        });
+      },
+    );
+  }
+
+  /**
+   * Retries a failed remote subscription with exponential backoff (1 s → 30 s by default), so an
+   * application that subscribes once at boot while Redis is down still receives remote events
+   * once Redis is back.
+   */
+  private scheduleRetry(retry: () => void): void {
+    if (this.destroyed) return;
+    const delay = Math.min(30_000, this.subscribeRetryMs * 2 ** Math.min(this.retryAttempt, 12));
+    this.retryAttempt++;
+    const timer = setTimeout(() => {
+      this.retryTimers.delete(timer);
+      if (!this.destroyed) retry();
+    }, delay);
+    timer.unref?.();
+    this.retryTimers.add(timer);
   }
 
   private releaseRemoteSubscription(topicPattern: string): void {
@@ -278,6 +324,9 @@ export class DistributedEventBus implements TopicEventBus {
    * module shutdown to prevent connection leaks.
    */
   async destroy(): Promise<void> {
+    this.destroyed = true;
+    for (const timer of this.retryTimers) clearTimeout(timer);
+    this.retryTimers.clear();
     if (this.subscriber) {
       try {
         if (this.patternSubscription) {

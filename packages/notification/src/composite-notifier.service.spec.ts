@@ -148,6 +148,24 @@ describe('CompositeNotifierService', () => {
       expect(email.send).not.toHaveBeenCalled();
     });
 
+    it('N17: a partial-delivery error with an empty failed list resolves as success without a second send', async () => {
+      const provider = createProvider(
+        'SMS' as NotifyChannel,
+        vi.fn().mockRejectedValue(new PartialNotificationDeliveryError('all delivered after all', [], 2)),
+      );
+      const email = createProvider('EMAIL' as NotifyChannel);
+      const strategy: FallbackStrategy = {
+        maxAttempts: 3,
+        channelPriority: ['SMS' as NotifyChannel, 'EMAIL' as NotifyChannel],
+        retryDelayMs: 0,
+      };
+      const service = new CompositeNotifierService([provider, email], historyService, strategy);
+      const result = await service.send(makeMessage({ channel: 'SMS' as NotifyChannel, to: ['1', '2'] }));
+      expect(result.success).toBe(true);
+      expect(provider.send).toHaveBeenCalledTimes(1);
+      expect(email.send).not.toHaveBeenCalled();
+    });
+
     it('should respect maxAttempts limit', async () => {
       const failProvider = createProvider('EMAIL' as NotifyChannel, vi.fn().mockRejectedValue(new Error('fail')));
       const smsProvider = createProvider('SMS' as NotifyChannel);

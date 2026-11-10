@@ -58,6 +58,13 @@ export const DEFAULT_CORS_CONFIG: Required<CorsPathConfig> = {
     'X-Requested-With',
     'X-Correlation-Id',
     'X-Request-Id',
+    // Request headers read by framework packages (tenant, auth, API keys, idempotency, 2FA).
+    'X-Tenant-ID',
+    'X-Auth-Token',
+    'X-Token',
+    'X-API-Key',
+    'Idempotency-Key',
+    'X-Verify-Code',
   ],
   exposedHeaders: [],
   allowCredentials: true,

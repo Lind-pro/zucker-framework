@@ -58,16 +58,46 @@ function arrayValue(value: unknown, field: FieldDefinition): unknown {
       }
     } else items = text.split(',');
   } else items = [value];
+  // The tag widget holds strings; a chosen option gets its declared value (number/boolean) back
+  // when no elementType says how to convert it.
+  const optionValues = new Map<string, unknown>();
+  if (!field.elementType) for (const option of field.options ?? []) optionValues.set(String(option.value), option.value);
   return items
     .filter((item) => !(typeof item === 'string' && !item.trim()))
-    .map((item) => elementValue(item, field.elementType));
+    .map((item) =>
+      typeof item === 'string' && optionValues.has(item.trim())
+        ? optionValues.get(item.trim())
+        : elementValue(item, field.elementType),
+    );
 }
 
-function jsonValue(value: unknown): unknown {
+/** A widget value that cannot be converted to the field's server shape (shown on the field). */
+export class FormValueError extends Error {
+  constructor(readonly fieldKey: string, readonly reason: 'invalid-json' | 'json-not-object') {
+    super(`Invalid value for field '${fieldKey}': ${reason}`);
+    this.name = 'FormValueError';
+  }
+}
+
+/** JSON objects or arrays only: the server validates JSON fields with `typeof === 'object'`. */
+export function parseJsonFieldText(text: string): { ok: true; value: unknown } | { ok: false; reason: FormValueError['reason'] } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text) as unknown;
+  } catch {
+    return { ok: false, reason: 'invalid-json' };
+  }
+  if (parsed === null || typeof parsed !== 'object') return { ok: false, reason: 'json-not-object' };
+  return { ok: true, value: parsed };
+}
+
+function jsonValue(value: unknown, field: FieldDefinition): unknown {
   if (typeof value !== 'string') return value;
   if (!value.trim()) return undefined;
-  // The field's own validator has already rejected invalid JSON before submit.
-  return JSON.parse(value) as unknown;
+  // Usually rejected by the field's validator already; a custom renderer may not have one.
+  const parsed = parseJsonFieldText(value);
+  if (!parsed.ok) throw new FormValueError(field.key, parsed.reason);
+  return parsed.value;
 }
 
 async function fileValue(value: unknown, field: FieldDefinition, upload?: FormFileUploader): Promise<unknown> {
@@ -94,6 +124,7 @@ async function fileValue(value: unknown, field: FieldDefinition, upload?: FormFi
  * Convert antd widget values into the shapes `@zucker-framework/form` validates: JSON fields as
  * objects, ARRAY fields as arrays (typed by `elementType`), DATE as `YYYY-MM-DD`, DATETIME as an ISO
  * string and FILE fields as uploaded values. Keys without a field definition are passed through.
+ * Throws `FormValueError` for JSON text that is not a JSON object or array.
  */
 export async function normalizeFormValues(
   definition: FormDefinition,
@@ -106,7 +137,7 @@ export async function normalizeFormValues(
     const value = values[field.key];
     switch (field.type) {
       case FieldType.JSON:
-        result[field.key] = jsonValue(value);
+        result[field.key] = jsonValue(value, field);
         break;
       case FieldType.ARRAY:
         result[field.key] = arrayValue(value, field);

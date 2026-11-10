@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { Logger } from '@nestjs/common';
 import { createHmac } from 'node:crypto';
 import { ExtensionCore } from './core';
 import type { ExtMailer, ExtServerOptions, ExtStore, StoreDelegate } from './types';
@@ -330,5 +331,102 @@ describe('ExtensionCore hardening (L8)', () => {
     };
     await core.adminListOrders(-3, 100000);
     expect(args).toMatchObject({ skip: 0, take: 100 });
+  });
+});
+
+describe('ExtensionCore unique-violation handling (N13)', () => {
+  /** Replaces the claim transaction with one that fails like a unique violation. */
+  function failClaimWith(store: ReturnType<typeof createStore>, error: unknown, beforeThrow?: () => void) {
+    store.$transaction = (async () => {
+      beforeThrow?.();
+      throw error;
+    }) as never;
+  }
+  const violation = (extra: Record<string, unknown> = {}) =>
+    Object.assign(new Error('Unique constraint failed'), { code: 'P2002', ...extra });
+
+  it('rethrows a violation on another unique key (licence codeHash) so Stripe retries', async () => {
+    const store = createStore();
+    const mail = mailer();
+    const core = new ExtensionCore(store, mail, OPTIONS);
+    failClaimWith(store, violation({ meta: { target: ['codeHash'] } }));
+    const { body, header } = stripeEvent('cs_hash');
+    await expect(core.handleStripeWebhook(body, header)).rejects.toThrow('Unique constraint failed');
+    expect(mail.sent).toHaveLength(0);
+  });
+
+  it('treats a violation naming stripeSessionId as a duplicate delivery', async () => {
+    const store = createStore();
+    const core = new ExtensionCore(store, mailer(), OPTIONS);
+    failClaimWith(store, violation({ meta: { target: ['stripeSessionId'] } }));
+    const { body, header } = stripeEvent('cs_session');
+    await expect(core.handleStripeWebhook(body, header)).resolves.toEqual({ received: true, duplicated: true });
+  });
+
+  it('with an unnamed key, an existing order row means duplicate', async () => {
+    const store = createStore();
+    const core = new ExtensionCore(store, mailer(), OPTIONS);
+    // The row appears after the fast-path lookup, as a concurrent delivery would commit it.
+    failClaimWith(store, violation(), () => {
+      store.tables.extensionOrder.push({ id: 'order-x', stripeSessionId: 'cs_unnamed', status: 'email_failed' });
+    });
+    const { body, header } = stripeEvent('cs_unnamed');
+    await expect(core.handleStripeWebhook(body, header)).resolves.toEqual({ received: true, duplicated: true });
+  });
+
+  it('with an unnamed key and no order row, the error is rethrown', async () => {
+    const store = createStore();
+    const core = new ExtensionCore(store, mailer(), OPTIONS);
+    failClaimWith(store, violation());
+    const { body, header } = stripeEvent('cs_norow');
+    await expect(core.handleStripeWebhook(body, header)).rejects.toThrow('Unique constraint failed');
+  });
+
+  it('logs a warning when a webhook secret is configured without a checkout policy', () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    try {
+      new ExtensionCore(createStore(), mailer(), OPTIONS);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('options.checkout'));
+      warn.mockClear();
+      new ExtensionCore(createStore(), mailer(), { ...OPTIONS, checkout: { allowedProducts: ['sampleexport'] } });
+      new ExtensionCore(createStore(), mailer(), { ...OPTIONS, stripeWebhookSecret: undefined });
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
+describe('ExtensionCore concurrent resend (N13)', () => {
+  it('revokes both the stale previous licence and the one a concurrent resend installed', async () => {
+    const store = createStore();
+    const results: boolean[] = [true];
+    const sent: unknown[] = [];
+    const mail: ExtMailer = {
+      async sendMail(message) {
+        sent.push(message);
+        // During the second (resend) mail, another resend repoints the order to its own licence.
+        if (sent.length === 2) {
+          store.tables.extensionLicense.push({ id: 'L_other', status: 'active', plan: 'pro', durationDays: 365, maxDevices: 2 });
+          store.tables.extensionOrder[0].licenseId = 'L_other';
+        }
+        return results.length ? results.shift()! : true;
+      },
+    };
+    const core = new ExtensionCore(store, mail, OPTIONS);
+    const { body, header } = stripeEvent('cs_race');
+    await core.handleStripeWebhook(body, header);
+    const order = store.tables.extensionOrder[0];
+    const previousId = order.licenseId as string;
+
+    await expect(core.adminResendOrder(order.id)).resolves.toMatchObject({ resent: true });
+
+    const byId = (id: string) => store.tables.extensionLicense.find((l) => l.id === id);
+    expect(byId(previousId)!.status).toBe('revoked');
+    expect(byId('L_other')!.status).toBe('revoked');
+    const active = store.tables.extensionLicense.filter((l) => l.status === 'active');
+    expect(active).toHaveLength(1);
+    expect(order.licenseId).toBe(active[0].id);
+    expect(order.status).toBe('fulfilled');
   });
 });

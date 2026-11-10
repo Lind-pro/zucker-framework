@@ -127,7 +127,13 @@ export class CompositeNotifierService {
           if (failed) {
             partiallyDelivered = true;
             pending = failed;
-            if (failed.length === 0) break;
+            if (failed.length === 0) {
+              // The provider reported an error but no failed recipient: every recipient was
+              // delivered, so the send succeeded and must not surface as an error.
+              const delivered: NotifyResult = { success: true, timestamp: new Date(), channel, to };
+              this.recordHistory(message, delivered, attempts);
+              return delivered;
+            }
           }
         }
       }

@@ -3,11 +3,12 @@ import {
   NestInterceptor,
   ExecutionContext,
   CallHandler,
+  ForbiddenException,
 } from '@nestjs/common';
 import { Observable, type Subscription } from 'rxjs';
 import { BusinessException } from '@zucker-framework/core';
 import { TenantContext } from './tenant-context';
-import { TenantResolver, type TenantInterceptorOptions } from './tenant-resolver';
+import { TENANT_REQUIRED_KEY, TenantResolver, type TenantInterceptorOptions } from './tenant-resolver';
 
 export type { TenantResolveStrategy, TenantInterceptorOptions } from './tenant-resolver';
 
@@ -28,6 +29,11 @@ export class TenantInterceptor implements NestInterceptor {
   async intercept(context: ExecutionContext, next: CallHandler): Promise<Observable<unknown>> {
     const request = context.switchToHttp().getRequest();
     const tenantId = await this.resolver.resolve(request);
+
+    if (!tenantId && (request as Record<string, unknown>)?.[TENANT_REQUIRED_KEY] === true) {
+      // @TenantAware route deferred by TenantGuard until authentication had run.
+      throw new ForbiddenException('Tenant context is required but not available');
+    }
 
     if (this.resolver.options.required && !tenantId) {
       throw new BusinessException('Tenant ID is required but not provided', 'TENANT_REQUIRED', 400);

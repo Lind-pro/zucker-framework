@@ -16,9 +16,12 @@ export type ApiKeyDecryptor = (encryptedKey: string) => string | Promise<string>
 @Injectable()
 export class AIConfigService {
   private readonly logger = new Logger(AIConfigService.name);
-  private readonly cache = new Map<string, { config: AIModelConfig; cachedAt: number }>();
+  private readonly cache = new Map<string, { config: AIModelConfig; cachedAt: number; ttl: number }>();
   private readonly sources: AIConfigSource[];
   private cacheTtl = 60_000;
+  // A fallback taken because a source failed is cached only briefly: long enough that an
+  // outage does not cost every AI call that source's timeout, short enough to recover quickly.
+  private fallbackCacheTtl = 5_000;
   private apiKeyDecryptor: ApiKeyDecryptor | null = null;
 
   constructor(
@@ -34,6 +37,11 @@ export class AIConfigService {
 
   setCacheTtl(ttlMs: number): void {
     if (ttlMs > 0 && Number.isFinite(ttlMs)) this.cacheTtl = ttlMs;
+  }
+
+  /** TTL for a config chosen after a source error (default 5 s); `0` disables caching it. */
+  setFallbackCacheTtl(ttlMs: number): void {
+    if (ttlMs >= 0 && Number.isFinite(ttlMs)) this.fallbackCacheTtl = ttlMs;
   }
 
   /** Register before the first lookup; cached configs contain the decrypted key. */
@@ -69,7 +77,7 @@ export class AIConfigService {
     const cacheKey = JSON.stringify([scenario, options.allowDefault !== false]);
     const cached = this.cache.get(cacheKey);
     // Return a copy: callers must not be able to mutate the cached (decrypted) config.
-    if (cached && Date.now() - cached.cachedAt < this.cacheTtl) return { ...cached.config };
+    if (cached && Date.now() - cached.cachedAt < cached.ttl) return { ...cached.config };
 
     // Pass 1 asks every source for an explicit scenario mapping; pass 2 (only when defaults
     // are allowed) asks for defaults. A higher-priority source's default model must not hide
@@ -95,8 +103,10 @@ export class AIConfigService {
         }
         if (!config) continue;
         const resolved = await this.decryptConfig(config);
-        // A fallback chosen because a source failed is not cached, so the next call retries it.
-        if (failedSources.size === 0) this.setCache(cacheKey, resolved);
+        // A fallback chosen because a source failed is cached only for the short fallback TTL,
+        // after which the next call retries the failed source.
+        if (failedSources.size === 0) this.setCache(cacheKey, resolved, this.cacheTtl);
+        else if (this.fallbackCacheTtl > 0) this.setCache(cacheKey, resolved, Math.min(this.fallbackCacheTtl, this.cacheTtl));
         this.logger.log(
           `AI 配置已加载 [${scenario}] source=${source.id}: ${resolved.providerId ?? 'unknown'} - ${resolved.modelId}`,
         );
@@ -149,12 +159,12 @@ export class AIConfigService {
     };
   }
 
-  private setCache(scenario: string, config: AIModelConfig): void {
+  private setCache(scenario: string, config: AIModelConfig, ttl: number): void {
     if (this.cache.size >= MAX_CACHE_SIZE) {
       const oldestKey = this.findOldestCacheKey();
       if (oldestKey) this.cache.delete(oldestKey);
     }
-    this.cache.set(scenario, { config, cachedAt: Date.now() });
+    this.cache.set(scenario, { config, cachedAt: Date.now(), ttl });
   }
 
   private sortSources(): void {

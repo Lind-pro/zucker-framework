@@ -33,7 +33,7 @@
 
 修改类账户请求须带允许的 Origin；跨站 Cookie 请求拒绝。刷新和访问令牌有不同 audience/type，刷新令牌不能作为 API Bearer 凭证。会话采用数据库固定有效期，刷新不会延长数据库期限；退出、账户停用、密码变更均由数据库事实判定。
 
-限流策略集中在 `src/rate-limits.ts`（`APP_RATE_LIMITERS`）。登录、注册、邮箱验证、找回/重置密码和其他账户写操作使用严格的 `accounts` 预算（每 IP 每分钟 20 次）。每次整页加载都会调用 `POST /authorize/refresh` 与 `GET /authorize/me`，因此它们不占用凭据预算：刷新按已验签刷新令牌的会话计数（`session-refresh`，每会话每分钟 60 次），另有每 IP 每分钟 300 次的总上限（`session-refresh-network`，含无效 Cookie）；`me` 按用户计数（`session-read`，每分钟 120 次）。刷新令牌的轮换与重放拒绝不变。本人会话列表、API Key、头像和外部绑定读取使用 `api-default` 的用户维度预算，公开提供方列表按来源 IP 读取预算计数。`test/account-rate-limits.persistent.e2e-spec.ts` 以实际策略验证两点：正常浏览不被限流，凭据端点保持严格。组合根关闭重复的全局限流 Guard，各控制器在认证之后显式使用 `RateLimitGuard`，一次请求只消耗一次。新增受限控制器沿用 `@UseGuards(RateLimitGuard)` 与 `@RateLimit(...)`，不另注册第二个全局实例。
+限流策略集中在 `src/rate-limits.ts`（`APP_RATE_LIMITERS`）。登录、注册、邮箱验证、找回/重置密码和其他账户写操作使用严格的 `accounts` 预算（每 IP 每分钟 20 次）。每次整页加载都会调用 `POST /authorize/refresh` 与 `GET /authorize/me`，因此它们不占用凭据预算：刷新按已验签刷新令牌的会话计数（`session-refresh`，每会话每分钟 60 次），另有每 IP 每分钟 300 次的总上限（`session-refresh-network`，含无效 Cookie）；`me` 按用户计数（`session-read`，每分钟 120 次）。刷新令牌的轮换与重放拒绝不变。本人会话列表、API Key、头像和外部绑定读取使用 `api-default` 的用户维度预算，公开提供方列表按来源 IP 读取预算计数。`test/account-rate-limits.persistent.e2e-spec.ts` 以实际策略验证两点：正常浏览不被限流，凭据端点保持严格。登录另有两个按目标计数的失败预算：同一账户加同一客户端 IP 每 15 分钟 5 次（`login`），同一账户跨所有来源每 15 分钟 30 次（`login-account`），成功登录退还额度。已接受的风险：任何人对某账户在 15 分钟内累计 30 次失败尝试后，该账户在窗口结束前即使输入正确密码也会被拒绝（可被用来短时锁定用户）；模板没有会话绑定 Cookie 可用于豁免已知设备。需要更强保证的部署应调高 `login-account` 预算、接入共享 Redis 预算并监控该限流，或在应用中实现已知设备豁免。组合根关闭重复的全局限流 Guard，各控制器在认证之后显式使用 `RateLimitGuard`，一次请求只消耗一次。新增受限控制器沿用 `@UseGuards(RateLimitGuard)` 与 `@RateLimit(...)`，不另注册第二个全局实例。
 
 邮件票据只保存 SHA-256 摘要。链接将原始票据放在片段 `#ticket=...`，页面读取后移除地址中的片段，再以请求正文提交，避免进入访问日志或 Referer。邮件投递仍是明确的即时发送，失败可请求新链接；本批不宣称已具备崩溃恢复 outbox。
 
@@ -174,6 +174,22 @@ transaction; limits changing after acceptance do not invalidate an existing rese
 
 The focused PostgreSQL suites are `jobs.persistent`, `jobs.http`, `credits.persistent`, `credits.http`
 and `billing-runtime.persistent` under `test/`; all require an explicit isolated test database.
+
+### Data retention
+
+`RetentionModule` purges API-key usage rows, access logs, revoked/expired sessions and completed
+internal reconciliation jobs once per hour through the JobsHost (windows: `RETENTION_*_DAYS`, `0` keeps
+a table forever). Each table is deleted in batches of `RETENTION_BATCH_SIZE` rows (default 1000), one
+transaction per batch, until a batch comes back short or `RETENTION_MAX_BATCHES_PER_RUN` (default 50)
+is reached. Raise the batch count temporarily to drain an existing backlog faster.
+
+Deployment checklist for the `20261110000000_retention_indexes` migration: it uses plain
+`CREATE INDEX IF NOT EXISTS`, which blocks writes to `account_api_key_usage`, `account_sessions` and
+`async_jobs` while each index builds. When those tables are large, first create the three indexes with
+`CREATE INDEX CONCURRENTLY IF NOT EXISTS` (statements in the migration file, run one at a time outside
+a transaction while the application is up), confirm none is invalid
+(`SELECT indexrelid::regclass FROM pg_index WHERE NOT indisvalid;` must not list them; drop and repeat
+otherwise), then run `pnpm db:migrate`, which accepts the existing indexes.
 
 ## Management, readiness and audit privacy
 

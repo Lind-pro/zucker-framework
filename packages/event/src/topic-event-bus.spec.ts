@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { DefaultTopicEventBus, matchesTopic, createTopicPayload } from './topic-event-bus';
+import { DefaultTopicEventBus, matchesTopic, createTopicPayload, type TopicPayload } from './topic-event-bus';
 import { SubscribeFeature } from './subscribe.decorator';
 
 describe('matchesTopic', () => {
@@ -86,7 +86,7 @@ describe('DefaultTopicEventBus', () => {
 
   it('should deliver messages to matching subscribers', async () => {
     const received: unknown[] = [];
-    bus.subscribe('/device/status', (msg) => {
+    bus.subscribe('/device/status', (msg: TopicPayload) => {
       received.push(msg.payload);
     });
 
@@ -96,7 +96,7 @@ describe('DefaultTopicEventBus', () => {
 
   it('should support wildcard subscriptions', async () => {
     const received: string[] = [];
-    bus.subscribe('/device/*/status', (msg) => {
+    bus.subscribe('/device/*/status', (msg: TopicPayload) => {
       received.push(msg.topic);
     });
 
@@ -109,7 +109,7 @@ describe('DefaultTopicEventBus', () => {
 
   it('should support ** wildcard', async () => {
     const received: string[] = [];
-    bus.subscribe('/device/**', (msg) => {
+    bus.subscribe('/device/**', (msg: TopicPayload) => {
       received.push(msg.topic);
     });
 
@@ -230,7 +230,7 @@ describe('DefaultTopicEventBus', () => {
         topics: ['/a/**', '/b/**'],
         features: [SubscribeFeature.LOCAL],
       },
-      (msg) => {
+      (msg: TopicPayload) => {
         received.push(msg.topic);
       },
     );
@@ -260,7 +260,7 @@ describe('DefaultTopicEventBus', () => {
 
   it('should normalize MQTT wildcards # and +', async () => {
     const received: string[] = [];
-    bus.subscribe('/device/#', (msg) => {
+    bus.subscribe('/device/#', (msg: TopicPayload) => {
       received.push(msg.topic);
     });
 
@@ -268,7 +268,7 @@ describe('DefaultTopicEventBus', () => {
     expect(received).toEqual(['/device/a/b/c']);
 
     const received2: string[] = [];
-    bus.subscribe('/device/+/status', (msg) => {
+    bus.subscribe('/device/+/status', (msg: TopicPayload) => {
       received2.push(msg.topic);
     });
 
@@ -278,7 +278,7 @@ describe('DefaultTopicEventBus', () => {
 
   it('should pass headers via publish', async () => {
     let headers: ReadonlyMap<string, unknown> | undefined;
-    bus.subscribe('/test', (msg) => {
+    bus.subscribe('/test', (msg: TopicPayload) => {
       headers = msg.headers;
     });
 

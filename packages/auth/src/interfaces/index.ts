@@ -283,8 +283,18 @@ export interface ZuckerAuthModuleOptions {
    */
   registerControllers?: boolean;
   dimensionProviders?: Array<new (...args: unknown[]) => DimensionProvider>;
-  /** 缓存 provider token（用于 Token 黑名单），指向 ICache 的注入 token */
+  /**
+   * 缓存 provider token（用于 Token 黑名单、撤销水位和共享会话活跃记录），指向 ICache 的注入 token.
+   * With `forRootAsync`, prefer the top-level `cacheProvider` of the async options; an
+   * options-level value is resolved at application bootstrap (startup fails if it does not
+   * resolve). The provider must propagate write failures (see TokenService).
+   */
   cacheProvider?: string | symbol;
+  /**
+   * With a cache configured, reject framework-tracked access tokens (claim `zsess`) whose shared
+   * session record is missing — i.e. expired by inactivity on any instance. Default true.
+   */
+  enforceSessionInactivity?: boolean;
   /** 最大并发会话数，0 表示不限制 */
   maxActiveSessions?: number;
   /** Access-token lifetime passed to JwtModule (`expiresIn`). Default `'7d'`. */

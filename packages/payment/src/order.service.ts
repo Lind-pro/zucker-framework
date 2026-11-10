@@ -100,8 +100,9 @@ export class OrderService {
         .get(order.providerId)
         .capture(order.paymentIntentId, idempotencyKey);
     } catch (error) {
-      // e.g. PayPal 422 ORDER_NOT_APPROVED: nothing was captured, the buyer can still pay.
-      if (isDefinitePaymentRejection(error)) await this.transition(orderId, ['confirming'], 'paying');
+      // A 4xx is not proof that nothing was captured: PayPal answers 422 ORDER_ALREADY_CAPTURED when
+      // the order was captured through another path. Read the provider state before reopening.
+      if (isDefinitePaymentRejection(error)) await this.settleRejectedCapture(order);
       throw error;
     }
     await this.applySettlement(orderId, 'confirming', session.state, session.providerRef);
@@ -113,6 +114,26 @@ export class OrderService {
   }
 
   /**
+   * After a definite capture rejection: `created`/`authorized` reopen `paying` (e.g. PayPal 422
+   * ORDER_NOT_APPROVED, the buyer can still pay); `captured`, `failed`, `canceled` and refund states
+   * are applied like a reconciliation. A failing `retrieve` or an `unknown` answer leaves the order
+   * `confirming` for `reconcileOrder`. The caller still receives the original error.
+   */
+  private async settleRejectedCapture(order: Order): Promise<void> {
+    let observed: PaymentSession;
+    try {
+      observed = await this.providers.get(order.providerId).retrieve(order.paymentIntentId!);
+    } catch {
+      return;
+    }
+    if (observed.state === 'created' || observed.state === 'authorized') {
+      await this.transition(order.id, ['confirming'], 'paying');
+    } else {
+      await this.applySettlement(order.id, 'confirming', observed.state, observed.providerRef);
+    }
+  }
+
+  /**
    * Read-only reconciliation for orders parked in `paying`, `confirming` or `refunding`.
    * Calls `adapter.retrieve` only (never capture/refund) and applies the observation with the
    * same `reconcile()` rules. Use it from a return page, a webhook handler or a periodic job.
@@ -121,6 +142,11 @@ export class OrderService {
    * `partially_refunded`). Adapters whose `retrieve` cannot observe refunds (the legacy Stripe
    * Checkout adapter) keep it `refunding`; resolve those with `resolveRefund` after checking the
    * provider.
+   *
+   * `partially_refunded` is only accepted as the outcome of the pending refund when the order has
+   * no earlier completed partial refund (`partialRefundCount(order) === 0`). Otherwise the
+   * observation may describe the earlier refund, so the order stays `refunding` and must be
+   * resolved with `resolveRefund` after checking the provider.
    */
   async reconcileOrder(orderId: string): Promise<Order> {
     const order = await this.getOrder(orderId);
@@ -130,9 +156,9 @@ export class OrderService {
     const session = await this.providers.get(order.providerId).retrieve(ref);
     if (refunding) {
       if (session.state === 'refunded') {
-        await this.transition(orderId, ['refunding'], 'refunded', { refundedAt: new Date() });
-      } else if (session.state === 'partially_refunded') {
-        await this.transition(orderId, ['refunding'], 'paid');
+        await this.transition(orderId, ['refunding'], 'refunded', { refundedAt: new Date(), metadata: refundBook(order) });
+      } else if (session.state === 'partially_refunded' && partialRefundCount(order) === 0) {
+        await this.transition(orderId, ['refunding'], 'paid', { metadata: refundBook(order, 1) });
       }
       return this.getOrder(orderId);
     }
@@ -150,8 +176,14 @@ export class OrderService {
    * refunded order to `paid` lets it be refunded again.
    */
   async resolveRefund(orderId: string, outcome: 'refunded' | 'partially_refunded' | 'not_refunded'): Promise<Order> {
-    if (outcome === 'refunded') await this.transition(orderId, ['refunding'], 'refunded', { refundedAt: new Date() });
-    else await this.transition(orderId, ['refunding'], 'paid');
+    const order = await this.getOrder(orderId);
+    if (outcome === 'refunded') {
+      await this.transition(orderId, ['refunding'], 'refunded', { refundedAt: new Date(), metadata: refundBook(order) });
+    } else {
+      await this.transition(orderId, ['refunding'], 'paid', {
+        metadata: refundBook(order, outcome === 'partially_refunded' ? 1 : 0),
+      });
+    }
     return this.getOrder(orderId);
   }
 
@@ -182,7 +214,11 @@ export class OrderService {
     } else if (decision.next === 'partially_refunded') {
       // Legacy persistence has no partial-refund state or cumulative refund ledger.
       // Some money remains paid; do not claim a full refund or introduce a new persisted enum.
-      await this.transition(orderId, [from], 'paid', { paymentId: paymentRef, paidAt: new Date() });
+      // Count the observed partial refund so a later pending refund is not confused with it.
+      const order = await this.getOrder(orderId);
+      await this.transition(orderId, [from], 'paid', {
+        paymentId: paymentRef, paidAt: new Date(), metadata: refundBook(order, 1),
+      });
     }
     // created / authorized / unknown：仍在途，保持当前状态等待对账
   }
@@ -201,7 +237,16 @@ export class OrderService {
     const order = await this.getOrder(orderId);
     if (!order.paymentId) throw new Error(`订单 "${orderId}" 缺少 paymentId`);
     const partial = options.money === undefined ? false : isPartialRefund(options.money, order);
-    await this.transition(orderId, ['paid'], 'refunding');
+    // Record the command being attempted, so an operator resolving an unknown outcome can see it.
+    const pending: PendingRefund = {
+      idempotencyKey,
+      amount: options.money?.amount ?? order.amount,
+      currency: order.currency,
+      hadPriorPartial: partialRefundCount(order) > 0,
+    };
+    await this.transition(orderId, ['paid'], 'refunding', {
+      metadata: { ...(order.metadata ?? {}), [PENDING_REFUND_KEY]: JSON.stringify(pending) },
+    });
     let result: { refundRef: string; state: SettlementState };
     try {
       result = await this.providers.get(order.providerId).refund({
@@ -211,21 +256,43 @@ export class OrderService {
         idempotencyKey,
       });
     } catch (error) {
-      // A definite provider rejection moved no money; unknown failures stay refunding.
-      if (isDefinitePaymentRejection(error)) await this.transition(orderId, ['refunding'], 'paid');
+      // A 4xx is not proof that no money moved (e.g. a refund already made through another path):
+      // read the provider state first. Unknown failures stay refunding.
+      if (isDefinitePaymentRejection(error)) await this.settleRejectedRefund(order);
       throw error;
     }
     if (result.state === 'partially_refunded' || (result.state === 'refunded' && partial)) {
-      await this.transition(orderId, ['refunding'], 'paid');
+      await this.transition(orderId, ['refunding'], 'paid', { metadata: refundBook(order, 1) });
       // A completed individual refund is not aggregate proof that the original payment is fully refunded.
       return { ...result, state: 'partially_refunded' };
     } else if (result.state === 'refunded') {
-      await this.transition(orderId, ['refunding'], 'refunded', { refundedAt: new Date() });
+      await this.transition(orderId, ['refunding'], 'refunded', { refundedAt: new Date(), metadata: refundBook(order) });
     } else if (result.state === 'failed') {
-      await this.transition(orderId, ['refunding'], 'paid');
+      await this.transition(orderId, ['refunding'], 'paid', { metadata: refundBook(order) });
     }
     // Pending or thrown outcomes stay refunding until reconciliation; they are not retried here.
     return result;
+  }
+
+  /**
+   * After a definite refund rejection, read the payment before releasing the order:
+   * `refunded` is recorded; `captured` (nothing refunded, or an adapter that cannot observe refunds)
+   * and `partially_refunded` explained by an earlier recorded partial refund return it to `paid`.
+   * An unexplained `partially_refunded`, `unknown`, any other state or a failing `retrieve` keeps it
+   * `refunding` for `resolveRefund`. The caller still receives the original error.
+   */
+  private async settleRejectedRefund(order: Order): Promise<void> {
+    let observed: PaymentSession;
+    try {
+      observed = await this.providers.get(order.providerId).retrieve(order.paymentId!);
+    } catch {
+      return;
+    }
+    if (observed.state === 'refunded') {
+      await this.transition(order.id, ['refunding'], 'refunded', { refundedAt: new Date(), metadata: refundBook(order) });
+    } else if (observed.state === 'captured' || (observed.state === 'partially_refunded' && partialRefundCount(order) > 0)) {
+      await this.transition(order.id, ['refunding'], 'paid', { metadata: refundBook(order) });
+    }
   }
 
   /**
@@ -243,7 +310,7 @@ export class OrderService {
     return this.initiatePayment(order, {
       reference: order.id,
       money: { amount: order.amount, currency: order.currency },
-      metadata: order.metadata as Record<string, string> | undefined,
+      metadata: providerMetadata(order.metadata),
       description: payment.description,
       returnUrl: payment.returnUrl,
       cancelUrl: payment.cancelUrl,
@@ -283,6 +350,55 @@ export class OrderService {
     );
     if (!changed) throw new Error(`订单 "${id}" 不存在或状态已变化，无法转换为 ${to}`);
   }
+}
+
+/**
+ * Refund bookkeeping kept in `Order.metadata` (string values, so any JSON/text column stores it).
+ * These keys are reserved; they are not sent to the provider by `retryOrder`.
+ */
+export const PENDING_REFUND_KEY = 'zucker.pendingRefund';
+export const PARTIAL_REFUND_COUNT_KEY = 'zucker.partialRefundCount';
+
+/** The refund command an order in `refunding` is waiting on (JSON in {@link PENDING_REFUND_KEY}). */
+export interface PendingRefund {
+  idempotencyKey: string;
+  amount: string;
+  currency: string;
+  hadPriorPartial: boolean;
+}
+
+/** Number of completed partial refunds recorded on the order (0 for orders from before 1.0.19). */
+export function partialRefundCount(order: Pick<Order, 'metadata'>): number {
+  const value = Number(order.metadata?.[PARTIAL_REFUND_COUNT_KEY] ?? 0);
+  return Number.isSafeInteger(value) && value > 0 ? value : 0;
+}
+
+/** The pending refund command of a `refunding` order, when one was recorded. */
+export function pendingRefund(order: Pick<Order, 'metadata'>): PendingRefund | undefined {
+  const raw = order.metadata?.[PENDING_REFUND_KEY];
+  if (typeof raw !== 'string') return undefined;
+  try {
+    return JSON.parse(raw) as PendingRefund;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Metadata for an exit from `refunding`: the pending marker is dropped, completed partials counted. */
+function refundBook(order: Pick<Order, 'metadata'>, completedPartials = 0): Record<string, string> | undefined {
+  const count = partialRefundCount(order) + completedPartials;
+  if (!order.metadata && count === 0) return undefined;
+  const rest = { ...(order.metadata ?? {}) };
+  delete rest[PENDING_REFUND_KEY];
+  return count > 0 ? { ...rest, [PARTIAL_REFUND_COUNT_KEY]: String(count) } : rest;
+}
+
+function providerMetadata(metadata: Order['metadata']): Record<string, string> | undefined {
+  if (!metadata) return undefined;
+  const rest = { ...metadata };
+  delete rest[PENDING_REFUND_KEY];
+  delete rest[PARTIAL_REFUND_COUNT_KEY];
+  return rest;
 }
 
 /** Compare decimal strings exactly without imposing Stripe's minor-unit rules on every provider. */

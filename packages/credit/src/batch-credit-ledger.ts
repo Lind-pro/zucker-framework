@@ -376,14 +376,20 @@ export class BatchCreditLedger<Tx, Source extends string = string> {
   /**
    * Expire every due lot. The scan is paged by lot id, and each lot runs in its own transaction:
    * a lot whose account fails (for example a hold that needs migration) does not stop the sweep
-   * for later accounts. Failures are collected and thrown together as an `AggregateError` after
+   * for later accounts. Failures are collected and thrown together as a {@link CreditExpiryError}
+   * (an `AggregateError` whose `expired` property carries the credits that were expired) after
    * every other lot was processed.
+   *
+   * `scanLots().findMany` must honour `orderBy: [{ id: 'asc' }]`, `take` and the `where.id.gt`
+   * cursor. A scan that ignores them still terminates: the sweep stops at the first page that
+   * returns no lot it has not already seen.
    */
   async expire(transactionData: Record<string, unknown>, now = new Date()): Promise<number> {
     if (!Number.isFinite(now.getTime())) throw new RangeError('Invalid credit expiry time');
     const expired = { isExpired: false, remainingAmount: { gt: 0 }, expiresAt: { lte: now } };
     const pageSize = 500;
     const errors: unknown[] = [];
+    const seen = new Set<string>();
     let total = 0;
     let after: string | undefined;
     for (;;) {
@@ -392,7 +398,10 @@ export class BatchCreditLedger<Tx, Source extends string = string> {
         orderBy: [{ id: 'asc' }],
         take: pageSize,
       });
-      for (const candidate of candidates) {
+      const fresh = candidates.filter(candidate => !seen.has(candidate.id));
+      if (!fresh.length) break;
+      for (const candidate of fresh) {
+        seen.add(candidate.id);
         try {
           const accountId = candidate[this.options.accountField];
           if (typeof accountId !== 'string' || !accountId) throw new Error(`Credit lot ${candidate.id} has no account identity`);
@@ -405,8 +414,16 @@ export class BatchCreditLedger<Tx, Source extends string = string> {
       if (candidates.length < pageSize) break;
       after = candidates[candidates.length - 1].id;
     }
-    if (errors.length) throw new AggregateError(errors, `${errors.length} credit lot(s) failed to expire; ${total} credits expired`);
+    if (errors.length) throw new CreditExpiryError(errors, total);
     return total;
   }
 
+}
+
+/** Thrown by `BatchCreditLedger.expire` when some lots failed; the others were expired. */
+export class CreditExpiryError extends AggregateError {
+  constructor(errors: unknown[], readonly expired: number) {
+    super(errors, `${errors.length} credit lot(s) failed to expire; ${expired} credits expired`);
+    this.name = 'CreditExpiryError';
+  }
 }

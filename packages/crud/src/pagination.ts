@@ -22,6 +22,11 @@ export interface PaginatedResult<T> {
    * 0-based page index, equal to page - 1.
    */
   pageIndex: number;
+  /**
+   * Set on unpaged reads that hit the row limit (`maxUnpagedRows`): `data` is incomplete and
+   * `total` is only the number of returned rows.
+   */
+  truncated?: boolean;
 }
 
 /**

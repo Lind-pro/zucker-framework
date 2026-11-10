@@ -23,6 +23,20 @@ export interface DatabaseAdapter {
 
 export type DataSourceFactory = (config: DataSourceConfig) => Promise<DatabaseAdapter>;
 
+export interface DataSourceDisposalOptions {
+  /**
+   * Release (`$disconnect`/`close`) an adapter that is replaced (re-register, re-add, reload)
+   * or removed/closed (default true). Set false when the application owns the clients'
+   * lifecycle.
+   */
+  disposeOnReplace?: boolean;
+  /**
+   * Wait this long before releasing a replaced/removed adapter, so queries already running on
+   * it can finish (default 0: released on the next tick).
+   */
+  drainDelayMs?: number;
+}
+
 /**
  * 数据源管理器 — 注册/获取/删除数据源，支持运行时动态添加
  *
@@ -36,6 +50,15 @@ export class DataSourceManager {
   private factories = new Map<string, DataSourceFactory>();
   private closedSources = new Set<string>();
   private defaultId: string | null = null;
+  private disposal: Required<DataSourceDisposalOptions> = { disposeOnReplace: true, drainDelayMs: 0 };
+
+  /** Configures how replaced or removed adapters are released. */
+  setDisposalOptions(options: DataSourceDisposalOptions): void {
+    this.disposal = {
+      disposeOnReplace: options.disposeOnReplace ?? this.disposal.disposeOnReplace,
+      drainDelayMs: Math.max(0, options.drainDelayMs ?? this.disposal.drainDelayMs),
+    };
+  }
 
   /**
    * 注册数据源工厂（按 type）
@@ -202,12 +225,28 @@ export class DataSourceManager {
 
   /**
    * 释放被替换/移除的适配器。异步执行且只记录错误，保持 remove/close 的同步签名。
+   * An adapter that is still registered under another id (or was registered again before the
+   * drain delay elapsed) is not released.
    */
   private dispose(id: string, adapter: DatabaseAdapter): void {
+    if (!this.disposal.disposeOnReplace) return;
     const release = adapter.$disconnect ?? adapter.close;
     if (typeof release !== 'function') return;
-    Promise.resolve()
-      .then(() => release.call(adapter))
+    const stillReferenced = () => [...this.dataSources.values()].includes(adapter);
+    if (stillReferenced()) return;
+    const delay = this.disposal.drainDelayMs;
+    const wait =
+      delay > 0
+        ? new Promise<void>((resolve) => {
+            const timer = setTimeout(resolve, delay);
+            timer.unref?.();
+          })
+        : Promise.resolve();
+    wait
+      .then(() => {
+        if (stillReferenced()) return;
+        return release.call(adapter);
+      })
       .catch((err: unknown) => {
         this.logger.warn(
           `Failed to release datasource ${id}: ${err instanceof Error ? err.message : String(err)}`,

@@ -42,7 +42,8 @@ export class QueryParamEntity implements DynamicQueryParam {
       this.inferTotal = param.inferTotal;
 
       if (param.filters !== undefined) {
-        this.filters = param.filters;
+        // An object filter map (POST body) is kept in its JSON form.
+        this.filters = typeof param.filters === 'string' ? param.filters : JSON.stringify(param.filters);
       }
       if (param.where !== undefined) {
         this.where = param.where;

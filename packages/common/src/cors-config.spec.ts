@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCorsOptions } from './cors-config';
+import { buildCorsOptions, DEFAULT_CORS_CONFIG } from './cors-config';
 
 describe('buildCorsOptions', () => {
   it('never combines the default wildcard origin with credentials', () => {
@@ -29,5 +29,14 @@ describe('buildCorsOptions', () => {
     expect(options && options.methods).toEqual(expect.arrayContaining(['PUT', 'PATCH', 'DELETE']));
     expect(options && options.allowedHeaders).not.toContain('*');
     expect(options && options.allowedHeaders).toContain('Authorization');
+  });
+  it('lists the request headers read by framework packages in the default allowed headers (N-M12)', () => {
+    const options = buildCorsOptions({ enable: true });
+    expect(options && options.allowedHeaders).toEqual(
+      expect.arrayContaining(['X-Tenant-ID', 'X-API-Key', 'Idempotency-Key', 'X-Verify-Code', 'X-Auth-Token', 'X-Token']),
+    );
+    expect(DEFAULT_CORS_CONFIG.allowedHeaders).toEqual(
+      expect.arrayContaining(['X-Tenant-ID', 'X-API-Key', 'Idempotency-Key', 'X-Verify-Code', 'X-Auth-Token', 'X-Token']),
+    );
   });
 });

@@ -475,3 +475,19 @@ describe('SubscriptionAssignmentService', () => {
     expect(new SubscriptionAssignmentError('invalid', 'x').name).toBe('SubscriptionAssignmentError');
   });
 });
+
+describe('readPlanPriceSnapshot amounts (N17)', () => {
+  const snap = (currency: string, amount: string) => ({
+    planId: 'p1', slug: 'basic', revision: 1, interval: 'one_time', currency, amount, termDays: 30, providerId: 'stripe', providerRef: 'price_1',
+  });
+  it('accepts two- and three-decimal stored snapshots for three-decimal currencies and keeps the stored string', () => {
+    expect(readPlanPriceSnapshot(snap('KWD', '12.50'))).toMatchObject({ currency: 'KWD', amount: '12.50' });
+    expect(readPlanPriceSnapshot(snap('KWD', '12.500'))).toMatchObject({ currency: 'KWD', amount: '12.500' });
+  });
+  it('rejects non-canonical amounts', () => {
+    expect(readPlanPriceSnapshot(snap('KWD', '12.5'))).toBeNull();
+    expect(readPlanPriceSnapshot(snap('KWD', '12.5000'))).toBeNull();
+    expect(readPlanPriceSnapshot(snap('USD', '12.5'))).toBeNull();
+    expect(readPlanPriceSnapshot(snap('USD', '12.50'))).toMatchObject({ amount: '12.50' });
+  });
+});

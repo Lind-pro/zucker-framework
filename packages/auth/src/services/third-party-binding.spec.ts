@@ -1,3 +1,4 @@
+import { describe, it, expect, vi } from 'vitest';
 import { ThirdPartyAccountService } from './third-party-account.service';
 
 describe('configured third-party bindings', () => {

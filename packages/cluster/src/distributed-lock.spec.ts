@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { RedisDistributedLock } from './distributed-lock';
 import type { RedisLike } from './cluster-manager';
 
@@ -244,6 +244,112 @@ describe('RedisDistributedLock', () => {
         aborted = signal.aborted;
       }, { renewIntervalMs: 10 });
       expect(aborted).toBe(true);
+    });
+  });
+
+  describe('watchdog and expiry with a monotonic clock (M3, L1)', () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'performance'] });
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    /** Resolves with the elapsed fake-ms at which `signal` aborted (or undefined if never within `maxMs`). */
+    const abortTime = async (signal: AbortSignal, maxMs: number): Promise<number | undefined> => {
+      const t0 = performance.now();
+      let at: number | undefined;
+      signal.addEventListener('abort', () => {
+        at = performance.now() - t0;
+      });
+      await vi.advanceTimersByTimeAsync(maxMs);
+      return at;
+    };
+
+    it('eval rejecting on every renewal aborts no later than the TTL after acquisition', async () => {
+      const failing = createMockRedis();
+      failing.eval = vi.fn().mockRejectedValue(new Error('redis down')) as never;
+      lock.configure(failing);
+      let at: number | undefined;
+      const run = lock.withLock(
+        'r',
+        300,
+        async (signal) => {
+          at = await abortTime(signal, 1000);
+        },
+        { renewIntervalMs: 50 },
+      );
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(1000);
+      await run;
+      expect(at).toBeDefined();
+      expect(at!).toBeLessThanOrEqual(300);
+    });
+
+    it('one renewal failure followed by success does not abort', async () => {
+      const flaky = createMockRedis();
+      const realEval = flaky.eval!.bind(flaky);
+      let calls = 0;
+      flaky.eval = (async (...args: unknown[]) => {
+        if (++calls === 1) throw new Error('blip');
+        return (realEval as (...a: unknown[]) => unknown)(...args);
+      }) as never;
+      lock.configure(flaky);
+      let aborted: boolean | undefined;
+      const run = lock.withLock(
+        'r',
+        300,
+        async (signal) => {
+          await vi.advanceTimersByTimeAsync(1500);
+          aborted = signal.aborted;
+        },
+        { renewIntervalMs: 50 },
+      );
+      await vi.advanceTimersByTimeAsync(2000);
+      await run;
+      expect(calls).toBeGreaterThan(1);
+      expect(aborted).toBe(false);
+    });
+
+    it('a renewal returning 0 aborts', async () => {
+      let at: number | undefined;
+      const run = lock.withLock(
+        'r',
+        300,
+        async (signal) => {
+          redis.store.delete('zucker:lock:r'); // lock lost: the compare-and-renew script returns 0
+          at = await abortTime(signal, 500);
+        },
+        { renewIntervalMs: 50 },
+      );
+      await vi.advanceTimersByTimeAsync(600);
+      await run;
+      expect(at).toBeDefined();
+      expect(at!).toBeLessThanOrEqual(100);
+    });
+
+    it('watchdog: false creates no timers', async () => {
+      let timers = -1;
+      const run = lock.withLock(
+        'r',
+        300,
+        async () => {
+          timers = vi.getTimerCount();
+        },
+        { watchdog: false },
+      );
+      await vi.advanceTimersByTimeAsync(0);
+      await run;
+      expect(timers).toBe(0);
+    });
+
+    it('isHeldByMe is false after the TTL', async () => {
+      await lock.acquire('r', 1000);
+      expect(lock.isHeldByMe('r')).toBe(true);
+      await vi.advanceTimersByTimeAsync(999);
+      expect(lock.isHeldByMe('r')).toBe(true);
+      await vi.advanceTimersByTimeAsync(2);
+      expect(lock.isHeldByMe('r')).toBe(false);
     });
   });
 });

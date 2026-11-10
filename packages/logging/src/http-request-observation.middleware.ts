@@ -1,7 +1,16 @@
 import { Inject, Injectable, Optional, type NestMiddleware } from '@nestjs/common';
 import { getCorrelationId } from './correlation-id';
 import { AccessLogService, type AccessLogCompletionResponse } from './persistent-logs';
-import { RejectedLogRateLimiter, type RejectedLogRateLimitOptions } from './rejected-log-limiter';
+import {
+  RejectedLogRateLimiter,
+  suppressedRejectionsLog,
+  type RejectedLogRateLimitOptions,
+} from './rejected-log-limiter';
+import { PiiFilter } from './pii-filter';
+
+/** Query parameters that carry one-time credentials on auth callbacks / magic links. */
+const DETAIL_URL_SENSITIVE_PARAMETERS = ['code', 'state', 'otp', 'captcha', 'ticket'];
+const urlFilter = new PiiFilter();
 
 export interface HttpRequestObservation {
   method: string;
@@ -29,8 +38,10 @@ export interface HttpRequestObservationOptions {
   retainClientIp?: boolean;
   /**
    * Bounds persisted access-log details for rejected/slow responses per status + client and in
-   * total per window (defaults: 20 per key, 300 total, 60 s). Metrics via onComplete are never
-   * sampled. `false` persists every detail (previous behaviour).
+   * total per window (defaults: 20 per status and client, 300 per status, 1200 non-5xx, 300 5xx,
+   * 60 s). Slow-request details count against the same budgets as rejected ones. Dropped details
+   * are summarised in one `http:suppressed` row per closed window. Metrics via onComplete are
+   * never sampled. `false` persists every detail (previous behaviour).
    */
   detailRateLimit?: RejectedLogRateLimitOptions | false;
 }
@@ -137,11 +148,11 @@ export class HttpRequestObservationMiddleware implements NestMiddleware {
         observation.statusCode >= 400 ||
         (this.options.slowRequestMs !== undefined && observation.durationMs >= this.options.slowRequestMs)
       );
-      if (
-        wantsDetail &&
-        this.limiter &&
-        !this.limiter.allow(observation.statusCode, request.ip || request.socket?.remoteAddress)
-      ) {
+      const allowed = !wantsDetail || !this.limiter ||
+        this.limiter.allow(observation.statusCode, request.ip || request.socket?.remoteAddress);
+      const suppressed = this.logs ? this.limiter?.drainSuppressed() : undefined;
+      if (suppressed && this.logs) void this.logs.log(suppressedRejectionsLog(suppressed)).catch(() => {});
+      if (!allowed) {
         // Suppressed by the rate limit: also stop later rejected-request writers for this request.
         request[HTTP_ACCESS_CAPTURED] = true;
       } else if (this.logs && wantsDetail) {
@@ -152,7 +163,10 @@ export class HttpRequestObservationMiddleware implements NestMiddleware {
           describe: `${request.method} ${observation.route}`,
           module: 'http',
           userId: observation.userId,
-          requestUrl: request.originalUrl || request.url || request.path,
+          requestUrl: urlFilter.sanitizeUrl(
+            request.originalUrl || request.url || request.path,
+            DETAIL_URL_SENSITIVE_PARAMETERS,
+          ),
           method: request.method,
           ip: observation.ip,
           userAgent: Array.isArray(userAgent) ? userAgent[0] : userAgent,

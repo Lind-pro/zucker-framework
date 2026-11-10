@@ -3,7 +3,7 @@ import { type TreeSortSupportEntity, type TreePathStrategy, list2tree, validateT
 import { BaseService } from './base.service';
 import { type DynamicQueryParam } from './dynamic-query.service';
 import { type PaginatedResult, type SaveResult } from './pagination';
-import { assertQueryField } from './query/query-policy';
+import { assertQueryField, stripRelationLikeIncludes, withModelFields } from './query/query-policy';
 import { EntityEventPhase, EntityEventType } from '@zucker-framework/event';
 
 export interface TreeServiceOptions {
@@ -214,12 +214,15 @@ export abstract class TreeService<T extends TreeSortSupportEntity> extends BaseS
       const includes = typeof queryParam.includes === 'string'
         ? (queryParam.includes as string).split(',').map((f) => f.trim()).filter(Boolean)
         : queryParam.includes;
+      // Same relation rule as dynamic queries: relations only when allow-listed (400 with field
+      // metadata, stripped from the rows without it).
+      const selectPolicy = withModelFields(this.queryPolicy, this.db.getModelFields?.(this.modelName));
       const selectFields: Record<string, boolean> | undefined =
         includes?.length
-          ? Object.fromEntries(includes.map((f) => [assertQueryField(f, 'select', this.queryPolicy), true]))
+          ? Object.fromEntries(includes.map((f) => [assertQueryField(f, 'select', selectPolicy), true]))
           : undefined;
 
-      const descendants = await this.db.model(this.modelName).findMany({
+      const rawDescendants = await this.db.model(this.modelName).findMany({
         where: {
           OR: [
             { id: node.id },
@@ -229,6 +232,7 @@ export abstract class TreeService<T extends TreeSortSupportEntity> extends BaseS
         orderBy: [{ sortIndex: 'asc' }, { createdAt: 'asc' }],
         ...(selectFields ? { select: selectFields } : {}),
       }) as T[];
+      const descendants = stripRelationLikeIncludes(rawDescendants, includes, selectPolicy);
 
       for (const desc of descendants) {
         if (!seenIds.has(desc.id)) {

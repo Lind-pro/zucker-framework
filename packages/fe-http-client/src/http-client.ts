@@ -34,6 +34,27 @@ function originOf(url: string | undefined, base?: string): string | null {
   }
 }
 
+function currentHref(): string | undefined {
+  try {
+    return typeof window !== 'undefined' && typeof window.location?.href === 'string' ? window.location.href : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Without a browser location the URL cannot be resolved like the browser would. Treat only
+ * unambiguous path-relative URLs as relative: `/\host`, `\\host` and URLs with leading
+ * whitespace / control characters are resolved by browsers as network-path (other-origin) URLs.
+ */
+function isUnambiguousRelative(url: string): boolean {
+  if (ABSOLUTE_URL.test(url)) return false;
+  if (/^[\u0000-\u0020]/.test(url)) return false;
+  if (/^[\\/][\\/]/.test(url)) return false;
+  if (url.includes('\\')) return false;
+  return !/^[a-z][a-z\d+\-.]*:/i.test(url);
+}
+
 function currentOrigin(): string | undefined {
   try {
     return typeof window !== 'undefined' && window.location?.origin && window.location.origin !== 'null'
@@ -372,12 +393,21 @@ export class HttpClient {
 
   /** Whether a fully resolved request URL targets the API (or an explicitly trusted) origin. */
   private isTrustedUrl(url: string): boolean {
-    if (!ABSOLUTE_URL.test(url)) return true; // relative: same origin as the page / baseURL path
     const here = currentOrigin();
+    const href = currentHref();
+    const trusted = [this.config.baseURL, this.config.streamBaseURL, ...(this.config.trustedOrigins ?? [])];
+    if (here && href) {
+      // In a browser, resolve exactly like the browser does (`/\evil.example` → other origin).
+      const origin = originOf(url, href);
+      if (!origin) return false;
+      if (origin === here) return true;
+      return trusted.some((candidate) => !!candidate && ABSOLUTE_URL.test(candidate) && originOf(candidate, href) === origin);
+    }
+    if (isUnambiguousRelative(url)) return true; // relative to the baseURL path
+    if (!ABSOLUTE_URL.test(url)) return false;
     const origin = originOf(url, here);
     if (!origin) return false;
-    if (origin === here) return true;
-    const trusted = [this.config.baseURL, this.config.streamBaseURL, ...(this.config.trustedOrigins ?? [])];
+    if (here && origin === here) return true;
     return trusted.some((candidate) => {
       if (!candidate || !ABSOLUTE_URL.test(candidate)) return false;
       return originOf(candidate, here) === origin;
@@ -429,12 +459,24 @@ export class HttpClient {
         return { access_token: currentAccessToken };
       }
 
+      // Cookie refresh never reads or persists a refresh token.
+      const presentedRefreshToken = this.config.refreshWithCookie ? undefined : this.config.getRefreshToken?.();
       const tokens = await refresh();
       // Re-check the session after the (possibly long) refresh: a sign-out or account switch
       // that happened meanwhile must not be overwritten with the refreshed credentials.
       const afterRefresh = this.config.getToken();
       if ((afterRefresh ?? null) !== (currentAccessToken ?? null)) {
-        if (afterRefresh) return { access_token: afterRefresh };
+        if (afterRefresh) {
+          // The access token changed (e.g. adopted from a response header) but the session is the
+          // same one whose refresh token we just rotated: keep the rotated refresh token, the
+          // stored one has been consumed by this refresh.
+          const sameSession =
+            !!presentedRefreshToken && this.config.getRefreshToken?.() === presentedRefreshToken;
+          if (sameSession && tokens.refresh_token && !this.config.refreshWithCookie) {
+            this.config.setRefreshToken?.(tokens.refresh_token);
+          }
+          return { access_token: afterRefresh };
+        }
         throw new axios.CanceledError('Session ended during token refresh');
       }
       this.config.setToken(tokens.access_token);

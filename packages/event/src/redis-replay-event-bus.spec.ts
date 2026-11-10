@@ -120,3 +120,130 @@ describe('RedisReplayEventBus', () => {
     expect(publisher.quit).toHaveBeenCalledTimes(1);
   });
 });
+
+/** In-memory Redis pub/sub shared by several bus instances. */
+function pubSubHub() {
+  const clients: Array<{ emitter: EventEmitter; channels: Set<string> }> = [];
+  const created: ReplayEventRedisClient[] = [];
+  const makeClient = (): ReplayEventRedisClient => {
+    const emitter = new EventEmitter();
+    const channels = new Set<string>();
+    clients.push({ emitter, channels });
+    const client = Object.assign(emitter, {
+      duplicate: () => makeClient(),
+      publish: vi.fn(async (channel: string, message: string) => {
+        for (const client of clients) if (client.channels.has(channel)) client.emitter.emit('message', channel, message);
+        return 1;
+      }),
+      subscribe: vi.fn(async (channel: string) => { channels.add(channel); return 1; }),
+      unsubscribe: vi.fn(async (channel: string) => { channels.delete(channel); return 0; }),
+      quit: vi.fn(async () => 'OK'),
+    }) as unknown as ReplayEventRedisClient;
+    created.push(client);
+    return client;
+  };
+  return { makeClient, created };
+}
+
+describe('RedisReplayEventBus run boundaries (N-H3)', () => {
+  type Evt = { value: number; run?: string; done?: boolean };
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  function twoBuses() {
+    const hub = pubSubHub();
+    const make = () =>
+      new RedisReplayEventBus<string, Evt>({
+        channel: (key) => `progress:${key}`,
+        isTerminal: (event) => event.done === true,
+        channelTtlMs: 120_000,
+        cleanupIntervalMs: 1_000,
+        createClient: hub.makeClient,
+        parsePayload: (value) => value as Evt,
+      });
+    const a = make();
+    const b = make();
+    a.onModuleInit();
+    b.onModuleInit();
+    return { a, b };
+  }
+  const collect = (bus: RedisReplayEventBus<string, Evt>, key: string) => {
+    const seen: number[] = [];
+    let completed = false;
+    bus.stream(key).subscribe({ next: (event) => seen.push(event.value), complete: () => { completed = true; } });
+    return { seen, isComplete: () => completed };
+  };
+
+  it('begin() on instance A drops the terminal run retained on instance B', async () => {
+    const { a, b } = twoBuses();
+    // Both instances follow run 1 and retain its terminal event.
+    const aRun1 = collect(a, 'doc');
+    const bRun1 = collect(b, 'doc');
+    a.publish('doc', { value: 1 });
+    a.publish('doc', { value: 2, done: true });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(aRun1.seen).toEqual([1, 2]);
+    expect(bRun1.seen).toEqual([1, 2]);
+
+    // Without begin(), a late subscriber on B would replay run 1.
+    expect(collect(b, 'doc').seen).toEqual([2]);
+
+    a.begin('doc');
+    await vi.advanceTimersByTimeAsync(0);
+
+    const bRun2 = collect(b, 'doc');
+    const aRun2 = collect(a, 'doc');
+    expect(bRun2.seen).toEqual([]);
+    expect(bRun2.isComplete()).toBe(false);
+    expect(aRun2.seen).toEqual([]);
+
+    a.publish('doc', { value: 10 });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(bRun2.seen).toEqual([10]);
+    expect(aRun2.seen).toEqual([10]);
+    await a.onModuleDestroy();
+    await b.onModuleDestroy();
+  });
+
+  it('subscribes to the control channel only once the instance retains a finished run', async () => {
+    const hub = pubSubHub();
+    const bus = new RedisReplayEventBus<string, Evt>({
+      channel: (key) => `progress:${key}`,
+      isTerminal: (event) => event.done === true,
+      channelTtlMs: 120_000,
+      cleanupIntervalMs: 1_000,
+      createClient: hub.makeClient,
+      parsePayload: (value) => value as Evt,
+    });
+    bus.onModuleInit();
+    const subscriber = hub.created[1];
+    bus.stream('doc').subscribe();
+    expect((subscriber.subscribe as ReturnType<typeof vi.fn>).mock.calls).toEqual([['progress:doc']]);
+
+    bus.publish('doc', { value: 1, done: true });
+    await vi.advanceTimersByTimeAsync(0);
+    expect((subscriber.subscribe as ReturnType<typeof vi.fn>).mock.calls).toEqual([
+      ['progress:doc'],
+      ['zucker:replay-bus:control'],
+    ]);
+    await bus.onModuleDestroy();
+  });
+
+  it('honours a custom controlChannel', async () => {
+    const hub = pubSubHub();
+    const publishers: ReplayEventRedisClient[] = [];
+    const bus = new RedisReplayEventBus<string, Evt>({
+      channel: (key) => `progress:${key}`,
+      isTerminal: (event) => event.done === true,
+      channelTtlMs: 120_000,
+      cleanupIntervalMs: 1_000,
+      controlChannel: 'custom:control',
+      createClient: () => { const client = hub.makeClient(); publishers.push(client); return client; },
+      parsePayload: (value) => value as Evt,
+    });
+    bus.onModuleInit();
+    bus.begin('doc');
+    expect(publishers[0].publish).toHaveBeenCalledWith('custom:control', JSON.stringify({ begin: 'progress:doc' }));
+    await bus.onModuleDestroy();
+  });
+});

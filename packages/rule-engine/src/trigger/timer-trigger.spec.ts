@@ -179,6 +179,23 @@ describe('TimerTrigger', () => {
       expect(handler).toHaveBeenCalledTimes(2);
     });
 
+    it('after reload() a tick does not overlap a handler still running from before the reload (L7)', async () => {
+      let release!: () => void;
+      const oldHandler = vi.fn(() => new Promise<void>((r) => { release = r; }));
+      const newHandler = vi.fn().mockResolvedValue(undefined);
+      trigger.start({ cron: '* * * * * *' }, oldHandler);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(oldHandler).toHaveBeenCalledTimes(1);
+
+      trigger.reload({ cron: '* * * * * *' }, newHandler);
+      await vi.advanceTimersByTimeAsync(3_000);
+      expect(newHandler).not.toHaveBeenCalled(); // old run is still in flight
+
+      release();
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(newHandler).toHaveBeenCalledTimes(1);
+    });
+
     it('rejects unsupported syntax instead of approximating it', () => {
       expect(() => trigger.validate({ cron: '0 0 L * *' })).toThrow();
       expect(() => trigger.validate({ cron: '0 0 * * *', timezone: 'Not/AZone' })).toThrow();

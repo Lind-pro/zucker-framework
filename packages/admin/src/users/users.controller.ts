@@ -44,6 +44,7 @@ import { DATABASE_ADAPTER } from '@zucker-framework/crud';
 import { type DatabaseAdapter, ValidationException } from '@zucker-framework/core';
 import type { UserEntity } from '@zucker-framework/auth';
 import { adminPage, toAdminWhere, type AdminQueryFilterOptions } from '../query-filter';
+import { isPrivilegedCode, isSuperadminUser, privilegedRoleCodes } from '../privileged-grants';
 import {
   ADMIN_USERS_OPTIONS,
   ADMIN_USER_HOOKS,
@@ -56,6 +57,10 @@ import {
 } from './users.options';
 
 type AdminRequest = { user?: { id?: string } } | undefined;
+
+/** Forms send `''` for an empty optional field that is stored as `null`; that is not a change. */
+const sameStoredValue = (next: unknown, stored: unknown): boolean =>
+  next === stored || ((next === '' || next == null) && (stored === '' || stored == null));
 type UserView = Partial<Omit<UserEntity, 'password'>>;
 
 /**
@@ -186,10 +191,11 @@ export class UsersController {
     }
     await this.requireNotOutranked(request, id);
     const sensitive = (USER_SENSITIVE_FIELDS as readonly string[]).filter(field => field in input
-      && (field === 'password' ? !!input.password : input[field] !== existing[field]));
+      && (field === 'password' ? !!input.password : !sameStoredValue(input[field], existing[field])));
     if (sensitive.length) await this.requirePermission(request, 'users:authorize',
       `Changing ${sensitive.join(', ')} requires users:authorize`);
-    const updated = await this.userService.saveUser({ ...input, id, username: existing.username });
+    // updateUser never inserts: a row deleted after the check above fails instead of being recreated.
+    const updated = await this.userService.updateUser(id, input as Partial<UserEntity>);
     if (sensitive.length && this.hooks?.sensitiveFieldsChanged) {
       await this.hooks.sensitiveFieldsChanged({ userId: id, fields: sensitive, actorId: request?.user?.id });
     }
@@ -267,6 +273,8 @@ export class UsersController {
         if (!role.count)
           throw new ValidationException({ roleIds: [`Role not found: ${roleId}`] }, 'Invalid roles');
       }
+      // Roles are pinned, so the privilege check below reads what will be committed.
+      await this.requireMayGrant(request, await privilegedRoleCodes(tx, roleIds));
       await tx.model('userRoles').deleteMany({ where: { userId: id } });
       for (const roleId of roleIds) {
         await tx.model('userRoles').create({ data: { userId: id, roleId } });
@@ -304,6 +312,7 @@ export class UsersController {
       throw new ValidationException({ grantType: ['Must be a non-empty string'] }, 'Invalid permissions');
     const permissionIds = input.values;
     await this.requireNotOutranked(request, id);
+    await this.requireMayGrant(request, permissionIds.filter(isPrivilegedCode));
     await this.db.$transaction(async (tx) => {
       await this.lockUser(tx, id);
       // Replace only the links of this grant type; other grant types are managed elsewhere.
@@ -410,9 +419,8 @@ export class UsersController {
     if (!locked.count) throw new NotFoundException(`User ${id} not found`);
   }
 
-  private async isSuperadmin(userId: string): Promise<boolean> {
-    const permissions = await this.permissionService.findUserPermissions(userId);
-    return permissions.includes('superadmin') || permissions.includes('*');
+  private isSuperadmin(userId: string): Promise<boolean> {
+    return isSuperadminUser(this.permissionService, userId);
   }
 
   /** An account holding superadmin can only be changed by a superadmin. Fails closed without an actor. */
@@ -421,6 +429,17 @@ export class UsersController {
     const actorId = request?.user?.id;
     if (!actorId || !await this.isSuperadmin(actorId))
       throw new ForbiddenException('Only a superadmin can change a superadmin account');
+  }
+
+  /**
+   * Granting superadmin (or the `*` wildcard) is itself a superadmin action. Without this an operator
+   * with `users:authorize` could make themselves superadmin and then pass {@link requireNotOutranked}.
+   */
+  private async requireMayGrant(request: AdminRequest, privilegedCodes: readonly string[]): Promise<void> {
+    if (!privilegedCodes.length) return;
+    const actorId = request?.user?.id;
+    if (!actorId || !await this.isSuperadmin(actorId))
+      throw new ForbiddenException(`Only a superadmin can grant ${[...new Set(privilegedCodes)].join(', ')}`);
   }
 
   private async requirePermission(request: AdminRequest, code: string, message: string): Promise<void> {

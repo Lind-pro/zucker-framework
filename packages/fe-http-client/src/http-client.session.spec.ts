@@ -69,6 +69,69 @@ describe('bearer scope (M9)', () => {
   });
 });
 
+describe('bearer scope without baseURL (N-L4)', () => {
+  const seen: Array<{ url: string | undefined; auth: unknown }> = [];
+  const adapter: AxiosAdapter = async (config) => {
+    seen.push({ url: config.url, auth: config.headers.get('Authorization') });
+    return reply(config, 200, { status: 200, result: 'ok' });
+  };
+  const authFor = async (client: HttpClient, urls: string[]) => {
+    seen.length = 0;
+    for (const url of urls) await client.get(url, {}, { adapter });
+    return seen.map((entry) => entry.auth);
+  };
+
+  it('with a (jsdom) location, resolves like the browser: /\\evil.example is another origin and gets no bearer', async () => {
+    expect(window.location.href).toMatch(/^https?:/);
+    const client = new HttpClient({ getToken: () => 'secret' });
+    const auth = await authFor(client, [
+      '/me',
+      'relative/path',
+      '/\\evil.example/collect',
+      '\\\\evil.example/collect',
+      '//evil.example/collect',
+      'https://evil.example/collect',
+      `${window.location.origin}/same-origin`,
+    ]);
+    expect(auth).toEqual(['Bearer secret', 'Bearer secret', undefined, undefined, undefined, undefined, 'Bearer secret']);
+  });
+
+  it('with a location, a trusted origin is still honoured', async () => {
+    const client = new HttpClient({ getToken: () => 'secret', trustedOrigins: ['https://files.example.test'] });
+    const auth = await authFor(client, ['https://files.example.test/x', 'https://other.example.test/x']);
+    expect(auth).toEqual(['Bearer secret', undefined]);
+  });
+
+  describe('without a window', () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    it('treats /\\x, \\\\x and URLs with leading whitespace or control characters as untrusted', async () => {
+      vi.stubGlobal('window', undefined);
+      expect(typeof window).toBe('undefined');
+      const client = new HttpClient({ getToken: () => 'secret' });
+      const auth = await authFor(client, [
+        '/\\x',
+        '\\\\x',
+        ' /x',
+        '\t/x',
+        '\n//evil.example/x',
+        '//evil.example/x',
+      ]);
+      expect(auth).toEqual([undefined, undefined, undefined, undefined, undefined, undefined]);
+    });
+
+    it('still trusts unambiguous relative paths and the configured API origin', async () => {
+      vi.stubGlobal('window', undefined);
+      const bare = new HttpClient({ getToken: () => 'secret' });
+      expect(await authFor(bare, ['/me', 'relative/path', 'a/b?x=1'])).toEqual(['Bearer secret', 'Bearer secret', 'Bearer secret']);
+
+      const withBase = new HttpClient({ baseURL: 'https://api.example.test/v1', getToken: () => 'secret' });
+      expect(await authFor(withBase, ['/me', 'https://api.example.test/other', 'https://evil.example/x']))
+        .toEqual(['Bearer secret', 'Bearer secret', undefined]);
+    });
+  });
+});
+
 describe('response-header token adoption (M9)', () => {
   const withHeader = (token: string): AxiosAdapter => async (config) =>
     reply(config, 200, { status: 200, result: 'ok' }, { 'x-auth-token': token });
@@ -145,6 +208,83 @@ describe('refresh after sign-out (M9)', () => {
     expect(token).toBeNull();
     expect(refreshToken).toBeNull();
     expect(errorHandler).not.toHaveBeenCalled();
+  });
+});
+
+describe('refresh with a mid-flight access token change (N-L4)', () => {
+  const denied: AxiosAdapter = async (config) => {
+    if (config.headers.get('Authorization') === 'Bearer adopted') return reply(config, 200, { status: 200, result: 'ok' });
+    throw new AxiosError('no', 'ERR_BAD_REQUEST', config, undefined, reply(config, 401, { message: 'no' }));
+  };
+
+  it('stores the rotated refresh token when the access token changed but the stored refresh token is unchanged', async () => {
+    let token: string | null = 'expired';
+    let refreshToken: string | null = 'r1';
+    const setToken = vi.fn((value: string) => { token = value; });
+    const setRefreshToken = vi.fn((value: string) => { refreshToken = value; });
+    const refreshTokenFn = vi.fn(async (presented: string) => {
+      expect(presented).toBe('r1');
+      token = 'adopted'; // e.g. adopted from an x-auth-token response header while refreshing
+      return { access_token: 'refreshed', refresh_token: 'r2' };
+    });
+    const client = new HttpClient({
+      baseURL: '/api', getToken: () => token, setToken, getRefreshToken: () => refreshToken, setRefreshToken, refreshTokenFn,
+    });
+    await expect(client.get('/me', {}, { adapter: denied })).resolves.toBeDefined();
+    expect(setRefreshToken).toHaveBeenCalledExactlyOnceWith('r2');
+    expect(refreshToken).toBe('r2');
+    // The adopted access token wins; the refreshed one is not written over it.
+    expect(setToken).not.toHaveBeenCalled();
+    expect(token).toBe('adopted');
+  });
+
+  it('does not store the rotated refresh token when the stored refresh token changed meanwhile (another session)', async () => {
+    let token: string | null = 'expired';
+    let refreshToken: string | null = 'r1';
+    const setRefreshToken = vi.fn((value: string) => { refreshToken = value; });
+    const refreshTokenFn = vi.fn(async () => {
+      token = 'adopted';
+      refreshToken = 'other-session-refresh';
+      return { access_token: 'refreshed', refresh_token: 'r2' };
+    });
+    const client = new HttpClient({
+      baseURL: '/api', getToken: () => token, setToken: (value) => { token = value; },
+      getRefreshToken: () => refreshToken, setRefreshToken, refreshTokenFn,
+    });
+    await expect(client.get('/me', {}, { adapter: denied })).resolves.toBeDefined();
+    expect(setRefreshToken).not.toHaveBeenCalled();
+    expect(refreshToken).toBe('other-session-refresh');
+  });
+
+  it('cookie refresh never reads or persists a refresh token', async () => {
+    let token: string | null = 'expired';
+    const getRefreshToken = vi.fn(() => 'r1');
+    const setRefreshToken = vi.fn();
+    const refreshWithCookie = vi.fn(async () => {
+      token = 'adopted';
+      return { access_token: 'refreshed', refresh_token: 'r2' };
+    });
+    const client = new HttpClient({
+      baseURL: '/api', getToken: () => token, setToken: (value) => { token = value; },
+      getRefreshToken, setRefreshToken, refreshWithCookie,
+    });
+    await expect(client.get('/me', {}, { adapter: denied })).resolves.toBeDefined();
+    expect(setRefreshToken).not.toHaveBeenCalled();
+    expect(getRefreshToken).not.toHaveBeenCalled();
+  });
+
+  it('still cancels when the session ended (no access token) during the refresh', async () => {
+    let token: string | null = 'expired';
+    let refreshToken: string | null = 'r1';
+    const setRefreshToken = vi.fn();
+    const client = new HttpClient({
+      baseURL: '/api', getToken: () => token, setToken: (value) => { token = value; },
+      getRefreshToken: () => refreshToken, setRefreshToken, errorHandler: () => {},
+      refreshTokenFn: async () => { token = null; refreshToken = null; return { access_token: 'x', refresh_token: 'r2' }; },
+    });
+    const failure = await client.get('/me', {}, { adapter: denied }).catch((error: unknown) => error);
+    expect(axios.isCancel(failure)).toBe(true);
+    expect(setRefreshToken).not.toHaveBeenCalled();
   });
 });
 

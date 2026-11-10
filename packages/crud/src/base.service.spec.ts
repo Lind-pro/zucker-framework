@@ -37,8 +37,8 @@ interface TestEntity extends GenericEntity {
   age: number;
   status: string;
   deletedAt?: Date | null;
-  createdAt?: Date;
-  updatedAt?: Date;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 // ---------------------------------------------------------------------------
@@ -469,10 +469,9 @@ describe('BaseService', () => {
       expect(result.name).toBe('Updated');
     });
 
-    it('should throw for non-existent id', async () => {
-      await expect(
-        service.saveOrUpdate({ id: 'non-existent', name: 'X', age: 1, status: 'x' }),
-      ).rejects.toThrow();
+    it('creates a row for an unknown client-generated id (upsert, N-M9)', async () => {
+      const saved = await service.saveOrUpdate({ id: 'non-existent', name: 'X', age: 1, status: 'x' });
+      expect(saved).toMatchObject({ id: 'non-existent', name: 'X' });
     });
   });
 

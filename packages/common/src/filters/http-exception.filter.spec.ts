@@ -325,4 +325,53 @@ describe('HttpExceptionFilter', () => {
       expect(body.timestamp).toBeCloseTo(Date.now(), -2); // within ~100ms
     });
   });
+  // ─── Brand-based business exception detection (N-L10) ────────────
+
+  describe('BusinessException brand', () => {
+    it('keeps status and code of a subclass whose class was renamed', () => {
+      class BusinessException2 extends BusinessException {}
+      const { statusCode, body } = catchAndGetResponse(
+        filter,
+        new BusinessException2('renamed', 'RENAMED_CODE', 418),
+      );
+      expect(statusCode).toBe(418);
+      expect(body.code).toBe('RENAMED_CODE');
+      expect(body.message).toBe('renamed');
+    });
+
+    it('recognises another copy of BusinessException (renamed class carrying the Symbol.for brand)', () => {
+      // A second module copy / minified build: not an instance of this realm's class, and the
+      // class name is not "BusinessException". Only the shared Symbol.for brand identifies it.
+      class a extends Error {
+        readonly status = 409;
+        readonly code = 'COPY_CODE';
+      }
+      Object.defineProperty(a.prototype, Symbol.for('zucker.business-exception'), { value: true });
+      const { statusCode, body } = catchAndGetResponse(filter, new a('from another copy'));
+      expect(statusCode).toBe(409);
+      expect(body.code).toBe('COPY_CODE');
+      expect(body.message).toBe('from another copy');
+    });
+
+    it('does not treat an unbranded error with status/code as a business exception', () => {
+      class UpstreamError extends Error {
+        readonly status = 401;
+        readonly code = 'UPSTREAM';
+      }
+      const { statusCode, body } = catchAndGetResponse(filter, new UpstreamError('secret upstream detail'));
+      expect(statusCode).toBe(500);
+      expect(body.code).toBe('INTERNAL_ERROR');
+      expect(body.message).not.toContain('secret upstream detail');
+    });
+
+    it('does not treat a branded Axios error as a business exception', () => {
+      class a extends Error {
+        readonly status = 401;
+        readonly code = 'ERR_BAD_REQUEST';
+        readonly isAxiosError = true;
+      }
+      Object.defineProperty(a.prototype, Symbol.for('zucker.business-exception'), { value: true });
+      expect(catchAndGetResponse(filter, new a('x')).statusCode).toBe(500);
+    });
+  });
 });

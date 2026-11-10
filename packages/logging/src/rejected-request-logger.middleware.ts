@@ -7,7 +7,16 @@ import {
   type ObservedHttpRequest,
 } from './http-request-observation.middleware';
 import { getCorrelationId } from './correlation-id';
-import { RejectedLogRateLimiter, type RejectedLogRateLimitOptions } from './rejected-log-limiter';
+import {
+  RejectedLogRateLimiter,
+  suppressedRejectionsLog,
+  type RejectedLogRateLimitOptions,
+} from './rejected-log-limiter';
+import { PiiFilter } from './pii-filter';
+
+/** Query parameters that carry one-time credentials on auth callbacks / magic links. */
+export const REJECTED_URL_SENSITIVE_PARAMETERS = ['code', 'state', 'otp', 'captcha', 'ticket'] as const;
+const urlFilter = new PiiFilter();
 
 export interface RejectedRequestLogOptions {
   skipPaths?: readonly string[];
@@ -15,7 +24,9 @@ export interface RejectedRequestLogOptions {
   retainClientIp?: boolean;
   /**
    * Bounds persisted rejections per status + client and in total per window (defaults:
-   * 20 per key, 300 total, 60 s). `false` persists every rejection (previous behaviour).
+   * 20 per status and client, 300 per status, 1200 non-5xx in total, 300 5xx, 60 s). Dropped rows
+   * are summarised in one `http:suppressed` row per closed window. `false` persists every
+   * rejection (previous behaviour).
    */
   rateLimit?: RejectedLogRateLimitOptions | false;
 }
@@ -64,7 +75,10 @@ export class RejectedRequestLoggerMiddleware implements NestMiddleware {
       // Only the transport address (request.ip honours the app's trust-proxy setting).
       // X-Forwarded-For / X-Real-IP are client-controlled unless a trusted proxy rewrote them.
       const clientIp = request.ip || request.socket?.remoteAddress || '';
-      if (this.limiter && !this.limiter.allow(response.statusCode, clientIp)) return;
+      const allowed = !this.limiter || this.limiter.allow(response.statusCode, clientIp);
+      const suppressed = this.limiter?.drainSuppressed();
+      if (suppressed) void this.logs.log(suppressedRejectionsLog(suppressed)).catch(() => {});
+      if (!allowed) return;
       const header = (name: string) => {
         const value = request.headers[name];
         return Array.isArray(value) ? value[0] : value;
@@ -76,7 +90,7 @@ export class RejectedRequestLoggerMiddleware implements NestMiddleware {
         module: 'http',
         userId: request.user?.id,
         username: request.user?.username || request.user?.email,
-        requestUrl: request.originalUrl || request.url,
+        requestUrl: urlFilter.sanitizeUrl(request.originalUrl || request.url, REJECTED_URL_SENSITIVE_PARAMETERS),
         method: request.method,
         ip,
         userAgent: header('user-agent'),

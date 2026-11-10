@@ -55,4 +55,35 @@ describe('RateLimitGuard', () => {
     const error = await guard.canActivate(context({ ip: '198.51.100.4' })).catch(e => e);
     expect(String(error.message)).not.toContain('api');
   });
+  it('allows the request and logs an error once when @RateLimit names a limiter that is not configured (N-L5)', async () => {
+    const error = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const { guard, consume } = await setup({ limiter: 'login' });
+    await expect(guard.canActivate(context({ ip: '198.51.100.4' }))).resolves.toBe(true);
+    await expect(guard.canActivate(context({ ip: '198.51.100.5' }))).resolves.toBe(true);
+    await expect(guard.canActivate(context({ ip: '198.51.100.6' }))).resolves.toBe(true);
+    expect(consume).not.toHaveBeenCalled();
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(String(error.mock.calls[0][0])).toContain("'login'");
+  });
+
+  it('logs separately for each missing limiter name (N-L5)', async () => {
+    const error = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const service = new RateLimiterService({ limiters: { api: { points: 1, duration: 60 } } });
+    await service.onModuleInit();
+    let options: RateLimitOptions = { limiter: 'login' };
+    const guard = new RateLimitGuard({ getAllAndOverride: () => options } as unknown as Reflector, service);
+    await guard.canActivate(context({ ip: '198.51.100.7' }));
+    options = { limiter: 'register' };
+    await guard.canActivate(context({ ip: '198.51.100.7' }));
+    await guard.canActivate(context({ ip: '198.51.100.7' }));
+    expect(error).toHaveBeenCalledTimes(2);
+  });
+
+  it('still enforces a configured limiter (N-L5)', async () => {
+    const error = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const { guard } = await setup({ limiter: 'api' });
+    await guard.canActivate(context({ ip: '198.51.100.8' }));
+    await expect(guard.canActivate(context({ ip: '198.51.100.8' }))).rejects.toBeInstanceOf(TooManyRequestsException);
+    expect(error).not.toHaveBeenCalled();
+  });
 });

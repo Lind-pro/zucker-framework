@@ -153,8 +153,10 @@ export class CacheService implements OnModuleInit, OnModuleDestroy {
       await this.redis.set(key, value, ttlSeconds);
       return;
     }
-    // The memory copy is now newer than whatever Redis holds for this key.
-    if (this.options.preferredProvider !== 'memory') this.redis.markStale(key);
+    // The memory copy is now newer than whatever Redis holds for this key: replay it to Redis
+    // on recovery (with the remaining TTL) instead of only deleting the old Redis value, so a
+    // write made during an outage (e.g. a token revocation) is not lost.
+    if (this.options.preferredProvider !== 'memory') this.redis.markPendingWrite(key, value, ttlSeconds);
     await this.memory.set(key, {
       value, expiresAt: Date.now() + ttlSeconds * 1000,
     }, ttlSeconds === 0 ? 1 : ttlSeconds * 1000);

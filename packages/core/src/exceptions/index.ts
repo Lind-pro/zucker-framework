@@ -6,6 +6,18 @@
  * - 提供仅保留异常名称和消息的 stack 格式
  */
 
+/**
+ * Realm-wide brand of {@link BusinessException} instances. Survives minification / bundler
+ * renaming and duplicated module copies (`Symbol.for` is shared across copies), so exception
+ * filters can recognise business errors without relying on `constructor.name`.
+ */
+export const BUSINESS_EXCEPTION_BRAND = Symbol.for('zucker.business-exception');
+
+/** True for instances of any copy of {@link BusinessException} (brand check). */
+export function isBusinessException(value: unknown): value is BusinessException {
+  return typeof value === 'object' && value !== null && (value as Record<symbol, unknown>)[BUSINESS_EXCEPTION_BRAND] === true;
+}
+
 export class BusinessException extends Error {
   readonly code: string;
   readonly status: number;
@@ -289,3 +301,10 @@ export function isLegalColumn(col: string): boolean {
   }
   return col.length > 0;
 }
+
+Object.defineProperty(BusinessException.prototype, BUSINESS_EXCEPTION_BRAND, {
+  value: true,
+  enumerable: false,
+  configurable: false,
+  writable: false,
+});

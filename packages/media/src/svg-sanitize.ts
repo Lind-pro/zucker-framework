@@ -90,10 +90,24 @@ const URL_ATTRIBUTES = new Set(['href', 'xlink:href']);
 const RASTER_DATA_URI = /^data:image\/(?:png|jpe?g|gif|webp);base64,[a-z0-9+/=]*$/;
 const NAMED_ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
 const NAME_CHAR = /[A-Za-z0-9_:.-]/;
+// Attribute names emitted to the output must be plain XML names (no `\u00a0onload`, quotes, etc.).
+const SAFE_ATTRIBUTE_NAME = /^[A-Za-z_:][A-Za-z0-9_:.-]*$/;
+// The only XML declaration that is accepted. It is never copied: a fixed string is emitted instead,
+// because an HTML parser ends `<?xml ...` at the first `>` and would turn the rest into live markup.
+const XML_DECLARATION =
+  /<\?xml[ \t\r\n]+version[ \t\r\n]*=[ \t\r\n]*(["'])1\.[0-9]\1(?:[ \t\r\n]+encoding[ \t\r\n]*=[ \t\r\n]*(["'])[A-Za-z][A-Za-z0-9._-]{0,39}\2)?(?:[ \t\r\n]+standalone[ \t\r\n]*=[ \t\r\n]*(["'])(?:yes|no)\3)?[ \t\r\n]*\?>/y;
+const CANONICAL_XML_DECLARATION = '<?xml version="1.0" encoding="UTF-8"?>';
+// CSS functions that fetch an external resource (besides `url(`, which is checked separately).
+const FETCHING_CSS_FUNCTIONS = ['image-set(', 'image(', 'src(', 'cross-fade(', 'element(', 'paint('];
 const EXACT_SVG11_DOCTYPE =
   /<!DOCTYPE[ \t\r\n]+svg[ \t\r\n]+PUBLIC[ \t\r\n]+["']-\/\/W3C\/\/DTD SVG 1\.1\/\/EN["'][ \t\r\n]+["']https?:\/\/www\.w3\.org\/Graphics\/SVG\/1\.1\/DTD\/svg11\.dtd["'][ \t\r\n]*>/iy;
 
-/** Decode XML character and predefined entity references. Unknown names stay literal. */
+/**
+ * Decode XML character and predefined entity references (with the terminating `;`).
+ * Unknown names and references without `;` stay literal; `escapeUnknownReferences` turns
+ * them into `&amp;lpar;` / `&amp;#40` on output, so an HTML parser never decodes them into a
+ * character this check did not see.
+ */
 function decodeEntities(value: string): string {
   if (!value.includes('&')) return value;
   return value.replace(/&(#x[0-9a-f]{1,6}|#[0-9]{1,7}|[a-z][a-z0-9]{0,31});/gi, (match, body: string) => {
@@ -109,7 +123,7 @@ function decodeEntities(value: string): string {
 
 /** Lowercase and remove whitespace / control characters a browser ignores in URLs. */
 function normalizeForCheck(value: string): string {
-  return decodeEntities(value).replace(/[\u0000-\u0020\u007f-\u00a0\u1680\u180e\u2000-\u200f\u2028-\u202f\u205f\u3000\ufeff]/g, '').toLowerCase();
+  return value.replace(/[\u0000-\u0020\u007f-\u00a0\u1680\u180e\u2000-\u200f\u2028-\u202f\u205f\u3000\ufeff]/g, '').toLowerCase();
 }
 
 function isSafeReference(normalized: string, allowRaster: boolean): boolean {
@@ -134,8 +148,11 @@ function decodeCssEscapes(value: string): string {
  * fragments (`url(#id)`) or inline raster images; scripts, imports and
  * external fetches make the value unsafe. Linear in the input length.
  */
-function isSafeCssOrValue(raw: string): boolean {
-  const value = normalizeForCheck(decodeCssEscapes(decodeEntities(raw)));
+function isSafeCssOrValue(decoded: string): boolean {
+  // `decoded` has already been entity-decoded once; that is the text a browser sees after
+  // `escapeUnknownReferences`, so decoding it again here would only add false positives.
+  const value = normalizeForCheck(decodeCssEscapes(decoded));
+  if (FETCHING_CSS_FUNCTIONS.some((fn) => value.includes(fn))) return false;
   if (
     value.includes('javascript:') ||
     value.includes('vbscript:') ||
@@ -159,12 +176,25 @@ function isSafeCssOrValue(raw: string): boolean {
   }
 }
 
-/** Re-emit an attribute value as a double-quoted XML attribute. */
+/**
+ * Escape every `&` that does not start one of the references `decodeEntities` understands
+ * (`&amp; &lt; &gt; &quot; &apos; &#N; &#xN;`, with `;`). Those references decode to the
+ * same character in XML and HTML, so the checked text and the browser's text agree, and
+ * well-formed input keeps its exact bytes. Any other form (`&lpar;`, `&#40` without `;`)
+ * becomes inert `&amp;…` text.
+ */
+function escapeUnknownReferences(raw: string): string {
+  return raw.replace(/&(?!(?:#x[0-9a-f]{1,6}|#[0-9]{1,7}|amp|lt|gt|quot|apos);)/gi, '&amp;');
+}
+
+/** Re-emit a source attribute value as a double-quoted XML attribute. */
 function encodeAttributeValue(raw: string): string {
-  return raw
-    .replace(/&(?!(?:#x[0-9a-f]{1,6}|#[0-9]{1,7}|[a-z][a-z0-9]{0,31});)/gi, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/"/g, '&quot;');
+  return escapeUnknownReferences(raw).replace(/</g, '&lt;').replace(/"/g, '&quot;');
+}
+
+/** Re-emit source character data (it cannot contain `<`; that starts the next tag). */
+function encodeText(raw: string): string {
+  return escapeUnknownReferences(raw);
 }
 
 interface ParsedAttribute {
@@ -235,21 +265,21 @@ function filterAttributes(element: string, attributes: ParsedAttribute[]): strin
   let out = '';
   for (const { name, value } of attributes) {
     const lower = name.toLowerCase();
-    if (lower.startsWith('on')) continue;
+    if (lower.startsWith('on') || !SAFE_ATTRIBUTE_NAME.test(name)) continue;
     const allowed =
       ALLOWED_ATTRIBUTES.has(lower) ||
       lower.startsWith('data-') ||
       lower.startsWith('aria-') ||
       (lower.startsWith('xmlns:') && lower.length > 6);
     if (!allowed) continue;
-    const raw = value ?? '';
+    const decoded = decodeEntities(value ?? '');
     if (URL_ATTRIBUTES.has(lower)) {
       const allowRaster = element === 'image' || element === 'feimage';
-      if (!isSafeReference(normalizeForCheck(raw), allowRaster)) continue;
-    } else if (!isSafeCssOrValue(raw)) {
+      if (!isSafeReference(normalizeForCheck(decoded), allowRaster)) continue;
+    } else if (!isSafeCssOrValue(decoded)) {
       continue;
     }
-    out += ` ${name}="${encodeAttributeValue(raw)}"`;
+    out += ` ${name}="${encodeAttributeValue(value ?? '')}"`;
   }
   return out;
 }
@@ -258,7 +288,7 @@ function isDangerousAnimation(element: string, attributes: ParsedAttribute[]): b
   if (!ANIMATION_ELEMENTS.has(element)) return false;
   const target = attributes.find((attr) => attr.name.toLowerCase() === 'attributename');
   if (!target) return element !== 'animatemotion' && element !== 'animatetransform';
-  const name = normalizeForCheck(target.value ?? '');
+  const name = normalizeForCheck(decodeEntities(target.value ?? ''));
   return name === 'href' || name.endsWith(':href') || name.startsWith('on') || name === 'style';
 }
 
@@ -273,28 +303,33 @@ function isDangerousAnimation(element: string, attributes: ParsedAttribute[]): b
  *   handlers, unknown attributes, `href`s other than `#fragment` (inline raster
  *   `data:image/*;base64` is kept on `image`/`feImage`), CSS or attribute values
  *   with `@import`, script URLs or external `url(...)`, and animations that target
- *   `href`, `style` or an event handler.
- * - Text content is kept verbatim; comments and processing instructions are removed.
+ *   `href`, `style` or an event handler. Elements inside `title`/`desc` are not emitted; their text is kept.
+ * - Text content and attribute values are checked after decoding XML references; on output,
+ *   any `&` that does not start an XML reference is escaped, so entity forms an HTML parser
+ *   knows but XML does not (`&lpar;`, `&#40` without `;`) stay inert text.
+ * - The XML declaration is replaced by a fixed one; any other declaration form returns
+ *   `null`. Comments, processing instructions and the SVG 1.1 DOCTYPE are removed.
  *
  * Runs in a single forward pass, so the cost is linear in the input length.
  */
 export function sanitizeSvgMarkup(svg: string, options: SanitizeSvgOptions = {}): string | null {
+  // Invariant: every string pushed to `out` is a constant, an allow-listed element or attribute
+  // name, an encoded attribute value, or encoded text. Never push a slice of `input` directly.
   const maxLength = options.maxLength ?? SVG_SANITIZE_DEFAULT_MAX_LENGTH;
   if (typeof svg !== 'string' || svg.length > maxLength) return null;
   const input = svg.trim().replace(/^\uFEFF/, '').trim();
   const out: string[] = [];
   let index = 0;
 
-  // Prolog: an optional XML declaration (kept with the whitespace after it), then
-  // comments, processing instructions and the standard SVG 1.1 DTD (removed).
-  if (input.startsWith('<?xml') && isSpace(input[5])) {
-    const end = input.indexOf('?>', 5);
-    if (end < 0) return null;
-    index = end + 2;
-    let after = index;
-    while (isSpace(input[after])) after += 1;
-    out.push(input.slice(0, after));
-    index = after;
+  // Prolog: an optional XML declaration (re-emitted as a constant, followed by one newline when
+  // the source had whitespace after it), then comments, processing instructions and the standard
+  // SVG 1.1 DTD (removed).
+  if (input.startsWith('<?xml') && (isSpace(input[5]) || input[5] === '?')) {
+    XML_DECLARATION.lastIndex = 0;
+    if (!XML_DECLARATION.test(input)) return null;
+    index = XML_DECLARATION.lastIndex;
+    out.push(CANONICAL_XML_DECLARATION);
+    if (isSpace(input[index])) out.push('\n');
   }
   for (;;) {
     while (isSpace(input[index])) index += 1;
@@ -316,7 +351,14 @@ export function sanitizeSvgMarkup(svg: string, options: SanitizeSvgOptions = {})
   }
 
   // Element stack: lowercase name plus whether the subtree is being dropped.
-  const stack: Array<{ name: string; source: string; dropped: boolean; styleStart: number }> = [];
+  // `hidden`: the element is not emitted but its text is (descendants of `title`/`desc`).
+  const stack: Array<{ name: string; source: string; dropped: boolean; styleStart: number; hidden?: boolean }> = [];
+  // Open-element count per lowercase name, so a stray closing tag is ignored in O(1).
+  const openCounts = new Map<string, number>();
+  const pushElement = (entry: { name: string; source: string; dropped: boolean; styleStart: number; hidden?: boolean }) => {
+    stack.push(entry);
+    openCounts.set(entry.name, (openCounts.get(entry.name) ?? 0) + 1);
+  };
   let dropDepth = 0;
   let sawRoot = false;
   let rootClosed = false;
@@ -325,10 +367,12 @@ export function sanitizeSvgMarkup(svg: string, options: SanitizeSvgOptions = {})
   const closeTop = () => {
     const top = stack.pop();
     if (!top) return;
+    openCounts.set(top.name, (openCounts.get(top.name) ?? 1) - 1);
     if (top.dropped) {
       dropDepth -= 1;
       return;
     }
+    if (top.hidden) return;
     if (top.name === 'style' && styleText) {
       const css = styleText.join('');
       styleText = null;
@@ -349,8 +393,8 @@ export function sanitizeSvgMarkup(svg: string, options: SanitizeSvgOptions = {})
       if (stack.length === 0) {
         if (text.trim()) return null;
       } else if (dropDepth === 0) {
-        out.push(text);
-        if (styleText) styleText.push(text);
+        out.push(encodeText(text));
+        if (styleText) styleText.push(decodeEntities(text));
       }
       index = textEnd;
       if (next < 0) break;
@@ -390,6 +434,7 @@ export function sanitizeSvgMarkup(svg: string, options: SanitizeSvgOptions = {})
       if (!name || input[cursor] !== '>') return null;
       index = cursor + 1;
       // Tolerate sloppy nesting: close up to the matching element, ignore strays.
+      if (!openCounts.get(name)) continue;
       let match = stack.length - 1;
       while (match >= 0 && stack[match].name !== name) match -= 1;
       if (match < 0) continue;
@@ -408,6 +453,7 @@ export function sanitizeSvgMarkup(svg: string, options: SanitizeSvgOptions = {})
     }
     if (stack.length >= MAX_DEPTH) return null;
 
+    const parentEntry = stack[stack.length - 1];
     const dropped =
       dropDepth > 0 ||
       styleText !== null ||
@@ -415,9 +461,16 @@ export function sanitizeSvgMarkup(svg: string, options: SanitizeSvgOptions = {})
       isDangerousAnimation(lower, tag.attributes);
     if (dropped) {
       if (!tag.selfClosing) {
-        stack.push({ name: lower, source: tag.name, dropped: true, styleStart: 0 });
+        pushElement({ name: lower, source: tag.name, dropped: true, styleStart: 0 });
         dropDepth += 1;
       }
+      continue;
+    }
+    // `title` and `desc` are HTML integration points when the SVG is inlined into HTML: an
+    // element inside them is parsed as HTML (`<image>` becomes `<img>`). Such elements are not
+    // emitted, but their (encoded) text is kept.
+    if (parentEntry && (parentEntry.hidden || parentEntry.name === 'title' || parentEntry.name === 'desc')) {
+      if (!tag.selfClosing) pushElement({ name: lower, source: tag.name, dropped: false, styleStart: 0, hidden: true });
       continue;
     }
     const styleStart = out.length;
@@ -426,7 +479,7 @@ export function sanitizeSvgMarkup(svg: string, options: SanitizeSvgOptions = {})
       if (stack.length === 0) rootClosed = true;
       continue;
     }
-    stack.push({ name: lower, source: tag.name, dropped: false, styleStart });
+    pushElement({ name: lower, source: tag.name, dropped: false, styleStart });
     if (lower === 'style') styleText = [];
   }
 

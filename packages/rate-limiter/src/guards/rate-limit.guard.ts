@@ -43,6 +43,19 @@ export class RateLimitGuard implements CanActivate {
         `@RateLimit windowSeconds/maxRequests are not applied; configure points/duration on limiter '${options.limiter}'`);
     }
 
+    if (typeof this.rateLimiterService.has === 'function' && !this.rateLimiterService.has(options.limiter)) {
+      // A decorator referencing a limiter that is not configured (e.g. the framework login's
+      // `login`) must not turn every request into an error. Log once and allow.
+      if (!this.warned.has(`missing:${options.limiter}`)) {
+        this.warned.add(`missing:${options.limiter}`);
+        this.logger.error(
+          `@RateLimit('${options.limiter}') references a limiter that is not configured; the route is NOT rate limited. ` +
+            `Add '${options.limiter}' to RateLimiterModule limiters.`,
+        );
+      }
+      return true;
+    }
+
     const http = context.switchToHttp();
     const request = http.getRequest();
     const key = this.extractKey(request, options);

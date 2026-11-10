@@ -325,4 +325,39 @@ describe('SearchService connection and alias lifecycle', () => {
     await service.onModuleInit();
     expect(service.isHealthy()).toBe(true);
   });
+
+  it('names the conflicting concrete index when existsAlias is false but exists is true (L13)', async () => {
+    const client = createMockClient();
+    client.indices.existsAlias = vi.fn().mockResolvedValue(false);
+    (client.indices.exists as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+    const service = new SearchService(client, { aliases: [{ alias: 'documents', definition: {} }] });
+    await expect(service.ensureAlias({ alias: 'documents', definition: {} })).rejects.toThrow(
+      /alias "documents" cannot be created.*concrete index.*documents/s,
+    );
+    expect(client.indices.create).not.toHaveBeenCalled();
+  });
+
+  it('accepts a concurrently created alias (second existsAlias true) instead of failing (L13)', async () => {
+    const client = createMockClient();
+    client.indices.existsAlias = vi.fn().mockResolvedValueOnce(false).mockResolvedValue(true);
+    (client.indices.exists as ReturnType<typeof vi.fn>).mockResolvedValue(true); // true also for an alias
+    const service = new SearchService(client, { aliases: [{ alias: 'documents', definition: {} }] });
+    await expect(service.ensureAlias({ alias: 'documents', definition: {} })).resolves.toBeUndefined();
+    expect(client.indices.create).not.toHaveBeenCalled();
+    await service.indexDocument('documents', '1', { a: 1 });
+    expect(client.index).toHaveBeenCalledTimes(1);
+  });
+
+  it('refused writes include the cause (L13)', async () => {
+    const client = createMockClient();
+    client.indices.existsAlias = vi.fn().mockResolvedValue(false);
+    (client.indices.exists as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+    const service = new SearchService(client, { aliases: [{ alias: 'documents', definition: {} }] });
+    await expect(service.indexDocument('documents', '1', {})).rejects.toThrow(
+      /write refused.*concrete index/s,
+    );
+    await expect(service.bulkIndex('documents', [{ id: '1', data: {} }])).rejects.toThrow(/write refused.*concrete index/s);
+    expect(client.index).not.toHaveBeenCalled();
+    expect(client.bulk).not.toHaveBeenCalled();
+  });
 });

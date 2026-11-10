@@ -286,4 +286,54 @@ describe('Codex refresh coalescing', () => {
     respond();
     await expect(other).resolves.toMatchObject({ refreshToken: 'refresh-2' });
   });
+
+  it('a forced call concurrent with a non-forced call on a valid token refreshes exactly once and returns the refreshed token', async () => {
+    const store = new InMemoryCredentialProfileStore();
+    await store.save(profile());
+    const fetcher = vi.fn().mockImplementation(async () => refreshResponse());
+    const manager = new CodexSubscriptionCredentialManager({ store, fetcher, now: () => now });
+    const [plain, forced] = await Promise.all([
+      manager.getCredentials(),
+      manager.getCredentials({ forceRefresh: true }),
+    ]);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(forced.refreshToken).toBe('refresh-2');
+    expect(plain.accessToken).toBeTruthy();
+  });
+
+  it('a forced caller does not join an in-flight non-forced refresh of an expiring token', async () => {
+    const store = new InMemoryCredentialProfileStore();
+    await store.save(profile(now - 1));
+    const releases: Array<() => void> = [];
+    let call = 0;
+    const fetcher = vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          call += 1;
+          const n = call;
+          releases.push(() =>
+            resolve(
+              new Response(
+                JSON.stringify({
+                  access_token: jwt(now + 60 * 60_000),
+                  refresh_token: `refresh-${n + 1}`,
+                  expires_in: 3600,
+                }),
+                { status: 200 },
+              ),
+            ),
+          );
+        }),
+    );
+    const manager = new CodexSubscriptionCredentialManager({ store, fetcher, now: () => now });
+    const plain = manager.getCredentials();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const forced = manager.getCredentials({ forceRefresh: true });
+    releases[0]();
+    await expect(plain).resolves.toMatchObject({ refreshToken: 'refresh-2' });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    releases[1]();
+    await expect(forced).resolves.toMatchObject({ refreshToken: 'refresh-3' });
+  });
 });

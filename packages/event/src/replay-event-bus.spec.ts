@@ -75,4 +75,117 @@ describe('ReplayEventBus', () => {
     await bus.onModuleDestroy();
     expect(vi.getTimerCount()).toBe(0);
   });
+  describe('run boundaries (N-H3)', () => {
+    type Evt = { value: number; run?: string; done?: boolean };
+    const runOptions = {
+      channel: (key: string) => key,
+      isTerminal: (event: Evt) => event.done === true,
+      runId: (event: Evt) => event.run,
+      channelTtlMs: 120_000,
+      cleanupIntervalMs: 1_000,
+    };
+    const collect = (observable: import('rxjs').Observable<Evt>) => {
+      const seen: string[] = [];
+      let completed = false;
+      const subscription = observable.subscribe({
+        next: (event) => seen.push(`${event.run ?? ''}${event.value}`),
+        complete: () => { completed = true; },
+      });
+      return { seen, subscription, isComplete: () => completed };
+    };
+
+    it('begin() drops the previous run: a new subscriber sees nothing, stays open, then only run 2 events', async () => {
+      const bus = new ReplayEventBus(runOptions);
+      bus.publish('doc', { value: 1 });
+      bus.publish('doc', { value: 2, done: true });
+
+      bus.begin('doc');
+      const run2 = collect(bus.stream('doc'));
+      expect(run2.seen).toEqual([]);
+      expect(run2.isComplete()).toBe(false);
+
+      bus.publish('doc', { value: 10 });
+      bus.publish('doc', { value: 11, done: true });
+      expect(run2.seen).toEqual(['10', '11']);
+      expect(run2.isComplete()).toBe(true);
+      await bus.onModuleDestroy();
+    });
+
+    it('reset() is an alias of begin()', async () => {
+      const bus = new ReplayEventBus(runOptions);
+      bus.publish('doc', { value: 2, done: true });
+      bus.reset('doc');
+      const run2 = collect(bus.stream('doc'));
+      expect(run2.seen).toEqual([]);
+      expect(run2.isComplete()).toBe(false);
+      await bus.onModuleDestroy();
+    });
+
+    it('begin() does not disturb a channel with a live (non-terminal) run', async () => {
+      const bus = new ReplayEventBus(runOptions);
+      const live = collect(bus.stream('doc'));
+      bus.publish('doc', { value: 1 });
+      bus.begin('doc');
+      bus.publish('doc', { value: 2 });
+      expect(live.seen).toEqual(['1', '2']);
+      await bus.onModuleDestroy();
+    });
+
+    it('without begin() the retained terminal replay is still delivered within the retention window', async () => {
+      const bus = new ReplayEventBus(runOptions);
+      bus.publish('doc', { value: 2, done: true });
+      await vi.advanceTimersByTimeAsync(29_000);
+      const late = collect(bus.stream('doc'));
+      expect(late.seen).toEqual(['2']);
+      expect(late.isComplete()).toBe(true);
+      await bus.onModuleDestroy();
+    });
+
+    it('without begin() the retained replay expires after min(channelTtlMs, 30 s)', async () => {
+      const bus = new ReplayEventBus(runOptions);
+      bus.publish('doc', { value: 2, done: true });
+      await vi.advanceTimersByTimeAsync(31_500);
+      const late = collect(bus.stream('doc'));
+      expect(late.seen).toEqual([]);
+      expect(late.isComplete()).toBe(false);
+      await bus.onModuleDestroy();
+    });
+
+    it('a short channelTtlMs shortens the retention below 30 s', async () => {
+      const bus = new ReplayEventBus({ ...runOptions, channelTtlMs: 5_000 });
+      bus.publish('doc', { value: 2, done: true });
+      await vi.advanceTimersByTimeAsync(6_500);
+      expect(collect(bus.stream('doc')).seen).toEqual([]);
+      await bus.onModuleDestroy();
+    });
+
+    it('an explicit terminalRetentionMs overrides the default', async () => {
+      const bus = new ReplayEventBus({ ...runOptions, terminalRetentionMs: 60_000 });
+      bus.publish('doc', { value: 2, done: true });
+      await vi.advanceTimersByTimeAsync(45_000);
+      expect(collect(bus.stream('doc')).seen).toEqual(['2']);
+      await bus.onModuleDestroy();
+    });
+
+    it('stream(ctx, { runId }) ignores a retained entry of another run', async () => {
+      const bus = new ReplayEventBus(runOptions);
+      bus.publish('doc', { value: 2, run: 'r1', done: true });
+
+      const other = collect(bus.stream('doc', { runId: 'r2' }));
+      expect(other.seen).toEqual([]);
+      expect(other.isComplete()).toBe(false);
+      bus.publish('doc', { value: 5, run: 'r2' });
+      expect(other.seen).toEqual(['r25']);
+      await bus.onModuleDestroy();
+    });
+
+    it('stream(ctx, { runId }) still replays the retained entry of the same run', async () => {
+      const bus = new ReplayEventBus(runOptions);
+      bus.publish('doc', { value: 2, run: 'r1', done: true });
+      const same = collect(bus.stream('doc', { runId: 'r1' }));
+      expect(same.seen).toEqual(['r12']);
+      expect(same.isComplete()).toBe(true);
+      await bus.onModuleDestroy();
+    });
+  });
 });

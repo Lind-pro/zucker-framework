@@ -1,3 +1,4 @@
+import { describe, it, expect, vi } from 'vitest';
 import { DatabaseOneTimeTicketStore, OneTimeTicketService } from './one-time-ticket';
 import type { OneTimeTicketRecord } from './one-time-ticket';
 

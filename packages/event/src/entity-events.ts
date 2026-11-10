@@ -137,3 +137,22 @@ export function getEntityEventName(
 ): string {
   return `entity/${entityType}/${type}/${phase}`;
 }
+
+/**
+ * Non-enumerable marker set by `CrudService.save` / `saveOrUpdate` on each SAVE entity after its
+ * existence probe: `true` = will be created, `false` = will update an existing row. Listeners use
+ * it to fill creator fields for new rows that carry a client-generated id. Absent marker: fall
+ * back to "has an id → update".
+ */
+export const ENTITY_IS_NEW = Symbol.for('zucker.entity.isNew');
+
+/** Mark a SAVE entity as new (create) or existing (update). The marker is not enumerable. */
+export function markEntityIsNew(entity: object, isNew: boolean): void {
+  Object.defineProperty(entity, ENTITY_IS_NEW, { value: isNew, enumerable: false, configurable: true, writable: true });
+}
+
+/** Whether a SAVE entity creates a row: the marker when present, otherwise `!entity.id`. */
+export function isNewSaveEntity(entity: Record<string, unknown>): boolean {
+  const marker = (entity as Record<symbol, unknown>)[ENTITY_IS_NEW];
+  return typeof marker === 'boolean' ? marker : !entity.id;
+}

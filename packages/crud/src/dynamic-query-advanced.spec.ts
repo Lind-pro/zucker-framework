@@ -153,12 +153,9 @@ describe('DynamicQueryParamService.parseFilters', () => {
     });
   });
 
-  it('ignores keys that resolve to an empty field name', () => {
-    // "$or$" with no field after stripping → field == '' → skipped
-    const result = svc.parseFilters({ '$or$': 'value' });
-    // The key "$or$" → isOrType=true, fieldKey="" → dollarIdx=-1 → field="" → skip
-    // But hasOrTerms is already true, so we get OR with empty array → {}
-    expect(result).toEqual({});
+  it('rejects keys that resolve to an empty field name (N-L9)', () => {
+    // "$or$" with no field after stripping → field == '' → 400 instead of silently skipping
+    expect(() => svc.parseFilters({ '$or$': 'value' })).toThrow(/Invalid filter key/);
   });
 });
 

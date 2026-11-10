@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { FormService } from './form.service';
+import { FormService, compileFormPattern, testFormPattern } from './form.service';
 import type { FormDefinition } from './form-definition';
 
 // Minimal mock for DatabaseAdapter
@@ -343,5 +343,51 @@ describe('FormService validator patterns', () => {
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+describe('FormService pattern guard and timeout (N12)', () => {
+  const formWith = (pattern: string): FormDefinition => ({
+    id: 'p', name: 'P',
+    fields: [{ key: 'code', name: 'Code', type: 'string', validators: [{ type: 'pattern', message: '', params: { pattern } }] }],
+  });
+  const service = () => new (FormService as any)(createMockDb()) as FormService;
+
+  it('allows a fixed inner count inside a quantified group', () => {
+    const regex = compileFormPattern('^(?:\\d{4})+$');
+    expect(regex).not.toBeNull();
+    expect(service().validateData(formWith('^(?:\\d{4})+$'), { code: '20262027' }).valid).toBe(true);
+    expect(service().validateData(formWith('^(?:\\d{4})+$'), { code: '2026202' }).valid).toBe(false);
+  });
+
+  it('still refuses a variable nested quantifier', () => {
+    expect(compileFormPattern('(a+)+')).toBeNull();
+    expect(compileFormPattern('(x|y+){2,}')).toBeNull();
+  });
+
+  it('compiles patterns the static guard cannot classify but stops them at the time limit', () => {
+    const slow = '(a|a)*$';
+    const slow2 = '(.*a){20}';
+    expect(compileFormPattern(slow)).not.toBeNull();
+    expect(compileFormPattern(slow2)).not.toBeNull();
+    const started = Date.now();
+    // `(.*a){20}` matches a string with many a's, so its hostile input has fewer than 20 of them.
+    const cases: Array<[string, string]> = [[slow, `${'a'.repeat(9000)}b`], [slow2, `${'a'.repeat(15)}${'b'.repeat(9000)}`]];
+    for (const [pattern, value] of cases) {
+      const result = service().validateData(formWith(pattern), { code: value });
+      expect(result.valid).toBe(false);
+      expect(JSON.stringify(result)).toContain('Does not match pattern');
+    }
+    expect(Date.now() - started).toBeLessThan(2_000);
+  });
+
+  it('testFormPattern returns null on timeout, and plain booleans otherwise', () => {
+    expect(testFormPattern(compileFormPattern('(a|a)*$')!, `${'a'.repeat(9000)}b`)).toBeNull();
+    expect(testFormPattern(/^\d+$/, '123')).toBe(true);
+    expect(testFormPattern(/^\d+$/, 'x')).toBe(false);
+    // A global/sticky regex must not carry lastIndex over between calls.
+    const global = /a/g;
+    expect(testFormPattern(global, 'a')).toBe(true);
+    expect(testFormPattern(global, 'a')).toBe(true);
   });
 });

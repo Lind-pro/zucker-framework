@@ -112,3 +112,31 @@ describe('persistent localized mail templates', () => {
     });
   });
 });
+
+describe('URL attribute schemes in templates (N14)', () => {
+  const render = (html: string, u: string) => harness().catalog.interpolate(html, { u });
+  it('href keeps http(s), mailto and tel but not javascript or relative paths', () => {
+    expect(render('<a href="{{u}}">x</a>', 'tel:+1 555')).toBe('<a href="tel:+1 555">x</a>');
+    expect(render('<a href="{{u}}">x</a>', 'https://example.com/a')).toBe('<a href="https://example.com/a">x</a>');
+    expect(render('<a href="{{u}}">x</a>', 'mailto:a@example.com')).toBe('<a href="mailto:a@example.com">x</a>');
+    expect(render('<a href="{{u}}">x</a>', 'javascript:alert(1)')).toBe('<a href="#">x</a>');
+    expect(render('<a href="{{u}}">x</a>', '/x')).toBe('<a href="#">x</a>');
+  });
+  it('src keeps cid: and base64 raster data images but not svg data or tel', () => {
+    expect(render('<img src="{{u}}">', 'cid:logo@x')).toBe('<img src="cid:logo@x">');
+    expect(render('<img src="{{u}}">', 'data:image/png;base64,AAAA')).toBe('<img src="data:image/png;base64,AAAA">');
+    expect(render('<img src="{{u}}">', 'data:image/svg+xml,<svg onload=alert(1)>')).toBe('<img src="#">');
+    expect(render('<img src="{{u}}">', 'tel:+1555')).toBe('<img src="#">');
+    expect(render('<img src="{{u}}">', '/logo.png')).toBe('<img src="#">');
+  });
+  it('action accepts only http, https and mailto', () => {
+    expect(render('<form action="{{u}}">', 'https://example.com/post')).toBe('<form action="https://example.com/post">');
+    expect(render('<form action="{{u}}">', 'mailto:a@example.com')).toBe('<form action="mailto:a@example.com">');
+    for (const value of ['tel:+1555', 'cid:logo@x', 'data:image/png;base64,AAAA', 'javascript:alert(1)'])
+      expect(render('<form action="{{u}}">', value)).toBe('<form action="#">');
+  });
+  it('text variables stay escaped even when they look like these schemes', () => {
+    expect(render('<p>{{u}}</p>', 'tel:+1 <b>')).toBe('<p>tel:+1 &lt;b&gt;</p>');
+  });
+});
+

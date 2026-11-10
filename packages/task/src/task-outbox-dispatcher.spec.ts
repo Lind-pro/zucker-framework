@@ -172,4 +172,40 @@ describe('TaskOutboxDispatcher', () => {
     clock = 700;
     await expect(dispatcher.runOnce()).resolves.toMatchObject({ claimed: 1 });
   });
+
+  it('a publisher that never settles ends the batch with errors: 1, the rest deferred and no markPublished (L5)', async () => {
+    vi.useFakeTimers();
+    try {
+      const repository = new InMemoryTaskOutboxRepository();
+      for (const n of [1, 2, 3]) {
+        await repository.append({ id: `event-${n}`, taskId: `task-${n}`, topic: 'task.created', payload: {}, now: at(0) });
+      }
+      const markPublished = vi.spyOn(repository, 'markPublished');
+      const publish = vi.fn(() => new Promise<void>(() => undefined)); // never settles
+      const dispatcher = new TaskOutboxDispatcher(repository, { publish }, {
+        workerId: 'dispatcher-a',
+        createLeaseToken: () => 'lease-a',
+        leaseDurationMs: 1_000,
+        leaseSafetyMarginMs: 100,
+        // Wall clock follows the fake timers so the remaining lease shrinks as time passes.
+        now: () => new Date(Date.now()),
+      });
+
+      const run = dispatcher.runOnce();
+      await vi.advanceTimersByTimeAsync(2_000);
+      await expect(run).resolves.toEqual({
+        claimed: 3,
+        published: 0,
+        rescheduled: 0,
+        conflicts: 0,
+        deferred: 2,
+        errors: 1,
+        exhausted: 0,
+      });
+      expect(publish).toHaveBeenCalledTimes(1); // the batch stopped at the first hanging publish
+      expect(markPublished).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

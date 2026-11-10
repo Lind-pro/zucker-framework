@@ -52,12 +52,45 @@ export interface CrudWritePolicy {
   allowNestedWrites?: boolean;
   /** Keep a client supplied `id` on create (default true, ids are commonly client-generated). */
   allowClientId?: boolean;
+  /**
+   * Fields callers may never write (400), e.g. `tenantId`, `ownerId`, `role`, `status`. Use it
+   * when an allow-list (`writableFields` or a whitelisting DTO) is impractical. Without either,
+   * every scalar column except the server-controlled ones is writable by the caller.
+   */
+  deniedFields?: readonly string[];
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value) || value instanceof Date) return false;
   const proto = Object.getPrototypeOf(value);
   return proto === Object.prototype || proto === null;
+}
+
+/** Built-ins that are objects but never a write body. */
+function isBuiltinObject(value: object): boolean {
+  return (
+    value instanceof Date ||
+    value instanceof Map ||
+    value instanceof Set ||
+    value instanceof RegExp ||
+    value instanceof Promise ||
+    ArrayBuffer.isView(value) ||
+    value instanceof ArrayBuffer ||
+    (typeof Buffer !== 'undefined' && Buffer.isBuffer(value))
+  );
+}
+
+/**
+ * A request body: a plain object, or a DTO class instance produced by
+ * `ValidationPipe({ transform: true })` (copied to a plain object of its own enumerable
+ * properties). Arrays, Dates, Maps, Buffers and other built-ins are rejected.
+ */
+function toBodyRecord(value: unknown): Record<string, unknown> | undefined {
+  if (isPlainObject(value)) return value;
+  if (typeof value !== 'object' || value === null || Array.isArray(value) || isBuiltinObject(value)) return undefined;
+  const copy: Record<string, unknown> = {};
+  for (const key of Object.keys(value)) copy[key] = (value as Record<string, unknown>)[key];
+  return copy;
 }
 
 /**
@@ -85,12 +118,14 @@ export function sanitizeWriteBody<T>(
   policy: CrudWritePolicy = {},
   mode: 'create' | 'update' = 'create',
 ): Partial<T> {
-  if (!isPlainObject(body)) throw new BadRequestException('Request body must be an object');
+  const record = toBodyRecord(body);
+  if (!record) throw new BadRequestException('Request body must be an object');
   const serverControlled = new Set(policy.serverControlledFields ?? DEFAULT_SERVER_CONTROLLED_FIELDS);
   const result: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(body)) {
+  for (const [key, value] of Object.entries(record)) {
     if (FORBIDDEN_KEYS.has(key)) throw new BadRequestException(`Field "${key}" is not allowed`);
     if (serverControlled.has(key)) continue;
+    if (policy.deniedFields?.includes(key)) throw new BadRequestException(`Field "${key}" is not writable`);
     if (key === 'id' && (mode === 'update' || policy.allowClientId === false)) continue;
     if (policy.writableFields && key !== 'id' && !policy.writableFields.includes(key)) {
       throw new BadRequestException(`Field "${key}" is not writable`);
@@ -157,6 +192,10 @@ export function assertSafeBatchWhere(where: unknown, policy?: CrudQueryPolicy): 
         continue;
       }
       assertFilterValue(field, value);
+      if ((op === 'contains' || op === 'startsWith' || op === 'endsWith') && (typeof value !== 'string' || value.length === 0)) {
+        // An empty pattern matches every row.
+        throw new BadRequestException(`"${op}" for "${field}" needs a non-empty string`);
+      }
       if ((op === 'in' || op === 'notIn') && !Array.isArray(value)) {
         throw new BadRequestException(`"${op}" for "${field}" needs an array`);
       }

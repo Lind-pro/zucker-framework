@@ -8,9 +8,27 @@ export interface ReplayEventBusOptions<TContext, TPayload> {
   beforePublish?: (context: TContext, payload: TPayload) => void;
   /**
    * How long a completed (terminal) channel is retained so late subscribers still receive the
-   * terminal event and completion. Default: `channelTtlMs`. `0` restores the old behaviour.
+   * terminal event and completion. Default: `min(channelTtlMs, 30 000)`. `0` restores the
+   * pre-1.0.19 behaviour (channel removed at the terminal event).
+   *
+   * When channel keys are reused across runs (e.g. keyed by document id), producers must call
+   * {@link ReplayEventBus.begin} when a new run is accepted, or a subscriber of the new run that
+   * connects before its first event receives the previous run's terminal replay.
    */
   terminalRetentionMs?: number;
+  /**
+   * Optional run id of a payload. A retained terminal entry is ignored by
+   * `stream(context, { runId })` when its run id differs from the requested one.
+   */
+  runId?: (payload: TPayload) => string | undefined;
+}
+
+/** Default upper bound of terminal retention. */
+export const DEFAULT_TERMINAL_RETENTION_MS = 30_000;
+
+export interface ReplayStreamOptions {
+  /** Only replay a retained terminal entry of this run; otherwise wait for new events. */
+  runId?: string;
 }
 
 /**
@@ -18,14 +36,14 @@ export interface ReplayEventBusOptions<TContext, TPayload> {
  * existing subscribers before their channel completes. A completed channel is
  * retained for `terminalRetentionMs` so a subscriber that arrives just after the
  * terminal event receives it and completes instead of waiting forever; a later
- * non-terminal event on that channel starts a fresh run. Stale channels expire
+ * event on that channel, or `begin(context)`, starts a fresh run. Stale channels expire
  * only when unobserved; slow work cannot evict an active stream.
  * This is reconstructable delivery state, not durable task state or a queue.
  */
 export class ReplayEventBus<TContext, TPayload> {
   protected readonly channels = new Map<
     string,
-    { subject: ReplaySubject<TPayload>; updatedAt: number; terminal?: boolean }
+    { subject: ReplaySubject<TPayload>; updatedAt: number; terminal?: boolean; runId?: string }
   >();
   protected closed = false;
   private readonly cleanupTimer: ReturnType<typeof setInterval>;
@@ -41,8 +59,40 @@ export class ReplayEventBus<TContext, TPayload> {
     this.emitLocal(this.options.channel(context), payload);
   }
 
-  stream(context: TContext): Observable<TPayload> {
-    return this.channelStream(this.options.channel(context));
+  stream(context: TContext, options?: ReplayStreamOptions): Observable<TPayload> {
+    const channel = this.options.channel(context);
+    this.dropStaleTerminal(channel, options?.runId);
+    return this.channelStream(channel);
+  }
+
+  /**
+   * Start a new run on `context`'s channel: drop a retained terminal entry of the previous run so
+   * subscribers wait for the new run's events. Call it when the run is accepted (before the
+   * client can subscribe). Alias: {@link reset}.
+   */
+  begin(context: TContext): void {
+    this.dropRetainedTerminal(this.options.channel(context));
+  }
+
+  /** Alias of {@link begin}. */
+  reset(context: TContext): void {
+    this.begin(context);
+  }
+
+  /** Remove a retained (completed) channel; active channels are left untouched. */
+  protected dropRetainedTerminal(channel: string): void {
+    if (this.channels.get(channel)?.terminal) this.channels.delete(channel);
+  }
+
+  /** With a requested run id, a retained terminal entry of another run is dropped. */
+  protected dropStaleTerminal(channel: string, runId: string | undefined): void {
+    if (runId === undefined) return;
+    const entry = this.channels.get(channel);
+    if (entry?.terminal && entry.runId !== runId) this.channels.delete(channel);
+  }
+
+  protected terminalRetentionMs(): number {
+    return this.options.terminalRetentionMs ?? Math.min(this.options.channelTtlMs, DEFAULT_TERMINAL_RETENTION_MS);
   }
 
   protected channelStream(channel: string): Observable<TPayload> {
@@ -56,13 +106,15 @@ export class ReplayEventBus<TContext, TPayload> {
     if (this.channels.get(channel)?.terminal) this.channels.delete(channel);
     const entry = this.getOrCreateChannel(channel);
     entry.updatedAt = Date.now();
+    const runId = this.options.runId?.(payload);
+    if (runId !== undefined) entry.runId = runId;
     entry.subject.next(payload);
     if (this.options.isTerminal(payload)) this.finishChannel(channel);
   }
 
   /** Complete a channel after its terminal event; keep it briefly for late subscribers. */
   protected finishChannel(channel: string): void {
-    const retention = this.options.terminalRetentionMs ?? this.options.channelTtlMs;
+    const retention = this.terminalRetentionMs();
     if (retention <= 0) {
       this.removeChannel(channel);
       return;
@@ -111,7 +163,7 @@ export class ReplayEventBus<TContext, TPayload> {
 
   private cleanupStaleChannels(): void {
     const now = Date.now();
-    const retention = this.options.terminalRetentionMs ?? this.options.channelTtlMs;
+    const retention = this.terminalRetentionMs();
     for (const [channel, entry] of this.channels) {
       const ttl = entry.terminal ? retention : this.options.channelTtlMs;
       if (now - entry.updatedAt > ttl && !entry.subject.observed) {

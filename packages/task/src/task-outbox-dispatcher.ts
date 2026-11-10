@@ -37,7 +37,11 @@ export interface TaskOutboxDispatchResult {
   conflicts: number;
   /** Claimed messages left untouched because the batch lease was about to expire. */
   deferred: number;
-  /** Messages whose acknowledgement or reschedule threw (left for lease expiry). */
+  /**
+   * Messages whose acknowledgement or reschedule threw, or whose publish did not finish before
+   * the lease safety margin (left for lease expiry; the outcome of a timed-out publish is unknown,
+   * so the message may be published again after reclaim — consumers must be idempotent).
+   */
   errors: number;
   /** Messages that reached `maxAttempts` and were parked. */
   exhausted: number;
@@ -109,11 +113,24 @@ export class TaskOutboxDispatcher<TPayload = unknown> {
       }
       let publishError: unknown;
       let published = false;
+      let timedOut = false;
       try {
-        await this.publisher.publish(message);
-        published = true;
+        // A publish must not outlive the lease: race it against the remaining lease time.
+        const budgetMs = leaseExpiresAt - this.leaseSafetyMarginMs - this.now().getTime();
+        timedOut = (await withTimeout(this.publisher.publish(message), budgetMs)) === TIMED_OUT;
+        published = !timedOut;
       } catch (error) {
         publishError = error;
+      }
+      if (timedOut) {
+        result.errors += 1;
+        result.deferred = messages.length - index - 1;
+        this.options.logger?.warn?.('task_outbox_publish_timeout', {
+          workerId: this.options.workerId,
+          eventId: message.id,
+          deferred: result.deferred,
+        });
+        break;
       }
 
       try {
@@ -170,4 +187,23 @@ export class TaskOutboxDispatcher<TPayload = unknown> {
       this.options.logger?.warn?.('task_outbox_exhausted_callback_failed', { eventId: message.id });
     }
   }
+}
+
+const TIMED_OUT: unique symbol = Symbol('timed out');
+
+/** Resolves with the promise's value, or `TIMED_OUT` after `ms`. The promise keeps running. */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | typeof TIMED_OUT> {
+  if (ms <= 0) {
+    promise.catch(() => undefined);
+    return Promise.resolve(TIMED_OUT);
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<typeof TIMED_OUT>((resolve) => {
+    timer = setTimeout(() => resolve(TIMED_OUT), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+    // A publish that fails after the timeout must not become an unhandled rejection.
+    promise.catch(() => undefined);
+  });
 }

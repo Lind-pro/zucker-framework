@@ -49,13 +49,24 @@ export class EnvironmentAIConfigSource implements AIConfigSource {
     // inheriting the global key would send one provider's credential to another host.
     const unscoped = (name: string) => this.env[`${this.prefix}_${name}`];
     const scoped = (name: string) => this.env[`${scopedPrefix}${name}`];
+    const providerDiffers = scoped('PROVIDER') !== undefined && scoped('PROVIDER') !== unscoped('PROVIDER');
     const targetDiffers =
-      (scoped('PROVIDER') !== undefined && scoped('PROVIDER') !== unscoped('PROVIDER')) ||
+      providerDiffers ||
       (scoped('BASE_URL') !== undefined && scoped('BASE_URL') !== unscoped('BASE_URL'));
     const apiKey = targetDiffers ? scoped('API_KEY') : read('API_KEY');
+    // Fail at configuration time instead of a provider 401 later. Only when a global key exists
+    // (the operator evidently expected it to be inherited); keyless local providers still work.
+    if (targetDiffers && apiKey === undefined && unscoped('API_KEY')) {
+      throw new Error(
+        `AI scenario '${scenario}' targets a different provider/endpoint than the global config and needs ` +
+          `its own ${scopedPrefix}API_KEY (the global key is not inherited)`,
+      );
+    }
     return {
       apiKey: apiKey ?? '',
-      baseURL: read('BASE_URL'),
+      // A scoped provider does not inherit the global endpoint: the scoped key belongs to that
+      // provider, and the global BASE_URL belongs to another one.
+      baseURL: providerDiffers ? scoped('BASE_URL') : read('BASE_URL'),
       modelId,
       providerId: read('PROVIDER')?.toLowerCase(),
       temperature: parseNumber(read('TEMPERATURE')),

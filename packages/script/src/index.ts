@@ -11,6 +11,7 @@ export {
   type AsyncSandbox,
   type SandboxLogLevel,
   createSandbox,
+  installSandboxRejectionGuard,
 } from './sandbox';
 
 export { ExposedScriptRegistry } from './exposed-script';

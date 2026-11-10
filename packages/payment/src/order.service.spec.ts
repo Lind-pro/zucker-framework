@@ -1,6 +1,10 @@
 import {
   OrderService,
   OrderNotFoundError,
+  PARTIAL_REFUND_COUNT_KEY,
+  PENDING_REFUND_KEY,
+  partialRefundCount,
+  pendingRefund,
   type Order,
   type CreateOrderParams,
 } from './order.service';
@@ -198,6 +202,8 @@ describe('persistent order workflow', () => {
     payment.adapter.capture.mockResolvedValueOnce(capturedAs('captured'));
     await service.confirmOrder(params.orderId, 'k-capture');
     payment.adapter.refund.mockRejectedValueOnce(new PaymentRejectedError('charge already refunded', 400));
+    // N3: the rejection is only released after a read shows nothing was refunded.
+    payment.adapter.retrieve.mockResolvedValueOnce(capturedAs('captured'));
     await expect(service.refundOrder(params.orderId, 'r1')).rejects.toThrow('already refunded');
     expect((await service.getOrder(params.orderId)).status).toBe('paid');
     payment.adapter.refund.mockRejectedValueOnce(new Error('timeout'));
@@ -357,5 +363,152 @@ describe('legacy partial-refund boundary', () => {
       paymentId: 'payment-1',
     });
     expect((await service.getOrder(params.orderId)).refundedAt).toBeUndefined();
+  });
+});
+
+describe('refund bookkeeping and rejected-call reconciliation (N2, N3)', () => {
+  function paidOrder(metadata?: Record<string, string>) {
+    const payment = payments(),
+      rows = new Map<string, Order>();
+    rows.set('paid-order', {
+      id: 'paid-order',
+      providerId: 'test',
+      paymentIntentId: 'payment-1',
+      paymentId: 'payment-1',
+      amount: '10.00',
+      currency: 'USD',
+      status: 'paid',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      paidAt: new Date(),
+      ...(metadata ? { metadata } : {}),
+    });
+    return { payment, rows, service: new OrderService(payment.registry, persistence(rows)) };
+  }
+  const partialMoney = { money: { amount: '4.00', currency: 'USD' } };
+  const stuckRefund = async (h: ReturnType<typeof paidOrder>) => {
+    h.payment.adapter.refund.mockRejectedValueOnce(new Error('connection lost'));
+    await expect(h.service.refundOrder('paid-order', 'r-unknown', partialMoney)).rejects.toThrow('connection lost');
+    expect((await h.service.getOrder('paid-order')).status).toBe('refunding');
+  };
+
+  it('N2: a first partial refund with an unknown outcome reconciles to paid and counts one partial', async () => {
+    const h = paidOrder();
+    await stuckRefund(h);
+    expect(pendingRefund(await h.service.getOrder('paid-order'))).toMatchObject({ idempotencyKey: 'r-unknown', amount: '4.00', hadPriorPartial: false });
+    h.payment.adapter.retrieve.mockResolvedValueOnce(capturedAs('partially_refunded'));
+    const order = await h.service.reconcileOrder('paid-order');
+    expect(order.status).toBe('paid');
+    expect(partialRefundCount(order)).toBe(1);
+    expect(pendingRefund(order)).toBeUndefined();
+  });
+
+  it('N2: with an earlier recorded partial, the same observation leaves the order refunding', async () => {
+    const h = paidOrder({ [PARTIAL_REFUND_COUNT_KEY]: '1' });
+    await stuckRefund(h);
+    h.payment.adapter.retrieve.mockResolvedValueOnce(capturedAs('partially_refunded'));
+    const order = await h.service.reconcileOrder('paid-order');
+    expect(order.status).toBe('refunding');
+    expect(partialRefundCount(order)).toBe(1);
+    expect(pendingRefund(order)).toBeDefined();
+  });
+
+  it.each([undefined, { [PARTIAL_REFUND_COUNT_KEY]: '2' }])('N2: a refunded observation always gives refunded (prior %j)', async (metadata) => {
+    const h = paidOrder(metadata);
+    await stuckRefund(h);
+    h.payment.adapter.retrieve.mockResolvedValueOnce(capturedAs('refunded'));
+    const order = await h.service.reconcileOrder('paid-order');
+    expect(order.status).toBe('refunded');
+    expect(order.refundedAt).toBeInstanceOf(Date);
+    expect(pendingRefund(order)).toBeUndefined();
+  });
+
+  it('N2: resolveRefund clears the pending marker and only partially_refunded increments the count', async () => {
+    const notRefunded = paidOrder();
+    await stuckRefund(notRefunded);
+    expect(pendingRefund(await notRefunded.service.getOrder('paid-order'))).toBeDefined();
+    const back = await notRefunded.service.resolveRefund('paid-order', 'not_refunded');
+    expect(back.status).toBe('paid');
+    expect(pendingRefund(back)).toBeUndefined();
+    expect(partialRefundCount(back)).toBe(0);
+
+    const partial = paidOrder();
+    await stuckRefund(partial);
+    const resolved = await partial.service.resolveRefund('paid-order', 'partially_refunded');
+    expect(resolved.status).toBe('paid');
+    expect(pendingRefund(resolved)).toBeUndefined();
+    expect(partialRefundCount(resolved)).toBe(1);
+
+    const full = paidOrder();
+    await stuckRefund(full);
+    const refunded = await full.service.resolveRefund('paid-order', 'refunded');
+    expect(refunded.status).toBe('refunded');
+    expect(pendingRefund(refunded)).toBeUndefined();
+  });
+
+  it('N2: retryOrder does not pass the zucker.* bookkeeping keys to the provider', async () => {
+    const payment = payments();
+    const rows = new Map<string, Order>();
+    rows.set('failed-order', {
+      id: 'failed-order',
+      providerId: 'test',
+      amount: '10.00',
+      currency: 'USD',
+      status: 'failed',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      metadata: {
+        plan: 'pro',
+        [PENDING_REFUND_KEY]: JSON.stringify({ idempotencyKey: 'x', amount: '1.00', currency: 'USD', hadPriorPartial: false }),
+        [PARTIAL_REFUND_COUNT_KEY]: '2',
+      },
+    });
+    await new OrderService(payment.registry, persistence(rows)).retryOrder('failed-order', 'retry-key');
+    expect(payment.adapter.createPayment).toHaveBeenCalledOnce();
+    const input = payment.adapter.createPayment.mock.calls[0][0];
+    expect(input.metadata).toEqual({ plan: 'pro' });
+    expect(Object.keys(input.metadata ?? {}).some((key) => key.startsWith('zucker.'))).toBe(false);
+  });
+
+  describe('N3 capture rejected with 4xx', () => {
+    const rejection = () => new PaymentRejectedError('ORDER_ALREADY_CAPTURED', 422);
+    const cases: Array<[string, SettlementState | 'throws', string]> = [
+      ['captured', 'captured', 'paid'],
+      ['created', 'created', 'paying'],
+      ['unknown', 'unknown', 'confirming'],
+      ['retrieve throws', 'throws', 'confirming'],
+    ];
+    it.each(cases)('retrieve %s leaves the order %s-> %#', async (_name, observed, expected) => {
+      const payment = payments();
+      const service = new OrderService(payment.registry, persistence(new Map()));
+      await service.createOrder(params);
+      const error = rejection();
+      payment.adapter.capture.mockRejectedValueOnce(error);
+      if (observed === 'throws') payment.adapter.retrieve.mockRejectedValueOnce(new Error('network'));
+      else payment.adapter.retrieve.mockResolvedValueOnce(capturedAs(observed));
+      await expect(service.confirmOrder(params.orderId, 'k')).rejects.toBe(error);
+      expect((await service.getOrder(params.orderId)).status).toBe(expected);
+    });
+  });
+
+  describe('N3 refund rejected with 4xx', () => {
+    const rejection = () => new PaymentRejectedError('refund rejected', 400);
+    const cases: Array<[string, SettlementState | 'throws', Record<string, string> | undefined, string]> = [
+      ['refunded', 'refunded', undefined, 'refunded'],
+      ['captured', 'captured', undefined, 'paid'],
+      ['partially_refunded without a prior partial', 'partially_refunded', undefined, 'refunding'],
+      ['partially_refunded with a prior partial', 'partially_refunded', { [PARTIAL_REFUND_COUNT_KEY]: '1' }, 'paid'],
+      ['unknown', 'unknown', undefined, 'refunding'],
+      ['retrieve throws', 'throws', undefined, 'refunding'],
+    ];
+    it.each(cases)('retrieve %s -> %s', async (_name, observed, metadata, expected) => {
+      const h = paidOrder(metadata);
+      const error = rejection();
+      h.payment.adapter.refund.mockRejectedValueOnce(error);
+      if (observed === 'throws') h.payment.adapter.retrieve.mockRejectedValueOnce(new Error('network'));
+      else h.payment.adapter.retrieve.mockResolvedValueOnce(capturedAs(observed));
+      await expect(h.service.refundOrder('paid-order', 'r1')).rejects.toBe(error);
+      expect((await h.service.getOrder('paid-order')).status).toBe(expected);
+    });
   });
 });

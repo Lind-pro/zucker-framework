@@ -53,8 +53,15 @@ export const HTTP_EXCEPTION_FILTER_OPTIONS = Symbol('HTTP_EXCEPTION_FILTER_OPTIO
  * - HttpException (NestJS) -> 对应 HTTP status
  * - 未知异常 -> 500 + INTERNAL_ERROR
  */
-/** True when `e` is an instance of a class named BusinessException (possibly another module copy). */
+const BUSINESS_EXCEPTION_BRAND = Symbol.for('zucker.business-exception');
+
+/**
+ * True when `e` is a BusinessException: the realm-wide symbol brand set by
+ * `@zucker-framework/core` first (robust against minified / renamed classes and duplicate module
+ * copies), then a class named BusinessException for older core versions.
+ */
 function hasBusinessExceptionBrand(e: object): boolean {
+  if ((e as Record<symbol, unknown>)[BUSINESS_EXCEPTION_BRAND] === true) return true;
   for (let proto = Object.getPrototypeOf(e); proto && proto !== Error.prototype; proto = Object.getPrototypeOf(proto)) {
     if ((proto as { constructor?: { name?: unknown } }).constructor?.name === 'BusinessException') return true;
   }

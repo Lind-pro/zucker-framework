@@ -90,7 +90,7 @@ describe('scenario routing (M6)', () => {
     await expect(service.getScenarioConfig('other')).resolves.toMatchObject({ modelId: 'global' });
   });
 
-  it('does not cache a fallback chosen after a source failure', async () => {
+  it('retries the failed source when the fallback cache TTL is 0', async () => {
     let fail = true;
     const flaky = {
       id: 'remote',
@@ -103,6 +103,7 @@ describe('scenario routing (M6)', () => {
     };
     const fallback = new StaticAIConfigSource({ defaultConfig: cfg('fallback') });
     const service = new AIConfigService(undefined, [flaky, fallback]);
+    service.setFallbackCacheTtl(0);
     await expect(service.getScenarioConfig('s')).resolves.toMatchObject({ modelId: 'fallback' });
     fail = false;
     await expect(service.getScenarioConfig('s')).resolves.toMatchObject({ modelId: 'remote-model' });
@@ -117,7 +118,119 @@ describe('scenario routing (M6)', () => {
         AI_EMBED_BASE_URL: 'https://other.test/v1',
       },
     });
-    await expect(source.getScenarioConfig('embed')).resolves.toMatchObject({ apiKey: '' });
+    // Since the round-2 fix this is a configuration error naming the missing variable.
+    await expect(source.getScenarioConfig('embed')).rejects.toThrow('AI_EMBED_API_KEY');
+  });
+
+  describe('fallback cache after a source failure', () => {
+    const flakySetup = () => {
+      let fail = true;
+      const flaky = {
+        id: 'remote',
+        priority: 200,
+        failureMode: 'continue' as const,
+        getScenarioConfig: vi.fn(async () => {
+          if (fail) throw new Error('down');
+          return cfg('remote-model');
+        }),
+      };
+      const fallback = new StaticAIConfigSource({ defaultConfig: cfg('fallback') });
+      const service = new AIConfigService(undefined, [flaky, fallback]);
+      return { flaky, service, recover: () => { fail = false; } };
+    };
+
+    it('queries the failing source once for calls within 5 s and retries it after the TTL', async () => {
+      vi.useFakeTimers();
+      try {
+        const { flaky, service, recover } = flakySetup();
+        await expect(service.getScenarioConfig('s')).resolves.toMatchObject({ modelId: 'fallback' });
+        vi.advanceTimersByTime(4_000);
+        await expect(service.getScenarioConfig('s')).resolves.toMatchObject({ modelId: 'fallback' });
+        expect(flaky.getScenarioConfig).toHaveBeenCalledTimes(1);
+        recover();
+        vi.advanceTimersByTime(1_500);
+        await expect(service.getScenarioConfig('s')).resolves.toMatchObject({ modelId: 'remote-model' });
+        expect(flaky.getScenarioConfig).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('setFallbackCacheTtl(0) disables the fallback cache', async () => {
+      vi.useFakeTimers();
+      try {
+        const { flaky, service } = flakySetup();
+        service.setFallbackCacheTtl(0);
+        await service.getScenarioConfig('s');
+        await service.getScenarioConfig('s');
+        expect(flaky.getScenarioConfig).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('caches a healthy result for the normal TTL', async () => {
+      vi.useFakeTimers();
+      try {
+        const service = new AIConfigService(undefined, [new StaticAIConfigSource({ defaultConfig: cfg('m') })]);
+        const spy = vi.spyOn(StaticAIConfigSource.prototype, 'getScenarioConfig');
+        await service.getScenarioConfig('s');
+        const afterFirst = spy.mock.calls.length;
+        vi.advanceTimersByTime(30_000);
+        await service.getScenarioConfig('s');
+        expect(spy).toHaveBeenCalledTimes(afterFirst);
+        spy.mockRestore();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
+  describe('scoped provider environment configuration', () => {
+    it('throws naming the scoped key when AI_EMBED_PROVIDER differs and only a global key exists', async () => {
+      const source = new EnvironmentAIConfigSource({
+        env: { AI_MODEL: 'g', AI_API_KEY: 'global-key', AI_EMBED_MODEL: 'e', AI_EMBED_PROVIDER: 'deepseek' },
+      });
+      await expect(source.getScenarioConfig('embed')).rejects.toThrow('AI_EMBED_API_KEY');
+    });
+
+    it('does not inherit the global BASE_URL for a scoped provider that has its own key', async () => {
+      const source = new EnvironmentAIConfigSource({
+        env: {
+          AI_MODEL: 'g',
+          AI_API_KEY: 'global-key',
+          AI_BASE_URL: 'https://global.test/v1',
+          AI_EMBED_MODEL: 'e',
+          AI_EMBED_PROVIDER: 'deepseek',
+          AI_EMBED_API_KEY: 'embed-key',
+        },
+      });
+      const config = await source.getScenarioConfig('embed');
+      expect(config).toMatchObject({ apiKey: 'embed-key', providerId: 'deepseek' });
+      expect(config?.baseURL).toBeUndefined();
+    });
+
+    it('uses the scoped BASE_URL when the scoped provider supplies one', async () => {
+      const source = new EnvironmentAIConfigSource({
+        env: {
+          AI_MODEL: 'g',
+          AI_API_KEY: 'global-key',
+          AI_BASE_URL: 'https://global.test/v1',
+          AI_EMBED_MODEL: 'e',
+          AI_EMBED_PROVIDER: 'deepseek',
+          AI_EMBED_API_KEY: 'embed-key',
+          AI_EMBED_BASE_URL: 'https://embed.test/v1',
+        },
+      });
+      await expect(source.getScenarioConfig('embed')).resolves.toMatchObject({ baseURL: 'https://embed.test/v1' });
+    });
+
+    it('resolves with an empty apiKey for a keyless scoped provider when no global key exists', async () => {
+      const source = new EnvironmentAIConfigSource({
+        env: { AI_MODEL: 'g', AI_EMBED_MODEL: 'e', AI_EMBED_PROVIDER: 'ollama', AI_EMBED_BASE_URL: 'http://localhost:11434/v1' },
+      });
+      await expect(source.getScenarioConfig('embed')).resolves.toMatchObject({ apiKey: '', providerId: 'ollama' });
+    });
   });
 
   it('returns copies so callers cannot mutate the cached config', async () => {

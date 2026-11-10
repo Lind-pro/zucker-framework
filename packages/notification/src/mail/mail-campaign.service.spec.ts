@@ -89,9 +89,10 @@ describe('MailCampaignService.processCampaign', () => {
         data: expect.objectContaining({ status: 'running' }),
       }),
     );
-    const last = campaignUpdate.mock.calls[campaignUpdate.mock.calls.length - 1][0].data;
-    expect(last).toMatchObject({ status: 'completed' });
-    const progressCalls = campaignUpdate.mock.calls.filter(
+    // N15: progress and completion are conditional on the campaign still being running.
+    const lastCall = campaignUpdateMany.mock.calls[campaignUpdateMany.mock.calls.length - 1][0];
+    expect(lastCall).toMatchObject({ where: { id: 'c1', status: 'running' }, data: { status: 'completed' } });
+    const progressCalls = campaignUpdateMany.mock.calls.filter(
       (c) => c[0].data.attempted !== undefined,
     );
     const lastProgress = progressCalls[progressCalls.length - 1][0].data;
@@ -141,8 +142,23 @@ describe('MailCampaignService.processCampaign', () => {
   it('发送过程抛错：标记 failed 并记录 error', async () => {
     loadBatch.mockRejectedValue(new Error('redis gone'));
     await expect(service.processCampaign('c1')).rejects.toThrow('redis gone');
-    const failedUpdate = campaignUpdate.mock.calls.find((c) => c[0].data.status === 'failed');
+    const failedUpdate = campaignUpdateMany.mock.calls.find((c) => c[0].data.status === 'failed');
     expect(failedUpdate).toBeTruthy();
+    expect(failedUpdate[0].where).toEqual({ id: 'c1', status: 'running' });
     expect(failedUpdate[0].data.error).toBe('redis gone');
+  });
+
+  it('N15: stops sending when a progress write updates no row (campaign no longer running)', async () => {
+    loadBatch.mockResolvedValue([
+      { id: 'u1', email: 'one@example.test', data: {} },
+      { id: 'u2', email: 'two@example.test', data: {} },
+    ]);
+    dispatchBatch.mockResolvedValue({ success: true, error: null });
+    // 1st call: claim; 2nd call: first batch progress write -> no row matched.
+    campaignUpdateMany.mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
+    await service.processCampaign('c1');
+    expect(loadBatch).toHaveBeenCalledTimes(1);
+    expect(campaignUpdateMany.mock.calls.some((c) => c[0].data.status === 'completed')).toBe(false);
+    expect(campaignUpdateMany.mock.calls.some((c) => c[0].data.status === 'failed')).toBe(false);
   });
 });

@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import {
   TransactionAwareDatabaseAdapter,
   type DatabaseAdapter,
+  type ModelFieldInfo,
   type ModelOperations,
 } from '@zucker-framework/core';
 
@@ -32,6 +33,11 @@ export class InMemoryAdapter extends TransactionAwareDatabaseAdapter {
 
   model(name: string): ModelOperations {
     return new InMemoryModelOperations(this.getStore(name));
+  }
+
+  /** Schemaless store: no field metadata (the query policy strips relation-like objects instead). */
+  getModelFields(_model?: string): readonly ModelFieldInfo[] | undefined {
+    return undefined;
   }
 
   protected override async doTransaction<T>(

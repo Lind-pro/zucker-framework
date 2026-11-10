@@ -1,8 +1,10 @@
-import { describe, expect, it, vi } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, renderHook, waitFor } from '@testing-library/react';
+import { DynamicForm } from './DynamicForm';
+import { resolveFormMessages } from './messages';
 import { FieldType, type FormDefinition } from './types';
 import { toAntdRules } from './validators';
-import { definitionInitialValues, normalizeFormValues } from './values';
+import { definitionInitialValues, FormValueError, normalizeFormValues, parseJsonFieldText } from './values';
 import { unwrapFormDefinition, useFormDefinition } from './useFormDefinition';
 
 const definition: FormDefinition = {
@@ -108,5 +110,97 @@ describe('definition loading', () => {
     expect(result.current.definition?.id).toBe('second');
     // An inline fetcher identity change alone does not refetch.
     expect(httpGet).toHaveBeenCalledTimes(2);
+  });
+});
+
+function stubBrowserApis() {
+  vi.stubGlobal(
+    'matchMedia',
+    (query: string) => ({
+      matches: false,
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    }),
+  );
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+}
+
+describe('JSON and array conversion errors (A16)', () => {
+  beforeEach(() => stubBrowserApis());
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it('throws FormValueError for a JSON scalar or invalid JSON', async () => {
+    const json: FormDefinition = { id: 'j', name: 'J', fields: [{ key: 'meta', name: 'Meta', type: FieldType.JSON }] };
+    await expect(normalizeFormValues(json, { meta: '123' })).rejects.toBeInstanceOf(FormValueError);
+    await expect(normalizeFormValues(json, { meta: '"x"' })).rejects.toBeInstanceOf(FormValueError);
+    await expect(normalizeFormValues(json, { meta: 'null' })).rejects.toBeInstanceOf(FormValueError);
+    await expect(normalizeFormValues(json, { meta: '{bad' })).rejects.toMatchObject({
+      name: 'FormValueError',
+      fieldKey: 'meta',
+      reason: 'invalid-json',
+    });
+    await expect(normalizeFormValues(json, { meta: '[1,2]' })).resolves.toEqual({ meta: [1, 2] });
+  });
+
+  it('parseJsonFieldText accepts objects and arrays only', () => {
+    expect(parseJsonFieldText('{"a":1}')).toEqual({ ok: true, value: { a: 1 } });
+    expect(parseJsonFieldText('[]')).toEqual({ ok: true, value: [] });
+    expect(parseJsonFieldText('123')).toEqual({ ok: false, reason: 'json-not-object' });
+    expect(parseJsonFieldText('{')).toEqual({ ok: false, reason: 'invalid-json' });
+  });
+
+  it('keeps the declared number/boolean option values for an ARRAY field without elementType', async () => {
+    const def: FormDefinition = {
+      id: 'a',
+      name: 'A',
+      fields: [
+        {
+          key: 'picks',
+          name: 'Picks',
+          type: FieldType.ARRAY,
+          options: [
+            { label: 'One', value: 1 },
+            { label: 'Yes', value: true },
+          ],
+        },
+      ],
+    };
+    await expect(normalizeFormValues(def, { picks: ['1', 'true'] })).resolves.toEqual({ picks: [1, true] });
+  });
+
+  describe.each(['123', '{bad'])('submitting %s into a JSON field', (text) => {
+    it('shows the field error and does not call onFinish', async () => {
+      const onFinish = vi.fn(async () => {});
+      const def: FormDefinition = { id: 'j', name: 'J', fields: [{ key: 'meta', name: 'Meta', type: FieldType.JSON }] };
+      const { container } = render(<DynamicForm definition={def} onFinish={onFinish} />);
+      const textarea = container.querySelector('textarea') as HTMLTextAreaElement;
+      fireEvent.change(textarea, { target: { value: text } });
+      fireEvent.click(container.querySelector('button[type="submit"]') as HTMLButtonElement);
+      await waitFor(() => expect(container.textContent).toContain(resolveFormMessages().invalidJsonText));
+      expect(onFinish).not.toHaveBeenCalled();
+    });
+  });
+
+  it('calls onFinish with the parsed object for valid JSON', async () => {
+    const onFinish = vi.fn(async () => {});
+    const def: FormDefinition = { id: 'j', name: 'J', fields: [{ key: 'meta', name: 'Meta', type: FieldType.JSON }] };
+    const { container } = render(<DynamicForm definition={def} onFinish={onFinish} />);
+    fireEvent.change(container.querySelector('textarea') as HTMLTextAreaElement, { target: { value: '{"a":1}' } });
+    fireEvent.click(container.querySelector('button[type="submit"]') as HTMLButtonElement);
+    await waitFor(() => expect(onFinish).toHaveBeenCalledWith({ meta: { a: 1 } }));
   });
 });

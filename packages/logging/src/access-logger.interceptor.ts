@@ -118,7 +118,10 @@ export class AccessLoggerInterceptor implements NestInterceptor {
     const userId = request.user?.id;
     const username = this.sanitizeOptional(request.user?.username || request.user?.email);
     const method = request.method;
-    const requestUrl = this.piiFilter.sanitize(request.url);
+    // Same field list as the parameters below, so `?code=` in the URL and `parameters.query.code`
+    // are redacted together.
+    const sensitiveFields = [...DEFAULT_SENSITIVE_FIELDS, ...(loggerOptions.excludeFields ?? [])];
+    const requestUrl = this.piiFilter.sanitizeUrl(request.url, sensitiveFields);
     const clientIp = this.getClientIp(request);
     const ip = this.captureOptions?.retainClientIp ? clientIp : this.piiFilter.sanitize(clientIp);
     const userAgent = this.sanitizeOptional(request.headers?.['user-agent']);
@@ -149,7 +152,6 @@ export class AccessLoggerInterceptor implements NestInterceptor {
     const target = context.getClass().name;
 
     const correlationId = getCorrelationId();
-    const sensitiveFields = [...DEFAULT_SENSITIVE_FIELDS, ...(loggerOptions.excludeFields ?? [])];
 
     // 忽略指定参数
     const ignoreParams = loggerOptions.ignoreParameter ?? [];

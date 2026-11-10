@@ -128,6 +128,24 @@ export function createPayPalAdapter(options: PayPalAdapterOptions): PaymentProvi
     return status === 'REFUNDED' ? 'refunded' : status === 'PARTIALLY_REFUNDED' ? 'partially_refunded' : 'unknown';
   };
 
+  /**
+   * Order id of a refund resource, resolved through its `rel: up` capture link. Only the capture id
+   * is taken from the (signed) payload; the request goes to the configured PayPal API. Any failure
+   * yields undefined, which keeps the webhook state `unknown`.
+   */
+  const orderOfRefund = async (links: Array<{ rel?: unknown; href?: unknown }> | undefined): Promise<string | undefined> => {
+    const up = Array.isArray(links) ? links.find((link) => link?.rel === 'up' && typeof link.href === 'string') : undefined;
+    const captureId = typeof up?.href === 'string' ? /\/v2\/payments\/captures\/([A-Za-z0-9-]{1,64})\/?$/.exec(up.href)?.[1] : undefined;
+    if (!captureId) return undefined;
+    try {
+      const capture = await transport.getCapturePayment(captureId);
+      const related = (capture.supplementary_data as { related_ids?: { order_id?: unknown } } | undefined)?.related_ids;
+      return typeof related?.order_id === 'string' && related.order_id ? related.order_id : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+
   return {
     id: 'paypal',
     supportedCurrencies: PAYPAL_SUPPORTED_CURRENCIES,
@@ -259,10 +277,17 @@ export function createPayPalAdapter(options: PayPalAdapterOptions): PaymentProvi
 
       const event = JSON.parse(body) as {
         event_type?: string;
-        resource?: { supplementary_data?: { related_ids?: { order_id?: string } } };
+        resource?: {
+          supplementary_data?: { related_ids?: { order_id?: string } };
+          links?: Array<{ rel?: unknown; href?: unknown }>;
+        };
       };
       const type = event.event_type ?? 'unknown';
-      const providerRef = event.resource?.supplementary_data?.related_ids?.order_id;
+      let providerRef = event.resource?.supplementary_data?.related_ids?.order_id;
+      if (type === 'PAYMENT.CAPTURE.REFUNDED' && !providerRef) {
+        // Refund resources usually omit the order id: follow the refund's `up` link to its capture.
+        providerRef = await orderOfRefund(event.resource?.links);
+      }
       let state: SettlementState =
         type === 'PAYMENT.CAPTURE.COMPLETED'
           ? 'captured'

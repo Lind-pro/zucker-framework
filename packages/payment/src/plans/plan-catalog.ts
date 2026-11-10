@@ -7,7 +7,7 @@ import {
   type PortErrorReason,
   type SubscriptionPlan,
 } from '@zucker-framework/fe-types/back-office';
-import { fromMinorUnits, toMinorUnits } from '../contract/money';
+import { currencyExponent, fromMinorUnits, toMinorUnits } from '../contract/money';
 
 /**
  * Database-backed subscription plan catalog. Plans are the single source of what is sold and at
@@ -251,13 +251,22 @@ export interface PlanPriceSnapshot {
   providerRef: string;
 }
 
+/**
+ * Canonical amount for the currency, or a two-decimal amount stored for a three-decimal currency
+ * (KWD, BHD, JOD, OMR, TND) before 1.0.19 used ISO exponents. The stored string is kept as is.
+ */
+function isStoredSnapshotAmount(amount: string, currency: string): boolean {
+  if (normalizePlanAmount(amount, currency) === amount) return true;
+  return currencyExponent(currency) === 3 && /^\d+\.\d{2}$/.test(amount) && normalizePlanAmount(amount, currency) !== null;
+}
+
 /** Strict parser for a stored snapshot; returns null for anything that is not one. */
 export function readPlanPriceSnapshot(value: unknown): PlanPriceSnapshot | null {
   if (!isRecord(value)) return null;
   const { planId, slug, revision, interval, currency, amount, termDays, providerId, providerRef } = value;
   if (typeof planId !== 'string' || !planId || typeof slug !== 'string' || typeof revision !== 'number'
     || !PLAN_PRICE_INTERVALS.includes(interval as PlanPriceInterval) || typeof currency !== 'string' || !CURRENCY.test(currency)
-    || typeof amount !== 'string' || normalizePlanAmount(amount, currency) !== amount
+    || typeof amount !== 'string' || !isStoredSnapshotAmount(amount, currency)
     || (interval === 'one_time' ? typeof termDays !== 'number' || !Number.isSafeInteger(termDays) || termDays < 1 : termDays !== null)
     || typeof providerId !== 'string' || typeof providerRef !== 'string' || !providerRef) return null;
   return { planId, slug, revision, interval: interval as PlanPriceInterval, currency, amount, termDays: termDays as number | null, providerId, providerRef };

@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { Logger } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { ExecutionContext } from '@nestjs/common';
 import { ZuckerAuthModule, resolveJwtSecret } from './auth.module';
@@ -125,6 +126,52 @@ describe('DataPermissionGuard (M3)', () => {
     Reflect.defineMetadata(DATA_PERMISSION_KEY, { dataType: 'orders' }, Ctl);
     const ctx = { switchToHttp: () => ({ getRequest: () => ({ auth, method: 'GET', path: '/orders' }) }), getHandler: () => () => {}, getClass: () => Ctl } as unknown as ExecutionContext;
     await expect(guard.canActivate(ctx)).resolves.toBe(false);
+  });
+});
+
+describe('DataPermissionGuard empty-permission warning (N-L3)', () => {
+  const noPermissions = { getUser: () => ({ id: 'u', username: 'a' }), getPermissions: () => [] };
+  function routeContext(handlerName: string, controllerName: string): ExecutionContext {
+    const handler = { [handlerName]: () => {} }[handlerName];
+    Reflect.defineMetadata(DATA_PERMISSION_KEY, { dataType: 'orders' }, handler);
+    const controller = { [controllerName]: class {} }[controllerName];
+    const request = { auth: noPermissions, method: 'GET', path: '/orders' };
+    return { switchToHttp: () => ({ getRequest: () => request }), getHandler: () => handler, getClass: () => controller } as unknown as ExecutionContext;
+  }
+
+  it('warns once per route when the Authentication carries no permissions, and still allows', async () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    try {
+      const guard = new DataPermissionGuard(new Reflector(), []);
+      const first = routeContext('list', 'OrdersController');
+      await expect(guard.canActivate(first)).resolves.toBe(true);
+      await expect(guard.canActivate(first)).resolves.toBe(true);
+      await expect(guard.canActivate(routeContext('list', 'OrdersController'))).resolves.toBe(true);
+      const emptyWarnings = () => warn.mock.calls.filter(([message]) => String(message).includes('carries no permissions'));
+      expect(emptyWarnings()).toHaveLength(1);
+      expect(String(emptyWarnings()[0][0])).toContain('OrdersController.list');
+      // A different route warns separately.
+      await guard.canActivate(routeContext('detail', 'OrdersController'));
+      expect(emptyWarnings()).toHaveLength(2);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('does not warn when the Authentication carries permissions', async () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    try {
+      const guard = new DataPermissionGuard(new Reflector(), []);
+      const ctx = routeContext('list', 'OrdersController');
+      (ctx.switchToHttp().getRequest() as { auth: unknown }).auth = {
+        getUser: () => ({ id: 'u', username: 'a' }),
+        getPermissions: () => [{ id: 'orders', dataAccesses: [] }],
+      };
+      await expect(guard.canActivate(ctx)).resolves.toBe(true);
+      expect(warn.mock.calls.filter(([message]) => String(message).includes('carries no permissions'))).toHaveLength(0);
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
 

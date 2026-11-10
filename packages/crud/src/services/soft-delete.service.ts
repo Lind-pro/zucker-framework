@@ -61,11 +61,29 @@ export abstract class SoftDeleteService<T extends SoftDeletableEntity> extends B
 
   protected override get requiredQueryWhere(): Record<string, unknown> { return { deletedAt: null }; }
 
+  /**
+   * The subclass's trusted constraint without the soft-delete fence (`deletedAt`), e.g. the
+   * owner / tenant part of `{ deletedAt: null, ownerId }`. Applied to every by-ID path that reads
+   * through the unscoped adapter, including `includeDeleted` reads, restore and force-delete.
+   */
+  private ownerConstraint(): Record<string, unknown> | undefined {
+    const required = this.requiredQueryWhere ?? {};
+    const { deletedAt: _fence, ...rest } = required;
+    return Object.keys(rest).length > 0 ? rest : undefined;
+  }
+
+  /** AND the owner constraint into an unscoped where (unique keys stay top-level). */
+  private ownerScoped(where: Record<string, unknown>): Record<string, unknown> {
+    const owner = this.ownerConstraint();
+    if (!owner) return where;
+    return { ...where, AND: [...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []), owner] };
+  }
+
   /** 查询单条记录（自动排除已删除） */
   override async findOne(id: string, options?: SoftDeleteQueryOptions): Promise<T> {
     this.assertId(id);
     const entity = await this.unscopedDb.model(this.modelName).findUnique({
-      where: { id },
+      where: this.ownerScoped({ id }),
     });
 
     if (!entity) {
@@ -85,7 +103,7 @@ export abstract class SoftDeleteService<T extends SoftDeletableEntity> extends B
     const policy = this.queryPolicy;
     return this.dynamicQuery.findMany<T>(this.modelName, query, this.defaultOrderField,
       options?.dataAccessTerms, options?.denyFields,
-      options?.includeDeleted ? undefined : this.requiredQueryWhere,
+      options?.includeDeleted ? this.ownerConstraint() : this.requiredQueryWhere,
       ...(policy ? [{ policy }] : []));
   }
 
@@ -101,7 +119,7 @@ export abstract class SoftDeleteService<T extends SoftDeletableEntity> extends B
     let result: T;
     try {
       result = await this.unscopedDb.model(this.modelName).update({
-        where: { id, deletedAt: null },
+        where: this.ownerScoped({ id, deletedAt: null }),
         data: { deletedAt: new Date() },
       }) as T;
     } catch (error) {
@@ -118,7 +136,7 @@ export abstract class SoftDeleteService<T extends SoftDeletableEntity> extends B
   override async deleteMany(where: Record<string, unknown>, options?: SoftDeleteQueryOptions): Promise<{ count: number }> {
     const softDeleteFilter = options?.includeDeleted ? {} : { deletedAt: null };
     return this.unscopedDb.model(this.modelName).updateMany({
-      where: { AND: [where, softDeleteFilter] },
+      where: { AND: [where, softDeleteFilter, ...(this.ownerConstraint() ? [this.ownerConstraint()!] : [])] },
       data: { deletedAt: new Date() },
     });
   }
@@ -128,7 +146,7 @@ export abstract class SoftDeleteService<T extends SoftDeletableEntity> extends B
     this.assertId(id);
     // 临时包含已删除记录来查找
     const entity = await this.unscopedDb.model(this.modelName).findUnique({
-      where: { id },
+      where: this.ownerScoped({ id }),
     });
 
     if (!entity) {
@@ -136,7 +154,7 @@ export abstract class SoftDeleteService<T extends SoftDeletableEntity> extends B
     }
 
     return this.unscopedDb.model(this.modelName).update({
-      where: { id, deletedAt: (entity as SoftDeletableEntity).deletedAt ?? null },
+      where: this.ownerScoped({ id, deletedAt: (entity as SoftDeletableEntity).deletedAt ?? null }),
       data: { deletedAt: null },
     }) as Promise<T>;
   }
@@ -158,7 +176,7 @@ export abstract class SoftDeleteService<T extends SoftDeletableEntity> extends B
   async forceDelete(id: string): Promise<T> {
     const entity = await this.findOne(id, { includeDeleted: true });
     await this.emitPrepareAndBefore(EntityEventType.DELETE, entity);
-    const result = await this.unscopedDb.model(this.modelName).delete({ where: { id } }) as T;
+    const result = await this.unscopedDb.model(this.modelName).delete({ where: this.ownerScoped({ id }) }) as T;
     await this.emitEvent(EntityEventType.DELETE, EntityEventPhase.AFTER, result);
     return result;
   }

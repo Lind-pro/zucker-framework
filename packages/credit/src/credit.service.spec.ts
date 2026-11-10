@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { InMemoryAdapter } from '@zucker-framework/crud';
 import { BusinessException, ValidationException } from '@zucker-framework/core';
 import { CreditService, CreditTransactionType } from './credit.service';
@@ -345,6 +345,157 @@ describe('CreditService', () => {
       await service.grant('user-1', 100, '永不过期');
       const count = await service.checkExpired();
       expect(count).toBe(0);
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Round 2 (N5-N7)
+// ---------------------------------------------------------------------------
+describe('CreditService round 2 hardening', () => {
+  let db: InMemoryAdapter;
+  let service: CreditService;
+  type Call = { model: string; op: string; args: unknown[] };
+  /** Records every model operation (adapter and transaction share this InMemoryAdapter) and lets a test override one. */
+  function record(override?: (model: string, op: string, args: unknown[]) => Promise<unknown> | undefined) {
+    const calls: Call[] = [];
+    const original = db.model.bind(db);
+    vi.spyOn(db, 'model').mockImplementation((name: string) => {
+      const ops = original(name) as unknown as Record<string, (...a: unknown[]) => Promise<unknown>>;
+      return new Proxy(ops, {
+        get(target, prop: string) {
+          const value = target[prop];
+          if (typeof value !== 'function') return value;
+          return (...args: unknown[]) => {
+            calls.push({ model: name, op: prop, args });
+            return override?.(name, prop, args) ?? value.apply(target, args);
+          };
+        },
+      }) as never;
+    });
+    return calls;
+  }
+  /** Backdates every GRANT of the user so it is due for expiry. */
+  const makeDue = async (userId: string) => {
+    await db.model('creditTransaction').updateMany({
+      where: { userId, type: CreditTransactionType.GRANT },
+      data: { expireAt: new Date(Date.now() - 1000) },
+    });
+  };
+  const future = () => new Date(Date.now() + 3_600_000);
+
+  beforeEach(() => {
+    db = new InMemoryAdapter();
+    service = new CreditService(db as any, undefined);
+  });
+
+  describe('N5 expiry grouped per account', () => {
+    it('replays the full ledger once for two due grants of one account', async () => {
+      await service.grant('u1', 30, 'a', future());
+      await service.grant('u1', 20, 'b', future());
+      await makeDue('u1');
+      const calls = record();
+      expect(await service.checkExpired()).toBe(2);
+      const replays = calls.filter((c) => c.model === 'creditTransaction' && c.op === 'findMany'
+        && JSON.stringify((c.args[0] as { where: unknown }).where) === JSON.stringify({ userId: 'u1' }));
+      expect(replays).toHaveLength(1);
+      const expireRows = calls.filter((c) => c.model === 'creditTransaction' && c.op === 'create'
+        && (c.args[0] as { data: { type: string } }).data.type === CreditTransactionType.EXPIRE);
+      expect(expireRows).toHaveLength(2);
+      expect(calls.filter((c) => c.model === 'creditAccount' && c.op === 'update')).toHaveLength(1);
+      expect((await service.getBalance('u1')).balance).toBe(0);
+    });
+
+    it('does not remove credits that were frozen and unfrozen (documented: unfreeze credits never expire)', async () => {
+      await service.grant('u1', 100, 'expiring', future());
+      await service.freeze('u1', 100, 'hold');
+      await service.unfreeze('u1', 100, 'release');
+      await makeDue('u1');
+      expect(await service.checkExpired()).toBe(0);
+      expect((await service.getBalance('u1')).balance).toBe(100);
+      const expired = await db.model('creditTransaction').findMany({ where: { userId: 'u1', type: CreditTransactionType.EXPIRE } });
+      expect(expired.every((row) => Number((row as { amount: number }).amount) === 0)).toBe(true);
+    });
+
+    it('a failing account does not block another account', async () => {
+      await service.grant('bad', 10, 'x', future());
+      await service.grant('good', 10, 'y', future());
+      await makeDue('bad');
+      await makeDue('good');
+      record((model, op, args) => model === 'creditAccount' && op === 'updateMany'
+        && (args[0] as { where: { userId?: string } }).where.userId === 'bad'
+        ? Promise.reject(new Error('boom')) : undefined);
+      expect(await service.checkExpired()).toBe(1);
+      expect((await service.getBalance('good')).balance).toBe(0);
+      expect((await service.getBalance('bad')).balance).toBe(10);
+    });
+  });
+
+  describe('N6 transfer lock order', () => {
+    it('locks both accounts before reading either inside the transaction', async () => {
+      await service.grant('a', 50, 'seed');
+      await service.grant('b', 50, 'seed');
+      const calls = record();
+      await service.transfer('b', 'a', 10);
+      // The transaction starts at the first account lock (ensureAccount reads happen before it).
+      const inTx = calls.slice(calls.findIndex((c) => c.model === 'creditAccount' && c.op === 'updateMany')).filter((c) => c.model === 'creditAccount');
+      const firstRead = inTx.findIndex((c) => c.op === 'findUnique');
+      const locksBeforeRead = inTx.slice(0, firstRead).filter((c) => c.op === 'updateMany').length;
+      expect(locksBeforeRead).toBe(2);
+    });
+  });
+
+  describe('N7 idempotency keys', () => {
+    const key = { idempotencyKey: 'key-1' };
+    it('rejects a fractional or out-of-range amount when a key is given', async () => {
+      await expect(service.grant('u1', 1.5, 'x', undefined, key)).rejects.toMatchObject({ status: 400 });
+      await expect(service.grant('u1', 2 ** 31, 'x', undefined, key)).rejects.toMatchObject({ status: 400 });
+      await expect(service.consume('u1', 1.5, 'x', undefined, key)).rejects.toMatchObject({ status: 400 });
+      expect((await service.getBalance('u1')).balance).toBe(0);
+    });
+
+    it('accepts the largest 32-bit amount with a key', async () => {
+      await expect(service.grant('u1', 2 ** 31 - 1, 'x', undefined, key)).resolves.toBeUndefined();
+    });
+
+    it('answers 409 when the same key is used for another account', async () => {
+      await service.grant('a', 5, 'x', undefined, key);
+      await expect(service.grant('b', 5, 'x', undefined, key)).rejects.toMatchObject({ status: 409, code: 'CREDIT_IDEMPOTENCY_CONFLICT' });
+      expect((await service.getBalance('b')).balance).toBe(0);
+    });
+
+    it('answers 409 when the same key and account are reused with a different orderId', async () => {
+      await service.grant('u1', 100, 'seed');
+      await service.consume('u1', 5, 'x', 'order-A', key);
+      await expect(service.consume('u1', 5, 'x', 'order-B', key)).rejects.toMatchObject({ status: 409 });
+      // Same parameters are a silent replay.
+      await expect(service.consume('u1', 5, 'x', 'order-A', key)).resolves.toBeUndefined();
+      expect((await service.getBalance('u1')).balance).toBe(95);
+    });
+
+    /** Makes the receipt lookup inside the transaction miss once and the insert fail like a unique violation. */
+    const raceOnReceipt = () => {
+      let firstLookup = true;
+      record((model, op) => {
+        if (model !== 'creditOperationReceipts') return undefined;
+        if (op === 'findUnique' && firstLookup) { firstLookup = false; return Promise.resolve(null); }
+        if (op === 'create') return Promise.reject(Object.assign(new Error('Unique constraint failed'), { code: 'P2002' }));
+        return undefined;
+      });
+    };
+
+    it('turns a concurrent unique violation from another account into 409', async () => {
+      await service.grant('a', 5, 'x', undefined, key);
+      raceOnReceipt();
+      await expect(service.grant('b', 5, 'x', undefined, key)).rejects.toMatchObject({ status: 409 });
+      expect((await service.getBalance('b')).balance).toBe(0);
+    });
+
+    it('turns a concurrent unique violation with identical parameters into a silent replay', async () => {
+      await service.grant('a', 5, 'x', undefined, key);
+      raceOnReceipt();
+      await expect(service.grant('a', 5, 'x', undefined, key)).resolves.toBeUndefined();
+      expect((await service.getBalance('a')).balance).toBe(5);
     });
   });
 });

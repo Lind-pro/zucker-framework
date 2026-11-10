@@ -16,12 +16,20 @@ import { Logger } from '@nestjs/common';
  * - `codeGeneration: { strings: false, wasm: false }` disables `eval`, `Function(...)` and
  *   WebAssembly compilation inside the context, so even a context-realm `Function` cannot
  *   compile code.
- * - Scripts that contain the `import` keyword are rejected (Node rejects dynamic `import()`
- *   with a host-realm error object).
+ * - Scripts containing dynamic `import(...)` or `import.meta` are rejected (Node rejects
+ *   dynamic `import()` with a host-realm error object). The word `import` elsewhere (strings,
+ *   identifiers such as `importDone`) is allowed.
  * - `microtaskMode: 'afterEvaluate'` makes promise jobs run inside the same timeout as the
  *   synchronous part; there are no timers, so an `async` script cannot keep running after
  *   the call returns. `FinalizationRegistry`, `WeakRef`, `Atomics` and `SharedArrayBuffer`
  *   are removed so nothing can schedule work outside the timeout.
+ * - The host never calls a context function outside `runInContext({ timeout })` once user code
+ *   has run (results are polled through a trampoline script), and protocol replies are
+ *   serialised without `JSON.stringify`, so `toJSON` overrides cannot run code or forge replies.
+ * - A rejected promise left unhandled inside the context would be reported process-wide and, in
+ *   Node's default mode, terminate the host. `createSandbox` installs a process-level guard
+ *   (`installSandboxRejectionGuard`) that ignores (logs) rejections of promises from vm realms
+ *   and keeps Node's default behaviour for host promises.
  *
  * Remaining limits: there is no memory cap (a script can allocate until the host process
  * runs out of heap) and V8/Node bugs can still break realm isolation. Code from untrusted
@@ -39,6 +47,14 @@ export interface SandboxOptions {
   name?: string;
   /** Receives `console.*` output of scripts. Defaults to a Nest `Logger`. */
   onLog?: (level: SandboxLogLevel, message: string) => void;
+  /**
+   * Class instances (objects whose prototype is not `Object.prototype`/`null`) passed into the
+   * sandbox expose their methods, including prototype and "private" methods, bound to the
+   * instance (default true, the historical behaviour). With `false` only their own enumerable
+   * non-function properties are copied, so a service-like object in the data cannot be called.
+   * Plain objects and top-level context functions are unaffected.
+   */
+  exposeMethods?: boolean;
 }
 
 export type SandboxLogLevel = 'log' | 'info' | 'warn' | 'error' | 'debug';
@@ -72,7 +88,16 @@ const BLOCKED_GLOBALS = [
 
 const MAX_DEPTH = 200;
 const MAX_LOG_LENGTH = 8192;
-const IMPORT_KEYWORD = /\bimport\b/;
+/**
+ * Dynamic `import(...)` / `import.meta`, also with whitespace or any comment form between
+ * `import` and `(`/`.`.
+ * Node rejects `import()` in a context without `importModuleDynamically` using a host-realm
+ * error object, which would expose the host `Function` constructor, so these forms must never
+ * reach the compiler. A plain word `import` (e.g. inside a string) is allowed.
+ */
+// Gap: whitespace, block comments, `//` comments and Annex B HTML-like comments (`<!--`, `-->`).
+const DYNAMIC_IMPORT =
+  /\bimport(?:\s|\/\*[\s\S]*?\*\/|(?:\/\/|<!--|-->)[^\n\r\u2028\u2029]*)*[(.]/;
 
 /**
  * Context-realm bootstrap. Runs before any user code, captures the intrinsics it needs and
@@ -117,6 +142,29 @@ const errorProto = ErrorC.prototype;
 const MAX_DEPTH = ${MAX_DEPTH};
 
 function put(o, k, v) { defineProperty(o, k, { value: v, writable: true, enumerable: true, configurable: true }); }
+// Serialises the protocol trees built by this bootstrap (strings, finite numbers, booleans, null,
+// arrays and plain objects with own data properties). Unlike JSON.stringify it never looks up
+// toJSON (which user code can define on Object.prototype / Array.prototype), so a script cannot
+// change or forge a protocol reply. JSON.stringify is only applied to string/number primitives,
+// for which no user code runs.
+function ser(v) {
+  const t = typeof v;
+  if (t === 'string') return JSONstringify(v);
+  if (t === 'number') return v === v && v !== 1 / 0 && v !== -1 / 0 ? JSONstringify(v) : 'null';
+  if (t === 'boolean') return v ? 'true' : 'false';
+  if (v === null || t !== 'object') return 'null';
+  let s;
+  if (isArray(v)) {
+    s = '[';
+    const n = v.length;
+    for (let i = 0; i < n; i++) s += (i ? ',' : '') + ser(v[i]);
+    return s + ']';
+  }
+  s = '{';
+  const ks = keys(v);
+  for (let i = 0; i < ks.length; i++) s += (i ? ',' : '') + JSONstringify(ks[i]) + ':' + ser(v[ks[i]]);
+  return s + '}';
+}
 function brand(fn, v) { try { apply(fn, v, []); return true; } catch (e) { return false; } }
 
 return function init(bridge, apiName) {
@@ -194,7 +242,7 @@ return function init(bridge, apiName) {
     }
   }
 
-  function encode(v) { return JSONstringify(enc(v, 0, new SetC())); }
+  function encode(v) { return ser(enc(v, 0, new SetC())); }
 
   function makeHostFn(id) {
     const f = function () {
@@ -243,7 +291,11 @@ return function init(bridge, apiName) {
     if (apply(hasOwn, o, ['ok'])) return dec(o.ok, 0);
     if (apply(hasOwn, o, ['p'])) {
       const id = o.p;
-      return new PromiseC(function (resolve, reject) { apply(mapSet, pendingHost, [id, [resolve, reject]]); });
+      const p = new PromiseC(function (resolve, reject) { apply(mapSet, pendingHost, [id, [resolve, reject]]); });
+      // A fire-and-forget host call that fails must not count as an unhandled rejection
+      // (V8 reports those process-wide). The script still sees the rejection when it awaits p.
+      apply(promiseThen, p, [undefined, function () {}]);
+      return p;
     }
     throw makeError(o.err || {});
   }
@@ -260,11 +312,11 @@ return function init(bridge, apiName) {
         m = StringC(e);
       }
     } catch (x) { m = 'Script error'; }
-    return JSONstringify({ err: { n: n, m: m } });
+    return ser({ err: { n: n, m: m } });
   }
 
   function okReply(v) {
-    try { return JSONstringify({ ok: enc(v, 0, new SetC()) }); } catch (e) { return errReply(e); }
+    try { return ser({ ok: enc(v, 0, new SetC()) }); } catch (e) { return errReply(e); }
   }
 
   function callAndReply(fn, args) {
@@ -282,7 +334,7 @@ return function init(bridge, apiName) {
       function (v) { apply(mapSet, slots, [k, okReply(v)]); },
       function (e) { apply(mapSet, slots, [k, errReply(e)]); },
     ]);
-    return JSONstringify({ w: k });
+    return ser({ w: k });
   }
 
   function takeStaged() { const s = staged; staged = undefined; return s; }
@@ -309,6 +361,29 @@ return function init(bridge, apiName) {
   put(consoleObj, 'error', freeze(logFn('error')));
   put(consoleObj, 'debug', freeze(logFn('debug')));
   defineProperty(g, 'console', { value: freeze(consoleObj), writable: true, configurable: true });
+
+  // Stack traces: only frames of sandbox code are shown, so host file paths (and the host
+  // frames' CallSites) are not observable through \`new Error().stack\`. Node consults the
+  // context's global Error.prepareStackTrace, so both it and the global Error binding are fixed.
+  const errorToString = ErrorC.prototype.toString;
+  const startsWith = StringC.prototype.startsWith;
+  function prepareStackTrace(err, frames) {
+    let out;
+    try { out = apply(errorToString, err, []); } catch (e) { out = 'Error'; }
+    for (let i = 0; i < frames.length; i++) {
+      let file;
+      try { file = frames[i].getFileName(); } catch (e) { file = undefined; }
+      if (typeof file === 'string' && apply(startsWith, file, ['sandbox-script'])) {
+        let line = '';
+        try { line = ':' + StringC(frames[i].getLineNumber()) + ':' + StringC(frames[i].getColumnNumber()); } catch (e) { line = ''; }
+        out += '\\n    at ' + file + line;
+      }
+    }
+    return out;
+  }
+  defineProperty(ErrorC, 'prepareStackTrace', { value: freeze(prepareStackTrace), writable: false, configurable: false });
+  defineProperty(ErrorC, 'stackTraceLimit', { value: ErrorC.stackTraceLimit, writable: false, configurable: false });
+  defineProperty(g, 'Error', { value: ErrorC, writable: false, configurable: false });
 
   const api = create(null);
   api.define = function (name, json) {
@@ -344,8 +419,10 @@ return function init(bridge, apiName) {
       entry[1](makeError(o.err || {}));
     }
   };
-  api.poll = function (k) {
-    if (!apply(mapHas, slots, [k])) return JSONstringify({ err: { n: 'Error', m: 'Unknown result slot' } });
+  api.poll = function () {
+    const s = takeStaged();
+    const k = s === undefined ? 0 : +s;
+    if (!apply(mapHas, slots, [k])) return ser({ err: { n: 'Error', m: 'Unknown result slot' } });
     const r = apply(mapGet, slots, [k]);
     if (r !== undefined) apply(mapDelete, slots, [k]);
     return r;
@@ -358,10 +435,19 @@ return function init(bridge, apiName) {
 })(this)`;
 
 
+/** Compiled once per process; a vm.Script can run in any context. */
+let compiledBootstrap: vm.Script | undefined;
+function bootstrapScript(): vm.Script {
+  compiledBootstrap ??= new vm.Script(BOOTSTRAP, { filename: 'sandbox-bootstrap.js' });
+  return compiledBootstrap;
+}
+
 interface ContextApi {
   define(name: string, json: string | undefined): void;
   stage(json: string): void;
-  poll(slot: number): string | undefined;
+  /** Only called directly while a `runInContext` call is active (nested host → sandbox calls). */
+  invoke(): unknown;
+  poll(): unknown;
 }
 
 interface HostCallable {
@@ -375,8 +461,11 @@ class SandboxRealm {
   private readonly apiName: string;
   private readonly invokeScript: vm.Script;
   private readonly settleScript: vm.Script;
+  private readonly pollScript: vm.Script;
   private readonly hostFns: HostCallable[] = [];
   private readonly hostFnIds = new Map<(...args: unknown[]) => unknown, number>();
+  /** Ids of methods bound to an instance, so re-encoding the same object does not grow hostFns. */
+  private readonly boundHostFnIds = new WeakMap<object, Map<(...args: unknown[]) => unknown, number>>();
   private readonly settled: string[] = [];
   private readonly waiters = new Set<() => void>();
   private outstandingHost = 0;
@@ -393,10 +482,7 @@ class SandboxRealm {
       codeGeneration: { strings: false, wasm: false },
       microtaskMode: 'afterEvaluate',
     });
-    const init = vm.runInContext(BOOTSTRAP, this.context, {
-      timeout: 1000,
-      filename: 'sandbox-bootstrap.js',
-    }) as (
+    const init = bootstrapScript().runInContext(this.context, { timeout: 1000 }) as (
       bridge: (op: unknown, a: unknown, b: unknown) => string | undefined,
       apiName: string,
     ) => ContextApi;
@@ -404,6 +490,7 @@ class SandboxRealm {
     this.api = init((op, a, b) => this.bridge(op, a, b), this.apiName);
     this.invokeScript = this.compile(`${this.apiName}.invoke()`, 'sandbox-invoke.js');
     this.settleScript = this.compile(`${this.apiName}.settle()`, 'sandbox-settle.js');
+    this.pollScript = this.compile(`${this.apiName}.poll()`, 'sandbox-poll.js');
     for (const key of BLOCKED_GLOBALS) {
       this.api.define(key, undefined);
     }
@@ -415,8 +502,8 @@ class SandboxRealm {
 
   /** Main entry: runs user code. */
   runMain(code: string, context: Record<string, unknown>, deadline: number): string {
-    if (IMPORT_KEYWORD.test(code)) {
-      throw new Error('The `import` keyword is not allowed in sandbox scripts');
+    if (DYNAMIC_IMPORT.test(code)) {
+      throw new Error('Dynamic `import()` and `import.meta` are not allowed in sandbox scripts');
     }
     for (const [key, value] of Object.entries(context)) {
       this.api.define(key, this.encodeHost(value));
@@ -430,6 +517,15 @@ class SandboxRealm {
 
   invoke(id: number, args: unknown[], deadline: number): string {
     this.api.stage(JSON.stringify({ id, args: this.encodeHost(args) }));
+    if (this.active) {
+      // Nested call: a host function called from the sandbox synchronously calls a sandbox
+      // callback (e.g. `each(list, fn)`). The outer `runInContext` is still on the stack, so its
+      // timeout also bounds this call; a new `runInContext` would not be allowed here.
+      const reply = this.api.invoke();
+      if (reply === undefined) return JSON.stringify({ ok: { $: 'u' } });
+      if (typeof reply !== 'string') throw new Error('Invalid sandbox reply');
+      return reply;
+    }
     return this.runScript(this.invokeScript, deadline);
   }
 
@@ -443,8 +539,15 @@ class SandboxRealm {
     throw this.toHostError(parsed.err);
   }
 
-  pollSlot(slot: number): string | undefined {
-    const r = this.api.poll(slot);
+  /**
+   * Reads a result slot. Runs inside `runInContext` with the call's remaining budget: once user
+   * code has run, the context's intrinsics are user-controlled, so no context function may be
+   * called from the host outside the vm timeout (only `api.stage`, a plain assignment, is).
+   */
+  pollSlot(slot: number, deadline: number): string | undefined {
+    this.api.stage(String(slot));
+    // Nested (see invoke): still inside the outer runInContext and its timeout.
+    const r = this.active ? this.api.poll() : this.runRaw(this.pollScript, deadline);
     if (r !== undefined && typeof r !== 'string') throw new Error('Invalid sandbox reply');
     return r;
   }
@@ -491,6 +594,13 @@ class SandboxRealm {
   }
 
   private runScript(script: vm.Script, deadline: number): string {
+    const result = this.runRaw(script, deadline);
+    if (result === undefined) return JSON.stringify({ ok: { $: 'u' } });
+    if (typeof result !== 'string') throw new Error('Invalid sandbox reply');
+    return result;
+  }
+
+  private runRaw(script: vm.Script, deadline: number): unknown {
     if (this.broken) throw new Error('Sandbox is no longer usable after a previous timeout');
     if (this.active) throw new Error('Re-entrant sandbox calls are not supported');
     const remaining = Math.max(1, deadline - Date.now());
@@ -506,8 +616,6 @@ class SandboxRealm {
     } finally {
       this.active = false;
     }
-    if (result === undefined) return JSON.stringify({ ok: { $: 'u' } });
-    if (typeof result !== 'string') throw new Error('Invalid sandbox reply');
     return result;
   }
 
@@ -593,11 +701,23 @@ class SandboxRealm {
     if (thisArg === undefined) {
       const existing = this.hostFnIds.get(fn);
       if (existing !== undefined) return existing;
+    } else if (thisArg !== null && typeof thisArg === 'object') {
+      const existing = this.boundHostFnIds.get(thisArg)?.get(fn);
+      if (existing !== undefined) return existing;
     }
     const id = this.hostFns.length || 1;
     if (this.hostFns.length === 0) this.hostFns.push({ fn: () => undefined, thisArg: undefined });
     this.hostFns.push({ fn, thisArg });
-    if (thisArg === undefined) this.hostFnIds.set(fn, id);
+    if (thisArg === undefined) {
+      this.hostFnIds.set(fn, id);
+    } else if (thisArg !== null && typeof thisArg === 'object') {
+      let byFn = this.boundHostFnIds.get(thisArg);
+      if (!byFn) {
+        byFn = new Map();
+        this.boundHostFnIds.set(thisArg, byFn);
+      }
+      byFn.set(fn, id);
+    }
     return id;
   }
 
@@ -646,16 +766,21 @@ class SandboxRealm {
       }
       if (obj instanceof Error) return { $: 'e', n: obj.name, m: obj.message };
       const entries: unknown[] = [];
+      const proto0 = Object.getPrototypeOf(obj) as object | null;
+      const isInstance = proto0 !== null && proto0 !== Object.prototype;
+      const dataOnly = isInstance && this.options.exposeMethods === false;
       for (const key of Object.keys(obj)) {
         const value = (obj as Record<string, unknown>)[key];
         if (typeof value === 'function') {
+          if (dataOnly) continue;
           entries.push([key, { $: 'f', v: this.registerHostFn(value as (...args: unknown[]) => unknown, obj) }]);
         } else {
           entries.push([key, this.encodeValue(value, depth + 1, seen)]);
         }
       }
+      if (dataOnly) return { $: 'o', v: entries };
       // Class instances: expose prototype methods (bound to the instance) like the old sandbox did.
-      let proto = Object.getPrototypeOf(obj) as object | null;
+      let proto = proto0;
       const ownKeys = new Set(Object.keys(obj));
       while (proto && proto !== Object.prototype) {
         for (const key of Object.getOwnPropertyNames(proto)) {
@@ -764,7 +889,7 @@ function settleSync(realm: SandboxRealm, reply: string, deadline: number, allowA
   const first = realm.readReply(reply);
   if (first.done) return first.value;
   const slot = first.slot;
-  const polled = realm.pollSlot(slot);
+  const polled = realm.pollSlot(slot, deadline);
   if (polled !== undefined) {
     const r = realm.readReply(polled);
     if (r.done) return r.value;
@@ -789,7 +914,7 @@ async function settleAsync(realm: SandboxRealm, slot: number, deadline: number):
       await realm.waitForHost(deadline);
       continue;
     }
-    const polled = realm.pollSlot(slot);
+    const polled = realm.pollSlot(slot, deadline);
     if (polled !== undefined) {
       const r = realm.readReply(polled);
       if (r.done) return r.value;
@@ -815,7 +940,92 @@ function errorShape(error: unknown): { n: string; m: string } {
   return { n: 'Error', m: String(error) };
 }
 
+// ─── unhandled rejections from sandbox realms ─────────────────────────────
+
+/**
+ * Shared with `@zucker-framework/core`'s `evaluate()` (which installs an identical guard) so that
+ * at most one listener is registered per process, whichever package installs it first.
+ */
+const REJECTION_GUARD_KEY = Symbol.for('zucker-framework.sandbox-rejection-guard');
+const MAX_REASON_LENGTH = 200;
+
+/**
+ * Installs (once per process) an `unhandledRejection` listener that keeps a rejected promise
+ * created inside a vm context from terminating the process.
+ *
+ * V8 reports unhandled rejections isolate-wide and Node's default mode turns them into an
+ * uncaught exception, so `Promise.reject(1)` in a sandbox script or rule expression would
+ * otherwise kill the host. A promise is treated as sandbox-owned when the host
+ * `Promise.prototype` is not on its prototype chain: sandbox code cannot reach the host
+ * intrinsic, so it cannot make its promises look like host promises. This also covers any other
+ * `vm` context in the process. Sandbox-owned rejections are logged (the reason is not inspected
+ * beyond `typeof`, because reading its properties could run sandbox code outside any timeout).
+ *
+ * Host promises keep Node's semantics: when no other `unhandledRejection` listener is
+ * registered, the listener re-raises the reason as an uncaught exception (default `throw`
+ * mode) or warns and sets `process.exitCode` (`warn-with-error-code` mode). When the application
+ * registered its own listener, that listener decides.
+ *
+ * Called automatically by `createSandbox()`; exported so applications and tests can install it
+ * eagerly.
+ */
+export function installSandboxRejectionGuard(): void {
+  const registry = globalThis as Record<symbol, unknown>;
+  if (registry[REJECTION_GUARD_KEY]) return;
+  const logger = new Logger('Sandbox');
+  const listener = (reason: unknown, promise: unknown): void => {
+    if (!(promise instanceof Promise)) {
+      const type = reason === null ? 'null' : typeof reason;
+      const detail =
+        typeof reason === 'string' || typeof reason === 'number' || typeof reason === 'boolean'
+          ? `: ${String(reason).slice(0, MAX_REASON_LENGTH)}`
+          : ` (reason type: ${type})`;
+      logger.warn(`Unhandled promise rejection inside a sandbox ignored${detail}`);
+      return;
+    }
+    if (process.listenerCount('unhandledRejection') > 1) return;
+    const mode = unhandledRejectionsMode();
+    if (mode === 'throw') {
+      throw reason instanceof Error ? reason : unhandledRejectionError(reason);
+    }
+    if (mode === 'warn-with-error-code') {
+      process.emitWarning(unhandledRejectionError(reason).message, 'UnhandledPromiseRejectionWarning');
+      process.exitCode = 1;
+    }
+    // 'warn' / 'strict' / 'none': Node already applied the mode's behaviour.
+  };
+  registry[REJECTION_GUARD_KEY] = listener;
+  process.on('unhandledRejection', listener);
+}
+
+function unhandledRejectionsMode(): string {
+  const flags = [...process.execArgv, ...(process.env.NODE_OPTIONS ?? '').split(/\s+/)];
+  let mode = 'throw';
+  for (const flag of flags) {
+    const m = /^--unhandled-rejections=(.+)$/.exec(flag);
+    if (m) mode = m[1];
+  }
+  return mode;
+}
+
+function unhandledRejectionError(reason: unknown): Error {
+  let text: string;
+  try {
+    text = String(reason);
+  } catch {
+    text = typeof reason;
+  }
+  const error = new Error(
+    'This error originated either by throwing inside of an async function without a catch block, ' +
+      `or by rejecting a promise which was not handled with .catch(). The promise rejected with the reason "${text}".`,
+  ) as Error & { code?: string };
+  error.name = 'UnhandledPromiseRejection';
+  error.code = 'ERR_UNHANDLED_REJECTION';
+  return error;
+}
+
 export function createSandbox(options: SandboxOptions): AsyncSandbox {
+  installSandboxRejectionGuard();
   const logger = new Logger(options.name ? `Sandbox:${options.name}` : 'Sandbox');
   const run = (code: string, context: Record<string, unknown>, allowAsync: boolean): unknown => {
     const deadline = Date.now() + options.timeout;

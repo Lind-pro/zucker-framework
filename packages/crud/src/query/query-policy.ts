@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import type { ModelFieldInfo } from '@zucker-framework/core';
 
 /**
  * Injection token for the module-wide default {@link CrudQueryPolicy}
@@ -13,8 +14,16 @@ export const CRUD_QUERY_POLICY = 'CRUD_QUERY_POLICY';
  * Secure defaults (no configuration needed):
  * - filter / sort / select field names must be plain scalar identifiers (`[A-Za-z_][A-Za-z0-9_]*`);
  *   `AND`/`OR`/`NOT`, dotted paths and prototype keys are rejected with 400;
+ * - relation fields are never selected, sorted or filtered unless explicitly allow-listed
+ *   (`selectableFields` for includes, `rawFilterFields` for filters). When the adapter reports
+ *   field metadata (`DatabaseAdapter.getModelFields`, implemented by `PrismaAdapter`), relation
+ *   and unknown fields are rejected with 400. Without metadata, included values that look like
+ *   relation rows (non-null objects other than Date / Buffer / Decimal / arrays of primitives)
+ *   are stripped from results; JSON columns then need an explicit `selectableFields` entry;
  * - fields matching {@link DEFAULT_SENSITIVE_FIELD_PATTERN} (password, secret, token hash, ...)
- *   cannot be filtered, sorted or selected;
+ *   cannot be filtered, sorted or selected. The pattern is a name-based deny-list and cannot
+ *   know every secret column: configure `filterableFields` / `selectableFields` allow-lists to
+ *   close filter oracles on models with secrets;
  * - unknown operators are rejected with 400 (no raw Prisma fragment passthrough);
  * - filter values must be primitives, Dates or arrays of those (no relation filters);
  * - `pageSize` is clamped to `maxPageSize` and unpaged reads are limited to `maxUnpagedRows`.
@@ -26,7 +35,11 @@ export interface CrudQueryPolicy {
   filterableFields?: readonly string[];
   /** Fields accepted in orderBy. Default: any non-sensitive scalar identifier. */
   sortableFields?: readonly string[];
-  /** Fields accepted in `includes`. Default: any non-sensitive scalar identifier. */
+  /**
+   * Fields accepted in `includes`. Default: any non-sensitive scalar field. Relation fields are
+   * only selectable when listed here (the whole related row is returned, so list only relations
+   * whose every column is safe for the caller).
+   */
   selectableFields?: readonly string[];
   /** Extra fields that are never filterable, sortable or selectable. */
   deniedFields?: readonly string[];
@@ -57,7 +70,38 @@ const DEFAULT_MAX_FILTER_DEPTH = 8;
 
 /** Default name pattern for fields that must never be used as a query oracle or selected by callers. */
 export const DEFAULT_SENSITIVE_FIELD_PATTERN =
-  /(passw(or)?d|^pwd$|secret|credential|private_?key|api_?key|^salt$|_salt$|Salt$|token_?hash|(access|refresh|session|reset|verification|verify|auth|bearer|id)_?token$|^token$|^hash$|otp_?(code|secret)|mfa_?secret|totp)/i;
+  /(passw(or)?d|^pwd$|secret|credential|private_?key|api_?key|^salt$|_salt$|Salt$|token_?hash|(access|refresh|session|reset|verification|verify|auth|bearer|id)_?token$|^token$|hash$|digest|signature|cipher|encrypted|otp_?(code|secret)|(otp|verification|verify|recovery|backup|invite|reset)_?codes?$|mfa_?secret|totp|^jti$|nonce)/i;
+
+/**
+ * Model field metadata attached to an effective policy by DynamicQueryService / TreeService.
+ * Not part of the public policy shape: callers cannot inject it through configuration.
+ */
+const MODEL_FIELDS = Symbol('zucker.crud.modelFields');
+
+type PolicyWithFields = CrudQueryPolicy & { [MODEL_FIELDS]?: ReadonlyMap<string, ModelFieldInfo> };
+
+/** Return a copy of `policy` that carries model field metadata for {@link assertQueryField}. */
+export function withModelFields(
+  policy: CrudQueryPolicy | undefined,
+  fields: readonly ModelFieldInfo[] | ReadonlyMap<string, ModelFieldInfo> | undefined,
+): CrudQueryPolicy {
+  const base: PolicyWithFields = { ...(policy ?? {}) };
+  if (fields) {
+    base[MODEL_FIELDS] = fields instanceof Map
+      ? fields as ReadonlyMap<string, ModelFieldInfo>
+      : new Map((fields as readonly ModelFieldInfo[]).map((field) => [field.name, field]));
+  }
+  return base;
+}
+
+/** Field metadata carried by `policy`, if any. */
+export function modelFieldsOf(policy: CrudQueryPolicy | undefined): ReadonlyMap<string, ModelFieldInfo> | undefined {
+  return (policy as PolicyWithFields | undefined)?.[MODEL_FIELDS];
+}
+
+function isRelationKind(field: ModelFieldInfo): boolean {
+  return field.kind === 'object' || field.kind === 'unsupported';
+}
 
 const FIELD_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const RESERVED_FIELDS = new Set(['AND', 'OR', 'NOT', '__proto__', 'constructor', 'prototype']);
@@ -120,6 +164,19 @@ export function assertQueryField(field: unknown, use: QueryFieldUse, policy?: Cr
   if (policy?.deniedFields?.includes(field)) {
     throw new BadRequestException(`Field "${field}" cannot be used to ${use}`);
   }
+  const fields = modelFieldsOf(policy);
+  if (fields) {
+    const info = fields.get(field);
+    if (!info) throw new BadRequestException(`Unknown ${use} field: ${field}`);
+    if (isRelationKind(info)) {
+      // Relations need an explicit opt-in: selectableFields for includes, rawFilterFields for
+      // filters. Sorting by a relation is never a scalar orderBy.
+      const optedIn =
+        (use === 'select' && !!policy?.selectableFields?.includes(field)) ||
+        (use === 'filter' && !!policy?.rawFilterFields?.includes(field));
+      if (!optedIn) throw new BadRequestException(`Field "${field}" cannot be used to ${use}`);
+    }
+  }
   if (allowList) {
     if (!allowList.includes(field)) throw new BadRequestException(`Field "${field}" cannot be used to ${use}`);
     return field;
@@ -153,4 +210,48 @@ export function assertFilterValue(field: string, value: unknown): void {
 
 export function isRawFilterField(field: string, policy?: CrudQueryPolicy): boolean {
   return !!policy?.rawFilterFields?.includes(field);
+}
+
+/** Values a scalar / enum column can hold in a result row. */
+function isScalarResultValue(value: unknown): boolean {
+  if (value === null || typeof value !== 'object') return true;
+  if (value instanceof Date) return true;
+  if (typeof Buffer !== 'undefined' && Buffer.isBuffer(value)) return true;
+  if (value instanceof Uint8Array) return true;
+  // Prisma / decimal.js Decimal
+  const candidate = value as { toFixed?: unknown; d?: unknown; s?: unknown; e?: unknown };
+  if (typeof candidate.toFixed === 'function' && 'd' in candidate && 's' in candidate && 'e' in candidate) return true;
+  if (Array.isArray(value)) return value.every((item) => item === null || typeof item !== 'object' || item instanceof Date);
+  return false;
+}
+
+/**
+ * Without field metadata, remove included keys whose values look like relation rows (or JSON
+ * objects) unless the field is explicitly in `selectableFields`. Returns a new array; rows that
+ * lose a field are shallow copies (adapters may return live objects, e.g. InMemoryAdapter), others
+ * are returned as is. Reports the stripped field names through `onStrip`.
+ */
+export function stripRelationLikeIncludes<T>(
+  rows: T[],
+  includes: readonly string[] | undefined,
+  policy: CrudQueryPolicy | undefined,
+  onStrip?: (fields: string[]) => void,
+): T[] {
+  if (!includes?.length || policy?.selectableFields || modelFieldsOf(policy)) return rows;
+  const stripped = new Set<string>();
+  const result = rows.map((row) => {
+    if (!row || typeof row !== 'object') return row;
+    const record = row as Record<string, unknown>;
+    let copy: Record<string, unknown> | undefined;
+    for (const field of includes) {
+      if (Object.prototype.hasOwnProperty.call(record, field) && !isScalarResultValue(record[field])) {
+        copy ??= { ...record };
+        delete copy[field];
+        stripped.add(field);
+      }
+    }
+    return (copy ?? row) as T;
+  });
+  if (stripped.size > 0) onStrip?.([...stripped]);
+  return result;
 }

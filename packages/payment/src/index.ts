@@ -33,8 +33,10 @@ export { createFakeAdapter } from './contract/fake-adapter';
 export type { FakeAdapterOptions } from './contract/fake-adapter';
 
 // 服务
-export { OrderService, OrderNotFoundError } from './order.service';
-export type { Order, OrderStatus, CreateOrderParams } from './order.service';
+export {
+  OrderService, OrderNotFoundError, PENDING_REFUND_KEY, PARTIAL_REFUND_COUNT_KEY, partialRefundCount, pendingRefund,
+} from './order.service';
+export type { Order, OrderStatus, CreateOrderParams, PendingRefund } from './order.service';
 export { DatabaseOrderPersistence, ORDER_PERSISTENCE } from './order-persistence';
 export type { OrderPersistence } from './order-persistence';
 export { HostedCheckoutService } from './hosted-checkout/service';
