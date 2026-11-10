@@ -1,0 +1,64 @@
+# Builds the workspace images and pushes them to GitHub Container Registry on version tags.
+# Rename to image.yml to enable. Requires a committed pnpm-lock.yaml. Images contain no secrets:
+# configure the runtime environment (see .env.example) in your deployment platform.
+name: images
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - app: server
+            target: runtime
+          - app: server
+            target: migrate
+# <zucker:web>
+          - app: web
+            target: runtime
+# </zucker:web>
+# <zucker:admin>
+          - app: admin
+            target: runtime
+# </zucker:admin>
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}/${{ matrix.app }}${{ matrix.target == 'migrate' && '-migrate' || '' }}
+          tags: |
+            type=ref,event=tag
+            type=sha
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/${{ matrix.app }}/Dockerfile
+          target: ${{ matrix.target }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Web fixes these at build time; set repository variables for the production origins.
+          build-args: |
+            SITE_URL=${{ vars.SITE_URL }}
+            API_URL=${{ vars.API_URL }}
+            DEFAULT_LOCALE=${{ vars.DEFAULT_LOCALE }}
+            VITE_DEFAULT_LOCALE=${{ vars.DEFAULT_LOCALE }}
+          cache-from: type=gha,scope=${{ matrix.app }}-${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.app }}-${{ matrix.target }}

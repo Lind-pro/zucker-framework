@@ -9,9 +9,10 @@ import { validateProjectBundle, validateTemplateAssets, writeTemplateAssets } fr
 
 const required = {
   admin: ['package.json', 'index.html', 'vite.config.ts', 'tsconfig.json', 'src/main.tsx'],
-  web: ['package.json', 'next.config.ts', 'tsconfig.json', 'src/app/[locale]/layout.tsx', 'src/app/[locale]/page.tsx'],
+  web: ['package.json', 'next.config.ts', 'tsconfig.json', 'src/app/[locale]/layout.tsx', 'src/app/[locale]/(home)/page.tsx'],
   'server-full': ['package.json', 'README.md', '.env.example', '.gitignore', 'nest-cli.json', 'tsconfig.json', 'eslint.config.cjs', 'prisma.config.ts', 'prisma/schema.prisma', 'prisma/migrations/migration_lock.toml', 'prisma/migrations/20261024000000_initial/migration.sql', 'prisma/migrations/20261024000100_credential_version/migration.sql', 'src/main.ts', 'src/app.module.ts', 'src/database.ts', 'src/accounts/account.module.ts', 'src/accounts/account.controller.ts', 'src/accounts/account.guard.ts', 'src/accounts/account.service.ts', 'src/accounts/account-mailer.ts', 'src/accounts/create-administrator.ts', 'src/scripts/create-admin.ts'],
 };
+const workspaceRequired = ['pnpm-workspace.yaml', 'docker-compose.yml', '.env.example', '.gitignore', '.dockerignore', 'README.md', 'scripts/with-env.mjs'];
 const instructions = '# Independent consumer\n\nUse installed public package exports.\n';
 const encode = (value) => Buffer.from(value).toString('base64');
 const decode = (value) => Buffer.from(value, 'base64');
@@ -36,6 +37,7 @@ function fixture(context) {
         : `// Synthetic ${name} ${path}\n`);
     }
   }
+  for (const path of workspaceRequired) write(`templates/workspace/${path}`, `# Synthetic workspace ${path}\n`);
   write('docs/templates/consumer-AGENTS.md', instructions);
   const output = join(root, 'release-assets');
   const bundlePath = join(output, 'project-templates.json');
@@ -55,7 +57,7 @@ test('prepares a self-contained Admin/Web/full Server bundle and round-trips bin
   f.prepare();
   const bundle = readBundle(f);
   validateProjectBundle(bundle);
-  assert.deepEqual(Object.keys(bundle.templates).sort(), ['admin', 'server-full', 'web']);
+  assert.deepEqual(Object.keys(bundle.templates).sort(), ['admin', 'server-full', 'web', 'workspace']);
   assert.equal(bundle.consumerInstructions, instructions);
   assert.deepEqual(decode(bundle.templates.admin['public/logo.png']), binary);
   assert.equal(decode(bundle.templates.web['.env.example']).toString(), 'API_URL=http://localhost:4200/api\n');
@@ -77,6 +79,27 @@ test('packages the actual repository templates without building or modifying the
     }
   }
   assert.equal(bundle.consumerInstructions, readFileSync(join(root, 'docs/templates/consumer-AGENTS.md'), 'utf8'));
+  for (const path of workspaceRequired) {
+    assert.deepEqual(decode(bundle.templates.workspace[path]), readFileSync(join(root, 'templates/workspace', path)));
+  }
+  // Deployment files ship with each app template; local secrets never do.
+  for (const name of ['server-full', 'web', 'admin']) {
+    assert.ok(bundle.templates[name].Dockerfile, `${name}/Dockerfile`);
+    assert.ok(bundle.templates[name]['.dockerignore'], `${name}/.dockerignore`);
+    assert.equal(Object.keys(bundle.templates[name]).some((path) => /(^|\/)\.env(?!\.example$)/.test(path)), false);
+  }
+  assert.ok(bundle.templates.admin['nginx.conf']);
+  assert.equal(Object.hasOwn(bundle.templates.workspace, 'package.json'), false);
+});
+
+test('requires every workspace shell file before replacing an existing prepared artifact', (context) => {
+  for (const path of workspaceRequired) {
+    const f = fixture(context);
+    f.write('release-assets/project-templates.json', 'PREVIOUS_VALID_ARTIFACT');
+    rmSync(join(f.root, 'templates/workspace', path));
+    assert.throws(f.prepare, /missing required asset/, path);
+    assert.equal(readFileSync(f.bundlePath, 'utf8'), 'PREVIOUS_VALID_ARTIFACT');
+  }
 });
 
 test('excludes private settings, generated output, embedded policies and symlinks before bundling', (context) => {

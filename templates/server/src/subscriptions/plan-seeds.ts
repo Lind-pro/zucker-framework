@@ -4,12 +4,13 @@ import { PlanCatalogError, validatePlanWrite, type PlanPrice, type SubscriptionP
 import type { DatabaseAdapter } from '@zucker-framework/core';
 import type { BillingCatalogItem } from '../billing/catalog';
 import { APP_ENTITLEMENT_CATALOG } from './entitlement-catalog';
+import { creditExpiryColumns } from './plan-catalog.store';
 
 const logger = new Logger('PlanSeeds');
 
 /**
  * Initial plans from BILLING_CATALOG_JSON subscription offers (slug = offer id): one monthly price in
- * the offer's currency with the offer's provider references. Plans are seeded listed with no features
+ * the offer's currency with the offer's provider references and credits. Plans are seeded listed with no features
  * or quotas; administrators then edit grants and prices in the back office. Afterwards the database is
  * the only source of plan prices: seeding never updates an existing slug, and a seeded plan claims
  * its static offer so checkout sells the plan (BillingCatalog), never the static entry.
@@ -18,7 +19,9 @@ export function planSeedsFromBillingCatalog(items: readonly BillingCatalogItem[]
   return items.filter(item => item.mode === 'subscription').map((item, order) => {
     const providerRefs = Object.fromEntries(Object.entries(item.providers)
       .filter(([provider, ref]) => !!ref && (provider !== 'stripe' || /^price_[A-Za-z0-9]{1,250}$/.test(ref)))) as Record<string, string>;
-    const price: PlanPrice = { interval: 'month', currency: item.currency, amount: item.amount, termDays: null, providerRefs };
+    // The offer's credits become the plan price's per-cycle credits (days-based expiry kept as is).
+    const price: PlanPrice = { interval: 'month', currency: item.currency, amount: item.amount, termDays: null, providerRefs,
+      credits: item.credits, creditExpiry: item.expiresInDays };
     return { slug: item.id, name: item.title, description: null, status: true, order, features: {}, quotas: {}, prices: [price] };
   });
 }
@@ -46,7 +49,7 @@ export async function seedPlans(tx: DatabaseAdapter, seeds: readonly Subscriptio
     const row = await tx.model('subscriptionPlans').create({ data: plan }) as { id: string };
     for (const price of prices) {
       const saved = await tx.model('subscriptionPlanPrices').create({ data: { planId: row.id, interval: price.interval,
-        currency: price.currency, amount: price.amount, termDays: price.termDays } }) as { id: string };
+        currency: price.currency, amount: price.amount, termDays: price.termDays, ...creditExpiryColumns(price) } }) as { id: string };
       for (const [provider, reference] of Object.entries(price.providerRefs))
         if (!(await tx.model('subscriptionPlanPriceRefs').count({ where: { provider, reference } })))
           await tx.model('subscriptionPlanPriceRefs').create({ data: { priceId: saved.id, provider, reference } });

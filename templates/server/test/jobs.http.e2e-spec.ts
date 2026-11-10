@@ -48,7 +48,7 @@ run('durable jobs HTTP contract and actual Nest lifecycle', () => {
     const login = await send('login', { username, password }).expect(200); return { id: login.body.userId, token: login.body.token };
   }
   beforeAll(async () => {
-    const url = new URL(databaseUrl!); if (url.pathname !== '/cnipa_dev') throw new Error('Requires approved development database');
+    const url = new URL(databaseUrl!); if (!/(?:_dev|_test|_tests)$/.test(url.pathname)) throw new Error('Use a designated development/test database');
     directory = mkdtempSync(join(tmpdir(), 'zucker-job-http-objects-')); pool = new Pool({ connectionString: url.href, connectionTimeoutMillis: 5000 });
     const client = await pool.connect();
     try { await client.query('BEGIN'); await client.query(`CREATE SCHEMA "${schema}"`); await client.query(`SET LOCAL search_path TO "${schema}"`);

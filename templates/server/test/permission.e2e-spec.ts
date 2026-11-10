@@ -26,6 +26,7 @@ import {
   HttpCode,
   HttpStatus,
   NotFoundException,
+  Inject,
 } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { APP_GUARD } from '@nestjs/core';
@@ -94,18 +95,19 @@ type DbAdapter = { model: (name: string) => DbModel };
 
 @Controller('permissions')
 class PermissionController {
-  constructor(private readonly db: DbAdapter) {}
+  // Interface types carry no runtime metadata, so the adapter is injected by token.
+  constructor(@Inject('DATABASE_ADAPTER') private readonly db: DbAdapter) {}
 
   /** GET /permissions — list all (public-ish: login required, no extra permission) */
   @Get()
-  @Permissions([])
+  @Permissions()
   async findAll() {
     return this.db.model('permissions').findMany();
   }
 
   /** POST /permissions/_query — paginated query */
   @Post('_query')
-  @Permissions([])
+  @Permissions()
   @HttpCode(HttpStatus.OK)
   async query(@Body() body: QueryDto) {
     const { pageIndex = 0, pageSize = 20 } = body;
@@ -117,7 +119,7 @@ class PermissionController {
 
   /** POST /permissions — create */
   @Post()
-  @Permissions(['permissions:add'])
+  @Permissions('permissions:add')
   async create(@Body() body: CreatePermissionDto) {
     const existing = await this.db.model('permissions').findUnique({ where: { id: body.id } });
     if (existing) {
@@ -130,7 +132,7 @@ class PermissionController {
 
   /** PUT /permissions/:id — update */
   @Put(':id')
-  @Permissions(['permissions:update'])
+  @Permissions('permissions:update')
   async update(@Param('id') id: string, @Body() body: UpdatePermissionDto) {
     const existing = await this.db.model('permissions').findUnique({ where: { id } });
     if (!existing) throw new NotFoundException(`Permission "${id}" not found`);
@@ -139,7 +141,7 @@ class PermissionController {
 
   /** DELETE /permissions/:id */
   @Delete(':id')
-  @Permissions(['permissions:delete'])
+  @Permissions('permissions:delete')
   async remove(@Param('id') id: string) {
     const existing = await this.db.model('permissions').findUnique({ where: { id } });
     if (!existing) throw new NotFoundException(`Permission "${id}" not found`);
@@ -156,10 +158,11 @@ class PermissionController {
 
 @Controller('roles')
 class RoleReadController {
-  constructor(private readonly db: DbAdapter) {}
+  // Interface types carry no runtime metadata, so the adapter is injected by token.
+  constructor(@Inject('DATABASE_ADAPTER') private readonly db: DbAdapter) {}
 
   @Get(':id')
-  @Permissions([])
+  @Permissions()
   async findOne(@Param('id') id: string) {
     const role = await this.db.model('roles').findUnique({ where: { id } });
     if (!role) throw new NotFoundException(`Role "${id}" not found`);

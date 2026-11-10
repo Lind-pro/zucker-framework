@@ -1,15 +1,20 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { DATABASE_ADAPTER } from '@zucker-framework/core';
-import { hasVisibleSiteContent, siteDocumentText, validateSiteDocument, visibleSiteDocument } from '@zucker-framework/fe-site/content';
+import { hasVisibleSiteContent, siteDocumentText, validateSiteDocument, visibleSiteDocument, type SiteDocument } from '@zucker-framework/fe-site/content';
 import { ApplicationDatabase, type ApplicationTransaction } from '../database';
 import { assertRevision, ContentRepository, isUniqueConflict } from './content.repository';
 import type { CategoryRow, ContentLocale, EntryDraft, EntryRow, PublicCategory, PublicEntry } from './content.types';
 import * as input from './content.validation';
+import { ContentFileSource, type FileEntry } from './content-files';
+import { ContentRevalidator, contentTags, entryTags } from './content-revalidate';
+
+const PUBLIC_PAGE_SIZE = 20, SITEMAP_PAGE_SIZE = 1000;
 
 @Injectable()
 export class ContentService {
   private readonly repository: ContentRepository;
-  constructor(@Inject(DATABASE_ADAPTER) private readonly database: ApplicationDatabase) { this.repository = new ContentRepository(database); }
+  constructor(@Inject(DATABASE_ADAPTER) private readonly database: ApplicationDatabase,
+    private readonly files: ContentFileSource, private readonly revalidator: ContentRevalidator) { this.repository = new ContentRepository(database); }
 
   createEntry(actor: string, body: unknown) {
     const value = input.record(body, ['kind', 'locale', 'slug', 'document', 'categoryIds']);
@@ -65,8 +70,10 @@ export class ContentService {
   async transitionEntry(actor: string, id: string, action: string, body: unknown) {
     input.identifier(id); this.action(action);
     const expected = input.revision(input.record(body, ['expectedRevision']).expectedRevision);
-    return this.conflicts(() => this.database.transaction(async tx => {
+    let previousSlug: string | null = null;
+    const updated = await this.conflicts(() => this.database.transaction(async tx => {
       const row = await this.repository.entry(tx, id, true); assertRevision(row, expected); this.transitionAllowed(row.status, action);
+      previousSlug = row.publishedSlug;
       if (action === 'publish') {
         const draft = input.entryDraft(row.draft.document, row.draft.categoryIds, row.kind);
         if (!hasVisibleSiteContent(draft.document)) throw new BadRequestException('Add visible content before publishing');
@@ -86,11 +93,14 @@ export class ContentService {
       [id, expected, next, actor]);
       return this.changed(result.rows[0]);
     }));
+    // After commit, best effort and not awaited: the Web cache drops the old and new public addresses.
+    if (previousSlug || updated.publishedSlug) this.revalidator.schedule(entryTags(updated.kind, updated.locale, [previousSlug, updated.publishedSlug]));
+    return updated;
   }
   async transitionCategory(actor: string, id: string, action: string, body: unknown) {
     input.identifier(id); this.action(action);
     const expected = input.revision(input.record(body, ['expectedRevision']).expectedRevision);
-    return this.conflicts(() => this.database.transaction(async tx => {
+    const updated = await this.conflicts(() => this.database.transaction(async tx => {
       const row = await this.repository.category(tx, id, true); assertRevision(row, expected); this.transitionAllowed(row.status, action);
       if (action === 'publish') {
         const published = input.categoryDraft(row.draft.title, row.draft.description);
@@ -105,12 +115,23 @@ export class ContentService {
         WHERE "id"=$1 AND "revision"=$2 RETURNING *`, [id, expected, action === 'archive' ? 'archived' : 'draft', actor]);
       return this.changed(result.rows[0]);
     }));
+    this.revalidator.schedule([contentTags.all, contentTags.sitemap, contentTags.categories(updated.locale), contentTags.list('post', updated.locale)]);
+    return updated;
   }
 
+  /**
+   * Published database entries merged with file-backed entries, newest first. File entries whose
+   * address a published database entry occupies are hidden. Paging is exact: each visible file's
+   * merged position is (database rows strictly newer than it) + (its index among visible files),
+   * so only one window of database rows is read. At equal timestamps file entries come first.
+   * `expand=document` (changelog only) includes each entry's visible document.
+   */
   async publicEntries(query: Record<string, unknown>) {
-    input.record(query, ['kind', 'locale', 'page', 'category']);
+    input.record(query, ['kind', 'locale', 'page', 'category', 'expand']);
     const kind = input.kind(query.kind), locale = input.locale(query.locale), page = input.page(query.page);
     if (query.category !== undefined && kind !== 'post') throw new BadRequestException('Categories apply to blog posts');
+    if (query.expand !== undefined && (query.expand !== 'document' || kind !== 'log')) throw new BadRequestException('Only changelog lists can include documents');
+    const expand = query.expand === 'document';
     return this.database.transaction(async tx => {
       let category: PublicCategory | null = null;
       if (query.category !== undefined) {
@@ -122,9 +143,27 @@ export class ContentService {
       const values = [kind, locale, category ? JSON.stringify([category.id]) : null];
       const where = '"kind"=$1 AND "locale"=$2 AND "status"=\'published\' AND ($3::jsonb IS NULL OR ("published"->\'categoryIds\') @> $3::jsonb)';
       const count = await tx.query<{ total: number }>(`SELECT COUNT(*)::int AS total FROM site_content_entries WHERE ${where}`, values);
-      const rows = await tx.query<EntryRow>(`SELECT * FROM site_content_entries WHERE ${where} ORDER BY "publishedAt" DESC,"id" LIMIT 20 OFFSET $4`, [...values, (page - 1) * 20]);
+      // File entries carry no categories, so a category filter shows database posts only.
+      const files = category ? [] : await this.visibleFiles(tx, this.files.list(kind, locale));
+      const ranks = files.length ? (await tx.query<{ newer: number }>(`SELECT (SELECT COUNT(*)::int FROM site_content_entries
+          WHERE "kind"=$1 AND "locale"=$2 AND "status"='published' AND "publishedAt" > (f.at::timestamptz AT TIME ZONE 'UTC')) AS newer
+        FROM unnest($3::text[]) WITH ORDINALITY AS f(at, n) ORDER BY f.n`, [kind, locale, files.map(entry => entry.publishedAt.toISOString())])).rows : [];
+      const positions = files.map((entry, index) => ({ entry, position: Number(ranks[index]?.newer ?? 0) + index }));
+      const offset = (page - 1) * PUBLIC_PAGE_SIZE, end = offset + PUBLIC_PAGE_SIZE;
+      const filesBefore = positions.filter(item => item.position < offset).length;
+      const window = positions.filter(item => item.position >= offset && item.position < end);
+      const rows = await tx.query<EntryRow>(`SELECT * FROM site_content_entries WHERE ${where} ORDER BY "publishedAt" DESC,"id" LIMIT $5 OFFSET $4`,
+        [...values, offset - filesBefore, PUBLIC_PAGE_SIZE - window.length]);
       const categories = await this.categories(tx, locale);
-      return { data: rows.rows.map(row => this.entrySummary(row, categories)), total: count.rows[0]?.total ?? 0, page, pageSize: 20, category };
+      const total = (count.rows[0]?.total ?? 0) + files.length, data: Array<PublicEntry & { document?: SiteDocument }> = [];
+      let next = 0;
+      for (let position = offset; position < Math.min(end, total); position++) {
+        const file = window.find(item => item.position === position)?.entry;
+        if (file) { data.push({ ...this.fileSummary(file), ...(expand ? { document: file.document } : {}) }); continue; }
+        const row = rows.rows[next++]; if (!row) break;
+        data.push({ ...this.entrySummary(row, categories), ...(expand ? { document: visibleSiteDocument(validateSiteDocument(row.published?.document)) } : {}) });
+      }
+      return { data, total, page, pageSize: PUBLIC_PAGE_SIZE, category };
     });
   }
   async publicEntry(query: Record<string, unknown>) {
@@ -132,7 +171,13 @@ export class ContentService {
     const kind = input.kind(query.kind), locale = input.locale(query.locale), slug = input.slug(query.slug, kind);
     return this.database.transaction(async tx => {
       const result = await tx.query<EntryRow>('SELECT * FROM site_content_entries WHERE "kind"=$1 AND "locale"=$2 AND "publishedSlug"=$3 AND "status"=\'published\'', [kind, locale, slug]);
-      const row = result.rows[0]; if (!row) throw new NotFoundException('Published content was not found');
+      const row = result.rows[0];
+      if (!row) {
+        // No published database entry at this address, so a file entry (if any) is visible.
+        const file = this.files.find(kind, locale, slug);
+        if (!file) throw new NotFoundException('Published content was not found');
+        return { ...this.fileSummary(file), document: file.document };
+      }
       const summary = this.entrySummary(row, await this.categories(tx, locale));
       return { ...summary, document: visibleSiteDocument(validateSiteDocument(row.published?.document)) };
     });
@@ -146,13 +191,21 @@ export class ContentService {
     const locale = input.locale(query.locale), q = input.boundedText(query.q, 100, true);
     const pattern = `%${q.replace(/[\\%_]/g, '\\$&')}%`;
     return this.database.transaction(async tx => {
-      const rows = await tx.query<EntryRow>(`SELECT * FROM site_content_entries WHERE "kind"='doc' AND "locale"=$1 AND "status"='published'
+      const rows = await tx.query<EntryRow & { searchRank: number }>(`SELECT *,CASE WHEN lower("publishedTitle")=lower($2) THEN 0 WHEN "publishedTitle" ILIKE $3 THEN 1 ELSE 2 END AS "searchRank"
+        FROM site_content_entries WHERE "kind"='doc' AND "locale"=$1 AND "status"='published'
         AND (to_tsvector('simple',"searchText") @@ websearch_to_tsquery('simple',$2) OR "searchText" ILIKE $3)
-        ORDER BY CASE WHEN lower("publishedTitle")=lower($2) THEN 0 WHEN "publishedTitle" ILIKE $3 THEN 1 ELSE 2 END,
-          "publishedAt" DESC,"id" LIMIT 20`, [locale, q, pattern]);
-      return { data: rows.rows.map(row => ({ ...this.entrySummary(row, []), excerpt: this.excerpt(row.searchText, q) })), query: q, limit: 20 };
+        ORDER BY "searchRank","publishedAt" DESC,"id" LIMIT 20`, [locale, q, pattern]);
+      // File documents use a plain case-insensitive substring match with the same title ranking.
+      const needle = q.toLocaleLowerCase(), rank = (title: string) => title.toLocaleLowerCase() === needle ? 0 : title.toLocaleLowerCase().includes(needle) ? 1 : 2;
+      const files = (await this.visibleFiles(tx, this.files.list('doc', locale))).filter(entry => entry.searchText.toLocaleLowerCase().includes(needle));
+      const merged = [
+        ...rows.rows.map(row => ({ rank: Number(row.searchRank), at: row.publishedAt?.getTime() ?? 0, item: { ...this.entrySummary(row, []), excerpt: this.excerpt(row.searchText, q) } })),
+        ...files.map(entry => ({ rank: rank(entry.document.title), at: entry.publishedAt.getTime(), item: { ...this.fileSummary(entry), excerpt: this.excerpt(entry.searchText, q) } })),
+      ].sort((a, b) => a.rank - b.rank || b.at - a.at);
+      return { data: merged.slice(0, 20).map(value => value.item), query: q, limit: 20 };
     });
   }
+  /** Database rows first (stable order), then visible, indexable file entries. */
   async sitemap(pageValue: unknown) {
     const page = input.page(pageValue);
     return this.database.transaction(async tx => {
@@ -161,8 +214,23 @@ export class ContentService {
         UNION ALL SELECT "id",'category' AS resource,'post' AS kind,"locale","publishedSlug" AS slug,"publishedAt" AS "updatedAt"
         FROM site_content_categories WHERE "status"='published'`;
       const count = await tx.query<{ total: number }>(`SELECT COUNT(*)::int AS total FROM (${source}) AS documents`);
-      const rows = await tx.query(`SELECT * FROM (${source}) AS documents ORDER BY resource,kind,locale,slug,"id" LIMIT 1000 OFFSET $1`, [(page - 1) * 1000]);
-      return { data: rows.rows, total: count.rows[0]?.total ?? 0, page, pageSize: 1000 };
+      const databaseTotal = count.rows[0]?.total ?? 0, offset = (page - 1) * SITEMAP_PAGE_SIZE;
+      const rows = offset < databaseTotal
+        ? (await tx.query(`SELECT * FROM (${source}) AS documents ORDER BY resource,kind,locale,slug,"id" LIMIT ${SITEMAP_PAGE_SIZE} OFFSET $1`, [offset])).rows : [];
+      const files = (await this.visibleFiles(tx, this.files.all())).filter(entry => !entry.document.seo.noIndex)
+        .sort((a, b) => a.kind.localeCompare(b.kind) || a.locale.localeCompare(b.locale) || a.slug.localeCompare(b.slug));
+      const fileStart = Math.max(0, offset - databaseTotal), room = SITEMAP_PAGE_SIZE - rows.length;
+      const fileRows = files.slice(fileStart, fileStart + room)
+        .map(entry => ({ id: entry.id, resource: 'entry', kind: entry.kind, locale: entry.locale, slug: entry.slug, updatedAt: entry.publishedAt }));
+      return { data: [...rows, ...fileRows], total: databaseTotal + files.length, page, pageSize: SITEMAP_PAGE_SIZE };
+    });
+  }
+  /** Admin view of the file source: every loaded document, whether a published entry overrides it, and skipped files. */
+  async adminFiles() {
+    return this.database.transaction(async tx => {
+      const all = this.files.all(), visible = new Set((await this.visibleFiles(tx, all)).map(entry => entry.id));
+      return { data: all.map(entry => ({ id: entry.id, kind: entry.kind, locale: entry.locale, slug: entry.slug, title: entry.document.title,
+        publishedAt: entry.publishedAt, source: entry.source, overridden: !visible.has(entry.id) })), issues: this.files.issues };
     });
   }
 
@@ -179,7 +247,21 @@ export class ContentService {
     const document = validateSiteDocument(row.published.document);
     return { id: row.id, kind: row.kind, locale: row.locale, slug: row.publishedSlug, title: document.title, description: document.description,
       authorName: document.authorName, publishedAt: row.publishedAt, updatedAt: row.publishedAt,
-      categories: categories.filter(category => row.published?.categoryIds.includes(category.id)) };
+      categories: categories.filter(category => row.published?.categoryIds.includes(category.id)), source: 'database' };
+  }
+  private fileSummary(entry: FileEntry): PublicEntry {
+    return { id: entry.id, kind: entry.kind, locale: entry.locale, slug: entry.slug, title: entry.document.title, description: entry.document.description,
+      authorName: entry.document.authorName, publishedAt: entry.publishedAt, updatedAt: entry.publishedAt, categories: [], source: 'file' };
+  }
+  /** File entries minus those whose address a published database entry occupies (database wins). */
+  private async visibleFiles(tx: ApplicationTransaction, files: readonly FileEntry[]): Promise<FileEntry[]> {
+    if (!files.length) return [];
+    const taken = await tx.query<{ key: string }>(`SELECT e."kind"||':'||e."locale"||':'||e."publishedSlug" AS key
+      FROM unnest($1::text[],$2::text[],$3::text[]) AS f(kind,locale,slug)
+      JOIN site_content_entries e ON e."kind"=f.kind AND e."locale"=f.locale AND e."publishedSlug"=f.slug AND e."status"='published'`,
+    [files.map(entry => entry.kind), files.map(entry => entry.locale), files.map(entry => entry.slug)]);
+    const occupied = new Set(taken.rows.map(row => row.key));
+    return files.filter(entry => !occupied.has(`${entry.kind}:${entry.locale}:${entry.slug}`));
   }
   private async assertCategories(tx: ApplicationTransaction, ids: string[], locale: ContentLocale): Promise<void> {
     if (!ids.length) return;

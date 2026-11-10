@@ -43,6 +43,7 @@ export class ContentManagementController {
     return req.user.id;
   }
   @Get('entries') @Header('Cache-Control', 'private, no-store') entries(@Query() query: Record<string, unknown>) { return result(() => this.content.adminEntries(query)); }
+  @Get('files') @Header('Cache-Control', 'private, no-store') files() { return result(() => this.content.adminFiles()); }
   @Get('entries/:id') @Header('Cache-Control', 'private, no-store') entry(@Param('id') id: string) { return result(() => this.content.adminEntry(id)); }
   @Post('entries') @HttpCode(200) create(@Req() req: ContentRequest, @Body() body: unknown) {
     const actor = this.actor(req); return result(() => this.content.createEntry(actor, body));

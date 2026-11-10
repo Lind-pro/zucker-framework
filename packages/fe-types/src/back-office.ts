@@ -175,6 +175,15 @@ export const PLAN_PRICE_INTERVALS = ['month', 'year', 'one_time', 'lifetime'] as
 export type PlanPriceInterval = (typeof PLAN_PRICE_INTERVALS)[number];
 export const RECURRING_PLAN_PRICE_INTERVALS: readonly PlanPriceInterval[] = ['month', 'year'];
 
+/**
+ * Lifetime of the credits a plan price grants: `'period'` expires them at the end of the paid period
+ * (one-time term end, subscription cycle end; never for `lifetime`), a number is days after the
+ * grant, `null` never expires.
+ */
+export type PlanCreditExpiry = 'period' | number | null;
+export const MAX_PLAN_PRICE_CREDITS = 2_147_483_647;
+export const MAX_CREDIT_EXPIRY_DAYS = 36_500;
+
 /** One price of a plan. Unique per plan by (interval, currency). */
 export interface PlanPrice {
   interval: PlanPriceInterval;
@@ -186,7 +195,19 @@ export interface PlanPrice {
   termDays: number | null;
   /** Payment provider id → that provider's catalog reference (for example a Stripe Price ID). */
   providerRefs: Record<string, string>;
+  /**
+   * Credits granted with each paid period (each renewal for month/year, once for one-time/lifetime).
+   * Always present in server responses; omitted in a write means 0.
+   */
+  credits?: number;
+  /** Expiry of those credits; always present in server responses; omitted in a write means null. */
+  creditExpiry?: PlanCreditExpiry;
 }
+
+/** Locale tag (`en`, `zh`, `pt-BR`) → localized text. Missing locales fall back to the base field. */
+export type LocalizedText = Record<string, string>;
+export const MAX_PLAN_HIGHLIGHTS = 12;
+export const MAX_PLAN_HIGHLIGHT_LENGTH = 200;
 
 /** Plan record as stored and as returned by `/management/plans`. */
 export interface SubscriptionPlan<TDate = string> {
@@ -200,6 +221,17 @@ export interface SubscriptionPlan<TDate = string> {
   features: Record<string, boolean>;
   quotas: Record<string, number>;
   prices: PlanPrice[];
+  /** Presentation (always present in server responses): emphasised card on the pricing page. */
+  featured?: boolean;
+  /** Short label on the card ("Most popular"), or null. */
+  badge?: string | null;
+  /** Bullet points of the card (at most 12, 200 characters each). */
+  highlights?: string[];
+  nameI18n?: LocalizedText;
+  descriptionI18n?: LocalizedText;
+  badgeI18n?: LocalizedText;
+  /** Locale → complete localized highlight list (replaces `highlights` for that locale). */
+  highlightsI18n?: Record<string, string[]>;
   /** Incremented by every write; send it back as `expectedRevision` to detect concurrent edits. */
   revision: number;
   createdAt: TDate;
@@ -217,6 +249,13 @@ export interface SubscriptionPlanWriteBody {
   quotas?: Record<string, number>;
   /** Replaces the whole price list when present. Amounts must be decimal strings. */
   prices?: PlanPrice[];
+  featured?: boolean;
+  badge?: string | null;
+  highlights?: string[];
+  nameI18n?: LocalizedText;
+  descriptionI18n?: LocalizedText;
+  badgeI18n?: LocalizedText;
+  highlightsI18n?: Record<string, string[]>;
   /** PUT only: rejects with 409 when the plan changed since this revision was read. */
   expectedRevision?: number;
 }
@@ -232,16 +271,115 @@ export interface PublicPlanPrice {
   purchasable: boolean;
   /** Provider ids that can sell this price now. */
   providers: string[];
+  /** Credits granted per paid period (0 = none). */
+  credits: number;
+  creditExpiry: PlanCreditExpiry;
 }
 export interface PublicPlan {
   id: string;
   slug: string;
+  /** Localized for `?locale=` when the plan has a translation, else the base text. */
   name: string;
   description: string | null;
   order: number;
   features: Record<string, boolean>;
   quotas: Record<string, number>;
   prices: PublicPlanPrice[];
+  featured: boolean;
+  badge: string | null;
+  highlights: string[];
+  /** True when the authenticated caller's current, active plan term is this plan (false for guests). */
+  current: boolean;
+}
+
+// ─── Credit packs ────────────────────────────────────────────────────────────
+
+/** One price of a credit pack (one-time payment). Unique per pack by currency. */
+export interface CreditPackPrice {
+  currency: string;
+  /** Exact decimal string in major units, formatted for the currency. */
+  amount: string;
+  /** Payment provider id → catalog reference that sells this price. */
+  providerRefs: Record<string, string>;
+}
+
+/** Credit pack as stored and as returned by `/management/credit-packs`. */
+export interface CreditPack<TDate = string> {
+  id: string;
+  slug: string;
+  title: string;
+  titleI18n: LocalizedText;
+  description: string | null;
+  descriptionI18n: LocalizedText;
+  /** Credits granted per purchase (1 … 2147483647). */
+  credits: number;
+  /** Days until the granted credits expire; null never expires. */
+  expiresInDays: number | null;
+  /** Listed (true) or draft/unlisted (false). */
+  status: boolean;
+  order: number;
+  prices: CreditPackPrice[];
+  /** Incremented by every write; send it back as `expectedRevision` to detect concurrent edits. */
+  revision: number;
+  createdAt: TDate;
+  updatedAt: TDate;
+}
+
+/** Body of `POST /management/credit-packs` and `PUT /management/credit-packs/:id` (PUT fields optional). */
+export interface CreditPackWriteBody {
+  slug?: string;
+  title?: string;
+  titleI18n?: LocalizedText;
+  description?: string | null;
+  descriptionI18n?: LocalizedText;
+  credits?: number;
+  expiresInDays?: number | null;
+  status?: boolean;
+  order?: number;
+  /** Replaces the whole price list when present. */
+  prices?: CreditPackPrice[];
+  /** PUT only: 409 when the pack changed since this revision was read. */
+  expectedRevision?: number;
+}
+
+export interface PublicCreditPackPrice {
+  currency: string;
+  amount: string;
+  /** Checkout offer id (`POST /billing/orders`), or null when nothing can sell this price. */
+  offerId: string | null;
+  purchasable: boolean;
+  providers: string[];
+}
+export interface PublicCreditPack {
+  id: string;
+  slug: string;
+  title: string;
+  description: string | null;
+  credits: number;
+  expiresInDays: number | null;
+  order: number;
+  prices: PublicCreditPackPrice[];
+}
+
+/** Checkout provider choice (the `billing` product policy). */
+export interface PublicBillingCheckoutPolicy {
+  /** Provider preselected (or the only one used when choice is off); null = first available. */
+  defaultProvider: string | null;
+  allowProviderChoice: boolean;
+}
+
+/** `GET /billing/plans[?currency=USD][&locale=en]`. */
+export interface PublicPricingCatalog {
+  plans: PublicPlan[];
+  packs: PublicCreditPack[];
+  checkout: PublicBillingCheckoutPolicy;
+}
+
+/** `GET /billing/currencies`: every currency with at least one listed plan or pack price. */
+export interface PublicBillingCurrencies {
+  currencies: string[];
+  /** Suggested default: the most common currency among listed prices, or null when none. */
+  default: string | null;
 }
 
 // ─── User subscriptions (§8.3) ───────────────────────────────────────────────

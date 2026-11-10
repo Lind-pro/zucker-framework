@@ -52,7 +52,7 @@ test('loads credit batches and retains a usable mobile layout in Chinese', async
   await expect(page.getByRole('article')).toContainText('已过期'); await expect(page.getByRole('article')).toContainText('已到期购买积分');
   await expect(page.getByRole('article')).toContainText('有效期至');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  await page.screenshot({ path: '/private/tmp/zucker-credits-mobile-20261024.png', fullPage: true });
+  await page.screenshot({ path: test.info().outputPath('credits-mobile.png'), fullPage: true });
 });
 
 test('offers retry after read failure and distinguishes a real empty account', async ({ page }) => {
@@ -66,7 +66,7 @@ test('offers retry after read failure and distinguishes a real empty account', a
   await expect(page.getByRole('heading', { name: 'No transactions yet' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'View plans', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Next', exact: true })).toBeDisabled();
-  await page.screenshot({ path: '/private/tmp/zucker-credits-desktop-20261024.png', fullPage: true });
+  await page.screenshot({ path: test.info().outputPath('credits-desktop.png'), fullPage: true });
 });
 
 test('explains per-batch frozen credits on desktop and mobile', async ({ page }) => {
@@ -103,5 +103,5 @@ test('separates refund-pending credits from frozen and spendable sources in Engl
   await expect(card).toContainText('可用积分0'); await expect(card).toContainText('冻结积分20'); await expect(card).toContainText('退款待处理额度60');
   await expect(page.getByText('退款回收尚未处理完成，暂时不可用；不与已冻结积分重复计算。')).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await page.screenshot({ path: '/private/tmp/zucker-refund-blocked-credit-mobile.png', fullPage: true });
+  await page.screenshot({ path: test.info().outputPath('refund-blocked-credit-mobile.png'), fullPage: true });
 });

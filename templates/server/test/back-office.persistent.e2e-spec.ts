@@ -108,7 +108,7 @@ run('back office plans, subscriptions, entitlements, quota and mail (PostgreSQL)
     await api('post', '/management/plans').send(pro).expect(409);
     // One provider reference sells one price across all plans.
     await api('post', '/management/plans').send({ ...pro, slug: 'pro-2', prices: [pro.prices[1]] }).expect(409);
-    expect((await request(f.app.getHttpServer()).get('/api/billing/plans').expect(200)).body).toEqual([]);
+    expect((await request(f.app.getHttpServer()).get('/api/billing/plans').expect(200)).body.plans).toEqual([]);
     await api('patch', `/management/plans/${proId}/status`).send({ status: 'yes' }).expect(400);
     expect((await api('patch', `/management/plans/${proId}/status`).send({ status: true }).expect(200)).body).toMatchObject({ status: true, revision: 1 });
     const updated = (await api('put', `/management/plans/${proId}`).send({ name: 'Pro plan', description: 'Synthetic', expectedRevision: 1 }).expect(200)).body;
@@ -116,13 +116,13 @@ run('back office plans, subscriptions, entitlements, quota and mail (PostgreSQL)
     // A second editor still holding revision 1 cannot overwrite that edit.
     const stale = await api('put', `/management/plans/${proId}`).send({ name: 'Lost edit', expectedRevision: 1 }).expect(409);
     expect(stale.body).toMatchObject({ code: 'conflict' });
-    const listed = (await request(f.app.getHttpServer()).get('/api/billing/plans').expect(200)).body;
+    const listed = (await request(f.app.getHttpServer()).get('/api/billing/plans').expect(200)).body.plans;
     // Stripe is not configured here, so nothing can sell these prices.
     expect(listed).toEqual([expect.objectContaining({ slug: 'pro', name: 'Pro plan',
       prices: [expect.objectContaining({ interval: 'month', amount: '19.90', purchasable: false, offerId: null, providers: [] }),
         expect.objectContaining({ interval: 'year', amount: '199.00', purchasable: false })] })]);
     expect(JSON.stringify(listed)).not.toContain('price_Pro');
-    expect((await request(f.app.getHttpServer()).get('/api/billing/plans?currency=EUR').expect(200)).body[0].prices).toEqual([]);
+    expect((await request(f.app.getHttpServer()).get('/api/billing/plans?currency=EUR').expect(200)).body.plans[0].prices).toEqual([]);
     await api('get', '/management/plans/missing').expect(404);
     const draft = (await api('post', '/management/plans').send({ slug: 'draft', name: 'Draft',
       prices: [{ interval: 'month', currency: 'JPY', amount: '0' }] }).expect(201)).body;
@@ -136,7 +136,7 @@ run('back office plans, subscriptions, entitlements, quota and mail (PostgreSQL)
       features: { projects: true }, quotas: { projects_per_month: 1 },
       prices: [{ interval: 'one_time', currency: 'USD', amount: '30.00', termDays: 30, providerRefs: { paypal: 'synthetic-pass' } },
         { interval: 'lifetime', currency: 'USD', amount: '99.00', providerRefs: { paypal: 'synthetic-lifetime' } }] }).expect(201)).body;
-    const priceOf = async () => ((await request(f.app.getHttpServer()).get('/api/billing/plans').expect(200)).body as Array<{
+    const priceOf = async () => ((await request(f.app.getHttpServer()).get('/api/billing/plans').expect(200)).body.plans as Array<{
       slug: string; prices: Array<{ interval: string; amount: string; offerId: string | null; purchasable: boolean }> }>)
       .find(plan => plan.slug === 'pass')!.prices.find(price => price.interval === 'one_time')!;
     expect(await priceOf()).toMatchObject({ amount: '30.00', purchasable: true, offerId: `plan:${pass.id}:one_time:USD` });
@@ -427,7 +427,7 @@ run('back office plans, subscriptions, entitlements, quota and mail (PostgreSQL)
       { id: 'pack', title: 'Credit pack', version: 'v1', mode: 'payment', amount: '5.00', currency: 'USD', credits: 10, providers: { stripe: 'price_Pack' } },
     ])));
     expect(seeds).toEqual([expect.objectContaining({ slug: 'starter', status: true, features: {}, quotas: {},
-      prices: [{ interval: 'month', currency: 'USD', amount: '5.00', termDays: null, providerRefs: { stripe: 'price_Starter' } }] })]);
+      prices: [{ interval: 'month', currency: 'USD', amount: '5.00', termDays: null, credits: 10, creditExpiry: null, providerRefs: { stripe: 'price_Starter' } }] })]);
     await createAdministrator(f.database, { username: 'seedadmin', email: 'seed@example.invalid', password: f.password }, { plans: seeds });
     await f.database.model('subscriptionPlans').updateMany({ where: { slug: 'starter' }, data: { name: 'Edited' } });
     await createAdministrator(f.database, { username: 'seedadmin2', email: 'seed2@example.invalid', password: f.password }, { plans: seeds });

@@ -1,11 +1,6 @@
-import type { ReferralProvider, SiteReferral } from '@zucker-framework/fe-site';
+import type { SiteReferral } from '@zucker-framework/fe-site';
 
 export interface BillingMoney { amount: string; currency: string }
-export interface BillingProvider { id: string; requiresCapture: boolean; referralProviders: ReferralProvider[]; grantBasis?: 'period' | 'payment' }
-export interface BillingOffer {
-  id: string; title: string; mode: 'payment' | 'subscription'; money: BillingMoney;
-  credits: number; expiresInDays: number | null; providers: BillingProvider[];
-}
 export interface CheckoutOrder {
   id: string; offerId: string; providerId: string; title: string; mode: 'payment' | 'subscription'; money: BillingMoney;
   state: 'unknown' | 'pending' | 'requires_capture' | 'paid' | 'unpaid';

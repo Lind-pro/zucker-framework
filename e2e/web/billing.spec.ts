@@ -10,6 +10,16 @@ const order = { id: orderId, offerId: offer.id, providerId: 'stripe', title: off
   state: 'pending', creationState: 'created', captureState: 'idle', checkoutUrl: null,
   fulfilledAt: null, createdAt: '2026-10-24T01:00:00.000Z', subscriptionId: null };
 const paid = { ...order, state: 'paid', fulfilledAt: '2026-10-24T01:01:00.000Z' };
+/**
+ * GET /billing/plans (the pricing page). The page renders the anonymous catalog on the Next server;
+ * with no Server behind `next dev` that read fails, so the browser reads /api/billing/plans itself
+ * (and signed-in visitors always re-read it with their session) — which page.route can answer.
+ */
+const pricingCatalog = (title = offer.title) => ({ plans: [], checkout: { defaultProvider: 'stripe', allowProviderChoice: true },
+  packs: [{ id: 'pack-standard', slug: 'standard', title, description: null, credits: 100, expiresInDays: 30, order: 0,
+    prices: [{ amount: '29.00', currency: 'USD', offerId: offer.id, purchasable: true, providers: ['stripe', 'paypal'] }] }] });
+const emptyCatalog = { plans: [], packs: [], checkout: { defaultProvider: null, allowProviderChoice: true } };
+const buyButton = (page: Page) => page.locator('[data-pack="standard"]').getByRole('button', { name: 'Buy now' });
 const envelope = (route: Route, result: unknown, status = 200, headers: Record<string, string> = {}) => route.fulfill({
   status, contentType: 'application/json', headers, body: JSON.stringify({ status, message: status === 200 ? 'success' : 'Synthetic request failure', result }),
 });
@@ -77,29 +87,36 @@ async function noBillingScripts(page: Page) {
 
 test('public catalog has recoverable failure and an honest empty state', async ({ page }) => {
   let fail = true;
-  await page.route('**/api/billing/catalog', route => envelope(route, [], fail ? 503 : 200));
+  await page.route('**/api/billing/plans**', route => envelope(route, emptyCatalog, fail ? 503 : 200));
   await page.goto('/en/pricing');
   await expect(page.getByRole('main').getByRole('alert')).toHaveText('Plans could not be loaded. Try again.');
   fail = false; await page.getByRole('button', { name: 'Retry', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'No plans are available yet' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Continue to checkout' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Buy now' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Subscribe' })).toHaveCount(0);
 });
 
 test('checkout retries retain one key across reload and send only server selections and supported referral', async ({ page, context, baseURL }) => {
+  // The referral cookie comes from the Affonso site connection, which the web server only renders when
+  // started with these variables (Playwright's webServer inherits this process environment).
+  test.skip(process.env.SITE_CONFIGURATION_SOURCE !== 'environment' || process.env.SITE_CONNECTIONS_ENABLED !== 'true'
+    || process.env.AFFONSO_ENABLED !== 'true' || !process.env.AFFONSO_PROGRAM_ID || !process.env.AFFONSO_COOKIE_DURATION_DAYS,
+    'Requires the web server to run with SITE_CONFIGURATION_SOURCE=environment, SITE_CONNECTIONS_ENABLED=true, AFFONSO_ENABLED=true, '
+      + 'a synthetic AFFONSO_PROGRAM_ID and AFFONSO_COOKIE_DURATION_DAYS (1-365)');
   await session(context, baseURL);
   const attempts: Array<{ key: string | undefined; body: Record<string, unknown> }> = [];
-  await page.route('**/api/billing/catalog', route => envelope(route, [offer]));
+  await page.route('**/api/billing/plans**', route => envelope(route, pricingCatalog()));
   await page.route('**/api/billing/orders', route => {
     attempts.push({ key: route.request().headers()['idempotency-key'], body: route.request().postDataJSON() });
     return attempts.length === 1 ? envelope(route, null, 503) : envelope(route, { ...order, checkoutUrl: 'https://payments.example.test/checkout' });
   });
   await page.goto('/en/pricing');
-  await expect(page.getByText('USD 29.00', { exact: true })).toBeVisible();
+  await expect(page.locator('[data-pack="standard"]')).toContainText('$29.00');
   await expect.poll(() => page.evaluate(() => document.cookie)).toContain('affonso_referral=synthetic_referral');
-  await page.getByRole('button', { name: 'Continue to checkout' }).click();
+  await buyButton(page).click();
   await expect(page.getByRole('main').getByRole('alert')).toContainText('resume the existing attempt');
   await page.reload();
-  await page.getByRole('button', { name: 'Continue to checkout' }).click();
+  await buyButton(page).click();
   await expect(page.getByRole('heading', { name: 'Synthetic checkout' })).toBeVisible();
   expect(attempts).toHaveLength(2); expect(attempts[0].key).toMatch(/^[a-f0-9]{32}$/);
   expect(attempts[1].key).toBe(attempts[0].key);
@@ -109,15 +126,15 @@ test('checkout retries retain one key across reload and send only server selecti
 
 test('unsupported referral stays out of PayPal purchase and public fallback opens a fresh billing document', async ({ page, context, baseURL }) => {
   await session(context, baseURL); const writes: unknown[] = [];
-  await page.route('**/api/billing/catalog', route => envelope(route, [offer]));
+  await page.route('**/api/billing/plans**', route => envelope(route, pricingCatalog()));
   await page.route('**/api/billing/orders', route => { writes.push(route.request().postDataJSON()); return envelope(route, { ...order, providerId: 'paypal' }); });
   await page.route(`**/api/billing/orders/${orderId}`, route => envelope(route, { ...order, providerId: 'paypal' }));
   await page.route(`**/api/billing/orders/${orderId}/confirm`, route => envelope(route, { ...order, providerId: 'paypal' }));
   await page.goto('/en/pricing');
   await page.getByLabel('Payment method').selectOption('paypal');
   await page.evaluate(() => { (window as unknown as Record<string, unknown>).__publicDocument = true; });
-  await page.getByRole('button', { name: 'Continue to checkout' }).click();
-  await expect(page).toHaveURL(new RegExp(`/en/billing/return\\?order=${orderId}`));
+  await buyButton(page).click();
+  await expect(page).toHaveURL(new RegExp(`/billing/return\\?order=${orderId}`));
   await expect(page.getByRole('heading', { name: 'Payment status' })).toBeVisible();
   expect(await page.evaluate(() => (window as unknown as Record<string, unknown>).__publicDocument)).toBeUndefined();
   expect(writes).toEqual([{ offerId: 'standard', providerId: 'paypal' }]);
@@ -131,12 +148,12 @@ test('an empty client store with a valid refresh cookie retains the server-owned
   await page.route('**/api/authorize/refresh', route => { refreshes++; return envelope(route, { access_token: 'fresh-billing-token' }); });
   await page.route('**/api/authorize/me', route => route.request().headers().authorization === 'Bearer fresh-billing-token'
     ? envelope(route, { id: 'synthetic-user', username: 'synthetic', permissions: [] }) : envelope(route, null, 401));
-  await page.route('**/api/billing/catalog', route => envelope(route, [offer]));
+  await page.route('**/api/billing/plans**', route => envelope(route, pricingCatalog()));
   await page.route('**/api/billing/orders', route => {
     keys.push(route.request().headers()['idempotency-key']);
     return keys.length === 1 ? envelope(route, null, 503) : envelope(route, { ...order, checkoutUrl: 'https://payments.example.test/checkout' });
   });
-  await page.goto('/en/pricing'); await page.getByRole('button', { name: 'Continue to checkout' }).click();
+  await page.goto('/en/pricing'); await buyButton(page).click();
   await expect(page.getByRole('main').getByRole('alert')).toContainText('resume the existing attempt');
   expect(refreshes).toBe(1);
   const storedScopes = await page.evaluate(() => Object.keys(sessionStorage));
@@ -147,7 +164,7 @@ test('an empty client store with a valid refresh cookie retains the server-owned
     stored.state.user = { id: 'synthetic-user', username: 'synthetic' };
     localStorage.setItem('auth-storage', JSON.stringify(stored));
   });
-  await page.reload(); await page.getByRole('button', { name: 'Continue to checkout' }).click();
+  await page.reload(); await buyButton(page).click();
   await expect(page.getByRole('heading', { name: 'Synthetic checkout' })).toBeVisible();
   expect(keys).toHaveLength(2); expect(keys[1]).toBe(keys[0]); expect(refreshes).toBe(1);
 });
@@ -260,11 +277,11 @@ test('anonymous billing navigation signs in and returns to the same order withou
   });
   await page.route(`**/api/billing/orders/${orderId}`, route => { orderReads++; return envelope(route, paid); });
   await page.goto(`/en/billing/return?order=${orderId}`);
-  await expect(page).toHaveURL(/\/en\/login\?redirect=/); expect(orderReads).toBe(0);
+  await expect(page).toHaveURL(/\/login\?redirect=/); expect(orderReads).toBe(0);
   await page.getByLabel('Username', { exact: true }).fill('synthetic');
   await page.getByLabel('Password', { exact: true }).fill('Synthetic123');
   await page.getByRole('button', { name: 'Sign In', exact: true }).click();
-  await expect(page).toHaveURL(new RegExp(`/en/billing/return\\?order=${orderId}`));
+  await expect(page).toHaveURL(new RegExp(`/billing/return\\?order=${orderId}`));
   await expect(page.getByText('Completed', { exact: true })).toBeVisible();
   await noBillingScripts(page); expect(externalRequests.get(context)).toEqual([]);
 });
@@ -272,13 +289,14 @@ test('anonymous billing navigation signs in and returns to the same order withou
 test('Chinese pricing and order status retain usable layout and keyboard controls', async ({ page, context, baseURL }) => {
   await session(context, baseURL);
   await context.addCookies([{ name: 'NEXT_LOCALE', value: 'zh', url: baseURL!, sameSite: 'Lax' }]);
-  await page.route('**/api/billing/catalog', route => envelope(route, [{ ...offer, title: '标准积分套餐' }]));
+  await page.route('**/api/billing/plans**', route => envelope(route, pricingCatalog('标准积分套餐')));
   await page.route(`**/api/billing/orders/${orderId}`, route => envelope(route, { ...paid, title: '标准积分套餐' }));
-  await page.goto('/pricing');
-  await expect(page.getByRole('heading', { name: '套餐与积分' })).toBeVisible();
-  await page.getByLabel('付款方式').focus(); await expect(page.getByLabel('付款方式')).toBeFocused();
+  await page.goto('/zh/pricing');
+  await expect(page.getByRole('heading', { level: 1, name: '价格' })).toBeVisible();
+  await expect(page.locator('[data-pack="standard"]')).toContainText('标准积分套餐');
+  await page.getByLabel('支付方式').focus(); await expect(page.getByLabel('支付方式')).toBeFocused();
   await page.screenshot({ path: test.info().outputPath('pricing-zh.png'), fullPage: true });
-  await page.goto(`/billing/return?order=${orderId}`);
+  await page.goto(`/zh/billing/return?order=${orderId}`);
   await expect(page.getByText('已完成', { exact: true })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.evaluate(() => new Promise<void>(resolve => { window.scrollTo(0, 0); requestAnimationFrame(() => requestAnimationFrame(() => resolve())); }));
@@ -310,7 +328,7 @@ for (const providerId of ['stripe', 'paypal', 'creem']) {
 for (const state of ['paid', 'unpaid']) {
   test(`verified ${state} provider return retires the attempt before a new explicit purchase`, async ({ page, context, baseURL }) => {
     await session(context, baseURL); const keys: string[] = []; const nextId = 'b'.repeat(64);
-    await page.route('**/api/billing/catalog', route => envelope(route, [offer]));
+    await page.route('**/api/billing/plans**', route => envelope(route, pricingCatalog()));
     await page.route('**/api/billing/orders', route => {
       keys.push(route.request().headers()['idempotency-key']);
       return envelope(route, { ...order, id: keys.length === 1 ? orderId : nextId });
@@ -319,10 +337,10 @@ for (const state of ['paid', 'unpaid']) {
     await page.route(`**/api/billing/orders/${orderId}/confirm`, route => envelope(route, state === 'paid' ? paid : { ...order, state: 'unpaid' }));
     await page.route(`**/api/billing/orders/${nextId}`, route => envelope(route, { ...order, id: nextId }));
     await page.route(`**/api/billing/orders/${nextId}/confirm`, route => envelope(route, { ...order, id: nextId }));
-    await page.goto('/en/pricing'); await page.getByRole('button', { name: 'Continue to checkout' }).click();
+    await page.goto('/en/pricing'); await buyButton(page).click();
     await expect(page.getByText(state === 'paid' ? 'Completed' : 'Not paid', { exact: true })).toBeVisible();
     await page.getByRole('link', { name: 'View plans', exact: true }).click();
-    await page.getByRole('button', { name: 'Continue to checkout' }).click();
+    await buyButton(page).click();
     await expect(page).toHaveURL(new RegExp(`order=${nextId}`));
     expect(keys).toHaveLength(2); expect(keys[0]).toMatch(/^[a-f0-9]{32}$/); expect(keys[1]).not.toBe(keys[0]);
   });

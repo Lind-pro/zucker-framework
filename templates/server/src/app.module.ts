@@ -28,7 +28,10 @@ import { ZuckerConfigModule } from '@zucker-framework/config';
 import { ZuckerDictionaryModule } from '@zucker-framework/dictionary';
 import { ZuckerCacheModule } from '@zucker-framework/cache';
 import { ZuckerRateLimiterModule } from '@zucker-framework/rate-limiter';
-import { APP_RATE_LIMITERS } from './rate-limits';
+import { APP_RATE_LIMITERS, composeRateLimiters } from './rate-limits';
+import { PolicyModule } from './policy/policy.module';
+import { ACCOUNT_POLICIES } from './accounts/account.policy';
+import { BILLING_POLICIES } from './billing/billing.policy';
 import { ZuckerStorageModule } from '@zucker-framework/storage';
 import { FilesModule } from './files/files.module';
 import { storageOptionsFromEnvironment } from './files/files.config';
@@ -68,6 +71,8 @@ if (!jwtSecret || jwtSecret.length < 32) throw new Error('JWT_SECRET must be an 
     // ============ Layer 2: 框架核心 ============
     ZuckerCrudModule.forRootAsync({ useFactory: () => new ApplicationDatabase(databaseUrl) }),
     RuntimeSettingsModule,
+    // Hot-applied product policies; features append their exported definitions to `policies`.
+    PolicyModule.forRoot({ policies: [...ACCOUNT_POLICIES, ...BILLING_POLICIES] }),
     ZuckerAuthModule.forRoot({ jwtSecret, registerControllers: false }),
     AccountModule,
     AccountAvatarModule,
@@ -90,7 +95,8 @@ if (!jwtSecret || jwtSecret.length < 32) throw new Error('JWT_SECRET must be an 
     ZuckerRateLimiterModule.forRoot({
       // Controllers run this guard after authentication; a global copy would consume twice.
       globalGuard: false,
-      limiters: { ...APP_RATE_LIMITERS },
+      // Feature fragments are appended here: composeRateLimiters(APP_RATE_LIMITERS, FEATURE_RATE_LIMITERS, ...).
+      limiters: { ...composeRateLimiters(APP_RATE_LIMITERS) },
       // Shared budgets across replicas/restarts; requires the optional `ioredis` package. Memory otherwise.
       ...(process.env.RATE_LIMIT_REDIS_URL?.trim() ? { redis: { url: process.env.RATE_LIMIT_REDIS_URL.trim() } } : {}),
     }),

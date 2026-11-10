@@ -1,5 +1,7 @@
 import { createCookieRefresh, createHttpClient } from "@zucker-framework/fe-http-client";
 import { useAuthStore } from "./stores/auth-store";
+import { DEFAULT_LOCALE, isLocale } from "./site/locales";
+import { localizedPath } from "./site/url";
 
 const clearLocalAuth = () => {
   useAuthStore.getState().logout();
@@ -18,9 +20,10 @@ export const httpClient = createHttpClient({
   onUnauthorized: () => {
     clearLocalAuth();
     if (typeof window === "undefined") return;
+    // The default locale is unprefixed (/login); the other one keeps its prefix (/zh/login).
     const segment = window.location.pathname.split("/")[1];
-    const locale = segment === "en" ? "en" : "zh";
-    const login = new URL(`/${locale}/login`, window.location.origin);
+    const locale = isLocale(segment) ? segment : DEFAULT_LOCALE;
+    const login = new URL(localizedPath(locale, "/login"), window.location.origin);
     login.searchParams.set("redirect", window.location.pathname + window.location.search);
     window.location.replace(login.href);
   },

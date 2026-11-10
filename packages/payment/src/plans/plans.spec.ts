@@ -80,7 +80,9 @@ describe('plan write validation', () => {
     expect(validatePlanWrite({ ...basic, prices: [{ ...monthly, amount: '9.9' }, { interval: 'one_time', currency: 'JPY', amount: '500', termDays: 30 }] },
       { validateGrant, partial: false })).toEqual({
       ...basic, description: null, status: false, order: 0,
-      prices: [{ ...monthly, termDays: null }, { interval: 'one_time', currency: 'JPY', amount: '500', termDays: 30, providerRefs: {} }],
+      featured: false, badge: null, highlights: [], nameI18n: {}, descriptionI18n: {}, badgeI18n: {}, highlightsI18n: {},
+      prices: [{ ...monthly, termDays: null, credits: 0, creditExpiry: null },
+        { interval: 'one_time', currency: 'JPY', amount: '500', termDays: 30, providerRefs: {}, credits: 0, creditExpiry: null }],
     });
   });
   it('collects every invalid field', () => {
@@ -183,7 +185,7 @@ describe('PlanCatalogService', () => {
     expect(await service.resolveOffer(offer, 'stripe')).toBeNull();
     await service.setStatus(plan.id, true);
     expect(await service.resolveOffer(offer, 'stripe')).toMatchObject({ mode: 'subscription',
-      snapshot: { planId: plan.id, slug: 'basic', revision: 1, interval: 'month', currency: 'USD', amount: '9.90', termDays: null, providerId: 'stripe', providerRef: 'price_M1' } });
+      snapshot: { planId: plan.id, slug: 'basic', revision: 1, interval: 'month', currency: 'USD', amount: '9.90', termDays: null, providerId: 'stripe', providerRef: 'price_M1', credits: 0, creditExpiry: null } });
     expect(await service.resolveOffer(offer, 'creem')).toBeNull();
     // A zero amount is never a checkout offer.
     expect(await service.resolveOffer(planOfferId(plan.id, 'lifetime', 'EUR'), 'stripe')).toBeNull();
@@ -194,6 +196,11 @@ describe('PlanCatalogService', () => {
     const snapshot = (await service.resolveOffer(offer, 'stripe'))!.snapshot;
     expect(readPlanPriceSnapshot(JSON.parse(JSON.stringify(snapshot)))).toEqual(snapshot);
     expect(readPlanPriceSnapshot({ ...snapshot, amount: 11 })).toBeNull();
+    // Orders frozen before plans granted credits read as granting none; corrupt credit fields are refused.
+    const { credits: _credits, creditExpiry: _expiry, ...legacy } = snapshot;
+    expect(readPlanPriceSnapshot(legacy)).toEqual({ ...legacy, credits: 0, creditExpiry: null });
+    expect(readPlanPriceSnapshot({ ...snapshot, credits: -1 })).toBeNull();
+    expect(readPlanPriceSnapshot({ ...snapshot, creditExpiry: 'forever' })).toBeNull();
     expect(planCheckoutMode('year')).toBe('subscription');
   });
 });

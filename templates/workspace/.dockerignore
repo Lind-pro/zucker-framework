@@ -1,0 +1,15 @@
+# Build context is the workspace root. Never send local secrets, dependencies or build output.
+**/.env*
+!**/.env.example
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+**/.cache
+**/coverage
+**/*.tsbuildinfo
+**/uploads
+**/src/generated
+.git
+.github
+docker-compose*.yml

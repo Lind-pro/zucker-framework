@@ -1,3 +1,5 @@
 /* Tailwind v4 entry: the fe-admin stylesheet adds its theme tokens and scans the package's components. */
 @import "tailwindcss";
 @import "@zucker-framework/fe-admin/styles.css";
+/* The content editor previews site blocks with fe-blocks' default theme (Tailwind classes in its dist). */
+@source "../node_modules/@zucker-framework/fe-blocks/dist";

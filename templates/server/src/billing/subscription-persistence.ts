@@ -4,7 +4,7 @@ import { HostedCheckoutError } from '@zucker-framework/payment';
 import type { HostedCheckoutOffer, HostedCheckoutOrder, SubscriptionCyclePersistence,
   SubscriptionCycleReceipt, SubscriptionEntitlementBinding } from '@zucker-framework/payment';
 import { ApplicationDatabase, type ApplicationTransaction } from '../database';
-import { createCreditLedger, validateCreditFulfillmentPolicy } from './ledger';
+import { createCreditLedger, creditExpiresAt, paidPeriodEnd, validateCreditFulfillmentPolicy } from './ledger';
 import { refundCycleGrant } from './refunds/refunds.grant';
 import { assertPlanFulfillment, type BillingExtensions } from './billing-extensions';
 
@@ -75,8 +75,10 @@ export function createSubscriptionCyclePersistence(database: ApplicationDatabase
       insertReceipt: async receipt => { await tx.model('billingSubscriptionCycles').create({ data: receipt }); },
       fulfill: async receipt => {
         const policy = validateCreditFulfillmentPolicy(receipt.policy);
-        const expiresAt = policy.expiresInDays === null ? null : new Date(receipt.paidAt.getTime() + policy.expiresInDays * 86_400_000);
-        if (expiresAt && !Number.isFinite(expiresAt.getTime())) throw new TypeError('Credit expiry exceeds the supported date range');
+        // Plan credits with `creditExpiry: 'period'` end with this paid cycle (the same period the plan
+        // write-back records); otherwise `expiresInDays` after payment, or never.
+        const expiresAt = creditExpiresAt(policy, receipt.paidAt,
+          () => paidPeriodEnd(receipt.policy, receipt.paidAt, receipt.periodEnd));
         const lotCount = await tx.model('creditLots').count({ where: { source: 'subscription', sourceId: receipt.id } });
         const events = await tx.model('billingOutbox').count({ where: { kind: 'billing.subscription-credit-fulfilled', aggregateId: receipt.id } });
         if (lotCount || events) conflict();

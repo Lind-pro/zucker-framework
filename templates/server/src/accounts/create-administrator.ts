@@ -19,12 +19,33 @@ export const BACK_OFFICE_PERMISSIONS: readonly string[] = [
   'mail:query', 'mail:update',
 ];
 
+/**
+ * Starter data contributed by features (plans and credit packs, CMS pages, ...). Each seed runs in the
+ * administrator-setup transaction and must be idempotent: create only what is missing, never change
+ * rows an operator may already have edited. The integration WP appends feature seeds to
+ * `STARTER_DATA_SEEDS`; features export their seed from their own folder.
+ */
+export interface StarterDataSeed {
+  /** Short stable name, used only in error messages. */
+  readonly name: string;
+  run(tx: DatabaseAdapter): Promise<void>;
+}
+export const STARTER_DATA_SEEDS: readonly StarterDataSeed[] = [];
+
+/** Runs the starter seeds in order on the caller's transaction. A failing seed aborts the whole setup. */
+export async function seedStarterData(tx: DatabaseAdapter, seeds: readonly StarterDataSeed[] = STARTER_DATA_SEEDS): Promise<void> {
+  for (const seed of seeds) {
+    try { await seed.run(tx); }
+    catch (error) { throw new Error(`Starter data seed ${seed.name} failed`, { cause: error }); }
+  }
+}
+
 /** Explicit owner setup only. This function is never reachable from public account HTTP routes. */
 export async function createAdministrator(
   db: DatabaseAdapter,
   input: { username: string; email: string; password: string },
   /** Initial plans (see planSeedsFromBillingCatalog); existing slugs are never changed. */
-  options: { plans?: readonly SubscriptionPlanWrite[] } = {},
+  options: { plans?: readonly SubscriptionPlanWrite[]; seeds?: readonly StarterDataSeed[] } = {},
 ): Promise<string> {
   const email = input.email.trim().toLowerCase();
   if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
@@ -75,6 +96,7 @@ export async function createAdministrator(
       if (!(await tx.model('permissions').findUnique({ where: { id: code } })))
         await tx.model('permissions').create({ data: { id: code, name: code, description: 'Seeded with the starter back office' } });
     await seedPlans(tx, options.plans ?? []);
+    await seedStarterData(tx, options.seeds ?? STARTER_DATA_SEEDS);
     return user.id;
   });
 }

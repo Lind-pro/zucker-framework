@@ -1,13 +1,15 @@
 "use client";
 import { useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
-import { Link } from "@/i18n/navigation";
+import { Link, useRouter } from "@/i18n/navigation";
 import { accountPublicClient } from "@/lib/http-client";
 import { AccountForm, buttonClass, FormMessage, inputClass } from "../account/_components/AccountForm";
-import { accountErrorKey } from "../account/_components/account-flow";
+import { accountErrorKey, registerOutcome } from "../account/_components/account-flow";
+import { establishSession } from "../account/_components/sign-in";
+import { captureUtmSource, readUtmSource } from "@/features/landing/utm";
 
 export default function RegisterPage() {
-  const t = useTranslations("auth"), locale = useLocale();
+  const t = useTranslations("auth"), locale = useLocale(), router = useRouter();
   const [form, setForm] = useState({ username: "", email: "", password: "", confirmPassword: "" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -19,11 +21,17 @@ export default function RegisterPage() {
         if (form.password !== form.confirmPassword) { setError(t("passwordMismatch")); return; }
         setLoading(true);
         try {
-          const result = await accountPublicClient.post<{ verificationRequired: boolean }>("/authorize/register", {
-            username: form.username, email: form.email, password: form.password, locale,
-          });
-          if (result.verificationRequired !== true) throw new Error("Unexpected account response");
-          setRegistered(true); setForm({ username: "", email: "", password: "", confirmPassword: "" });
+          // First-touch acquisition source (optional; the Server sanitises it again).
+          captureUtmSource(window.location.search);
+          const utm = readUtmSource();
+          const outcome = registerOutcome(await accountPublicClient.post<unknown>("/authorize/register", {
+            username: form.username, email: form.email, password: form.password, locale, ...(utm ? { utm } : {}),
+          }));
+          setForm({ username: "", email: "", password: "", confirmPassword: "" });
+          if (outcome.kind === "verify") { setRegistered(true); return; }
+          // Verification is off: the account exists and the server already opened its session.
+          await establishSession(outcome.token);
+          router.replace("/account");
         } catch (failure) { setError(t(accountErrorKey(failure, "registrationFailed"))); }
         finally { setLoading(false); }
       }}>

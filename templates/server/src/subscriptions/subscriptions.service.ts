@@ -7,14 +7,16 @@ import {
   counterSnapshot, isActiveTerm, type CounterSnapshot, type ResourceCharge, type ResolvedEntitlements,
 } from '@zucker-framework/credit';
 import {
-  PlanCatalogService, SubscriptionAssignmentService, planCheckoutMode, planOfferId, toMinorUnits,
+  PlanCatalogService, SubscriptionAssignmentService, localizedText, planCheckoutMode, planOfferId, toMinorUnits,
   type SubscriptionChange, type UserSubscriptionRecord,
 } from '@zucker-framework/payment';
 import {
   mapPortError, type QuotaReservationAdminPort, type UserSubscriptionAdminPort, type UserSubscriptionAssignment,
   type UserSubscriptionListQuery,
 } from '@zucker-framework/admin';
-import { CYCLE_FOR_INTERVAL, type EntitlementCatalogResponse, type PublicPlan } from '@zucker-framework/fe-types/back-office';
+import {
+  CYCLE_FOR_INTERVAL, type EntitlementCatalogResponse, type PublicBillingCurrencies, type PublicPlan, type PublicPricingCatalog,
+} from '@zucker-framework/fe-types/back-office';
 import { ApplicationDatabase, type ApplicationTransaction } from '../database';
 import type { CapturedQuotaInput, StoredQuotaReservation } from '../credits/quota.store';
 import { BillingService } from '../billing/billing.service';
@@ -25,6 +27,14 @@ import { createPlanQuotaStore, resourceChargeLookup } from './entitlement-quota'
 import { planFulfillmentHooks } from './payment-writeback';
 
 export const SUBSCRIPTION_OPTIONS = Symbol('SUBSCRIPTION_OPTIONS');
+/** Untrusted `?currency=`: an ISO 4217 code or nothing (unknown values never filter to an empty page). */
+function publicCurrency(value: unknown): string | undefined {
+  return typeof value === 'string' && /^[A-Z]{3}$/.test(value) ? value : undefined;
+}
+/** Untrusted `?locale=`: a locale tag or nothing. */
+function publicLocale(value: unknown): string | undefined {
+  return typeof value === 'string' && /^[a-z]{2,3}(-[A-Za-z0-9]{2,8}){0,2}$/.test(value) ? value : undefined;
+}
 /** Emitted (in-process, after commit) for administrator assignments and cancellations. */
 export const SUBSCRIPTION_CHANGED_EVENT = 'subscriptions.changed';
 export interface SubscriptionOptions { timeZone: string; reservationTtlMs: number }
@@ -126,20 +136,55 @@ export class SubscriptionsService implements UserSubscriptionAdminPort {
   /**
    * RFC 8.2 public plans: listed plans with every price (optionally one currency). A price is
    * purchasable when its amount is positive and an enabled provider can sell it; `offerId` is then
-   * the checkout offer for exactly this plan price.
+   * the checkout offer for exactly this plan price. `current` marks the plan of the caller's active
+   * term (`viewerId` from an optional bearer; always false for guests).
    */
-  async publicPlans(currency?: string): Promise<PublicPlan[]> {
-    const wanted = typeof currency === 'string' && /^[A-Z]{3}$/.test(currency) ? currency : undefined;
+  async publicPlans(currency?: string, locale?: string, viewerId?: string | null): Promise<PublicPlan[]> {
+    const wanted = publicCurrency(currency);
+    const language = publicLocale(locale);
+    const currentPlanId = viewerId ? await this.currentPlanId(viewerId) : null;
     return (await this.plans.list({ listedOnly: true })).map(plan => ({
-      id: plan.id, slug: plan.slug, name: plan.name, description: plan.description, order: plan.order,
+      id: plan.id, slug: plan.slug, name: localizedText(plan.name, plan.nameI18n, language),
+      description: localizedText(plan.description, plan.descriptionI18n, language), order: plan.order,
       features: plan.features, quotas: plan.quotas,
+      featured: plan.featured === true, badge: localizedText(plan.badge ?? null, plan.badgeI18n, language),
+      highlights: (language && plan.highlightsI18n?.[language]) || (language && plan.highlightsI18n?.[language.split('-')[0]]) || plan.highlights || [],
+      current: currentPlanId === plan.id,
       prices: plan.prices.filter(price => !wanted || price.currency === wanted).map(price => {
         const providers = toMinorUnits(price.amount, price.currency) > 0
           ? this.billing.catalog.planProviders(planCheckoutMode(price.interval), price.providerRefs) : [];
         return { interval: price.interval, currency: price.currency, amount: price.amount, termDays: price.termDays,
-          purchasable: providers.length > 0, offerId: providers.length ? planOfferId(plan.id, price.interval, price.currency) : null, providers };
+          purchasable: providers.length > 0, offerId: providers.length ? planOfferId(plan.id, price.interval, price.currency) : null, providers,
+          credits: price.credits ?? 0, creditExpiry: price.credits ? price.creditExpiry ?? null : null };
       }),
     }));
+  }
+
+  /** `GET /billing/plans`: listed plans, credit packs and the checkout provider policy. */
+  async pricing(currency?: string, locale?: string, viewerId?: string | null): Promise<PublicPricingCatalog> {
+    const [plans, packs, checkout] = await Promise.all([
+      this.publicPlans(currency, locale, viewerId),
+      this.billing.catalog.publicPacks(publicCurrency(currency), publicLocale(locale)),
+      this.billing.checkoutPolicy(),
+    ]);
+    return { plans, packs, checkout };
+  }
+
+  /** `GET /billing/currencies`: currencies of listed plan and pack prices, most common first suggested. */
+  async currencies(): Promise<PublicBillingCurrencies> {
+    const [plans, packs] = await Promise.all([this.plans.list({ listedOnly: true }), this.billing.catalog.publicPacks()]);
+    const counts = new Map<string, number>();
+    for (const price of [...plans.flatMap(plan => plan.prices), ...packs.flatMap(pack => pack.prices)])
+      counts.set(price.currency, (counts.get(price.currency) ?? 0) + 1);
+    const currencies = [...counts.keys()].sort();
+    const suggested = [...counts.entries()].sort(([a, x], [b, y]) => y - x || a.localeCompare(b))[0]?.[0] ?? null;
+    return { currencies, default: suggested };
+  }
+
+  /** Plan id of the user's active term, or null. */
+  private async currentPlanId(userId: string): Promise<string | null> {
+    const row = await this.database.model('userSubscriptions').findUnique({ where: { userId } }) as UserSubscriptionRecord | null;
+    return row && isActiveTerm(row, new Date()) ? row.planId : null;
   }
 
   private async current(userId: string, now: Date) {

@@ -77,7 +77,8 @@ describe('versioned public site document contract', () => {
     expect(() => validateSiteDocument({ ...input(), markdown: '界'.repeat(23000) })).toThrow(
       /64 KiB/,
     );
-    expect(() => validateSiteDocument({ ...input(), version: 2 })).toThrow();
+    expect(() => validateSiteDocument({ ...input(), version: 3 })).toThrow();
+    expect(() => validateSiteDocument({ ...input(), version: '2' })).toThrow();
     expect(() => validateSiteDocument({ ...input(), blocks: new Array(1) })).toThrow();
     expect(() =>
       validateSiteDocument({
@@ -105,5 +106,82 @@ describe('versioned public site document contract', () => {
     expect(() => resolveSiteTheme('x', ['editorial'])).toThrow();
     expect(resolveSiteColorMode('system')).toBe('system');
     expect(resolveSiteColorMode('unknown')).toBe('dark');
+  });
+  it('upgrades version 1 in memory without rewriting other fields', () => {
+    const v1 = input();
+    const result = validateSiteDocument(v1);
+    expect(result.version).toBe(2);
+    expect(result.blocks).toEqual(v1.blocks);
+    expect(validateSiteDocument(result)).toEqual(result);
+  });
+  it('keeps version 1 limited to version 1 block types and fields', () => {
+    const stats = { id: 'numbers', type: 'stats', heading: 'Numbers', items: [] };
+    expect(() => validateSiteDocument({ ...input(), blocks: [stats] })).toThrow(
+      'Unsupported site block',
+    );
+    expect(validateSiteDocument({ ...input(), version: 2, blocks: [stats] }).blocks[0]).toEqual({
+      ...stats,
+      enabled: true,
+      text: '',
+    });
+    const hero = { ...input().blocks[0], variant: 'split' };
+    expect(() => validateSiteDocument({ ...input(), blocks: [hero] })).toThrow('Unexpected field');
+    expect(
+      validateSiteDocument({ ...input(), version: 2, blocks: [hero] }).blocks[0],
+    ).toMatchObject({ variant: 'split' });
+  });
+  it('validates version 2 landing blocks, defaults and unsafe links', () => {
+    const doc = (block: Record<string, unknown>) => ({ ...input(), version: 2, blocks: [block] });
+    const pricing = { id: 'pricing', type: 'pricing', heading: 'Plans', plans: ['pro', 'team'] };
+    expect(validateSiteDocument(doc(pricing)).blocks[0]).toMatchObject({
+      plans: ['pro', 'team'],
+      showCreditPacks: false,
+    });
+    expect(validateSiteDocument(doc({ ...pricing, plans: 'all' })).blocks[0]).toMatchObject({
+      plans: 'all',
+    });
+    for (const plans of [[], ['Pro'], ['pro', 'pro'], 'some'])
+      expect(() => validateSiteDocument(doc({ ...pricing, plans }))).toThrow();
+    expect(() => validateSiteDocument(doc({ ...pricing, price: 10 }))).toThrow('Unexpected field');
+    const newsletter = {
+      id: 'news',
+      type: 'newsletter',
+      heading: 'News',
+      formAction: '/api/newsletter',
+      emailLabel: 'Email',
+      buttonLabel: 'Subscribe',
+    };
+    expect(validateSiteDocument(doc(newsletter)).blocks[0]).toMatchObject({
+      formAction: '/api/newsletter',
+    });
+    for (const formAction of [
+      'http://x.test/a',
+      'relative',
+      '#x',
+      'javascript:alert(1)',
+      '//x.test',
+    ])
+      expect(() => validateSiteDocument(doc({ ...newsletter, formAction }))).toThrow();
+    expect(
+      validateSiteDocument(doc({ id: 'blog', type: 'blog-list', heading: 'Blog' })).blocks[0],
+    ).toMatchObject({ limit: 3 });
+    expect(() =>
+      validateSiteDocument(doc({ id: 'blog', type: 'blog-list', heading: 'Blog', limit: 13 })),
+    ).toThrow();
+    const media = { id: 'video', type: 'media', kind: 'video', src: '/demo.mp4', alt: 'Demo' };
+    expect(validateSiteDocument(doc(media)).blocks[0]).toMatchObject({ heading: '', caption: '' });
+    expect(() => validateSiteDocument(doc({ ...media, src: 'data:video/mp4,x' }))).toThrow();
+    expect(() => validateSiteDocument(doc({ ...media, alt: '' }))).toThrow();
+    const logos = {
+      id: 'logos',
+      type: 'logo-cloud',
+      items: [{ name: 'Acme', image: { src: 'javascript:x', alt: '' } }],
+    };
+    try {
+      validateSiteDocument(doc(logos));
+      throw new Error('expected failure');
+    } catch (error) {
+      expect((error as { field: string }).field).toBe('blocks.0.items.0.image.src');
+    }
   });
 });

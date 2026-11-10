@@ -128,6 +128,24 @@ export {
   type OutboundUrlPolicy,
   type OutboundUrlRejectionReason,
 } from './outbound-url-policy';
+export {
+  assertPublicOutboundUrl,
+  classifyAddress,
+  createPinnedLookup,
+  createPublicFetch,
+  defaultHostResolver,
+  isInternalHostname,
+  isPublicAddress,
+  normaliseOutboundHost,
+  OutboundHostResolutionError,
+  pinnedFetch,
+  resolvePublicAddress,
+  type AddressClass,
+  type HostResolver,
+  type PublicOutboundDestination,
+  type PublicOutboundUrlOptions,
+  type ResolvedAddress,
+} from './outbound-address';
 
 export { SecretCipher, isSecureCiphertext, isLegacyCiphertext } from './secret-cipher';
 export type { SecretCipherOptions } from './secret-cipher';

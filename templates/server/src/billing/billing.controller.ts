@@ -1,6 +1,6 @@
 import { BadRequestException, Body, Controller, ForbiddenException, Get, HttpCode, HttpException, Param, Post, Query, Req, ServiceUnavailableException, UseGuards } from '@nestjs/common';
 import { Permissions, Public } from '@zucker-framework/auth';
-import { HostedCheckoutError } from '@zucker-framework/payment';
+import { HostedCheckoutError, RefundProtocolError, SubscriptionProtocolError } from '@zucker-framework/payment';
 import { RateLimit, RateLimitGuard } from '@zucker-framework/rate-limiter';
 import { BillingService } from './billing.service';
 import { BILLING_WEBHOOK_LIMITER } from '../rate-limits';
@@ -30,6 +30,12 @@ export class BillingController {
       if (error instanceof HostedCheckoutError) {
         const status = { invalid_input: 400, not_found: 404, forbidden: 403, conflict: 409, verification_failed: 409, unsupported: 400 }[error.code];
         throw new HttpException({ code: error.code, message: error.message }, status);
+      }
+      // A callback whose signature/headers do not verify (refund and subscription adapters) is the
+      // caller's fault: fail closed with a 4xx (gate 2), never a retryable 5xx. Nothing was recorded.
+      if ((error instanceof RefundProtocolError || error instanceof SubscriptionProtocolError)
+        && (error.code === 'verification_failed' || error.code === 'invalid_input')) {
+        throw new BadRequestException({ code: error.code, message: 'Provider request could not be verified' });
       }
       // Gateway errors can contain provider bodies. A claimed dispatch is retained for reconciliation.
       throw new ServiceUnavailableException('Payment verification is unavailable; keep the order for reconciliation');

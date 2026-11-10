@@ -49,6 +49,7 @@ export const starterAdminMenus = [
     permission: 'billing:query',
   },
   { key: 'plans', name: '套餐', path: '/plans', parent: 'commerce', permission: 'plans:query' },
+  { key: 'credit-packs', name: '积分包', path: '/credit-packs', parent: 'commerce', permission: 'plans:query' },
   {
     key: 'user-subscriptions',
     name: '用户订阅',
@@ -147,6 +148,13 @@ export const starterAdminMenus = [
     key: 'connections',
     name: '连接配置',
     path: '/connections',
+    parent: 'system',
+    permission: 'config:query',
+  },
+  {
+    key: 'policies',
+    name: '产品策略',
+    path: '/policies',
     parent: 'system',
     permission: 'config:query',
   },

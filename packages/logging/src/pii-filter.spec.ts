@@ -2,6 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { PiiFilter } from './pii-filter';
 
 describe('PiiFilter', () => {
+  it('replaces NUL characters that PostgreSQL text/jsonb columns reject (22P05), in values and keys', () => {
+    const filter = new PiiFilter();
+    expect(filter.sanitize('a\u0000b')).toBe('a\uFFFDb');
+    const value = filter.sanitizeValue({ body: 'x\u0000y', ['k\u0000']: ['\u0000'] }) as Record<string, unknown>;
+    expect(JSON.stringify(value)).not.toContain('\\u0000');
+    expect(value).toEqual({ body: 'x\uFFFDy', ['k\uFFFD']: ['\uFFFD'] });
+  });
   it('redacts credentials and identifiers in nested values', () => {
     const filter = new PiiFilter();
 

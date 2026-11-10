@@ -1,39 +1,38 @@
-import {
-  sitemapOrigin,
-  sitemapPage,
-  sitemapUrl,
-  xml,
-  xmlResponse,
-} from '@/features/content/sitemap';
+import { sitemapPage } from '@/features/content/sitemap';
+import { contentPath } from '@/features/content/types';
+import { isLocale } from '@/lib/site/locales';
+import { buildUrlsetXml, staticSitemapUrls, unavailableResponse, xmlResponse, type SitemapUrl } from '@/lib/site/sitemap';
+import { staticSitemapRoutes } from '@/lib/site/sitemap-routes';
+import { localizedUrl, siteOrigin } from '@/lib/site/url';
 export const dynamic = 'force-dynamic';
 export async function GET(_request: Request, { params }: { params: Promise<{ file: string }> }) {
   const { file } = await params;
-  if (!/^[1-9][0-9]{0,5}\.xml$/.test(file) || Number(file.slice(0, -4)) > 100000)
+  if (!/^(?:0|[1-9][0-9]{0,5})\.xml$/.test(file) || Number(file.slice(0, -4)) > 100000)
     return new Response('Not found', { status: 404 });
+  const page = Number(file.slice(0, -4));
   try {
-    const [result, origin] = await Promise.all([
-      sitemapPage(Number(file.slice(0, -4))),
-      sitemapOrigin(),
-    ]);
+    const origin = siteOrigin();
+    if (page === 0) return xmlResponse(buildUrlsetXml(staticSitemapUrls(origin, staticSitemapRoutes)));
+    const result = await sitemapPage(page);
     if (result.page > Math.max(1, Math.ceil(result.total / result.pageSize)))
       return new Response('Not found', { status: 404 });
-    const staticRoutes =
-      result.page === 1
-        ? ['zh', 'en']
-            .flatMap((locale) =>
-              ['', '/pricing', '/blog', '/docs'].map(
-                (path) => `<url><loc>${xml(`${origin}/${locale}${path}`)}</loc></url>`,
+    // CMS slugs differ per locale, so entries carry no hreflang alternates here.
+    const urls: SitemapUrl[] = result.data.flatMap((row) =>
+      isLocale(row.locale)
+        ? [
+            {
+              loc: localizedUrl(
+                origin,
+                row.locale,
+                row.resource === 'category' ? `/blog/category/${row.slug}` : contentPath(row.kind, row.slug),
               ),
-            )
-            .join('')
-        : '';
-    return xmlResponse(
-      `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${staticRoutes}${result.data.map((row) => `<url><loc>${xml(sitemapUrl(row, origin))}</loc><lastmod>${xml(new Date(row.updatedAt).toISOString())}</lastmod></url>`).join('')}</urlset>`,
+              lastmod: new Date(row.updatedAt).toISOString(),
+            },
+          ]
+        : [],
     );
+    return xmlResponse(buildUrlsetXml(urls));
   } catch {
-    return new Response('Sitemap temporarily unavailable', {
-      status: 503,
-      headers: { 'Cache-Control': 'no-store' },
-    });
+    return unavailableResponse();
   }
 }

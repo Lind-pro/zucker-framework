@@ -24,5 +24,7 @@ export interface OAuthRequestContext {
   origin?: string;
   user?: { id: string; sid: string };
   sessionCookie?: string;
+  /** Client IP as Express derived it (TRUST_PROXY); recorded once as sign-up acquisition data. */
+  ip?: string;
 }
 export interface BindingRecord { id: string; userId: string; provider: OAuthProvider; providerAccountId: string }

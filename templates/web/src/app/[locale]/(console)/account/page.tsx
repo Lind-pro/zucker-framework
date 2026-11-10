@@ -1,6 +1,6 @@
 "use client";
-import { AccountApiKeys } from "./_components/ApiKeys";
-import { OAuthConnections } from "./_components/OAuthConnections";
+import { AccountApiKeys } from "@/app/[locale]/account/_components/ApiKeys";
+import { OAuthConnections } from "@/app/[locale]/account/_components/OAuthConnections";
 import { AccountBillingLink } from "@/features/billing/AccountBillingLink";
 import { AccountCreditsLink } from "@/features/credits/AccountCreditsLink";
 import { AvatarSection } from "@/features/account-avatar/AvatarSection";
@@ -10,8 +10,8 @@ import { useLocale, useTranslations } from "next-intl";
 import { useRouter } from "@/i18n/navigation";
 import { accountPublicClient, httpClient } from "@/lib/http-client";
 import { useAuthStore } from "@/lib/stores/auth-store";
-import { accountErrorKey, accountPermissions, type AccountIdentity } from "./_components/account-flow";
-import { buttonClass, FormMessage, inputClass, panelClass } from "./_components/AccountForm";
+import { accountErrorKey, accountPermissions, type AccountIdentity } from "@/app/[locale]/account/_components/account-flow";
+import { buttonClass, FormMessage, inputClass, panelClass } from "@/app/[locale]/account/_components/AccountForm";
 
 function ProfileSection() {
   const t = useTranslations("auth"), locale = useLocale(), router = useRouter();
@@ -60,7 +60,7 @@ function PasswordSection() {
   const t = useTranslations("auth"), router = useRouter();
   const [currentPassword, setCurrentPassword] = useState(""), [password, setPassword] = useState(""), [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
-  return <section className={`${panelClass} space-y-4`} aria-label={t("changePasswordTitle")}>
+  return <section id="security" className={`${panelClass} scroll-mt-24 space-y-4`} aria-label={t("changePasswordTitle")}>
     <h2 className="text-xl font-semibold">{t("changePasswordTitle")}</h2>
     <p className="text-sm text-[var(--color-muted)]">{t("changePasswordDescription")}</p>
     <form className="space-y-4" onSubmit={async (event) => {
@@ -149,7 +149,7 @@ export default function AccountPage() {
     <AvatarSection />
     <div className="grid items-start gap-6 lg:grid-cols-2"><ProfileSection /><PasswordSection /></div>
     <OAuthConnections />
-    <AccountApiKeys />
+    <div id="api-keys" className="scroll-mt-24"><AccountApiKeys /></div>
     <SessionsSection />
   </div>;
 }

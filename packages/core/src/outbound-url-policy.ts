@@ -7,7 +7,9 @@ export type OutboundUrlRejectionReason =
   | 'host-not-allowed'
   | 'ip-literal-not-allowed'
   | 'local-host-not-allowed'
-  | 'port-not-allowed';
+  | 'port-not-allowed'
+  /** Raised by assertPublicOutboundUrl/resolvePublicAddress (outbound-address.ts). */
+  | 'private-address-not-allowed';
 
 export class OutboundUrlRejectedError extends Error {
   constructor(

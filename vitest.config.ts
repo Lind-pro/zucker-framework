@@ -45,7 +45,11 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
-    include: ['packages/*/src/**/*.spec.{ts,tsx}'],
+    include: [
+      'packages/*/src/**/*.spec.{ts,tsx}',
+      // Template component specs live outside the template's `src/` so its `tsc -b` never type-checks them.
+      'templates/admin/test/**/*.spec.{ts,tsx}',
+    ],
     setupFiles: ['./vitest.setup.ts'],
   },
 });

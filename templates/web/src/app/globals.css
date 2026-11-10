@@ -1,5 +1,7 @@
 @import "tailwindcss";
 @config "../../tailwind.config.ts";
+/* Landing blocks ship Tailwind class names in their compiled output; scan it so those utilities exist. */
+@source "../../node_modules/@zucker-framework/fe-blocks/dist";
 
 :root {
   --color-background: #ffffff;

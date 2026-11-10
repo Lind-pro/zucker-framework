@@ -1,4 +1,5 @@
-import { publicContent, readSiteSettings } from './server';
+import { staticSitemapRoutes } from '@/lib/site/sitemap-routes';
+import { publicContent } from './server';
 import { contentPath, type ContentKind } from './types';
 export interface SitemapRow {
   resource: 'entry' | 'category';
@@ -13,25 +14,16 @@ export interface SitemapPage {
   page: number;
   pageSize: number;
 }
-export const xml = (value: string) =>
-  value.replace(
-    /[&<>"']/g,
-    (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[char]!,
-  );
-export async function sitemapPage(page: number) {
-  return publicContent<SitemapPage>('sitemap', { page: String(page) });
-}
-export async function sitemapOrigin() {
-  return (await readSiteSettings('en')).siteUrl;
-}
-export function sitemapUrl(row: SitemapRow, origin: string) {
-  return new URL(
-    `/${row.locale}${row.resource === 'category' ? `/blog/category/${row.slug}` : contentPath(row.kind, row.slug)}`,
-    origin,
-  ).href;
-}
-export function xmlResponse(body: string) {
-  return new Response(`<?xml version="1.0" encoding="UTF-8"?>${body}`, {
-    headers: { 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'no-store' },
-  });
+/**
+ * One page of CMS sitemap rows. Rows whose public path is already a static route (the `home` page
+ * is served at `/`) are dropped: page 0 lists those with hreflang alternates. `total`/`pageSize`
+ * stay the Server's so page numbering is unchanged.
+ */
+export async function sitemapPage(page: number): Promise<SitemapPage> {
+  const result = await publicContent<SitemapPage>('sitemap', { page: String(page) });
+  const fixed = new Set(staticSitemapRoutes);
+  return {
+    ...result,
+    data: result.data.filter((row) => row.resource !== 'entry' || !fixed.has(contentPath(row.kind, row.slug))),
+  };
 }

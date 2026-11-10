@@ -36,12 +36,34 @@ describe('validatePlanDraft', () => {
       order: 0,
       status: false,
       prices: [
-        { interval: 'month', currency: 'USD', amount: '19.90', termDays: null, providerRefs: { stripe: 'price_1A' } },
-        { interval: 'one_time', currency: 'EUR', amount: '5', termDays: 30, providerRefs: { creem: 'prod_x' } },
+        { interval: 'month', currency: 'USD', amount: '19.90', termDays: null, providerRefs: { stripe: 'price_1A' }, credits: 0, creditExpiry: null },
+        { interval: 'one_time', currency: 'EUR', amount: '5', termDays: 30, providerRefs: { creem: 'prod_x' }, credits: 0, creditExpiry: null },
       ],
       features: { export: true, support: false },
       quotas: { documents: 100 },
+      featured: false,
+      badge: null,
+      highlights: [],
+      nameI18n: {},
+      descriptionI18n: {},
+      badgeI18n: {},
+      highlightsI18n: {},
     });
+  });
+
+  it('writes per-period credits, their expiry and presentation fields', () => {
+    const { errors, payload } = validatePlanDraft(
+      { ...valid(), featured: true, badge: ' Popular ', highlights: 'Fast\n\nPriority support', translations: '{"nameI18n":{"zh":"专业版"}}',
+        prices: [{ ...month(), credits: '1000', creditExpiryMode: 'period' }, { ...month(), interval: 'year', providerRefs: {}, credits: '5', creditExpiryMode: 'days', creditExpiryDays: '30' }] },
+      catalog,
+    );
+    expect(errors).toEqual({});
+    expect(payload).toMatchObject({ featured: true, badge: 'Popular', highlights: ['Fast', 'Priority support'], nameI18n: { zh: '专业版' },
+      prices: [{ credits: 1000, creditExpiry: 'period' }, { credits: 5, creditExpiry: 30 }] });
+    expect(validatePlanDraft({ ...valid(), prices: [{ ...month(), interval: 'lifetime', credits: '1', creditExpiryMode: 'period' }] }, catalog).errors)
+      .toEqual({ 'prices.0.creditExpiry': { key: 'plans.error.creditExpiry' } });
+    expect(validatePlanDraft({ ...valid(), prices: [{ ...month(), credits: '1.5' }] }, catalog).errors).toEqual({ 'prices.0.credits': { key: 'plans.error.credits' } });
+    expect(validatePlanDraft({ ...valid(), translations: '{"other":{}}' }, catalog).errors).toEqual({ translations: { key: 'plans.error.translations' } });
   });
 
   it('allows a plan without prices (not purchasable)', () => {

@@ -221,7 +221,7 @@ function EditorForm({ initial }: { initial: DraftEntry | null }) {
         {saved?.publishedSlug && (
           <a
             className="text-sm text-primary-400"
-            href={`/${saved.locale}${contentPath(saved.kind, saved.publishedSlug)}`}
+            href={localizedHref(contentPath(saved.kind, saved.publishedSlug), saved.locale)}
             target="_blank"
             rel="noopener noreferrer"
           >
@@ -340,6 +340,7 @@ function EditorForm({ initial }: { initial: DraftEntry | null }) {
                 <option value="page">{t('页面', 'Page')}</option>
                 <option value="post">{t('博客', 'Blog post')}</option>
                 <option value="doc">{t('文档', 'Documentation')}</option>
+                <option value="log">{t('更新日志', 'Changelog')}</option>
               </select>
             </Field>
             <Field label={t('语言', 'Language')}>

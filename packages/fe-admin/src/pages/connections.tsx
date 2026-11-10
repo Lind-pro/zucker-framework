@@ -38,8 +38,14 @@ export interface ConnectionProfile {
   pendingRestart: boolean;
   canSave: boolean;
   saveUnavailableReason: string | null;
+  /**
+   * `hot`: a save applies without a restart; `restart`: it applies on the next server start.
+   * Older servers omit it and every profile then applies after a restart.
+   */
+  applyMode?: ConnectionApplyMode;
   fields: ConnectionField[];
 }
+export type ConnectionApplyMode = 'hot' | 'restart';
 interface Connection {
   id: string;
   name: string;
@@ -59,7 +65,11 @@ interface Connection {
   storedRevision?: number;
   appliedRevision?: number;
   pendingRestart?: boolean;
+  applyMode?: ConnectionApplyMode;
 }
+
+/** Hot profiles never wait for a restart, whatever `pendingRestart` says. */
+const isHot = (profile: { applyMode?: string } | undefined) => profile?.applyMode === 'hot';
 
 type Action = 'keep' | 'replace' | 'clear';
 const KNOWN_STATES = ['configured', 'disabled', 'missing', 'invalid', 'missing-sdk', 'managed-elsewhere', 'not-registered'];
@@ -124,7 +134,9 @@ function ConnectionEditor({
     setFailed(false);
     try {
       const saved = await api.put<ConnectionProfile>(path, { expectedRevision: profile.storedRevision, values: plain, secrets });
-      toast.success(saved?.pendingRestart ? t('connections.savedPending') : t('connections.savedUnchanged'));
+      toast.success(
+        isHot(saved ?? profile) ? t('connections.savedApplied') : saved?.pendingRestart ? t('connections.savedPending') : t('connections.savedUnchanged'),
+      );
       onSaved();
     } catch (error) {
       if (errorStatus(error) === 409) {
@@ -179,7 +191,7 @@ function ConnectionEditor({
     >
       <div className="space-y-4">
         <Notice tone="info" title={t('connections.revisionNotice', { stored: profile.storedRevision, applied: profile.appliedRevision })}>
-          {t('connections.revisionNoticeDescription')}
+          {isHot(profile) ? t('connections.revisionNoticeDescriptionHot') : t('connections.revisionNoticeDescription')}
         </Notice>
         {!profile.canSave && (
           <Notice tone="warning" title={t('connections.noKey')}>
@@ -351,7 +363,7 @@ export function ConnectionsPage() {
   return (
     <PageContainer title={t('page.connections')} actions={<Button onClick={refresh}>{t('common.refresh')}</Button>}>
       <Notice tone="info" title={t('connections.notice')}>
-        {t('connections.noticeDescription')}
+        {profiles.some((profile) => profile.applyMode) ? t('connections.noticeDescriptionPerProfile') : t('connections.noticeDescription')}
       </Notice>
       {status.error && (
         <Notice tone="danger" title={t('connections.statusFailed')}>
@@ -395,12 +407,18 @@ export function ConnectionsPage() {
             title: t('connections.revision'),
             render: (row) => {
               const current = profiles.find((profile) => profile.id === row.id) ?? row;
+              const applyMode = current.applyMode ?? row.applyMode;
+              const modeBadge =
+                applyMode === 'hot' || applyMode === 'restart' ? (
+                  <StatusBadge tone={applyMode === 'hot' ? 'success' : 'neutral'}>{t(`connections.applyMode.${applyMode}`)}</StatusBadge>
+                ) : null;
               return current.appliedRevision === undefined ? (
-                '—'
+                (modeBadge ?? '—')
               ) : (
                 <span className="flex flex-col gap-1">
                   {t('connections.revisionValue', { applied: current.appliedRevision, stored: current.storedRevision ?? 0 })}
-                  {current.pendingRestart && <StatusBadge tone="warning">{t('connections.pendingRestart')}</StatusBadge>}
+                  {modeBadge}
+                  {current.pendingRestart && !isHot({ applyMode }) && <StatusBadge tone="warning">{t('connections.pendingRestart')}</StatusBadge>}
                 </span>
               );
             },

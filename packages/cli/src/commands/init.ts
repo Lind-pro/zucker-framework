@@ -3,33 +3,8 @@ import { existsSync, mkdirSync, writeFileSync, readFileSync, lstatSync } from 'f
 import { resolve, join } from 'path';
 import { randomBytes } from 'node:crypto';
 import { frameworkCheckoutRoot } from './checkout';
-import { installConsumerAgentInstructions } from '../../tooling/agent-instructions.mjs';
-import { collectTemplateAssets, validateProjectBundle, validateTemplateAssets, writeTemplateAssets, type ProjectBundle } from '../../tooling/project-templates.mjs';
-
-interface ReleaseCatalog {
-  versions: Record<string, string>;
-  runtime?: { node: string; packageManager: string };
-  server: { dependencies: Record<string, string>; devDependencies: Record<string, string> };
-}
-
-function readReleaseCatalog(runtimeDirectory: string): ReleaseCatalog {
-  const path = resolve(runtimeDirectory, 'release-catalog.json');
-  if (!existsSync(path)) throw new Error('CLI release catalog is missing; build or reinstall the CLI package.');
-  return JSON.parse(readFileSync(path, 'utf8')) as ReleaseCatalog;
-}
-
-function readProjectBundle(runtimeDirectory: string): ProjectBundle {
-  const path = join(runtimeDirectory, 'project-templates.json');
-  if (!existsSync(path)) throw new Error('CLI project assets are missing; build or reinstall the CLI.');
-  const bundle: unknown = JSON.parse(readFileSync(path, 'utf8'));
-  validateProjectBundle(bundle);
-  return bundle;
-}
-function installInstructions(targetDir: string, bundle: ProjectBundle) {
-  const result = installConsumerAgentInstructions(targetDir, bundle.consumerInstructions);
-  for (const warning of result.warnings) console.warn(warning);
-}
-
+import { collectTemplateAssets, validateTemplateAssets, writeTemplateAssets } from '../../tooling/project-templates.mjs';
+import { assertReleasedVersions, installInstructions, pinReleasedVersions, readProjectBundle, readReleaseCatalog } from './project-files';
 
 function createFullServerEnvironment(targetDir: string): void {
   let environment = readFileSync(join(targetDir, '.env.example'), 'utf8');
@@ -201,14 +176,7 @@ export function createInitCommand(runtimeDirectory?: string, workingDirectory?: 
     {
       // Validate dependency catalog before creating any consumer files.
       validateTemplateAssets(assets);
-      const manifest = JSON.parse(Buffer.from(assets['package.json'], 'base64').toString('utf8'));
-      for (const field of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
-        for (const [dependency, version] of Object.entries(manifest[field] ?? {})) {
-          if (typeof version === 'string' && version.startsWith('workspace:') && !catalog.versions[dependency]) {
-            throw new Error(`No release version found for ${dependency}`);
-          }
-        }
-      }
+      assertReleasedVersions(JSON.parse(Buffer.from(assets['package.json'], 'base64').toString('utf8')), catalog);
       mkdirSync(targetDir);
       writeTemplateAssets(assets, targetDir);
     }
@@ -218,15 +186,7 @@ export function createInitCommand(runtimeDirectory?: string, workingDirectory?: 
     copiedManifest.name = name;
     if (catalog.runtime?.packageManager) copiedManifest.packageManager = catalog.runtime.packageManager;
     if (catalog.runtime?.node) copiedManifest.engines = { ...(copiedManifest.engines as object ?? {}), node: catalog.runtime.node };
-    for (const field of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
-      const entries = copiedManifest[field] as Record<string, string> | undefined;
-      for (const [dependency, version] of Object.entries(entries ?? {})) {
-        if (!version.startsWith('workspace:')) continue;
-        const releasedVersion = catalog.versions[dependency];
-        if (!releasedVersion) throw new Error(`No release version found for ${dependency}`);
-        if (entries) entries[dependency] = releasedVersion;
-      }
-    }
+    pinReleasedVersions(copiedManifest, catalog);
     writeFileSync(copiedManifestPath, JSON.stringify(copiedManifest, null, 2) + '\n');
 
     if (options.template === 'server-full') createFullServerEnvironment(targetDir);

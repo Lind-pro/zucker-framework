@@ -58,7 +58,8 @@ run('canonical credits and persistent record quota', () => {
     return { task, leaseToken: 'stale-token', signal: new AbortController().signal, now: () => new Date(), assertActive: async () => {}, reportProgress: async () => task };
   }
   beforeAll(async () => {
-    const url = new URL(databaseUrl!); if (url.pathname !== '/cnipa_dev') throw new Error('Requires approved isolated development database');
+    const url = new URL(databaseUrl!); // Safety, as in every persistent suite: only a database named *_dev/*_test/*_tests (it creates and drops its own schema).
+    if (!/(?:_dev|_test|_tests)$/.test(url.pathname)) throw new Error('Use a designated development/test database');
     directory = mkdtempSync(join(tmpdir(), 'zucker-credit-objects-')); pool = new Pool({ connectionString: url.href, connectionTimeoutMillis: 5000 });
     const client = await pool.connect();
     try { await client.query('BEGIN'); await client.query(`CREATE SCHEMA "${schema}"`); await client.query(`SET LOCAL search_path TO "${schema}"`);

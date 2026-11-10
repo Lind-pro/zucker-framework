@@ -369,5 +369,19 @@
     "renameFailed": "未能修改密钥名称，输入已保留，请重试。",
     "renameUnavailable": "此密钥已不可重命名。",
     "revokeNamed": "撤销{name}"
+  },
+  "shell": {
+    "mainNav": "主导航",
+    "toggleNav": "切换导航菜单",
+    "language": "语言",
+    "accountMenu": "账户菜单",
+    "credits": "积分",
+    "creditsUnavailable": "余额暂不可用",
+    "console": "控制台",
+    "consoleNav": "控制台导航",
+    "admin": "管理后台",
+    "signOut": "退出登录",
+    "signingOut": "正在退出…",
+    "signOutFailed": "退出失败，请重试。"
   }
 }

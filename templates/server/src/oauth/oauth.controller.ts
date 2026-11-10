@@ -7,7 +7,7 @@ import { ACCESS_TTL_SECONDS, SESSION_TTL_SECONDS } from '../accounts/account.ser
 import { OAuthService } from './oauth.service';
 import type { OAuthRequestContext } from './oauth.types';
 
-interface OAuthRequest { headers: { cookie?: string; origin?: string; 'sec-fetch-site'?: string }; user?: { id: string; sid: string } }
+interface OAuthRequest { ip?: string; headers: { cookie?: string; origin?: string; 'sec-fetch-site'?: string }; user?: { id: string; sid: string } }
 interface OAuthResponse extends RefreshCookieResponse { redirect(url: string): void; setHeader(name: string, value: string): void }
 
 @Controller('authorize/oauth')
@@ -25,7 +25,7 @@ export class OAuthController {
       secure: oauth.settings.secureCookies, maxAge: SESSION_TTL_SECONDS * 1000 });
   }
   private context(req: OAuthRequest): OAuthRequestContext {
-    return { browserBinding: this.browser.read(req) ?? '', origin: req.headers.origin, user: req.user, sessionCookie: this.session.read(req) ?? undefined };
+    return { browserBinding: this.browser.read(req) ?? '', origin: req.headers.origin, user: req.user, sessionCookie: this.session.read(req) ?? undefined, ip: req.ip };
   }
   private mutation(req: OAuthRequest): OAuthRequestContext {
     const context = this.context(req);

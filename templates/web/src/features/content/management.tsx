@@ -130,6 +130,7 @@ export function ContentManager() {
           <option value="page">{t('页面', 'Page')}</option>
           <option value="post">{t('博客', 'Blog post')}</option>
           <option value="doc">{t('文档', 'Documentation')}</option>
+          <option value="log">{t('更新日志', 'Changelog')}</option>
         </select>
         <select
           aria-label={t('发布状态', 'Publication status')}

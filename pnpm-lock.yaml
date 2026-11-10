@@ -385,6 +385,16 @@ importers:
         specifier: 20.19.43
         version: 20.19.43
 
+  packages/create-app:
+    dependencies:
+      '@zucker-framework/cli':
+        specifier: workspace:*
+        version: link:../cli
+    devDependencies:
+      '@types/node':
+        specifier: 20.19.43
+        version: 20.19.43
+
   packages/credit:
     dependencies:
       '@nestjs/common':
@@ -617,6 +627,19 @@ importers:
       zustand:
         specifier: ^5.0.0
         version: 5.0.15(@types/react@19.2.18)(react@19.2.8)(use-sync-external-store@1.6.0(react@19.2.8))
+    devDependencies:
+      '@types/react':
+        specifier: ^19.2.18
+        version: 19.2.18
+
+  packages/fe-blocks:
+    dependencies:
+      '@zucker-framework/fe-site':
+        specifier: workspace:*
+        version: link:../fe-site
+      react:
+        specifier: 19.2.8
+        version: 19.2.8
     devDependencies:
       '@types/react':
         specifier: ^19.2.18
@@ -1157,6 +1180,9 @@ importers:
       '@zucker-framework/fe-admin':
         specifier: workspace:*
         version: link:../../packages/fe-admin
+      '@zucker-framework/fe-blocks':
+        specifier: workspace:*
+        version: link:../../packages/fe-blocks
       '@zucker-framework/fe-site':
         specifier: workspace:*
         version: link:../../packages/fe-site
@@ -1334,6 +1360,9 @@ importers:
       dotenv:
         specifier: ^17.4.2
         version: 17.4.2
+      ioredis:
+        specifier: 6.0.0
+        version: 6.0.0(supports-color@8.1.1)
       openai:
         specifier: 7.9.0
         version: 7.9.0(@aws-sdk/credential-provider-node@3.972.82)(@smithy/signature-v4@5.7.3)(undici@8.10.1)(ws@8.21.3)(zod@4.5.4)
@@ -1416,6 +1445,9 @@ importers:
       '@zucker-framework/fe-auth':
         specifier: workspace:*
         version: link:../../packages/fe-auth
+      '@zucker-framework/fe-blocks':
+        specifier: workspace:*
+        version: link:../../packages/fe-blocks
       '@zucker-framework/fe-http-client':
         specifier: workspace:*
         version: link:../../packages/fe-http-client

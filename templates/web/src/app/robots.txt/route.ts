@@ -1,24 +1,12 @@
-import { sitemapOrigin } from '@/features/content/sitemap';
+import { ROBOTS_DISALLOWED_PREFIXES } from '@/lib/site/cache-policy';
+import { LOCALES } from '@/lib/site/locales';
+import { siteOrigin } from '@/lib/site/url';
 export const dynamic = 'force-dynamic';
 export async function GET() {
-  const origin = await sitemapOrigin();
-  const privatePaths = [
-    'account',
-    'billing',
-    'dashboard',
-    'content/manage',
-    'login',
-    'register',
-    'oauth',
-    'forgot-password',
-    'reset-password',
-    'verify-email',
-    'docs/search',
-  ];
   const rules = ['User-agent: *', 'Allow: /', 'Disallow: /api/'];
-  for (const path of privatePaths)
-    for (const prefix of ['', '/zh', '/en']) rules.push(`Disallow: ${prefix}/${path}`);
-  rules.push(`Sitemap: ${origin}/sitemap.xml`);
+  for (const path of ROBOTS_DISALLOWED_PREFIXES)
+    for (const prefix of ['', ...LOCALES.map((locale) => `/${locale}`)]) rules.push(`Disallow: ${prefix}${path}`);
+  rules.push(`Sitemap: ${siteOrigin()}/sitemap.xml`);
   return new Response(rules.join('\n'), {
     headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' },
   });

@@ -37,7 +37,17 @@ export interface BatchCreditLedgerOptions<Tx, Source extends string = string> {
   allocationLotField: string;
   /** Opt-in persistent wallet holds. Existing callers without this port retain their behavior. */
   holds?: CreditLotHoldStore<Tx>;
+  /**
+   * Order in which eligible lots are drawn by `consume` and allocated by `hold`:
+   * - `fifo` (default): oldest grant first (`createdAt ASC`).
+   * - `expiry_first`: soonest-expiring first (`expiresAt ASC NULLS LAST, createdAt ASC, id ASC`), so
+   *   credits that would expire are spent before credits that would not.
+   * A preferred source is still drawn before other sources; the order applies within each group.
+   */
+  consumeOrder?: CreditConsumeOrder;
 }
+export type CreditConsumeOrder = 'fifo' | 'expiry_first';
+
 export interface CreditLotGrant<Source extends string = string> {
   accountId: string;
   amount: number;
@@ -66,9 +76,34 @@ export class BatchCreditInsufficientError extends Error {
   }
 }
 
+function time(value: unknown): number {
+  return value instanceof Date ? value.getTime() : typeof value === 'string' || typeof value === 'number' ? new Date(value).getTime() : NaN;
+}
+/** `expiresAt ASC NULLS LAST, createdAt ASC, id ASC`; also applied in memory so every store agrees. */
+export function compareLotsByExpiry(a: CreditLot, b: CreditLot): number {
+  const ea = a.expiresAt ? time(a.expiresAt) : Infinity, eb = b.expiresAt ? time(b.expiresAt) : Infinity;
+  if (ea !== eb) return ea < eb ? -1 : 1;
+  const ca = time(a.createdAt), cb = time(b.createdAt);
+  if (ca !== cb && !Number.isNaN(ca) && !Number.isNaN(cb)) return ca < cb ? -1 : 1;
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
 /** Transaction-bound lot accounting. Product source/type enums and eligibility stay with the caller. */
 export class BatchCreditLedger<Tx, Source extends string = string> {
-  constructor(private readonly options: BatchCreditLedgerOptions<Tx, Source>) {}
+  constructor(private readonly options: BatchCreditLedgerOptions<Tx, Source>) {
+    if (options.consumeOrder !== undefined && options.consumeOrder !== 'fifo' && options.consumeOrder !== 'expiry_first')
+      throw new TypeError('consumeOrder must be fifo or expiry_first');
+  }
+  private get expiryFirst(): boolean { return this.options.consumeOrder === 'expiry_first'; }
+  /** Store ordering for lot selection; `fifo` keeps the historical single-key order. */
+  private lotOrder(): unknown {
+    return this.expiryFirst
+      ? [{ expiresAt: { sort: 'asc', nulls: 'last' } }, { createdAt: 'asc' }, { id: 'asc' }]
+      : { createdAt: 'asc' };
+  }
+  private ordered<L extends CreditLot<Source>>(lots: L[]): L[] {
+    return this.expiryFirst ? [...lots].sort(compareLotsByExpiry) : lots;
+  }
   private account(accountId: string) { return { [this.options.accountField]: accountId }; }
   private amount(value: number) {
     if (!Number.isSafeInteger(value) || value <= 0 || value > 2_147_483_647) throw new BatchCreditAmountError();
@@ -94,8 +129,8 @@ export class BatchCreditLedger<Tx, Source extends string = string> {
     if (existing) return { hold: await this.holdView(tx, existing), changed: false };
     if (!prepared.claimed) throw new CreditLotHoldError('invariant', 'Credit hold receipt has no matching hold');
     const models = this.options.models(tx), wallet = await this.holdWallet(tx, command.accountId, models);
-    const selected = await models.lots.findMany({ where: { ...this.account(command.accountId), id: { in: command.lotIds } },
-      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] });
+    const selected = this.ordered(await models.lots.findMany({ where: { ...this.account(command.accountId), id: { in: command.lotIds } },
+      orderBy: this.expiryFirst ? this.lotOrder() : [{ createdAt: 'asc' }, { id: 'asc' }] }));
     if (selected.length !== command.lotIds.length) throw new CreditLotHoldError('not_found');
     const lots = selected.filter(lot => !lot.isExpired && lot.remainingAmount > 0 && (!lot.expiresAt || lot.expiresAt > at));
     const available = lots.reduce((sum, lot) => sum + this.unheld(lot, wallet.allocations), 0);
@@ -265,14 +300,14 @@ export class BatchCreditLedger<Tx, Source extends string = string> {
     const preferred = input.preferredSource &&
       (!input.allowedSources || input.allowedSources.includes(input.preferredSource))
       ? input.preferredSource : undefined;
-    let lots = preferred ? await models.lots.findMany({
-      where: { ...where, source: preferred }, orderBy: { createdAt: 'asc' },
-    }) : [];
+    let lots = preferred ? this.ordered(await models.lots.findMany({
+      where: { ...where, source: preferred }, orderBy: this.lotOrder(),
+    })) : [];
     if (!preferred || lots.reduce((sum, lot) => sum + this.unheld(lot, wallet?.allocations), 0) < input.amount) {
-      const others = await models.lots.findMany({ where: {
+      const others = this.ordered(await models.lots.findMany({ where: {
         ...where,
         ...(preferred ? { source: { ...(input.allowedSources ? { in: input.allowedSources } : {}), not: preferred } } : {}),
-      }, orderBy: { createdAt: 'asc' } });
+      }, orderBy: this.lotOrder() }));
       lots = [...lots, ...others];
     }
     const available = lots.reduce((sum, lot) => sum + this.unheld(lot, wallet?.allocations), 0);

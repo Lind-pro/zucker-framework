@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.next/
+out/
+.turbo/
+.cache/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+uploads/
+apps/server/src/generated/
+# Every .env file holds generated secrets; only the documented example is tracked.
+.env*
+!.env.example

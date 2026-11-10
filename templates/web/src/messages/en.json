@@ -369,5 +369,19 @@
     "renameFailed": "Could not rename this key. Your name is kept; try again.",
     "renameUnavailable": "This key is no longer available for renaming.",
     "revokeNamed": "Revoke {name}"
+  },
+  "shell": {
+    "mainNav": "Main navigation",
+    "toggleNav": "Toggle navigation",
+    "language": "Language",
+    "accountMenu": "Account menu",
+    "credits": "Credits",
+    "creditsUnavailable": "Balance unavailable",
+    "console": "Console",
+    "consoleNav": "Console navigation",
+    "admin": "Admin",
+    "signOut": "Sign out",
+    "signingOut": "Signing out…",
+    "signOutFailed": "Sign out failed. Try again."
   }
 }

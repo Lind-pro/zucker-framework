@@ -86,6 +86,8 @@ export interface AdminEndpoints {
   dictionaryItems: string;
   entitlementCatalog: string;
   plans: string;
+  /** Credit pack administration (same list/detail/create/update/status/delete contract as plans). */
+  creditPacks: string;
   userSubscriptions: string;
   quotaUsage: string;
   quotaReservations: string;
@@ -126,6 +128,7 @@ export const defaultAdminEndpoints: AdminEndpoints = {
   dictionaryItems: '/dictionary-item',
   entitlementCatalog: '/billing/entitlements/catalog',
   plans: '/management/plans',
+  creditPacks: '/management/credit-packs',
   userSubscriptions: '/management/subscriptions',
   quotaUsage: '/management/quota-usage',
   quotaReservations: '/management/quota-reservations',
@@ -156,6 +159,7 @@ export type AdminPageKey =
   | 'menu'
   | 'dictionary'
   | 'plans'
+  | 'creditPacks'
   | 'userSubscriptions'
   | 'quotaUsage'
   | 'quotaReservations'

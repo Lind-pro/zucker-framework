@@ -1,0 +1,101 @@
+{
+  "publishedAt": "2026-01-01",
+  "document": {
+    "version": 2,
+    "title": "首页",
+    "description": "起始落地页。请在管理后台的“内容”中编辑或替换。",
+    "authorName": "",
+    "markdown": "",
+    "blocks": [
+      {
+        "id": "hero",
+        "type": "hero",
+        "variant": "centered",
+        "heading": "更快上线你的 AI 产品",
+        "text": "账户、计费、积分、内容和管理后台均已集成。请将这段文字替换为你自己的产品介绍。",
+        "action": {
+          "label": "查看套餐",
+          "href": "/pricing"
+        },
+        "secondaryAction": {
+          "label": "阅读文档",
+          "href": "/docs/getting-started"
+        }
+      },
+      {
+        "id": "features",
+        "type": "features",
+        "variant": "grid",
+        "heading": "付费产品所需的一切",
+        "items": [
+          {
+            "title": "账户与登录",
+            "text": "邮箱注册与验证、找回密码、第三方登录和 API 密钥。"
+          },
+          {
+            "title": "计费与积分",
+            "text": "订阅、一次性购买和积分包，积分流水可审计。"
+          },
+          {
+            "title": "可编辑的内容",
+            "text": "落地页、博客、文档、更新日志和法律页面都在管理后台维护。"
+          },
+          {
+            "title": "内置运维能力",
+            "text": "角色与权限、审计日志、运行时配置和后台任务。"
+          }
+        ]
+      },
+      {
+        "id": "pricing",
+        "type": "pricing",
+        "heading": "简单透明的价格",
+        "text": "套餐和积分包在管理后台维护，启用支付渠道后即可购买。",
+        "plans": "all",
+        "showCreditPacks": true
+      },
+      {
+        "id": "blog",
+        "type": "blog-list",
+        "heading": "博客文章",
+        "limit": 3
+      },
+      {
+        "id": "changelog",
+        "type": "changelog",
+        "heading": "最近更新",
+        "limit": 3
+      },
+      {
+        "id": "faq",
+        "type": "faq",
+        "heading": "常见问题",
+        "items": [
+          {
+            "question": "可以修改这个页面吗？",
+            "answer": "可以。在管理后台“内容”中编辑已发布的首页，或发布一个 slug 为“home”的页面来替换这个起始版本。"
+          },
+          {
+            "question": "试用需要支付凭据吗？",
+            "answer": "不需要。没有支付渠道时站点也能运行；在管理后台启用支付渠道后套餐即可购买。"
+          }
+        ]
+      },
+      {
+        "id": "cta",
+        "type": "cta",
+        "heading": "准备好了吗？",
+        "text": "创建账户，体验用户控制台。",
+        "action": {
+          "label": "创建账户",
+          "href": "/register"
+        }
+      }
+    ],
+    "seo": {
+      "title": "",
+      "description": "",
+      "noIndex": false
+    }
+  }
+}

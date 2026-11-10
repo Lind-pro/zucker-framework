@@ -1,53 +1,38 @@
-import { publicContent, readEntry } from './server';
-import {
-  contentPath,
-  localizedHref,
-  type Category,
-  type ContentKind,
-  type EntryPage,
-} from './types';
+import { landingSlots } from '@/features/landing/slots';
+import { contentCopy } from './copy';
+import { publicContent, readEntries, readEntry } from './server';
+import { contentPath, localizedHref, type Category, type ContentKind } from './types';
 import { DocumentView } from './DocumentView';
 
-export async function ArticlePage({
-  kind,
-  locale,
-  slug,
-}: {
-  kind: ContentKind;
-  locale: string;
-  slug: string;
-}) {
+const listingPath = { post: '/blog', doc: '/docs', log: '/changelog' } as const;
+
+function formatDate(value: string, locale: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString(locale, { timeZone: 'UTC' });
+}
+
+export async function ArticlePage({ kind, locale, slug }: { kind: ContentKind; locale: string; slug: string }) {
   const entry = await readEntry(kind, locale, slug);
+  const copy = contentCopy(locale);
+  const back = kind === 'post' ? copy.blogTitle : kind === 'doc' ? copy.docsShort : copy.changelogTitle;
   return (
     <article className="mx-auto max-w-6xl px-6 py-12 md:py-16">
       <header className="max-w-3xl mb-10">
         {kind !== 'page' && (
-          <a
-            className="text-sm text-primary-500"
-            href={`/${locale}/${kind === 'post' ? 'blog' : 'docs'}`}
-          >
-            ←{' '}
-            {kind === 'post'
-              ? locale === 'zh'
-                ? '博客'
-                : 'Blog'
-              : locale === 'zh'
-                ? '文档'
-                : 'Documentation'}
+          <a className="text-sm text-primary-500" href={localizedHref(listingPath[kind], locale)}>
+            ← {back}
           </a>
         )}
         <h1 className="mt-4 text-4xl font-bold tracking-tight md:text-5xl">{entry.title}</h1>
-        <p className="mt-5 text-xl text-[var(--color-muted)]">{entry.description}</p>
-        {kind === 'post' && (
+        {entry.description && <p className="mt-5 text-xl text-[var(--color-muted)]">{entry.description}</p>}
+        {(kind === 'post' || kind === 'log') && (
           <div className="mt-5 flex flex-wrap gap-3 text-sm text-[var(--color-muted)]">
-            {entry.authorName && <span>{entry.authorName}</span>}
-            <time dateTime={entry.publishedAt}>
-              {new Date(entry.publishedAt).toLocaleDateString(locale)}
-            </time>
+            {kind === 'post' && entry.authorName && <span>{entry.authorName}</span>}
+            <time dateTime={entry.publishedAt}>{formatDate(entry.publishedAt, locale)}</time>
             {entry.categories.map((category) => (
               <a
                 key={category.id}
-                href={`/${locale}/blog/category/${category.slug}`}
+                href={localizedHref(`/blog/category/${category.slug}`, locale)}
                 className="text-primary-500"
               >
                 {category.title}
@@ -56,10 +41,46 @@ export async function ArticlePage({
           </div>
         )}
       </header>
-      <DocumentView document={entry.document} locale={locale} showToc={kind === 'doc'} />
+      <DocumentView
+        document={entry.document}
+        locale={locale}
+        showToc={kind === 'doc'}
+        slots={kind === 'page' ? landingSlots : undefined}
+      />
     </article>
   );
 }
+
+function Pagination({
+  locale,
+  href,
+  page,
+  pageSize,
+  total,
+}: {
+  locale: string;
+  href: string;
+  page: number;
+  pageSize: number;
+  total: number;
+}) {
+  const copy = contentCopy(locale);
+  return (
+    <nav aria-label={copy.pagination} className="mt-8 flex justify-between text-sm text-primary-500">
+      <span>
+        {page > 1 && (
+          <a href={localizedHref(page === 2 ? href : `${href}?page=${page - 1}`, locale)}>← {copy.previous}</a>
+        )}
+      </span>
+      {page * pageSize < total && (
+        <a href={localizedHref(`${href}?page=${page + 1}`, locale)}>
+          {copy.next} →
+        </a>
+      )}
+    </nav>
+  );
+}
+
 export async function ContentListing({
   kind,
   locale,
@@ -72,30 +93,17 @@ export async function ContentListing({
   category?: string;
 }) {
   const [entries, categories] = await Promise.all([
-    publicContent<EntryPage>('entries', { kind, locale, page, ...(category ? { category } : {}) }),
+    readEntries(kind, locale, page, category),
     kind === 'post' ? publicContent<Category[]>('categories', { locale }) : Promise.resolve([]),
   ]);
-  const title =
-    entries.category?.title ??
-    (kind === 'post'
-      ? locale === 'zh'
-        ? '博客'
-        : 'Blog'
-      : locale === 'zh'
-        ? '文档中心'
-        : 'Documentation');
-  const href = `/${locale}/${kind === 'post' ? 'blog' : 'docs'}${category ? `/category/${category}` : ''}`;
+  const copy = contentCopy(locale);
+  const title = entries.category?.title ?? (kind === 'post' ? copy.blogTitle : copy.docsTitle);
+  const href = `${listingPath[kind]}${category ? `/category/${category}` : ''}`;
   return (
     <section className="mx-auto max-w-6xl px-6 py-12 md:py-16">
       <div className="mb-10">
         <p className="text-sm font-medium text-primary-500">
-          {kind === 'post'
-            ? locale === 'zh'
-              ? '最新动态与经验'
-              : 'Ideas and updates'
-            : locale === 'zh'
-              ? '指南与参考'
-              : 'Guides and reference'}
+          {kind === 'post' ? copy.blogEyebrow : copy.docsEyebrow}
         </p>
         <h1 className="mt-3 text-4xl font-bold tracking-tight">{title}</h1>
         {entries.category?.description && (
@@ -103,38 +111,33 @@ export async function ContentListing({
         )}
       </div>
       {kind === 'doc' && (
-        <form action={`/${locale}/docs/search`} className="mb-8 flex max-w-xl gap-3">
+        <form action={localizedHref('/docs/search', locale)} className="mb-8 flex max-w-xl gap-3">
           <label className="sr-only" htmlFor="docs-query">
-            {locale === 'zh' ? '搜索文档' : 'Search documentation'}
+            {copy.searchDocs}
           </label>
           <input
             id="docs-query"
             name="q"
             maxLength={100}
             required
-            placeholder={locale === 'zh' ? '搜索文档…' : 'Search documentation…'}
+            placeholder={copy.searchPlaceholder}
             className="content-input"
           />
-          <button className="rounded-lg bg-primary-600 px-5 text-white">
-            {locale === 'zh' ? '搜索' : 'Search'}
-          </button>
+          <button className="rounded-lg bg-primary-600 px-5 text-white">{copy.search}</button>
         </form>
       )}
       {categories.length > 0 && (
-        <nav
-          aria-label={locale === 'zh' ? '博客分类' : 'Blog categories'}
-          className="mb-8 flex flex-wrap gap-3"
-        >
+        <nav aria-label={copy.blogCategories} className="mb-8 flex flex-wrap gap-3">
           <a
-            href={`/${locale}/blog`}
+            href={localizedHref('/blog', locale)}
             className="rounded-full border border-[var(--color-border)] px-4 py-2 text-sm"
           >
-            {locale === 'zh' ? '全部' : 'All'}
+            {copy.all}
           </a>
           {categories.map((item) => (
             <a
               className={`rounded-full border px-4 py-2 text-sm ${category === item.slug ? 'border-primary-500 text-primary-500' : 'border-[var(--color-border)]'}`}
-              href={`/${locale}/blog/category/${item.slug}`}
+              href={localizedHref(`/blog/category/${item.slug}`, locale)}
               key={item.id}
             >
               {item.title}
@@ -156,7 +159,7 @@ export async function ContentListing({
                 <p className="mt-6 text-xs text-[var(--color-muted)]">
                   {entry.authorName}
                   {entry.authorName && ' · '}
-                  {new Date(entry.publishedAt).toLocaleDateString(locale)}
+                  {formatDate(entry.publishedAt, locale)}
                 </p>
               )}
             </a>
@@ -164,24 +167,54 @@ export async function ContentListing({
         </div>
       ) : (
         <p className="rounded-xl border border-dashed border-[var(--color-border)] p-10 text-center text-[var(--color-muted)]">
-          {locale === 'zh' ? '暂无已发布内容。' : 'No published content yet.'}
+          {copy.noContent}
         </p>
       )}
-      <nav
-        aria-label={locale === 'zh' ? '分页' : 'Pagination'}
-        className="mt-8 flex justify-between text-sm text-primary-500"
-      >
-        <span>
-          {entries.page > 1 && (
-            <a href={`${href}?page=${entries.page - 1}`}>
-              ← {locale === 'zh' ? '上一页' : 'Previous'}
-            </a>
-          )}
-        </span>
-        {entries.page * entries.pageSize < entries.total && (
-          <a href={`${href}?page=${entries.page + 1}`}>{locale === 'zh' ? '下一页' : 'Next'} →</a>
-        )}
-      </nav>
+      <Pagination locale={locale} href={href} page={entries.page} pageSize={entries.pageSize} total={entries.total} />
+    </section>
+  );
+}
+
+/** `/changelog`: releases (`log` entries) newest first, each with its full document. */
+export async function ChangelogListing({ locale, page = '1' }: { locale: string; page?: string }) {
+  const entries = await readEntries('log', locale, page, undefined, 'document');
+  const copy = contentCopy(locale);
+  return (
+    <section className="mx-auto max-w-4xl px-6 py-12 md:py-16">
+      <div className="mb-12">
+        <p className="text-sm font-medium text-primary-500">{copy.changelogEyebrow}</p>
+        <h1 className="mt-3 text-4xl font-bold tracking-tight">{copy.changelogTitle}</h1>
+        <p className="mt-4 text-lg text-[var(--color-muted)]">{copy.changelogDescription}</p>
+      </div>
+      {entries.data.length ? (
+        <ol className="space-y-14">
+          {entries.data.map((entry) => (
+            <li key={entry.id} className="grid gap-4 md:grid-cols-[160px_minmax(0,1fr)]">
+              <time dateTime={entry.publishedAt} className="text-sm text-[var(--color-muted)] md:pt-1.5">
+                {formatDate(entry.publishedAt, locale)}
+              </time>
+              <article id={entry.slug} className="min-w-0">
+                <h2 className="text-2xl font-semibold tracking-tight">
+                  <a href={localizedHref(contentPath('log', entry.slug), locale)} className="hover:text-primary-500">
+                    {entry.title}
+                  </a>
+                </h2>
+                {entry.description && <p className="mt-2 text-[var(--color-muted)]">{entry.description}</p>}
+                {entry.document && (
+                  <div className="mt-6">
+                    <DocumentView document={entry.document} locale={locale} anchorPrefix={`log-${entry.slug}`} />
+                  </div>
+                )}
+              </article>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p className="rounded-xl border border-dashed border-[var(--color-border)] p-10 text-center text-[var(--color-muted)]">
+          {copy.noContent}
+        </p>
+      )}
+      <Pagination locale={locale} href="/changelog" page={entries.page} pageSize={entries.pageSize} total={entries.total} />
     </section>
   );
 }

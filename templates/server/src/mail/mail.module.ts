@@ -4,7 +4,11 @@ import { MailService, ZuckerMailModule } from '@zucker-framework/notification';
 import {
   createMailLogAdminController, createMailTemplateAdminController, type MailTemplatePreview,
 } from '@zucker-framework/admin';
-import { SmtpTransport, SmtpTransportModule } from './smtp-transport';
+import { ApplicationMailTransport } from './mail-transport';
+import { ACCOUNT_MAIL_TEMPLATES } from './mail-templates';
+import { SmtpTransportModule } from './smtp-transport';
+import { TransactionalMail } from './transactional-mail';
+import { BillingReceiptMail } from './billing-receipt.runtime';
 
 /** Template-owned preview: stored template text, interpolated with no business sample data. */
 @Injectable()
@@ -18,30 +22,38 @@ export class MailTemplatePreviewer implements MailTemplatePreview {
 }
 
 /**
- * One MailService with durable templates (`email_templates`) and delivery history (`email_logs`).
- * Delivery uses the application's shared SmtpTransport (the `account-email` connection profile, also
- * used by account mail); without it nothing is sent and the admin pages still work. Applications
- * register their own built-in templates and audiences here.
+ * One MailService with durable templates (`email_templates`), the built-in account/billing templates
+ * and delivery history (`email_logs`). Delivery uses ApplicationMailTransport (the `account-email`
+ * connection profile: SMTP or Resend); without it nothing is sent and the admin pages still work.
+ * Imported by both AccountModule (account mail) and MailModule; Nest builds it once.
  */
 @Module({
-  imports: [ZuckerMailModule.forRootAsync({
+  imports: [SmtpTransportModule, ZuckerMailModule.forRootAsync({
     imports: [SmtpTransportModule],
-    inject: [DATABASE_ADAPTER, SmtpTransport],
+    inject: [DATABASE_ADAPTER, ApplicationMailTransport],
     useFactory: (...args: unknown[]) => {
-      const [database, transport] = args as [DatabaseAdapter, SmtpTransport];
+      const [database, transport] = args as [DatabaseAdapter, ApplicationMailTransport];
       return {
         database,
         providers: [transport],
-        templates: { defaultLocale: 'en', contentFields: { en: 'htmlContentEn', zh: 'htmlContentZh' }, builtIns: [] },
+        templates: { defaultLocale: 'en', contentFields: { en: 'htmlContentEn', zh: 'htmlContentZh' }, builtIns: ACCOUNT_MAIL_TEMPLATES },
       };
     },
   })],
+  providers: [TransactionalMail],
+  exports: [TransactionalMail, SmtpTransportModule],
+})
+export class MailCoreModule {}
+
+@Module({
+  imports: [MailCoreModule],
   controllers: [
     // RFC 8.5. Global AccountGuard/PermissionsGuard enforce authentication and permission metadata.
     createMailTemplateAdminController({ path: 'management/email-templates', permissions: { read: 'mail:query', write: 'mail:update' },
       auditModule: 'mail', previewService: MailTemplatePreviewer, guards: [] }),
     createMailLogAdminController({ guards: [] }),
   ],
-  providers: [MailTemplatePreviewer],
+  // Receipt mail is a consumer of the billing fulfillment outbox; it needs the global JobsModule.
+  providers: [MailTemplatePreviewer, BillingReceiptMail],
 })
 export class MailModule {}

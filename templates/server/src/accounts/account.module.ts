@@ -2,18 +2,19 @@ import { Module } from '@nestjs/common';
 import { AccountService, ACCOUNT_MAILER } from './account.service';
 import { AccountGuard } from './account.guard';
 import { AccountController } from './account.controller';
-import { SmtpAccountMailer } from './account-mailer';
-import { RUNTIME_ENVIRONMENT } from '../runtime-settings/runtime-settings.tokens';
-import { SmtpTransport, SmtpTransportModule } from '../mail/smtp-transport';
+import { MailAccountMailer } from './account-mailer';
+import { AccountOnboarding } from './account-onboarding';
+import { MailCoreModule } from '../mail/mail.module';
 
+/**
+ * Accounts. PolicyService (account policy) and JobsService (welcome-credit retry) are injected
+ * optionally from their global modules; without them sign-up keeps the policy defaults.
+ */
 @Module({
-  imports: [SmtpTransportModule],
+  imports: [MailCoreModule],
   controllers: [AccountController],
-  providers: [AccountService, AccountGuard, { provide: SmtpAccountMailer,
-    inject: [SmtpTransport, { token: RUNTIME_ENVIRONMENT, optional: true }],
-    useFactory: (transport: SmtpTransport, environment?: Readonly<NodeJS.ProcessEnv>) =>
-      new SmtpAccountMailer(transport, (environment ?? process.env).WEB_URL ?? '') },
-    { provide: ACCOUNT_MAILER, useExisting: SmtpAccountMailer }],
-  exports: [AccountService, AccountGuard],
+  providers: [AccountService, AccountGuard, AccountOnboarding, MailAccountMailer,
+    { provide: ACCOUNT_MAILER, useExisting: MailAccountMailer }],
+  exports: [AccountService, AccountGuard, AccountOnboarding],
 })
 export class AccountModule {}

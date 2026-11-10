@@ -1,0 +1,40 @@
+{
+  "name": "@zucker-framework/create-app",
+  "version": "1.0.19",
+  "description": "Create a Zucker Framework SaaS workspace: pnpm create @zucker-framework/app <name>",
+  "bin": {
+    "create-app": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "NOTICE",
+    "THIRD_PARTY_NOTICES"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs --clean",
+    "clean": "rm -rf dist",
+    "lint": "eslint src/",
+    "prepack": "node ../../scripts/prepare-package-legal.mjs"
+  },
+  "dependencies": {
+    "@zucker-framework/cli": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.43"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "license": "Apache-2.0",
+  "author": "Lind",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Lind-pro/zucker-framework.git",
+    "directory": "packages/create-app"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
+}

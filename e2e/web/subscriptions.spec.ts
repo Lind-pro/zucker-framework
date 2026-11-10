@@ -52,7 +52,7 @@ test('subscription list URL pagination preserves local detail identity', async (
   await page.goto('/en/billing/subscriptions'); await expect(page.getByRole('heading', { name: 'First subscription' })).toBeVisible();
   await page.getByRole('link', { name: 'Next', exact: true }).click(); await expect(page).toHaveURL(/page=2/);
   await expect(page.getByRole('heading', { name: 'Second subscription' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'View subscription', exact: true })).toHaveAttribute('href', `/en/billing/subscriptions/${another}`);
+  await expect(page.getByRole('link', { name: 'View subscription', exact: true })).toHaveAttribute('href', `/billing/subscriptions/${another}`);
   expect(pages).toContain('2');
 });
 
@@ -69,7 +69,7 @@ test('detail shows real service periods, pages receipts and only uses bound invo
   await expect(page.getByRole('link', { name: 'View invoice' })).toHaveAttribute('rel', 'noopener noreferrer');
   await page.getByRole('navigation', { name: 'Payment history pages' }).getByRole('link', { name: 'Next', exact: true }).click();
   await expect(page).toHaveURL(/page=2/); await expect(page.getByText('Renewal payment', { exact: true })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'View initial order' })).toHaveAttribute('href', `/en/billing/return?order=${id}`);
+  await expect(page.getByRole('link', { name: 'View initial order' })).toHaveAttribute('href', `/billing/return?order=${id}`);
   await expect(page.locator('script[id^="zucker-site-"], script[id^="zucker-analytics-"]')).toHaveCount(0);
 });
 
@@ -133,7 +133,7 @@ test('paid order with unfulfilled credits stays processing and links to the loca
   await expect(page.getByRole('status')).toContainText('Payment has been received');
   await expect(page.getByText('Completed', { exact: true })).toHaveCount(0);
   await expect(page.getByText('Awaiting payment', { exact: true })).toHaveCount(0);
-  await expect(page.getByRole('link', { name: 'View subscription' })).toHaveAttribute('href', `/en/billing/subscriptions/${id}`);
+  await expect(page.getByRole('link', { name: 'View subscription' })).toHaveAttribute('href', `/billing/subscriptions/${id}`);
   await expect(page.getByRole('button', { name: /Pay .* with PayPal/ })).toHaveCount(0);
   credited = true; await page.getByRole('button', { name: 'Check payment status' }).click();
   await expect(page.getByText('Completed', { exact: true })).toBeVisible();
@@ -193,7 +193,7 @@ test('English desktop and Chinese narrow screens keep subscription controls and 
   await expect(page.getByRole('link', { name: 'View invoice' })).toBeVisible();
   await page.screenshot({ path: test.info().outputPath('subscription-desktop-en.png'), fullPage: true });
   await context.addCookies([{ name: 'NEXT_LOCALE', value: 'zh', url: baseURL!, sameSite: 'Lax' }]);
-  await page.setViewportSize({ width: 390, height: 844 }); await page.goto(`/billing/subscriptions/${id}`);
+  await page.setViewportSize({ width: 390, height: 844 }); await page.goto(`/zh/billing/subscriptions/${id}`);
   await expect(page.getByRole('heading', { name: '管理订阅', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '取消订阅', exact: true }).click();
   await expect(page.getByRole('heading', { name: '确认取消订阅' })).toBeFocused();
@@ -208,7 +208,7 @@ test('anonymous subscription detail goes to sign-in before any private request',
   let reads = 0;
   await context.route(`**/api/billing/subscriptions/${id}`, route => { reads++; return envelope(route, subscription); });
   await context.route('**/api/authorize/oauth/providers', route => envelope(route, { providers: [] }));
-  await page.goto(`/en/billing/subscriptions/${id}`);
-  await expect(page).toHaveURL(/\/en\/login\?redirect=/); expect(reads).toBe(0);
-  expect(new URL(page.url()).searchParams.get('redirect')).toBe(`/en/billing/subscriptions/${id}`);
+  await page.goto(`/billing/subscriptions/${id}`);
+  await expect(page).toHaveURL(/\/login\?redirect=/); expect(reads).toBe(0);
+  expect(new URL(page.url()).searchParams.get('redirect')).toBe(`/billing/subscriptions/${id}`);
 });

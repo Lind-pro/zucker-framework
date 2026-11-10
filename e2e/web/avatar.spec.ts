@@ -12,7 +12,7 @@ async function open(page: Page, baseURL: string, locale = 'en') {
     const revoke = URL.revokeObjectURL.bind(URL), revoked: string[] = [];
     Reflect.set(window, '__avatarRevokedUrls', revoked); URL.revokeObjectURL = value => { revoked.push(value); revoke(value); };
   });
-  await page.goto(locale === 'zh' ? '/account' : '/en/account');
+  await page.goto(locale === 'zh' ? '/zh/account' : '/en/account');
 }
 
 test.beforeEach(async ({ context, baseURL }) => {
@@ -93,5 +93,5 @@ test('keeps profile editing usable during avatar failures and renders the recove
   await section.getByRole('button', { name: '保存头像', exact: true }).click();
   await expect(section.getByRole('alert')).toContainText('这张图片无法使用'); await expect(section.getByRole('button', { name: '保存头像', exact: true })).toBeDisabled();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  await section.screenshot({ path: '/private/tmp/zucker-avatar-mobile-20261024.png' });
+  await section.screenshot({ path: test.info().outputPath('avatar-mobile.png') });
 });

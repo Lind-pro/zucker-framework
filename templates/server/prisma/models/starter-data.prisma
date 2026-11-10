@@ -1,0 +1,10 @@
+// ─── Starter data markers (WP 1.Z) ───────────────────────────────────────────
+// One row per one-time starter seed that has run (e.g. `credit-packs`). Seeds that must never
+// recreate rows an administrator deleted check and write their marker in the seeding transaction.
+
+model starterDataMarkers {
+  name      String   @id
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@map("starter_data_markers")
+}

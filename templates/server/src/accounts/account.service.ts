@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Inject, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, Optional, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { randomUUID } from 'node:crypto';
 import { DATABASE_ADAPTER, type DatabaseAdapter, type ModelOperations } from '@zucker-framework/core';
@@ -7,12 +7,22 @@ import {
   PersistentSessionService, PersistentSessionRefreshTokenStore, RefreshTokenService, RefreshTokenError,
   BcryptEncoder, UserService, type UserEntity, type OneTimeTicketRecord, type RefreshTokenPair, type PersistentSession,
 } from '@zucker-framework/auth';
+import { AccountOnboarding, type SignupContext, type SignupWelcome } from './account-onboarding';
+import { readAccountPolicy, type AccountPolicyValues } from './account.policy';
 
 export const ACCOUNT_MAILER = Symbol('ACCOUNT_MAILER');
 export interface AccountMailer {
+  /** Throws 503 when account mail cannot be sent (no transport or no WEB_URL). */
   assertConfigured(): void;
-  send(email: string, purpose: 'verify-email' | 'reset-password', ticket: string, locale: string): Promise<void>;
+  send(email: string, purpose: 'verify-email' | 'reset-password', ticket: string, locale: string, userId?: string): Promise<void>;
+  /** Optional welcome message once the account can sign in; best effort, a no-op without a transport. */
+  welcome?(email: string, locale: string, name: string, userId: string): Promise<void>;
 }
+/** `register` result: verification mail sent, or (verification off) a signed-in session. */
+export type RegisterResult = { verificationRequired: true }
+  | ({ verificationRequired: false } & RefreshTokenPair & { userId: string });
+/** Request facts the controller passes to sign-up; never taken from the JSON body. */
+export interface RegisterRequestContext { ip?: string }
 interface AccountTicket extends OneTimeTicketRecord {
   userId: string;
   email: string;
@@ -53,6 +63,8 @@ export class AccountService {
     private readonly users: UserService,
     private readonly jwt: JwtService,
     @Inject(ACCOUNT_MAILER) private readonly mailer: AccountMailer,
+    // Optional so narrow compositions (tests) keep today's defaults: open, verification required, no extras.
+    @Optional() private readonly onboarding?: AccountOnboarding,
   ) {
     this.sessions = new PersistentSessionService<AccountSession>(db, { modelName: 'accountSessions', sessionTtlMs: SESSION_TTL_SECONDS * 1000 });
     this.tokens = new RefreshTokenService({
@@ -86,34 +98,70 @@ export class AccountService {
     });
   }
 
-  async register(body: unknown): Promise<{ verificationRequired: true }> {
-    const input = fields(body, ['username', 'email', 'password', 'locale']);
+  /** Current account policy (declared defaults without PolicyModule/AccountOnboarding). */
+  policy(): Promise<AccountPolicyValues> { return this.onboarding ? this.onboarding.policy() : readAccountPolicy(undefined); }
+
+  async register(body: unknown, context: RegisterRequestContext = {}): Promise<RegisterResult> {
+    const input = fields(body, ['username', 'email', 'password', 'locale', 'utm']);
     const email = emailAddress(input.email);
     if (!input.username || !input.password) throw new BadRequestException('Username and password are required');
     const locale = input.locale === 'zh' ? 'zh' : 'en';
-    this.mailer.assertConfigured();
-    let user: UserEntity;
+    const policy = await this.policy();
+    if (!policy.registrationOpen) throw new ForbiddenException('Registration is closed');
+    const verify = policy.requireEmailVerification;
+    // With verification on, refuse before creating an account that could never receive its ticket.
+    if (verify) this.mailer.assertConfigured();
+    const signup: SignupContext = { method: 'password', ip: context.ip, utmSource: input.utm };
+    let created: { user: UserEntity; welcome: SignupWelcome | null };
     try {
-      user = await this.db.$transaction(async tx => {
+      created = await this.db.$transaction(async tx => {
         const existing = await tx.model('users').findMany({ where: { OR: [{ email }, { username: input.username }] }, take: 1 });
         if (existing.length) throw new ConflictException('Account already exists');
-        return new UserService(tx).addUser({
+        // emailVerified stays false when verification is off: the address is still unproven, and
+        // turning the policy back on requires these accounts to verify before their next sign-in.
+        const user = await new UserService(tx).addUser({
           username: input.username, password: input.password, email, locale,
           name: input.username, typeId: 'member', status: true, emailVerified: false,
         });
+        return { user, welcome: this.onboarding ? await this.onboarding.recordSignup(tx, user.id, signup, policy) : null };
       });
     } catch (error) {
       if (error && typeof error === 'object' && 'code' in error && error.code === 'P2002') throw new ConflictException('Account already exists');
       throw error;
     }
-    await this.deliverTicket(user, 'verify-email');
-    return { verificationRequired: true };
+    const { user, welcome } = created;
+    await this.onboarding?.afterSignup(user.id, welcome);
+    if (verify) {
+      await this.deliverTicket(user, 'verify-email');
+      return { verificationRequired: true };
+    }
+    this.background('welcome', () => this.sendWelcome(user));
+    return { verificationRequired: false, ...await this.openSession(user, 'password') };
+  }
+
+  /** Account-related mail runs after the response, so its timing and failures never reach the caller. */
+  private background(kind: string, work: () => Promise<void>): void {
+    const delivery = work()
+      .catch(error => { this.logger.warn(`Account ${kind} mail failed: ${error instanceof Error ? error.name : 'Error'}`); })
+      .finally(() => { this.backgroundMail.delete(delivery); });
+    this.backgroundMail.add(delivery);
+  }
+  /** Welcome mail to an address the account controls; skipped without a transport or an address. */
+  async sendWelcome(user: Pick<UserEntity, 'id' | 'email' | 'locale' | 'name' | 'username'>): Promise<void> {
+    if (!user.email || !this.mailer.welcome) return;
+    await this.mailer.welcome(user.email, user.locale ?? 'en', user.name || user.username, user.id);
+  }
+  /** OAuth (or another trusted path) created an account: welcome credits now, welcome mail in the background. */
+  async completeProviderSignup(user: Pick<UserEntity, 'id' | 'email' | 'emailVerified' | 'locale' | 'name' | 'username'>,
+    welcome: SignupWelcome | null): Promise<void> {
+    await this.onboarding?.afterSignup(user.id, welcome);
+    if (user.emailVerified) this.background('welcome', () => this.sendWelcome(user));
   }
 
   private async deliverTicket(user: UserEntity, purpose: AccountTicket['purpose']): Promise<void> {
     if (!user.email) return;
     const code = await this.tickets().issue({ userId: user.id, email: user.email, purpose, credentialVersion: Number(user.credentialVersion ?? 0) });
-    await this.mailer.send(user.email, purpose, code, user.locale ?? 'en');
+    await this.mailer.send(user.email, purpose, code, user.locale ?? 'en', user.id);
   }
 
   async requestEmail(body: unknown, purpose: AccountTicket['purpose']): Promise<{ accepted: true }> {
@@ -122,12 +170,7 @@ export class AccountService {
     this.mailer.assertConfigured();
     const rows = await this.db.model('users').findMany({ where: { email }, take: 1 }) as UserEntity[];
     const user = rows[0];
-    if (user?.status && (purpose === 'reset-password' || !user.emailVerified)) {
-      const delivery = this.deliverTicket(user, purpose)
-        .catch(error => { this.logger.warn(`Account ${purpose} mail failed: ${error instanceof Error ? error.name : 'Error'}`); })
-        .finally(() => { this.backgroundMail.delete(delivery); });
-      this.backgroundMail.add(delivery);
-    }
+    if (user?.status && (purpose === 'reset-password' || !user.emailVerified)) this.background(purpose, () => this.deliverTicket(user, purpose));
     return { accepted: true };
   }
   /** Waits for verification/reset mail started by earlier requests (tests and graceful shutdown). */
@@ -140,6 +183,7 @@ export class AccountService {
     const input = fields(body, purpose === 'reset-password' ? ['ticket', 'password'] : ['ticket']);
     if (!input.ticket || !/^[A-Za-z0-9_-]{43}$/.test(input.ticket)) throw new BadRequestException('Invalid ticket');
     if (purpose === 'reset-password' && !input.password) throw new BadRequestException('Password is required');
+    let verified: UserEntity | null = null;
     try {
       await this.db.$transaction(async tx => {
         const ticket = await this.tickets(tx).consume(input.ticket);
@@ -148,6 +192,7 @@ export class AccountService {
           || ticket.credentialVersion !== Number(user.credentialVersion ?? 0)) throw new OneTimeTicketError('invalid');
         if (purpose === 'verify-email') {
           await tx.model('users').update({ where: { id: user.id }, data: { emailVerified: true } });
+          verified = user;
         } else {
           await this.replacePassword(tx, user, input.password, 'password-reset');
         }
@@ -156,6 +201,8 @@ export class AccountService {
       if (error instanceof OneTimeTicketError) throw new BadRequestException('Invalid or expired ticket');
       throw error;
     }
+    const welcomed = verified as UserEntity | null;
+    if (welcomed) this.background('welcome', () => this.sendWelcome(welcomed));
     return { success: true };
   }
 
@@ -202,7 +249,7 @@ export class AccountService {
       throw new UnauthorizedException('Invalid credentials or email not verified');
     }
     const user = await this.users.findByUsernameAndPassword(input.username, input.password);
-    if (!user?.status || !user.emailVerified) throw new UnauthorizedException('Invalid credentials or email not verified');
+    if (!user?.status || !await this.emailRequirementMet(user)) throw new UnauthorizedException('Invalid credentials or email not verified');
     return this.openSession(user, 'password');
   }
 
@@ -232,7 +279,11 @@ export class AccountService {
       const binding = await db.model('thirdPartyBinds').findUnique({ where: { id: session.oauthBindingId } }) as { userId: string } | null;
       return binding?.userId === user.id;
     }
-    return (session.authMethod === undefined || session.authMethod === 'password') && user.emailVerified === true;
+    return (session.authMethod === undefined || session.authMethod === 'password') && await this.emailRequirementMet(user);
+  }
+  /** Password accounts need a verified address only while the policy requires verification (read-through, cached). */
+  private async emailRequirementMet(user: UserEntity): Promise<boolean> {
+    return user.emailVerified === true || !(await this.policy()).requireEmailVerification;
   }
 
   /** Read the current HttpOnly session without rotating it, for browser-bound OAuth callbacks. */

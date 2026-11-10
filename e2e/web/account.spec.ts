@@ -43,7 +43,7 @@ test.describe('Web public email flows', () => {
     await page.getByRole('button', { name: 'Sign Up', exact: true }).click();
     await expect(page.getByRole('status')).toContainText('verify it before signing in');
     expect(requests).toEqual([{ path: '/api/authorize/register', body: { username: 'synthetic', email: 'synthetic@example.test', password: 'Synthetic123', locale: 'en' } }]);
-    await expect(page).toHaveURL(/\/en\/register$/);
+    await expect(page).toHaveURL(/\/register$/);
   });
   test('reads a fragment ticket once and verifies only on explicit confirmation', async ({ page }) => {
     const calls: Array<{ url: string; body: unknown }> = [];
@@ -52,7 +52,7 @@ test.describe('Web public email flows', () => {
     });
     await page.goto(`/en/verify-email#ticket=${ticket}`);
     await expect(page.getByRole('button', { name: 'Verify email', exact: true })).toBeVisible();
-    await expect(page).toHaveURL(/\/en\/verify-email$/); expect(calls).toHaveLength(0);
+    await expect(page).toHaveURL(/\/verify-email$/); expect(calls).toHaveLength(0);
     await page.getByRole('button', { name: 'Verify email', exact: true }).click();
     await expect(page.getByRole('status')).toContainText('Your email is verified');
     expect(calls).toHaveLength(1); expect(calls[0].body).toEqual({ ticket }); expect(calls[0].url).not.toContain(ticket);
@@ -87,7 +87,7 @@ test.describe('Web public email flows', () => {
     await page.getByRole('button', { name: 'Reset password', exact: true }).click();
     await expect(page.getByRole('status')).toContainText('previous sessions have been revoked');
     expect(calls).toHaveLength(1); expect(calls[0].body).toEqual({ ticket, password: 'Synthetic123' }); expect(calls[0].url).not.toContain(ticket);
-    await expect(page).toHaveURL(/\/en\/reset-password$/);
+    await expect(page).toHaveURL(/\/reset-password$/);
   });
 });
 
@@ -130,7 +130,7 @@ test.describe('Web account sessions', () => {
     await expect(sessions.getByRole('alert')).toBeVisible(); failSessions = false;
     await sessions.getByRole('button', { name: 'Retry' }).click();
     await sessions.getByRole('button', { name: 'Sign out this session' }).click();
-    await expect(page).toHaveURL(/\/en\/login$/); expect(mutations).toEqual(['/api/authorize/sessions/owned-session']);
+    await expect(page).toHaveURL(/\/login$/); expect(mutations).toEqual(['/api/authorize/sessions/owned-session']);
   });
 });
 
@@ -144,6 +144,7 @@ test('profile and password forms use the account contracts without refreshing on
     if (path.endsWith('/refresh')) { refreshes++; return envelope(route, { access_token: 'fresh-access' }); }
     if (path.endsWith('/oauth/providers')) return envelope(route, { providers: [] });
     if (path.endsWith('/oauth/connections')) return envelope(route, { connections: [] });
+    if (path.includes('/authorize/avatar') && route.request().method() === 'GET') return envelope(route, null, 404);
     writes.push({ path, body: route.request().postDataJSON() });
     if (path.endsWith('/profile')) return envelope(route, { success: true });
     if (path.endsWith('/password')) {
@@ -166,11 +167,11 @@ test('profile and password forms use the account contracts without refreshing on
   await form.getByLabel('Confirm Password', { exact: true }).fill('Synthetic456');
   await form.getByRole('button', { name: 'Change password', exact: true }).click();
   await expect(form.getByRole('alert')).toContainText('Could not change the password');
-  expect(refreshes).toBe(0); await expect(page).toHaveURL(/\/en\/account$/);
+  expect(refreshes).toBe(0); await expect(page).toHaveURL(/\/account$/);
   rejectPassword = false;
   await form.getByLabel('Current password', { exact: true }).fill('Synthetic123');
   await form.getByRole('button', { name: 'Change password', exact: true }).click();
-  await expect(page).toHaveURL(/\/en\/login\?changed=1$/);
+  await expect(page).toHaveURL(/\/login\?changed=1$/);
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('auth-storage') || '{}').state.isAuthenticated)).toBe(false);
   expect((await page.context().cookies()).some(cookie => cookie.name === 'zucker-session')).toBe(false);
 });
@@ -182,6 +183,8 @@ test('logout failure is not reported as successful and a successful retry clears
     if (path.endsWith('/authorize/api-keys') && route.request().method() === 'GET') return envelope(route, { apiKeys: [] });
     if (path.endsWith('/me')) return envelope(route, identity);
     if (path.endsWith('/sessions')) return envelope(route, []);
+    // No profile photo: otherwise the avatar section reports a load failure as a second alert in main.
+    if (path.endsWith('/authorize/avatar') && route.request().method() === 'GET') return envelope(route, { assetId: null, revision: 0 });
     if (path.endsWith('/logout')) return failLogout ? envelope(route, null, 503, 'Unavailable')
       : envelope(route, { success: true }, 200, 'success', { 'set-cookie': 'zucker-session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax' });
     return envelope(route, null, 404);
@@ -189,10 +192,10 @@ test('logout failure is not reported as successful and a successful retry clears
   await addSession(page); await page.goto('/en/account');
   await expect(page.getByLabel('Display name')).toHaveValue('Synthetic member');
   await page.getByRole('button', { name: 'Sign out', exact: true }).click();
-  await expect(page.getByRole('main').getByRole('alert')).toBeVisible(); await expect(page).toHaveURL(/\/en\/account$/);
+  await expect(page.getByRole('main').getByRole('alert')).toBeVisible(); await expect(page).toHaveURL(/\/account$/);
   failLogout = false;
   await page.getByRole('button', { name: 'Sign out', exact: true }).click();
-  await expect(page).toHaveURL(/\/en\/login$/);
+  await expect(page).toHaveURL(/\/login$/);
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('auth-storage') || '{}').state.isAuthenticated)).toBe(false);
 });
 
@@ -210,7 +213,7 @@ test.describe('Configured analytics account boundary', () => {
     await expect(page.locator('#zucker-analytics-plausible-script')).toHaveAttribute('src', 'https://analytics.example.test/synthetic.js');
     await expect.poll(() => page.evaluate(() => Reflect.get(window, '__syntheticAnalyticsLoaded'))).toBe(true);
     await page.locator('header').getByRole('link', { name: 'Sign In', exact: true }).first().click();
-    await expect(page).toHaveURL(/\/en\/login$/);
+    await expect(page).toHaveURL(/\/login$/);
     await expect(page.locator('script[id^="zucker-analytics-"]')).toHaveCount(0);
     expect(await page.evaluate(() => Reflect.get(window, '__syntheticAnalyticsLoaded'))).toBeUndefined();
     const count = external.length;

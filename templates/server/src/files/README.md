@@ -66,7 +66,11 @@ Redirects are disabled and a redirect response is rejected without following it.
 `FILES_IMPORT_TIMEOUT_MS` defaults to 15000 and is bounded to 1–30000. The deadline covers both the
 request and streamed body reading; actual accumulated bytes and declared lengths are bounded by the
 same attachment limit. Source errors become fixed messages. `FILES_IMPORT_FETCH` is injectable for
-synthetic verification; production uses fetch with manual redirects and omitted credentials.
+synthetic verification; production uses core `createPublicFetch({allowedProtocols: ['https:'],
+allowedPorts: [443]})`: the allowlisted hostname is resolved once, every resolved address must be
+public (loopback, private, link-local, CGNAT, unique-local and similar ranges are refused, as is a
+mixed public/private answer set), and the request is pinned to the checked address so a second DNS
+answer cannot redirect it. A refused destination returns 403 `FILE_IMPORT_SOURCE_FORBIDDEN`.
 
 The bounded downloaded bytes go through ordinary owner/key upload. Explicit same-key retries may
 read the source again, but changed content conflicts with the existing immutable asset identity.

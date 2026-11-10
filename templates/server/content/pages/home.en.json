@@ -1,0 +1,101 @@
+{
+  "publishedAt": "2026-01-01",
+  "document": {
+    "version": 2,
+    "title": "Home",
+    "description": "Starter landing page. Edit or replace it in the admin under Content.",
+    "authorName": "",
+    "markdown": "",
+    "blocks": [
+      {
+        "id": "hero",
+        "type": "hero",
+        "variant": "centered",
+        "heading": "Launch your AI product faster",
+        "text": "Accounts, billing, credits, content and an admin console are already wired together. Replace this text with your own pitch.",
+        "action": {
+          "label": "See pricing",
+          "href": "/pricing"
+        },
+        "secondaryAction": {
+          "label": "Read the docs",
+          "href": "/docs/getting-started"
+        }
+      },
+      {
+        "id": "features",
+        "type": "features",
+        "variant": "grid",
+        "heading": "Everything a paid product needs",
+        "items": [
+          {
+            "title": "Accounts and sign-in",
+            "text": "Email sign-up with verification, password reset, OAuth providers and API keys."
+          },
+          {
+            "title": "Billing and credits",
+            "text": "Subscriptions, one-time purchases and credit packs with an auditable credit ledger."
+          },
+          {
+            "title": "Content you can edit",
+            "text": "Landing pages, blog, docs, changelog and legal pages managed from the admin console."
+          },
+          {
+            "title": "Operations built in",
+            "text": "Roles and permissions, audit logs, runtime settings and background jobs."
+          }
+        ]
+      },
+      {
+        "id": "pricing",
+        "type": "pricing",
+        "heading": "Simple, transparent pricing",
+        "text": "Plans and credit packs come from the admin console. They become purchasable once a payment provider is enabled.",
+        "plans": "all",
+        "showCreditPacks": true
+      },
+      {
+        "id": "blog",
+        "type": "blog-list",
+        "heading": "From the blog",
+        "limit": 3
+      },
+      {
+        "id": "changelog",
+        "type": "changelog",
+        "heading": "What's new",
+        "limit": 3
+      },
+      {
+        "id": "faq",
+        "type": "faq",
+        "heading": "Frequently asked questions",
+        "items": [
+          {
+            "question": "Can I change this page?",
+            "answer": "Yes. Edit the published home page in the admin under Content, or publish a page with the slug \"home\" to replace this starter version."
+          },
+          {
+            "question": "Do I need payment credentials to try it?",
+            "answer": "No. The site runs without providers; plans become purchasable once a payment provider is enabled in the admin."
+          }
+        ]
+      },
+      {
+        "id": "cta",
+        "type": "cta",
+        "heading": "Ready to start?",
+        "text": "Create an account and explore the console.",
+        "action": {
+          "label": "Create an account",
+          "href": "/register"
+        }
+      }
+    ],
+    "seo": {
+      "title": "",
+      "description": "",
+      "noIndex": false
+    }
+  }
+}

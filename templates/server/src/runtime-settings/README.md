@@ -6,6 +6,14 @@ The token lives in the dependency-free `runtime-settings.tokens.ts`; factories i
 the resulting environment to their existing options parser. It is resolved once at startup and
 frozen. Saving a profile never changes an active SDK, financial task or mail transport.
 
+Profiles are declared with `defineConnectionProfile({ profile, applyMode, validate })` (`registry.ts`)
+in per-feature arrays (`profiles/*.profiles.ts`; new features export theirs from their own folder) and
+composed in `connection-settings.descriptors.ts`. `applyMode: 'restart'` profiles reach providers only
+through the startup snapshot. `applyMode: 'hot'` profiles (currently `web-analytics` and
+`web-connections`) are read on demand through `ConnectionSettingsService.liveEnvironment()`: a 30 s
+per-process cache that the saving process invalidates when the save commits; other replicas pick the
+change up within the TTL. Payment, sign-in, mail, storage and AI profiles stay restart-to-apply.
+
 The eight non-AI server-provider profiles configure the existing Stripe, PayPal, Creem, Google/GitHub login,
 account SMTP, durable SMTP/Resend and private S3-compatible storage (including R2) providers.
 Six optional native AI profiles configure OpenAI, OpenAI-compatible, OpenRouter, DeepSeek, Anthropic
@@ -44,7 +52,7 @@ The general `/api/config` API remains fixed to the separate `system` scope.
 
 ## Administrator contract
 
-- `GET /api/management/connection-settings`: `{profiles, appliesOn: 'server-restart', externalRequests: false}`.
+- `GET /api/management/connection-settings`: `{profiles, appliesOn: 'per-profile', externalRequests: false}`.
 - `GET /api/management/connection-settings/:profileId`: one profile.
 - `PUT /api/management/connection-settings/:profileId`: update and return the saved profile.
 
@@ -67,7 +75,8 @@ non-empty string. `clear` explicitly masks the environment value. An empty input
 credential. Unknown fields, client-supplied actor/profile identity and stale revisions are rejected.
 A no-op keeps the current revision. Revision conflicts require a fresh read before a deliberate save.
 
-Each profile returns `storedRevision`, `appliedRevision`, `pendingRestart`, `canSave`, field
+Each profile returns `applyMode` (`hot` | `restart`), `appliesOn` (`next-request` | `server-restart`),
+`storedRevision`, `appliedRevision`, `pendingRestart` (always false for hot profiles), `canSave`, field
 metadata and field provenance (`saved`, `environment`, `default`, `cleared`, `unset`). Secret fields
 return only whether a value is configured and its source; they never contain a `value` property.
 The page can therefore show saved versus active settings without revealing credentials. Non-secret
@@ -95,14 +104,15 @@ configuration and therefore needs an explicit provider-account reconciliation de
 
 ## Applied public website configuration
 
-`GET /api/site/public/integrations` is an unauthenticated, `no-store` projection of the applied startup
-snapshot: `{analytics, connections, revisions: {analytics, connections}}`. It accepts no dynamic
+`GET /api/site/public/integrations` is an unauthenticated, `no-store` projection of the current hot
+public profiles: `{analytics, connections, revisions: {analytics, connections}}`. It accepts no dynamic
 scope or field selector. It never includes server provider profiles, credentials, ciphertext, hashes
 or the environment object. A disabled global switch returns only `{enabled: false}`; disabled
-providers omit their identifiers and URLs as well. Saving an enabled profile has no public effect
-until restart. Invalid enabled startup configuration fails the endpoint instead of emitting scripts.
+providers omit their identifiers and URLs as well. A save is visible on the next request in the saving
+process and within 30 s elsewhere. Invalid enabled startup configuration fails the endpoint instead of emitting scripts.
 
-This endpoint does no database/provider I/O after startup and has no separate shared-IP rate limit:
+This endpoint reads the database at most once per profile per cache TTL (concurrent requests share the
+read), makes no provider I/O and has no separate shared-IP rate limit:
 server-rendered pages otherwise consume one server IP's allowance for all visitors. Administrator
 configuration routes retain their permission, Origin and rate-limit checks. The host remains
 responsible for ordinary ingress controls.
@@ -111,4 +121,4 @@ The website decides consent and eligible routes before mounting any scripts. Pub
 is not a consent signal or provider availability check. `buildAdsTxt` and both pure configuration
 resolvers are reused; no analytics, advertising or customer-support requests are made by the server.
 The PG/HTTP suite verifies default-off behavior, authenticated saves, CAS, exact public projections,
-disabled-value redaction, secret sentinels and a real HTTP application restart before activation.
+disabled-value redaction, secret sentinels and activation on the next request without a restart, and the same projection after a real HTTP restart.

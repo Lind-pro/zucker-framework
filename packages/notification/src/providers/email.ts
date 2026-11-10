@@ -25,6 +25,7 @@ export interface EmailProviderOptions {
   host: string;
   port: number;
   secure?: boolean;
+  /** SMTP AUTH credentials; leave both empty for a server without authentication. */
   auth: {
     user: string;
     pass: string;
@@ -56,7 +57,9 @@ export class EmailProvider implements SimpleNotifierProvider, MailProvider {
             host: options.host,
             port: options.port,
             secure: options.secure ?? false,
-            auth: options.auth,
+            // Empty credentials mean "no SMTP AUTH" (local catchers, IP-allowlisted relays). Passing
+            // `{user: '', pass: ''}` would make Nodemailer attempt AUTH whenever the server offers it.
+            ...(options.auth?.user || options.auth?.pass ? { auth: options.auth } : {}),
           });
     if (this.transporter) this.logger.log('Email service initialized');
   }

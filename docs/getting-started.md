@@ -18,6 +18,10 @@
 
 使用已发布 CLI 时先核对该版本的实际文件和支持范围，不使用 `latest` 推断能力。旧版 `1.0.2` 的独立最小 Server 示例仍可作为历史入口；它不包含本节新增的 Admin/Web bundle 与消费者指令安装。源码 manifest 的版本号、catalog 中的版本和注册表已发布制品是不同证据。
 
+### 完整工作区：`zucker create`（1.0.20 起）
+
+需要 Server、Web、Admin 一起上线时，优先使用 `zucker create <name> [--locale en|zh] [--no-admin] [--no-web]`，或等价的 `pnpm create @zucker-framework/app <name>`。它生成一个 pnpm 工作区（`apps/server`、`apps/web`、`apps/admin`）、Docker Compose（PostgreSQL、Redis、MinIO、Mailpit、一次性迁移服务）、各应用 Dockerfile 和唯一的根 `.env`（`0600`，所有密钥随机生成）；默认语言在创建时选择，默认 `en`。应用依赖固定到发布目录中的版本，生成时不需要 Framework 源码。启动与管理员初始化步骤见[新 SaaS 落地手册第 0 节](saas-quickstart.md#0-推荐一条命令生成完整工作区1020-起)。`init` 继续生成单个应用，下表说明其模板。在 1.0.20 发布前，只能用本地构建的 CLI（`node packages/cli/dist/index.js create ...`）验证，生成项目的依赖安装需要对应的固定制品。
+
 ### 本地源码的模板选择
 
 | 模板 | 当前本地实现的数据来源 | 能力边界 |

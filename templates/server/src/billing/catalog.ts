@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import type { HostedCheckoutAdapter, HostedCheckoutOffer, HostedCheckoutSelection, SubscriptionAdapter } from '@zucker-framework/payment';
-import { parsePlanOfferId, toMinorUnits } from '@zucker-framework/payment';
+import { localizedText, packOfferId, parsePackOfferId, parsePlanOfferId, toMinorUnits, type CreditPackCatalogService } from '@zucker-framework/payment';
+import type { PublicCreditPack } from '@zucker-framework/fe-types/back-office';
 import { referralMetadata, type ReferralProvider } from '@zucker-framework/fe-site';
 import { validateCreditFulfillmentPolicy } from './ledger';
 import type { BillingPlanOffers } from './billing-extensions';
@@ -54,18 +55,32 @@ export function readBillingCatalog(serialized: string | undefined): readonly Bil
   });
 }
 
+/** Database credit packs as checkout offers (see {@link BillingCatalog}). */
+export interface BillingPackOffers {
+  service: CreditPackCatalogService;
+  /** True when the `credit_packs` table has any row; static payment offers are then no longer sold. */
+  configured(): Promise<boolean>;
+}
+
 /**
  * Checkout offers. Plans (when a {@link BillingPlanOffers} source is registered) are the single source
  * of plan prices: a `plan:` offer is resolved from the current plan price and its snapshot is frozen
- * on the order. Static BILLING_CATALOG_JSON offers remain for credit packs and credit-only
- * subscriptions; a static subscription offer whose id a plan claims (its seed) is no longer sold.
+ * on the order. Credit packs come from the `credit_packs` table (`pack:` offers, snapshot frozen on the
+ * order); static BILLING_CATALOG_JSON payment offers are sold only while that table is empty (seed and
+ * fallback). Static credit-only subscriptions remain; a static subscription offer whose id a plan
+ * claims (its seed) is no longer sold.
  */
 export class BillingCatalog {
   private readonly items: () => readonly BillingCatalogItem[];
   constructor(items: readonly BillingCatalogItem[] | (() => readonly BillingCatalogItem[]), private readonly providers: readonly HostedCheckoutAdapter[],
     private readonly referrals: readonly ReferralProvider[] = [], private readonly subscriptions: readonly SubscriptionAdapter[] = [],
-    private readonly planOffers: () => BillingPlanOffers | null = () => null) {
+    private readonly planOffers: () => BillingPlanOffers | null = () => null,
+    private readonly packOffers: BillingPackOffers | null = null) {
     this.items = typeof items === 'function' ? items : () => items;
+  }
+  /** Static payment offers are replaced by database packs as soon as one pack exists. */
+  private async staticPacksSold(): Promise<boolean> {
+    return !this.packOffers || !(await this.packOffers.configured());
   }
 
   private grantBasis(item: BillingCatalogItem, provider: string): 'period' | 'payment' {
@@ -90,14 +105,57 @@ export class BillingCatalog {
   planProviders(mode: 'payment' | 'subscription', providerRefs: Readonly<Record<string, string>>): string[] {
     return this.providers.filter(provider => !!providerRefs[provider.id] && this.supports(provider, mode, 'period')).map(provider => provider.id);
   }
-  private async claimed(item: BillingCatalogItem): Promise<boolean> {
+  private async claimed(item: BillingCatalogItem, staticPacks: () => Promise<boolean>): Promise<boolean> {
+    if (item.mode === 'payment') return !(await staticPacks());
     const plans = this.planOffers();
     return item.mode === 'subscription' && !!plans && await plans.claims(item.id);
   }
+  /** Providers that can sell a one-time pack price now. */
+  packProviders(providerRefs: Readonly<Record<string, string>>): string[] {
+    return this.providers.filter(provider => !!providerRefs[provider.id] && this.supports(provider, 'payment', 'payment')).map(provider => provider.id);
+  }
+  /**
+   * Credit packs for `GET /billing/plans`: listed database packs, or (while the table is empty) the
+   * static payment offers they replace, projected to the same shape (`id`/`slug`/`offerId` = offer id).
+   * Prices are optionally narrowed to one currency; text is localized for `locale` when translated.
+   */
+  async publicPacks(currency?: string, locale?: string): Promise<PublicCreditPack[]> {
+    if (this.packOffers && !(await this.staticPacksSold()))
+      return (await this.packOffers.service.list({ listedOnly: true })).map(pack => ({
+        id: pack.id, slug: pack.slug, title: localizedText(pack.title, pack.titleI18n, locale),
+        description: localizedText(pack.description, pack.descriptionI18n, locale),
+        credits: pack.credits, expiresInDays: pack.expiresInDays, order: pack.order,
+        prices: pack.prices.filter(price => !currency || price.currency === currency).map(price => {
+          const providers = toMinorUnits(price.amount, price.currency) > 0 ? this.packProviders(price.providerRefs) : [];
+          return { currency: price.currency, amount: price.amount, purchasable: providers.length > 0,
+            offerId: providers.length ? packOfferId(pack.id, price.currency) : null, providers };
+        }),
+      }));
+    return this.items().filter(item => item.mode === 'payment').map((item, order) => {
+      const providers = this.available(item).map(provider => provider.id);
+      return { id: item.id, slug: item.id, title: item.title, description: null, credits: item.credits,
+        expiresInDays: item.expiresInDays, order,
+        prices: currency && item.currency !== currency ? [] : [{ currency: item.currency, amount: item.amount,
+          purchasable: providers.length > 0, offerId: providers.length ? item.id : null, providers }] };
+    });
+  }
+  /** `GET /billing/catalog`: listed database packs (one offer per price) or the static offers they replace. */
   async list() {
     const offers = [];
+    let staticPacks: Promise<boolean> | undefined;
+    const sold = () => (staticPacks ??= this.staticPacksSold());
+    if (this.packOffers && !(await sold()))
+      for (const pack of await this.packOffers.service.list({ listedOnly: true }))
+        for (const price of pack.prices) {
+          const providers = toMinorUnits(price.amount, price.currency) > 0 ? this.packProviders(price.providerRefs) : [];
+          if (!providers.length) continue;
+          offers.push({ id: packOfferId(pack.id, price.currency), title: pack.title, mode: 'payment' as const,
+            money: { amount: price.amount, currency: price.currency }, credits: pack.credits, expiresInDays: pack.expiresInDays,
+            providers: providers.map(id => ({ id, requiresCapture: !!this.providers.find(provider => provider.id === id)?.capture,
+              referralProviders: this.referralProviders(id) })) });
+        }
     for (const item of this.items()) {
-      if (await this.claimed(item)) continue;
+      if (await this.claimed(item, sold)) continue;
       const providers = this.available(item);
       if (!providers.length) continue;
       offers.push({ id: item.id, title: item.title, mode: item.mode,
@@ -110,8 +168,10 @@ export class BillingCatalog {
   }
   async resolve(selection: Readonly<HostedCheckoutSelection>): Promise<HostedCheckoutOffer> {
     if (parsePlanOfferId(selection.offerId)) return this.resolvePlan(selection);
+    if (parsePackOfferId(selection.offerId)) return this.resolvePack(selection);
     const item = this.items().find(offer => offer.id === selection.offerId);
-    if (!item || !this.available(item).some(provider => provider.id === selection.providerId) || await this.claimed(item))
+    if (!item || !this.available(item).some(provider => provider.id === selection.providerId)
+      || await this.claimed(item, () => this.staticPacksSold()))
       throw new BadRequestException('Offer or payment provider is unavailable');
     const catalogReference = item.providers[selection.providerId as keyof BillingCatalogItem['providers']];
     if (!catalogReference) throw new BadRequestException('Offer is not available with this provider');
@@ -130,10 +190,25 @@ export class BillingCatalog {
     const { snapshot } = resolved;
     return { version: `plan:${snapshot.planId}@${snapshot.revision}`, catalogReference: snapshot.providerRef,
       description: resolved.plan.name, mode: resolved.mode, money: { amount: snapshot.amount, currency: snapshot.currency },
-      // Plans grant entitlement, not credits. The snapshot is what write-back applies.
-      fulfillmentData: { credits: 0, expiresInDays: null, ...(resolved.mode === 'subscription' ? { grantBasis: 'period' } : {}), plan: { ...snapshot } } };
+      // The plan term (write-back) and the per-period credits both come from this frozen snapshot;
+      // renewals reuse it, so a later price edit never changes what an existing subscription grants.
+      fulfillmentData: { credits: snapshot.credits,
+        expiresInDays: typeof snapshot.creditExpiry === 'number' ? snapshot.creditExpiry : null,
+        ...(snapshot.credits > 0 && snapshot.creditExpiry === 'period' ? { expiresAtPeriodEnd: true } : {}),
+        ...(resolved.mode === 'subscription' ? { grantBasis: 'period' } : {}), plan: { ...snapshot } } };
   }
-  private referralProviders(provider: string): ReferralProvider[] {
+  /** Amount, currency, credits and expiry come from the pack as it is now, frozen on the order. */
+  private async resolvePack(selection: Readonly<HostedCheckoutSelection>): Promise<HostedCheckoutOffer> {
+    const resolved = this.packOffers ? await this.packOffers.service.resolveOffer(selection.offerId, selection.providerId) : null;
+    const provider = this.providers.find(value => value.id === selection.providerId);
+    if (!resolved || !provider || !this.supports(provider, 'payment', 'payment'))
+      throw new BadRequestException('Offer or payment provider is unavailable');
+    const { snapshot } = resolved;
+    return { version: `pack:${snapshot.packId}@${snapshot.revision}`, catalogReference: snapshot.providerRef,
+      description: resolved.pack.title, mode: 'payment', money: { amount: snapshot.amount, currency: snapshot.currency },
+      fulfillmentData: { credits: snapshot.credits, expiresInDays: snapshot.expiresInDays, pack: { ...snapshot } } };
+  }
+  referralProviders(provider: string): ReferralProvider[] {
     // Official affiliate integration support, not merely a gateway accepting arbitrary metadata.
     if (provider === 'stripe') return [...this.referrals];
     if (provider === 'creem') return this.referrals.filter(value => value === 'affonso');

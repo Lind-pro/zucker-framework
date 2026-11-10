@@ -42,7 +42,7 @@ async function signIn(page: Page) {
 test.describe('Web account sign-in', () => {
   test('preserves locale, HttpOnly refresh cookie and wildcard permissions', async ({ page }) => {
     await mockAccount(page); await page.goto('/en/login'); await signIn(page);
-    await expect(page).toHaveURL(/\/en\/account$/);
+    await expect(page).toHaveURL(/\/account$/);
     const cookies = await page.context().cookies();
     expect(cookies.find(cookie => cookie.name === 'zucker-session')).toMatchObject({ value: 'synthetic-refresh', httpOnly: true });
     expect(cookies.some(cookie => cookie.name === 'auth-token')).toBe(false);
@@ -55,23 +55,23 @@ test.describe('Web account sign-in', () => {
   test('bad credentials stay on the same page without refreshing another session', async ({ page }) => {
     const calls = await mockAccount(page, false); await page.goto('/en/login'); await signIn(page);
     await expect(page.getByRole('main').getByRole('alert')).toContainText('Sign-in failed');
-    await expect(page).toHaveURL(/\/en\/login$/);
+    await expect(page).toHaveURL(/\/login$/);
     expect(calls.filter(path => path.endsWith('/refresh'))).toHaveLength(0);
   });
   for (const target of ['//outside.example/path', '/\\outside.example/path', '/%2Foutside.example/path']) {
     test(`rejects external redirect ${target}`, async ({ page }) => {
       await mockAccount(page); await page.goto(`/en/login?redirect=${encodeURIComponent(target)}`); await signIn(page);
-      await expect(page).toHaveURL(/\/en\/account$/);
+      await expect(page).toHaveURL(/\/account$/);
     });
   }
   test('returns to an authorized locale-aware account path', async ({ page }) => {
     await mockAccount(page); await page.goto('/en/login?redirect=%2Fen%2Faccount'); await signIn(page);
-    await expect(page).toHaveURL(/\/en\/account$/);
+    await expect(page).toHaveURL(/\/account$/);
     await expect(page.getByRole('heading', { name: 'Your account', exact: true })).toBeVisible();
   });
   test('forgot-password link has a real localized destination', async ({ page }) => {
     await page.goto('/en/login'); await page.getByRole('link', { name: 'Forgot password?' }).click();
-    await expect(page).toHaveURL(/\/en\/forgot-password$/);
+    await expect(page).toHaveURL(/\/forgot-password$/);
     await expect(page.getByRole('button', { name: 'Send reset link' })).toBeVisible();
   });
 });

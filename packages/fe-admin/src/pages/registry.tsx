@@ -18,6 +18,7 @@ import {
   Mail,
   MailCheck,
   PackageCheck,
+  PackagePlus,
   PlugZap,
   ReceiptText,
   RotateCcw,
@@ -39,6 +40,7 @@ function lazyPage<M>(load: () => Promise<M>, pick: (module: M) => ComponentType)
 const AIModelsPage = lazyPage(() => import('./ai-models'), (m) => m.AIModelsPage);
 const ConnectionsPage = lazyPage(() => import('./connections'), (m) => m.ConnectionsPage);
 const CreditsPage = lazyPage(() => import('./credits'), (m) => m.CreditsPage);
+const CreditPacksPage = lazyPage(() => import('./credit-packs'), (m) => m.CreditPacksPage);
 const DashboardPage = lazyPage(() => import('./dashboard'), (m) => m.DashboardPage);
 const DictionaryPage = lazyPage(() => import('./dictionary'), (m) => m.DictionaryPage);
 const EmailTemplatesPage = lazyPage(() => import('./email'), (m) => m.EmailTemplatesPage);
@@ -77,6 +79,8 @@ export function createDefaultPages(codes: AdminPermissionCodes): BuiltInPage[] {
     { key: 'permissions', path: '/permissions', titleKey: 'page.permissions', permission: codes.permissions.query, component: PermissionsPage, icon: LockKeyhole },
     { key: 'apiKeys', path: '/records/api-keys', titleKey: 'page.apiKeys', permission: codes.apiKeys.query, component: ApiKeysPage, icon: KeyRound },
     { key: 'plans', path: '/plans', titleKey: 'page.plans', permission: codes.plans.query, component: PlansPage, icon: PackageCheck },
+    // Credit packs share the plan catalog permissions (the server mounts the plan admin controller for them).
+    { key: 'creditPacks', path: '/credit-packs', titleKey: 'page.creditPacks', permission: codes.plans.query, component: CreditPacksPage, icon: PackagePlus },
     { key: 'userSubscriptions', path: '/user-subscriptions', titleKey: 'page.userSubscriptions', permission: codes.subscriptions.query, component: UserSubscriptionsPage, icon: Ticket },
     { key: 'quotaUsage', path: '/quota/usage', titleKey: 'page.quotaUsage', permission: codes.quota.query, component: QuotaUsagePage, icon: Gauge },
     { key: 'quotaReservations', path: '/quota/reservations', titleKey: 'page.quotaReservations', permission: codes.quota.query, component: QuotaReservationsPage, icon: BadgePercent },

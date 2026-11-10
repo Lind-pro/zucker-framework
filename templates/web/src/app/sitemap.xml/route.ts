@@ -1,16 +1,17 @@
-import { sitemapOrigin, sitemapPage, xml, xmlResponse } from '@/features/content/sitemap';
+import { sitemapPage } from '@/features/content/sitemap';
+import { buildSitemapIndexXml, unavailableResponse, xmlResponse } from '@/lib/site/sitemap';
+import { siteOrigin } from '@/lib/site/url';
 export const dynamic = 'force-dynamic';
+/** Page 0 lists static routes; pages 1..n list CMS entries from the content API. */
 export async function GET() {
   try {
-    const [first, origin] = await Promise.all([sitemapPage(1), sitemapOrigin()]);
+    const origin = siteOrigin();
+    const first = await sitemapPage(1);
     const count = Math.max(1, Math.ceil(first.total / first.pageSize));
     return xmlResponse(
-      `<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${Array.from({ length: count }, (_, index) => `<sitemap><loc>${xml(`${origin}/sitemaps/${index + 1}.xml`)}</loc></sitemap>`).join('')}</sitemapindex>`,
+      buildSitemapIndexXml(Array.from({ length: count + 1 }, (_, index) => `${origin}/sitemaps/${index}.xml`)),
     );
   } catch {
-    return new Response('Sitemap temporarily unavailable', {
-      status: 503,
-      headers: { 'Cache-Control': 'no-store' },
-    });
+    return unavailableResponse();
   }
 }

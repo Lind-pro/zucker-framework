@@ -50,7 +50,7 @@ run('credit lot wallet holds on actual PostgreSQL', () => {
     } finally { await pool.query(`DROP FUNCTION "${schema}".synthetic_hold_failure()`); }
   }
   beforeAll(async () => {
-    const url = new URL(databaseUrl!); if (url.pathname !== '/cnipa_dev') throw new Error('Requires approved isolated development database');
+    const url = new URL(databaseUrl!); if (!/(?:_dev|_test|_tests)$/.test(url.pathname)) throw new Error('Use a designated development/test database');
     pool = new Pool({ connectionString: url.href, connectionTimeoutMillis: 5000 }); const client = await pool.connect();
     try { await client.query('BEGIN'); await client.query(`CREATE SCHEMA "${schema}"`); await client.query(`SET LOCAL search_path TO "${schema}"`);
       for (const entry of readdirSync(resolve('prisma/migrations'), { withFileTypes: true }).filter(value => value.isDirectory()).sort((a, b) => a.name.localeCompare(b.name)))

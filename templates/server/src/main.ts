@@ -16,6 +16,9 @@ async function bootstrap() {
   if (trustProxy !== undefined) app.set('trust proxy', trustProxy);
   else if (process.env.NODE_ENV === 'production')
     Logger.warn('TRUST_PROXY is not set: if this server runs behind a proxy or load balancer, all clients share its address and per-IP rate limits', 'Bootstrap');
+  // Without a shared Redis store each replica keeps its own rate-limit budget (compose sets it).
+  if (process.env.NODE_ENV === 'production' && !process.env.RATE_LIMIT_REDIS_URL?.trim())
+    Logger.warn('RATE_LIMIT_REDIS_URL is not set: rate limits are kept in process memory, so every replica and restart gets a separate budget', 'Bootstrap');
   const bootstrapTime = performance.now() - startTime;
   Logger.log(`NestJS module init completed in ${bootstrapTime.toFixed(0)}ms`, 'Bootstrap');
 

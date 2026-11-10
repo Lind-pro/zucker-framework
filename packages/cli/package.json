@@ -65,6 +65,10 @@
       "types": "./tooling/agent-instructions.d.mts",
       "import": "./tooling/agent-instructions.mjs",
       "default": "./tooling/agent-instructions.mjs"
+    },
+    "./create": {
+      "types": "./dist/create.d.ts",
+      "default": "./dist/create.js"
     }
   }
 }

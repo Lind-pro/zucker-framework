@@ -1667,6 +1667,14 @@ model subscriptionPlans {
   quotas        Json     @default("{}")
   /// Incremented by every write; checkout snapshots and optimistic edits refer to it.
   revision      Int      @default(0)
+  /// Pricing-page presentation (WP 1.1): emphasised card, short badge, bullet points, translations.
+  featured        Boolean  @default(false)
+  badge           String?
+  highlights      Json     @default("[]")
+  nameI18n        Json     @default("{}")
+  descriptionI18n Json     @default("{}")
+  badgeI18n       Json     @default("{}")
+  highlightsI18n  Json     @default("{}")
   createdAt     DateTime @default(now()) @db.Timestamptz(3)
   updatedAt     DateTime @default(now()) @updatedAt @db.Timestamptz(3)
   prices        subscriptionPlanPrices[]
@@ -1687,6 +1695,12 @@ model subscriptionPlanPrices {
   amount    String
   /// Days of access for one_time; NULL otherwise.
   termDays  Int?
+  /// Credits granted with each paid period; frozen into the order snapshot at checkout.
+  credits            Int     @default(0)
+  /// Credits expire at the end of the paid period (creditExpiryDays is then NULL).
+  creditExpiryPeriod Boolean @default(false)
+  /// Credits expire this many days after the grant; NULL with creditExpiryPeriod=false never expires.
+  creditExpiryDays   Int?
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(3)
   plan      subscriptionPlans @relation(fields: [planId], references: [id], onDelete: Cascade)

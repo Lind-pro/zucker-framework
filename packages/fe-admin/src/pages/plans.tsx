@@ -1,7 +1,12 @@
 import { Plus, Trash2 } from 'lucide-react';
 import { useId, useState } from 'react';
 import {
+  MAX_CREDIT_EXPIRY_DAYS,
+  MAX_PLAN_HIGHLIGHTS,
+  MAX_PLAN_HIGHLIGHT_LENGTH,
+  MAX_PLAN_PRICE_CREDITS,
   PLAN_PRICE_INTERVALS,
+  type PlanCreditExpiry,
   type PlanPrice,
   type PlanPriceInterval,
   type SubscriptionPlan,
@@ -32,6 +37,11 @@ export interface PlanPriceDraft {
   termDays: string;
   /** Provider id → reference text ('' = none). */
   providerRefs: Record<string, string>;
+  /** Credits per paid period; '' = 0. */
+  credits?: string;
+  /** Credit lifetime: never, with the paid period, or a number of days. */
+  creditExpiryMode?: 'never' | 'period' | 'days';
+  creditExpiryDays?: string;
 }
 
 /** Editable form state; numeric inputs stay strings until validated. */
@@ -45,13 +55,31 @@ export interface PlanDraft {
   features: Record<string, boolean>;
   /** Counter key → '' (omit), '-1' (unlimited) or a non-negative integer. */
   quotas: Record<string, string>;
+  /** Pricing-page card presentation. */
+  featured?: boolean;
+  badge?: string;
+  /** One highlight per line. */
+  highlights?: string;
+  /** JSON `{ nameI18n, descriptionI18n, badgeI18n, highlightsI18n }`; '' keeps no translations. */
+  translations?: string;
 }
 
+/**
+ * Translate a core admin key. The plan credit/presentation keys now live in the built-in messages, so a
+ * host overrides them like any other key; kept as a hook for existing imports.
+ */
+export type PlanExtraKey = Extract<AdminMessageKey, `plans.${string}`>;
+export function usePlanText(): (key: AdminMessageKey, params?: MessageParams) => string {
+  return useAdminI18n().t;
+}
+const TRANSLATION_KEYS = ['nameI18n', 'descriptionI18n', 'badgeI18n', 'highlightsI18n'] as const;
+
 /** `POST /management/plans` body; PUT adds `expectedRevision`. */
-export type PlanWrite = Required<Pick<SubscriptionPlanWriteBody, 'slug' | 'name' | 'description' | 'order' | 'status' | 'prices' | 'features' | 'quotas'>>;
+export type PlanWrite = Required<Pick<SubscriptionPlanWriteBody, 'slug' | 'name' | 'description' | 'order' | 'status' | 'prices' | 'features' | 'quotas'>>
+  & Pick<SubscriptionPlanWriteBody, 'featured' | 'badge' | 'highlights' | 'nameI18n' | 'descriptionI18n' | 'badgeI18n' | 'highlightsI18n'>;
 
 export interface PlanValidationMessage {
-  key: AdminMessageKey;
+  key: AdminMessageKey | PlanExtraKey;
   params?: MessageParams;
 }
 /** Keyed by field: `slug`, `prices.<index>.amount`, `features.<key>`, `quotas.<key>` … */
@@ -65,7 +93,7 @@ const CONTROL = /[\u0000-\u001f\u007f]/;
 export const DEFAULT_PAYMENT_PROVIDERS: readonly string[] = ['stripe', 'paypal', 'creem'];
 
 export function emptyPriceDraft(interval: PlanPriceInterval = 'month', currency = 'USD'): PlanPriceDraft {
-  return { interval, currency, amount: '', termDays: '', providerRefs: {} };
+  return { interval, currency, amount: '', termDays: '', providerRefs: {}, credits: '', creditExpiryMode: 'never', creditExpiryDays: '' };
 }
 
 export function emptyPlanDraft(): PlanDraft {
@@ -85,9 +113,18 @@ export function planToDraft(plan: SubscriptionPlan): PlanDraft {
       amount: String(price.amount ?? ''),
       termDays: price.termDays == null ? '' : String(price.termDays),
       providerRefs: { ...(price.providerRefs ?? {}) },
+      credits: price.credits ? String(price.credits) : '',
+      creditExpiryMode: price.creditExpiry === 'period' ? 'period' : typeof price.creditExpiry === 'number' ? 'days' : 'never',
+      creditExpiryDays: typeof price.creditExpiry === 'number' ? String(price.creditExpiry) : '',
     })),
     features: { ...(plan.features ?? {}) },
     quotas: Object.fromEntries(Object.entries(plan.quotas ?? {}).map(([key, value]) => [key, String(value)])),
+    featured: plan.featured === true,
+    badge: plan.badge ?? '',
+    highlights: (plan.highlights ?? []).join('\n'),
+    translations: TRANSLATION_KEYS.some((key) => Object.keys(plan[key] ?? {}).length)
+      ? JSON.stringify(Object.fromEntries(TRANSLATION_KEYS.map((key) => [key, plan[key] ?? {}])), null, 2)
+      : '',
   };
 }
 
@@ -142,8 +179,39 @@ export function validatePlanDraft(
         providerRefs[provider] = ref;
       }
     }
-    prices.push({ interval: row.interval, currency, amount, termDays, providerRefs });
+    const creditsText = (row.credits ?? '').trim();
+    const credits = creditsText === '' ? 0 : Number(creditsText);
+    if (!/^\d*$/.test(creditsText) || !Number.isSafeInteger(credits) || credits > MAX_PLAN_PRICE_CREDITS)
+      errors[at('credits')] = { key: 'plans.error.credits' };
+    let creditExpiry: PlanCreditExpiry = null;
+    const mode = row.creditExpiryMode ?? 'never';
+    if (credits > 0 && mode === 'period') {
+      if (row.interval === 'lifetime') errors[at('creditExpiry')] = { key: 'plans.error.creditExpiry' };
+      else creditExpiry = 'period';
+    } else if (credits > 0 && mode === 'days') {
+      const text = (row.creditExpiryDays ?? '').trim(), days = Number(text);
+      if (!/^\d+$/.test(text) || days < 1 || days > MAX_CREDIT_EXPIRY_DAYS) errors[at('creditExpiry')] = { key: 'plans.error.creditExpiry' };
+      else creditExpiry = days;
+    }
+    prices.push({ interval: row.interval, currency, amount, termDays, providerRefs, credits, creditExpiry });
   });
+  const badge = (draft.badge ?? '').trim();
+  if (badge.length > 40 || CONTROL.test(badge)) errors.badge = { key: 'plans.error.badge' };
+  const highlights = (draft.highlights ?? '').split('\n').map((line) => line.trim()).filter(Boolean);
+  if (highlights.length > MAX_PLAN_HIGHLIGHTS || highlights.some((line) => line.length > MAX_PLAN_HIGHLIGHT_LENGTH))
+    errors.highlights = { key: 'plans.error.highlights' };
+  let translations: Partial<PlanWrite> = {};
+  if ((draft.translations ?? '').trim()) {
+    try {
+      const parsed: unknown = JSON.parse(draft.translations ?? '');
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)
+        || Object.keys(parsed).some((key) => !(TRANSLATION_KEYS as readonly string[]).includes(key))) throw new Error('shape');
+      // Detailed checks (locale tags, lengths) stay with the server; it reports them as issues.
+      translations = parsed as Partial<PlanWrite>;
+    } catch {
+      errors.translations = { key: 'plans.error.translations' };
+    }
+  } else translations = { nameI18n: {}, descriptionI18n: {}, badgeI18n: {}, highlightsI18n: {} };
   const featureKeys = new Set(catalog.features.map((feature) => feature.key));
   const counterKeys = new Set(catalog.counters.map((counter) => counter.key));
   const features: Record<string, boolean> = {};
@@ -167,7 +235,8 @@ export function validatePlanDraft(
   if (Object.keys(errors).length) return { errors, payload: null };
   return {
     errors,
-    payload: { slug, name, description: draft.description.trim() || null, order, status: draft.status, prices, features, quotas },
+    payload: { slug, name, description: draft.description.trim() || null, order, status: draft.status, prices, features, quotas,
+      featured: draft.featured === true, badge: badge || null, highlights, ...translations },
   };
 }
 
@@ -215,7 +284,7 @@ function PriceRow({
   onChange: (next: PlanPriceDraft, field: string) => void;
   onRemove: () => void;
 }) {
-  const { t } = useAdminI18n();
+  const t = usePlanText();
   const n = index + 1;
   const at = (field: string) => `prices.${index}.${field}`;
   const input = (field: 'currency' | 'amount' | 'termDays', label: string, extra: { inputMode?: 'decimal' | 'numeric'; placeholder?: string } = {}) => (
@@ -254,7 +323,8 @@ function PriceRow({
               options={PLAN_PRICE_INTERVALS.map((interval) => ({ value: interval, label: t(`plans.interval.${interval}`) }))}
               onChange={(event) => {
                 const interval = event.target.value as PlanPriceInterval;
-                onChange({ ...row, interval, termDays: interval === 'one_time' ? row.termDays : '' }, 'interval');
+                onChange({ ...row, interval, termDays: interval === 'one_time' ? row.termDays : '',
+                  creditExpiryMode: interval === 'lifetime' && row.creditExpiryMode === 'period' ? 'never' : row.creditExpiryMode }, 'interval');
               }}
             />
           )}
@@ -262,6 +332,57 @@ function PriceRow({
         {input('currency', t('plans.priceCurrency', { n }), { placeholder: 'USD' })}
         {input('amount', t('plans.priceAmount', { n }), { inputMode: 'decimal', placeholder: '19.90' })}
         {row.interval === 'one_time' && input('termDays', t('plans.priceTermDays', { n }), { inputMode: 'numeric', placeholder: '30' })}
+      </div>
+      <div className="mt-3 grid gap-3 sm:grid-cols-3">
+        <Field label={t('plans.priceCredits', { n })} error={message(errors[at('credits')])}>
+          {({ id, describedBy, invalid }) => (
+            <Input
+              id={id}
+              name={at('credits')}
+              data-field={at('credits')}
+              aria-describedby={describedBy}
+              aria-invalid={invalid || undefined}
+              inputMode="numeric"
+              placeholder="0"
+              disabled={disabled}
+              value={row.credits ?? ''}
+              onChange={(event) => onChange({ ...row, credits: event.target.value }, 'credits')}
+            />
+          )}
+        </Field>
+        <Field label={t('plans.priceCreditExpiry', { n })} error={message(errors[at('creditExpiry')])}>
+          {({ id, describedBy, invalid }) => (
+            <Select
+              id={id}
+              name={at('creditExpiry')}
+              data-field={at('creditExpiry')}
+              aria-describedby={describedBy}
+              aria-invalid={invalid || undefined}
+              disabled={disabled}
+              value={row.creditExpiryMode ?? 'never'}
+              options={(['never', 'period', 'days'] as const)
+                .filter((mode) => mode !== 'period' || row.interval !== 'lifetime')
+                .map((mode) => ({ value: mode, label: t(`plans.creditExpiry.${mode}`) }))}
+              onChange={(event) => onChange({ ...row, creditExpiryMode: event.target.value as PlanPriceDraft['creditExpiryMode'] }, 'creditExpiry')}
+            />
+          )}
+        </Field>
+        {row.creditExpiryMode === 'days' && (
+          <Field label={t('plans.priceCreditExpiryDays', { n })}>
+            {({ id }) => (
+              <Input
+                id={id}
+                name={at('creditExpiryDays')}
+                data-field={at('creditExpiryDays')}
+                inputMode="numeric"
+                placeholder="30"
+                disabled={disabled}
+                value={row.creditExpiryDays ?? ''}
+                onChange={(event) => onChange({ ...row, creditExpiryDays: event.target.value }, 'creditExpiry')}
+              />
+            )}
+          </Field>
+        )}
       </div>
       <div className="mt-3 grid gap-3 sm:grid-cols-3">
         {providers.map((provider) => {
@@ -308,7 +429,7 @@ export function PlanEditor({
 }) {
   const { config } = useAdmin();
   const api = useAdminApi();
-  const { t } = useAdminI18n();
+  const t = usePlanText();
   const formId = useId();
   const providers = config.paymentProviders;
   const [draft, setDraft] = useState<PlanDraft>(() => (plan ? planToDraft(plan) : emptyPlanDraft()));
@@ -421,9 +542,35 @@ export function PlanEditor({
             )}
           </Field>
         </fieldset>
+        <fieldset className="grid gap-4 sm:grid-cols-2">
+          <legend className="text-sm font-medium">{t('plans.presentation')}</legend>
+          <Field label={t('plans.featured')} inline>
+            {({ id }) => <Switch id={id} data-field="featured" checked={draft.featured === true} disabled={saving} onCheckedChange={(checked) => set('featured', checked)} />}
+          </Field>
+          <Field label={t('plans.badge')} error={message(errors.badge)}>
+            {({ id, describedBy, invalid }) => (
+              <Input id={id} name="badge" data-field="badge" aria-describedby={describedBy} aria-invalid={invalid || undefined} maxLength={40}
+                disabled={saving} value={draft.badge ?? ''} onChange={(event) => set('badge', event.target.value)} />
+            )}
+          </Field>
+          <Field label={t('plans.highlights')} className="sm:col-span-2" error={message(errors.highlights)}>
+            {({ id, describedBy, invalid }) => (
+              <Textarea id={id} name="highlights" data-field="highlights" rows={3} aria-describedby={describedBy} aria-invalid={invalid || undefined}
+                disabled={saving} value={draft.highlights ?? ''} onChange={(event) => set('highlights', event.target.value)} />
+            )}
+          </Field>
+          <Field label={t('plans.translations')} className="sm:col-span-2" error={message(errors.translations)}>
+            {({ id, describedBy, invalid }) => (
+              <Textarea id={id} name="translations" data-field="translations" rows={3} spellCheck={false} aria-describedby={describedBy}
+                aria-invalid={invalid || undefined} placeholder={t('plans.translationsHint')} disabled={saving} value={draft.translations ?? ''}
+                onChange={(event) => set('translations', event.target.value)} />
+            )}
+          </Field>
+        </fieldset>
         <fieldset className="space-y-3">
           <legend className="text-sm font-medium">{t('plans.prices')}</legend>
           <p className="text-xs text-muted-foreground">{t('plans.pricesHint')}</p>
+          <p className="text-xs text-muted-foreground">{t('plans.creditsHint')}</p>
           {draft.prices.length === 0 && <p className="text-sm text-muted-foreground">{t('plans.noPrices')}</p>}
           <ul className="space-y-3">
             {draft.prices.map((row, index) => (
@@ -570,6 +717,7 @@ export function PlansPage() {
   const { config } = useAdmin();
   const api = useAdminApi();
   const { t } = useAdminI18n();
+  const planText = usePlanText();
   const can = usePermissionCheck();
   const codes = config.permissions.plans;
   const catalog = useEntitlementCatalog();
@@ -608,7 +756,10 @@ export function PlansPage() {
               row.prices?.length ? (
                 <span className="flex flex-col gap-0.5 whitespace-nowrap">
                   {row.prices.map((price) => (
-                    <span key={`${price.interval}:${price.currency}`}>{priceText(t, price)}</span>
+                    <span key={`${price.interval}:${price.currency}`}>
+                      {priceText(t, price)}
+                      {price.credits ? ` · ${planText('plans.creditsShort', { credits: price.credits })}` : ''}
+                    </span>
                   ))}
                 </span>
               ) : (

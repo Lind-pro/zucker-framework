@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { createPlanAdminController, createQuotaAdminControllers, createUserSubscriptionAdminController } from '@zucker-framework/admin';
 import { BillingModule } from '../billing/billing.module';
+import { AccountModule } from '../accounts/account.module';
+import { OptionalViewer } from './optional-viewer';
 import { RUNTIME_ENVIRONMENT } from '../runtime-settings/runtime-settings.tokens';
 import { SubscriptionsController } from './subscriptions.controller';
 import { SUBSCRIPTION_OPTIONS, SubscriptionsService, subscriptionOptionsFromEnvironment } from './subscriptions.service';
@@ -14,7 +16,7 @@ const quota = createQuotaAdminControllers({ reservations: QUOTA_RESERVATIONS, gu
  * AccountGuard/PermissionsGuard enforce the permission metadata, so factory guards are disabled.
  */
 @Module({
-  imports: [BillingModule],
+  imports: [BillingModule, AccountModule],
   controllers: [
     SubscriptionsController,
     createPlanAdminController({ service: PLAN_ADMIN, guards: [] }),
@@ -30,6 +32,7 @@ const quota = createQuotaAdminControllers({ reservations: QUOTA_RESERVATIONS, gu
         return () => options;
       } },
     SubscriptionsService,
+    OptionalViewer,
     { provide: PLAN_ADMIN, inject: [SubscriptionsService], useFactory: (service: SubscriptionsService) => service.plans },
     { provide: QUOTA_RESERVATIONS, inject: [SubscriptionsService], useFactory: (service: SubscriptionsService) => service.reservations },
   ],

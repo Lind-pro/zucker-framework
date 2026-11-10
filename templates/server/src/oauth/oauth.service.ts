@@ -1,9 +1,10 @@
-import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, Optional, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { DATABASE_ADAPTER, type DatabaseAdapter, type ModelOperations } from '@zucker-framework/core';
 import { DatabaseOneTimeTicketStore, OneTimeTicketService, OneTimeTicketError, OAuthProofService, OAuthProofError, PostgresIdentityTransactions, ThirdPartyAccountService, UserService,
   type OAuthProofContext, type OAuthProofRecord, type VerifiedOAuthIdentity, type UserEntity } from '@zucker-framework/auth';
 import { AccountService } from '../accounts/account.service';
+import { AccountOnboarding, type SignupWelcome } from '../accounts/account-onboarding';
 import { ApplicationDatabase, type ApplicationTransaction } from '../database';
 import { OAUTH_SETTINGS, type OAuthProvider, type OAuthSettings } from './oauth.config';
 import { OAUTH_PROVIDER_CLIENT, type OAuthProviderClient } from './oauth-provider';
@@ -36,7 +37,8 @@ export class OAuthService {
   constructor(@Inject(DATABASE_ADAPTER) private readonly db: ApplicationDatabase,
     @Inject(OAUTH_SETTINGS) readonly settings: OAuthSettings,
     @Inject(OAUTH_PROVIDER_CLIENT) private readonly providerClient: OAuthProviderClient,
-    private readonly accounts: AccountService) {}
+    private readonly accounts: AccountService,
+    @Optional() private readonly onboarding?: AccountOnboarding) {}
 
   providers() {
     const result: Array<{ id: OAuthProvider; code: boolean; oneTapClientId?: string }> = [];
@@ -183,13 +185,15 @@ export class OAuthService {
     if (!this.providers().providers.some(provider => provider.id === rawProvider)) throw new NotFoundException('OAuth provider is unavailable');
     const provider = rawProvider as OAuthProvider, input = record(body, ['proof']);
     if (!/^[A-Za-z0-9_-]{43}$/.test(input.proof || '') || !context.browserBinding) throw new BadRequestException('Invalid OAuth proof');
-    let outcome: { userId: string; bindingId: string; returnPath: string };
+    // Read once before the transaction; a closed registration rejects only first-time sign-up below.
+    const policy = purpose === 'login' ? await this.accounts.policy() : null;
+    let outcome: { userId: string; bindingId: string; returnPath: string; created: { user: UserEntity; welcome: SignupWelcome | null } | null };
     try {
       outcome = await this.db.transaction(async tx => {
         const { identity, row } = await this.handoff(tx, provider, input.proof, purpose, context);
         const bindings = new ThirdPartyAccountService(tx);
         const existing = await bindings.findAccount(provider, identity.subject);
-        let user: UserEntity;
+        let user: UserEntity, created: { user: UserEntity; welcome: SignupWelcome | null } | null = null;
         if (purpose === 'link') {
           user = await this.accounts.currentUser(context.user!.id, context.user!.sid, tx);
           if (existing && existing.userId !== user.id) throw new ConflictException('Provider account is already linked');
@@ -201,6 +205,7 @@ export class OAuthService {
           if (!found?.status) throw new UnauthorizedException('Account is unavailable');
           user = found;
         } else {
+          if (!policy?.registrationOpen) throw new ForbiddenException('Registration is closed');
           const email = identity.email?.trim().toLowerCase();
           if (email && (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) throw new UnauthorizedException('Provider email is invalid');
           if (email && await tx.model('users').findUnique({ where: { email } })) {
@@ -211,21 +216,25 @@ export class OAuthService {
             name: identity.displayName?.trim().slice(0, 100) || `${provider === 'google' ? 'Google' : 'GitHub'} member`,
             typeId: 'member', status: true, email: identity.emailVerified ? email ?? null : null,
             emailVerified: Boolean(identity.emailVerified && email), locale: row.locale, password: null } }) as UserEntity;
+          created = { user, welcome: this.onboarding ? await this.onboarding.recordSignup(tx, user.id, { method: `oauth:${provider}`, ip: context.ip }, policy) : null };
         }
         await bindings.bindAccount(user.id, provider, { providerAccountId: identity.subject, email: identity.email,
           displayName: identity.displayName, avatarUrl: identity.avatarUrl, profileData: { emailVerified: identity.emailVerified } });
         const binding = await bindings.findAccount(provider, identity.subject);
         if (!binding) throw new Error('Binding was not persisted');
-        return { userId: user.id, bindingId: binding.id, returnPath: row.returnPath };
+        return { userId: user.id, bindingId: binding.id, returnPath: row.returnPath, created };
       });
     } catch (error) {
       if (error && typeof error === 'object' && 'code' in error && error.code === 'P2002') {
         throw new ConflictException('Sign in to your existing account before linking this provider');
       }
-      if (error instanceof BadRequestException || error instanceof UnauthorizedException || error instanceof ConflictException) throw error;
+      if (error instanceof BadRequestException || error instanceof UnauthorizedException || error instanceof ConflictException
+        || error instanceof ForbiddenException) throw error;
       if (error instanceof OneTimeTicketError || error instanceof OAuthProofError) throw new BadRequestException('Invalid or expired OAuth proof');
       throw new ServiceUnavailableException('OAuth confirmation could not be completed');
     }
+    // After commit: welcome credits (idempotent, never fails the sign-in) and a background welcome mail.
+    if (outcome.created) await this.accounts.completeProviderSignup(outcome.created.user, outcome.created.welcome);
     if (purpose === 'link') return { success: true as const, returnPath: '/account' };
     return { ...await this.accounts.providerLogin(outcome.userId, outcome.bindingId), returnPath: outcome.returnPath };
   }

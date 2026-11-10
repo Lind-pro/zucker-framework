@@ -28,9 +28,19 @@ export class AccountController {
     }
   }
 
+  /**
+   * `{verificationRequired: true}` (ticket mailed), or with the account policy's verification off a
+   * signed-in session: `{verificationRequired: false, userId, token, expires}` plus the refresh cookie.
+   */
   @Post('register') @Public()
-  register(@Body() body: unknown, @Req() req: AccountRequest) {
-    this.sameOrigin(req); return this.accounts.register(body);
+  async register(@Body() body: unknown, @Req() req: AccountRequest, @Res({ passthrough: true }) res: RefreshCookieResponse) {
+    this.sameOrigin(req);
+    const result = await this.accounts.register(body, { ip: req.ip });
+    if (!result.verificationRequired) {
+      this.cookie.issue(res, result.refreshToken);
+      return { verificationRequired: false, userId: result.userId, token: result.accessToken, expires: ACCESS_TTL_SECONDS * 1000 };
+    }
+    return result;
   }
   @Post('verification') @Public() @HttpCode(200)
   resend(@Body() body: unknown, @Req() req: AccountRequest) {

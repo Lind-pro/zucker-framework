@@ -1,14 +1,21 @@
 'use client';
 import { useLocale, useTranslations } from 'next-intl';
 import { usePathname } from '@/i18n/navigation';
-import { AccountLink } from '@/components/AccountLink';
 import { Menu, X } from 'lucide-react';
 import { useState } from 'react';
 import { AppearanceControl } from '@/features/site/SiteTheme';
 import { localizedHref, type PublicSiteSettings } from '@/features/content/types';
+import { LocaleSwitcher } from '@/components/LocaleSwitcher';
+import { SessionMenu } from '@/components/SessionMenu';
+import { localizedPath } from '@/lib/site/url';
+import { isLocale } from '@/lib/site/locales';
 
-export function Header({ site }: { site: PublicSiteSettings }) {
-  const t = useTranslations('common'),
+/**
+ * Site header. Everything session-dependent lives in SessionMenu and is resolved in the browser,
+ * so the server-rendered header is identical for every visitor.
+ */
+export function Header({ site, adminUrl }: { site: PublicSiteSettings; adminUrl: string | null }) {
+  const t = useTranslations('shell'),
     locale = useLocale(),
     pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -25,32 +32,22 @@ export function Header({ site }: { site: PublicSiteSettings }) {
   return (
     <header className="sticky top-0 z-50 border-b border-[var(--color-border)] bg-[var(--color-background)]/90 backdrop-blur-sm">
       <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between gap-5">
-        <a href={`/${locale}`} className="text-xl font-bold text-primary-500 truncate">
+        <a href={isLocale(locale) ? localizedPath(locale, '/') : '/'} className="text-xl font-bold text-primary-500 truncate">
           {site.name}
         </a>
-        <nav
-          aria-label={locale === 'zh' ? '主导航' : 'Main navigation'}
-          className="hidden md:flex items-center gap-5"
-        >
+        <nav aria-label={t('mainNav')} className="hidden md:flex items-center gap-5">
           {nav}
         </nav>
         <div className="hidden md:flex items-center gap-3">
+          <LocaleSwitcher />
           <AppearanceControl locale={locale} />
-          <AccountLink href="/login" className="text-sm text-[var(--color-muted)]">
-            {t('login')}
-          </AccountLink>
-          <AccountLink
-            href="/register"
-            className="rounded-lg bg-primary-600 px-4 py-2 text-sm text-white"
-          >
-            {t('register')}
-          </AccountLink>
+          <SessionMenu adminUrl={adminUrl} />
         </div>
         <button
           className="md:hidden p-2"
           aria-expanded={menuOpen}
           aria-controls="mobile-navigation"
-          aria-label={locale === 'zh' ? '切换导航菜单' : 'Toggle navigation'}
+          aria-label={t('toggleNav')}
           onClick={() => setMenuOpen(!menuOpen)}
         >
           {menuOpen ? <X size={20} /> : <Menu size={20} />}
@@ -59,13 +56,14 @@ export function Header({ site }: { site: PublicSiteSettings }) {
       {menuOpen && (
         <nav
           id="mobile-navigation"
+          aria-label={t('mainNav')}
           className="md:hidden space-y-4 border-t border-[var(--color-border)] p-6"
         >
           {nav}
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-4">
+            <LocaleSwitcher />
             <AppearanceControl locale={locale} />
-            <AccountLink href="/login">{t('login')}</AccountLink>
-            <AccountLink href="/register">{t('register')}</AccountLink>
+            <SessionMenu adminUrl={adminUrl} compact />
           </div>
         </nav>
       )}

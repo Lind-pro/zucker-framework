@@ -1,0 +1,15 @@
+/// First-touch acquisition data captured once at sign-up (WP 1.2). Kept off `users` so the core
+/// account table stays unchanged; `userId` is a scalar reference (no cross-file relation field).
+/// Values are sanitised server-side before insert: `signupIp` is a parsed IP literal, and
+/// `signupUtmSource` keeps only [A-Za-z0-9_.-] (max 64 characters).
+model userAcquisition {
+  userId          String   @id
+  signupMethod    String   @db.VarChar(32)
+  signupIp        String?  @db.VarChar(45)
+  signupUtmSource String?  @db.VarChar(64)
+  createdAt       DateTime @default(now())
+
+  @@index([signupUtmSource, createdAt])
+  @@index([createdAt])
+  @@map("user_acquisition")
+}

@@ -10,7 +10,7 @@ async function openAccount(page: Page, baseURL: string, locale = 'en', knownOwne
   await page.addInitScript((known: boolean) => localStorage.setItem('auth-storage', JSON.stringify({ version: 0, state: {
     token: 'synthetic-access', refreshToken: null, isAuthenticated: true, user: known ? { id: 'synthetic-owner', username: 'synthetic' } : null, permissions: [],
   } })), knownOwner);
-  await page.goto(locale === 'zh' ? '/account' : '/en/account');
+  await page.goto(locale === 'zh' ? '/zh/account' : '/en/account');
 }
 
 test.beforeEach(async ({ context, baseURL }) => {

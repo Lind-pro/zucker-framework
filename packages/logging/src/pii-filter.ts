@@ -266,6 +266,9 @@ export class PiiFilter {
       text.length > this.maxStringLength
         ? `${text.slice(0, this.maxStringLength)}[TRUNCATED]`
         : text;
+    // PostgreSQL text and jsonb cannot store U+0000 (SQLSTATE 22P05), so one NUL in a request body
+    // would make the whole log row fail to persist. Keep a visible marker instead.
+    if (result.includes('\u0000')) result = result.replace(/\u0000/g, '\uFFFD');
     result = redactPrivateKeys(result);
     for (let index = 0; index < this.patterns.length; index += 1) {
       const pattern = this.patterns[index];
@@ -424,8 +427,10 @@ export class PiiFilter {
 
     const result: Record<string, unknown> = {};
     const entries = Object.entries(value as Record<string, unknown>);
-    for (const [key, val] of entries.slice(0, this.maxObjectKeys)) {
-      const sanitized = this.sanitizeDeep(val, key, depth + 1, state);
+    for (const [rawKey, val] of entries.slice(0, this.maxObjectKeys)) {
+      const sanitized = this.sanitizeDeep(val, rawKey, depth + 1, state);
+      // Keys are stored too (jsonb): the same NUL replacement as string values.
+      const key = rawKey.includes('\u0000') ? rawKey.replace(/\u0000/g, '\uFFFD') : rawKey;
       if (key === '__proto__') {
         // Plain assignment would set the prototype instead of an own property.
         Object.defineProperty(result, key, { value: sanitized, enumerable: true, writable: true, configurable: true });

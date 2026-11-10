@@ -4,6 +4,7 @@ import { EmailProvider } from '@zucker-framework/notification';
 import { configuredBillingProviders } from '../billing/providers';
 import { readBillingCatalog } from '../billing/catalog';
 import { deliveryOptionsFromEnvironment } from '../delivery/delivery.config';
+import { mailTransportSettingsFromConnection } from '../mail/mail-transport';
 import { storageOptionsFromEnvironment } from '../files/files.config';
 import { oauthSettings } from '../oauth/oauth.config';
 import { inspectAIConnections } from '../ai-connections/ai-connections.config';
@@ -143,15 +144,26 @@ export class ConnectionsService {
       }
       rows.push(row);
     }
+    // Account/transactional mail follows MAIL_PROVIDER (smtp default, or resend), like the runtime transport.
+    const mailTransport = mailTransportSettingsFromConnection(env);
+    const resendMail = mailTransport?.kind === 'resend';
     const accountMail = base(
       'account-email',
-      '账户邮件（SMTP）',
+      '账户邮件',
       '邮件',
       true,
-      missing(['SMTP_HOST', 'SMTP_FROM', 'WEB_URL']),
-      connectionSdkAvailable('@zucker-framework/notification', 'nodemailer'),
+      missing(resendMail ? ['SMTP_FROM', 'MAIL_RESEND_API_KEY', 'WEB_URL'] : ['SMTP_HOST', 'SMTP_FROM', 'WEB_URL']),
+      connectionSdkAvailable('@zucker-framework/notification', resendMail ? 'resend' : 'nodemailer'),
     );
-    if (accountMail.status === 'configured') {
+    if (!mailTransport) accountMail.status = 'invalid';
+    else if (accountMail.status === 'configured' && resendMail) {
+      try {
+        oauthSettings(env);
+        accountMail.mode = 'resend';
+      } catch {
+        accountMail.status = 'invalid';
+      }
+    } else if (accountMail.status === 'configured') {
       let provider: EmailProvider | undefined;
       try {
         const port = Number(env.SMTP_PORT ?? 587);
@@ -165,6 +177,7 @@ export class ConnectionsService {
           auth: { user: env.SMTP_USER ?? '', pass: env.SMTP_PASSWORD ?? '' },
         });
         if (!provider.isConfigured()) throw new Error();
+        accountMail.mode = 'smtp';
       } catch {
         accountMail.status = 'invalid';
       } finally {

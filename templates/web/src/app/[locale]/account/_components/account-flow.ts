@@ -43,3 +43,16 @@ export function accountErrorKey(error: unknown, fallback: string): string {
   if (status === 403) return "requestRejected";
   return fallback;
 }
+
+/**
+ * POST /authorize/register answers `{verificationRequired:true}` (a verification mail was sent) or,
+ * when the account policy turns verification off, `{verificationRequired:false, userId, token, expires}`
+ * plus the refresh cookie: the account exists and is already signed in. Anything else is unexpected.
+ */
+export type RegisterOutcome = { kind: "verify" } | { kind: "signed-in"; token: string };
+export function registerOutcome(result: unknown): RegisterOutcome {
+  const value = result && typeof result === "object" ? result as Record<string, unknown> : {};
+  if (value.verificationRequired === true) return { kind: "verify" };
+  if (value.verificationRequired === false && typeof value.token === "string" && value.token) return { kind: "signed-in", token: value.token };
+  throw new Error("Unexpected account response");
+}

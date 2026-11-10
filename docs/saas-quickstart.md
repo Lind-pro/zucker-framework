@@ -4,6 +4,24 @@
 
 本手册按首次使用顺序组织。每个新产品拥有自己的目录、数据库、品牌、商品和业务处理器，通用能力通过公开包复用。
 
+## 0. 推荐：一条命令生成完整工作区（1.0.20 起）
+
+1.0.20 发布后（在此之前只能用本地 CLI 产物验证），可以直接生成包含 Server、Web、Admin 的 pnpm 工作区：
+
+```sh
+pnpm create @zucker-framework/app my-saas            # 等同于下一行
+pnpm dlx @zucker-framework/cli@1.0.20 create my-saas [--locale en|zh] [--no-admin] [--no-web]
+cd my-saas && pnpm install
+docker compose up -d --build                         # PostgreSQL、Redis、MinIO、Mailpit、一次性迁移、三个应用
+# 或者：pnpm dev:infra && pnpm db:migrate && pnpm dev  # 只在 Docker 中运行数据库与邮件，应用跑在本机
+```
+
+生成结果是 `apps/{server,web,admin}`、`docker-compose.yml`、各应用 Dockerfile 和**一个**根目录 `.env`（`0600`，JWT、配置加密、缓存刷新、数据库、Redis、对象存储密钥均随机生成且不打印）。`--locale` 决定 Web/Admin 的默认语言，默认 `en`，两种语言始终都带。迁移由 compose 中的 `migrate` 服务显式执行一次，不在 Server 启动时运行。
+
+在 `.env` 中填写 `BOOTSTRAP_ADMIN_USERNAME/EMAIL/PASSWORD` 后执行 `pnpm setup:admin`：创建第一个管理员，并且只做一次地写入起始数据——`BILLING_CATALOG_JSON` 中的订阅商品成为套餐、一次性商品成为积分包，`apps/server/content/` 下的首页（区块文档）、隐私/条款/退款页、更新日志、示例博客与文档发布进 CMS。之后这些内容都在 Admin 中编辑；管理员删除的积分包不会被再次写入。完成后从 `.env` 删除引导密码。
+
+本地注册邮件由 Mailpit 接收（`http://localhost:8025`，不需要 SMTP 认证）。需要无邮件注册时，在 Admin「系统设置 → 产品策略」中关闭 `requireEmailVerification`，或用 `POLICY_ACCOUNT_REQUIRE_EMAIL_VERIFICATION=false` 固定。`zucker doctor` 检查密钥长度、origin 一致性、数据库可达和迁移状态。下面的 1–7 节是逐个生成单应用的方式，仍然有效。
+
 ## 1. 生成需要的应用
 
 使用 Node.js 24.14.1、pnpm 11.25.0，在新产品的父目录执行。目录名只是示例，CLI 不覆盖已有目录；只需要其中一端时生成对应应用即可。
@@ -61,7 +79,8 @@ pnpm dev
 | 要做的事 | 配置位置 | 生效与检查 |
 | --- | --- | --- |
 | 网站品牌、双语导航、主题与 SEO | Admin「内容与站点 → 站点配置」 | 保存后刷新 Web；Admin 自身标题、Logo 仍在消费者 UI 中定制 |
-| 账户验证／找回邮件 | Server `SMTP_HOST/PORT/SECURE/FROM/USER/PASSWORD`，或后台账户邮件连接 | 当前账户邮件使用 SMTP；配置后验证注册 → 收信 → 验证 → 登录 |
+| 账户验证／找回／欢迎邮件与购买回执 | Server `MAIL_PROVIDER`（`smtp` 默认或 `resend`）、`SMTP_FROM`，以及 `SMTP_HOST/PORT/SECURE/USER/PASSWORD` 或 `MAIL_RESEND_API_KEY`；或后台账户邮件连接 | 配置后验证注册 → 收信 → 验证 → 登录；`SMTP_USER/PASSWORD` 都为空时不做 SMTP 认证 |
+| 注册开关、邮箱验证、初始角色、欢迎积分、默认支付渠道 | Admin「系统设置 → 产品策略」（`account`、`billing`），或 `POLICY_<策略>_<字段>` 环境变量固定 | 保存后无需重启，最长 30 秒内生效；被环境变量固定的字段在后台只读 |
 | 任务完成通知 | 独立的 `DELIVERY_PROVIDER` 为 `none`、`smtp` 或 `resend`，以及 `DELIVERY_*` 配置 | 默认 `none`；填账户 SMTP 不会自动开启持久任务通知 |
 | 付款、OAuth、私有存储、AI 连接 | Admin「系统设置 → 连接配置」或 Server 的对应环境配置 | 后台保存后重启 Server，再核对已应用版本和真实渠道行为 |
 | 分析、广告、联盟、客服 | 后台公开网站连接 | 默认 Web 的 `SITE_CONFIGURATION_SOURCE=server` 读取 Server 已应用快照；只改 Web 环境变量不会覆盖该来源 |
@@ -74,7 +93,7 @@ OAuth 应用登记的回调是 `WEB_URL/api/authorize/oauth/google/callback` 或
 
 ## 5. 配置商品后再验证收款
 
-后台连接页负责渠道配置；商品仍由 Server 的 `BILLING_CATALOG_JSON` 定义，目前没有后台商品编辑器。仅启用 Stripe，价格页仍可能为空。
+后台连接页负责渠道配置；套餐（含每期赠送积分）在 Admin「交易与额度 → 套餐」、积分包在「积分包」中编辑，`BILLING_CATALOG_JSON` 只在管理员初始化时作为一次性种子（积分包表为空时其一次性商品也作为后备在售）。公开价格接口 `GET /api/billing/plans` 返回 `{plans, packs, checkout}`（1.0.20 起；此前是数组）。价格页在渠道启用前把套餐标为“暂不可购买”。
 
 每个商品包含 `id/title/version/mode/amount/currency/credits/providers`，可带 `expiresInDays`；金额用精确十进制字符串，积分是正整数。`mode` 为 `payment` 或 `subscription`。渠道引用含义如下：
 

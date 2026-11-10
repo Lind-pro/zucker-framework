@@ -59,6 +59,25 @@ describe('transaction-bound credit lots', () => {
     ] });
     expect(f.models.transactions.create).toHaveBeenCalledWith({ data: expect.objectContaining({ amount: -7, balanceBefore: 10, balanceAfter: 3, lotIds: ['l1', 'l2'] }) });
   });
+  it('expiry_first drains the soonest-expiring lot first: nulls last, then createdAt, then id', async () => {
+    const f = fixture();
+    const ledger = new BatchCreditLedger({ ...((f.ledger as unknown as { options: BatchCreditLedgerOptions<typeof f.tx> }).options), consumeOrder: 'expiry_first' });
+    const created = new Date('2026-01-01');
+    // Store returns creation order; the ledger must not rely on the store honouring NULLS LAST.
+    f.models.lots.findMany.mockResolvedValue([
+      { id: 'never', source: 's', sourceId: null, remainingAmount: 5, expiresAt: null, createdAt: new Date('2025-01-01') },
+      { id: 'late', source: 's', sourceId: null, remainingAmount: 5, expiresAt: new Date('2031-01-01'), createdAt: created },
+      { id: 'soon-b', source: 's', sourceId: null, remainingAmount: 1, expiresAt: new Date('2030-01-01'), createdAt: created },
+      { id: 'soon-a', source: 's', sourceId: null, remainingAmount: 1, expiresAt: new Date('2030-01-01'), createdAt: created },
+    ]);
+    await ledger.consume(f.tx, { accountId: 'a', amount: 8, transactionData: {}, consumptionData: {} });
+    expect(f.models.lots.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      orderBy: [{ expiresAt: { sort: 'asc', nulls: 'last' } }, { createdAt: 'asc' }, { id: 'asc' }] }));
+    expect(f.models.lots.update.mock.calls.map(([args]) => args.where.id)).toEqual(['soon-a', 'soon-b', 'late', 'never']);
+    expect(f.models.lots.update.mock.calls.at(-1)?.[0]).toEqual({ where: { id: 'never' }, data: { remainingAmount: 4 } });
+    expect(() => new BatchCreditLedger({ ...((f.ledger as unknown as { options: BatchCreditLedgerOptions<typeof f.tx> }).options),
+      consumeOrder: 'lifo' as never })).toThrow(TypeError);
+  });
   it('does not partially spend when eligible lots are insufficient', async () => {
     const f = fixture();
     await expect(f.ledger.consume(f.tx, { accountId: 'a', amount: 1,

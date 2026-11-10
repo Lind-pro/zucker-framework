@@ -1,8 +1,9 @@
 import { Command } from 'commander';
 import { existsSync, readFileSync } from 'fs';
 import { resolve } from 'path';
+import { Pool } from 'pg';
 
-interface CheckResult {
+export interface CheckResult {
   name: string;
   status: 'ok' | 'warn' | 'error';
   message: string;
@@ -23,9 +24,110 @@ export function describeSecret(value: string): string {
   return `Set (${value.length} characters)`;
 }
 
-export async function runDiagnostics(): Promise<CheckResult[]> {
+/** Key material checks. Reports lengths and relations only, never any part of a value. */
+export function checkSecrets(env: NodeJS.ProcessEnv): CheckResult[] {
   const results: CheckResult[] = [];
-  const cwd = process.cwd();
+  const jwt = env.JWT_SECRET?.trim() ?? '';
+  const config = env.CONFIG_ENCRYPTION_KEY?.trim() ?? '';
+  if (jwt && jwt.length < 32) results.push({ name: 'JWT_SECRET length', status: 'error', message: `Too short (${jwt.length} characters); use at least 32 random characters.` });
+  if (!config) {
+    results.push({ name: 'CONFIG_ENCRYPTION_KEY', status: 'warn', message: 'Not set. Saved provider settings cannot be encrypted.' });
+  } else if (config.length < 32) {
+    results.push({ name: 'CONFIG_ENCRYPTION_KEY', status: 'error', message: `Too short (${config.length} characters); use at least 32 random characters.` });
+  } else if (config === jwt) {
+    results.push({ name: 'CONFIG_ENCRYPTION_KEY', status: 'error', message: 'Must differ from JWT_SECRET.' });
+  } else {
+    results.push({ name: 'CONFIG_ENCRYPTION_KEY', status: 'ok', message: describeSecret(config) });
+  }
+  return results;
+}
+
+function parseOrigin(value: string): string | null {
+  try {
+    const url = new URL(value);
+    return ['http:', 'https:'].includes(url.protocol) ? url.origin : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Browser origins must agree: the server's CORS list has to contain every app that calls it. */
+export function checkOrigins(env: NodeJS.ProcessEnv): CheckResult[] {
+  const results: CheckResult[] = [];
+  const raw = env.ACCOUNT_ORIGINS?.trim();
+  if (!raw) return results;
+  const origins = raw.split(',').map(value => value.trim()).filter(Boolean);
+  const invalid = origins.filter(value => parseOrigin(value) !== value.replace(/\/+$/, ''));
+  if (invalid.length) {
+    results.push({ name: 'ACCOUNT_ORIGINS', status: 'error', message: `Not plain http(s) origins: ${invalid.join(', ')}` });
+    return results;
+  }
+  const allowed = new Set(origins.map(value => parseOrigin(value)));
+  const production = env.NODE_ENV === 'production';
+  for (const key of ['WEB_URL', 'SITE_URL', 'ADMIN_URL']) {
+    const value = env[key]?.trim();
+    if (!value) continue;
+    const origin = parseOrigin(value);
+    if (!origin) results.push({ name: key, status: 'error', message: 'Not an http(s) URL.' });
+    else if (!allowed.has(origin)) results.push({ name: key, status: 'error', message: `${origin} is missing from ACCOUNT_ORIGINS.` });
+    else if (production && origin.startsWith('http:')) results.push({ name: key, status: 'warn', message: 'Uses http in production; serve it over HTTPS.' });
+    else results.push({ name: key, status: 'ok', message: origin });
+  }
+  const web = env.WEB_URL?.trim() && parseOrigin(env.WEB_URL.trim());
+  const site = env.SITE_URL?.trim() && parseOrigin(env.SITE_URL.trim());
+  if (web && site && web !== site) results.push({ name: 'SITE_URL', status: 'warn', message: 'Differs from WEB_URL; links in mail and canonical URLs will disagree.' });
+  return results;
+}
+
+/** Minimal database client surface, so the check can run against a fake in tests. */
+export interface DiagnosticDatabase {
+  query<T>(sql: string): Promise<{ rows: T[] }>;
+  end(): Promise<void>;
+}
+
+/**
+ * Reachability and schema readiness (migrations applied, none failed). Connection errors report the
+ * driver's error code only: messages can contain the host, user or other parts of DATABASE_URL.
+ */
+export async function checkDatabase(url: string | undefined,
+  connect: (url: string) => DiagnosticDatabase = value => new Pool({ connectionString: value, max: 1, connectionTimeoutMillis: 3000 })): Promise<CheckResult[]> {
+  if (!url?.trim()) return [];
+  const database = connect(url.trim());
+  try {
+    await database.query('SELECT 1');
+  } catch (error) {
+    const code = (error as { code?: unknown }).code;
+    await database.end().catch(() => undefined);
+    return [{ name: 'Database', status: 'error', message: `Unreachable${typeof code === 'string' && /^[A-Z0-9_]{1,32}$/.test(code) ? ` (${code})` : ''}. Is PostgreSQL running (pnpm dev:infra)?` }];
+  }
+  const results: CheckResult[] = [{ name: 'Database', status: 'ok', message: 'Reachable' }];
+  try {
+    const table = await database.query<{ present: boolean }>(`SELECT to_regclass('_prisma_migrations') IS NOT NULL AS present`);
+    if (!table.rows[0]?.present) {
+      results.push({ name: 'Schema', status: 'error', message: 'No migrations applied. Run pnpm db:migrate.' });
+    } else {
+      const state = await database.query<{ applied: string; failed: string }>(
+        `SELECT count(*) FILTER (WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL)::text AS applied,
+                count(*) FILTER (WHERE finished_at IS NULL AND rolled_back_at IS NULL)::text AS failed
+           FROM _prisma_migrations`);
+      const { applied = '0', failed = '0' } = state.rows[0] ?? {};
+      results.push(failed !== '0'
+        ? { name: 'Schema', status: 'error', message: `${failed} migration(s) failed or unfinished. Resolve with prisma migrate resolve.` }
+        : { name: 'Schema', status: 'ok', message: `${applied} migration(s) applied` });
+    }
+  } catch {
+    results.push({ name: 'Schema', status: 'error', message: 'Could not read migration state.' });
+  } finally {
+    await database.end().catch(() => undefined);
+  }
+  return results;
+}
+
+export async function runDiagnostics(options: { database?: typeof checkDatabase } = {}): Promise<CheckResult[]> {
+  const results: CheckResult[] = [];
+  const workspaceRoot = process.cwd();
+  // In a `zucker create` workspace the server app holds the framework dependencies and tsconfig.
+  const cwd = existsSync(resolve(workspaceRoot, 'apps/server/package.json')) ? resolve(workspaceRoot, 'apps/server') : workspaceRoot;
 
   // 1. Check package.json exists
   const pkgPath = resolve(cwd, 'package.json');
@@ -105,7 +207,7 @@ export async function runDiagnostics(): Promise<CheckResult[]> {
   }
 
   // 5. Check for a local environment file (`zucker init` writes `.env`)
-  const envFile = ['.env', '.env.local'].find((file) => existsSync(resolve(cwd, file)));
+  const envFile = ['.env', '.env.local'].find((file) => existsSync(resolve(workspaceRoot, file)) || existsSync(resolve(cwd, file)));
   if (envFile) {
     results.push({ name: '.env', status: 'ok', message: `Found ${envFile}` });
   } else {
@@ -123,6 +225,10 @@ export async function runDiagnostics(): Promise<CheckResult[]> {
   } else {
     results.push({ name: 'tsconfig.json', status: 'error', message: 'Not found' });
   }
+
+  // 7. Key material, origin consistency, database reachability and schema readiness
+  results.push(...checkSecrets(process.env), ...checkOrigins(process.env));
+  results.push(...await (options.database ?? checkDatabase)(process.env.DATABASE_URL));
 
   return results;
 }

@@ -23,6 +23,7 @@
     "tailwind-merge": "^3.6.0",
     "zustand": "^5.0.15",
     "@zucker-framework/fe-analytics": "workspace:*",
+    "@zucker-framework/fe-blocks": "workspace:*",
     "@zucker-framework/fe-site": "workspace:*"
   },
   "devDependencies": {

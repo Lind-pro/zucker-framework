@@ -8,7 +8,7 @@ export function record(value: unknown, allowed: readonly string[]): Record<strin
   return value as Record<string, unknown>;
 }
 export function kind(value: unknown): ContentKind {
-  if (value !== 'page' && value !== 'post' && value !== 'doc') throw new BadRequestException('Invalid content kind');
+  if (value !== 'page' && value !== 'post' && value !== 'doc' && value !== 'log') throw new BadRequestException('Invalid content kind');
   return value;
 }
 export function locale(value: unknown): ContentLocale {
@@ -24,11 +24,11 @@ export function identifier(value: unknown): string {
   return value;
 }
 const reservedPageRoots = new Set(['api', 'account', 'billing', 'pricing', 'blog', 'docs', 'content', 'dashboard',
-  'login', 'register', 'verify-email', 'forgot-password', 'reset-password', 'oauth', 'en', 'zh', 'sitemaps']);
+  'changelog', 'login', 'register', 'verify-email', 'forgot-password', 'reset-password', 'oauth', 'en', 'zh', 'sitemaps']);
 export function slug(value: unknown, type: ContentKind | 'category'): string {
   if (typeof value !== 'string' || value.length < 1 || value.length > (type === 'category' ? 100 : 200)
     || !/^[a-z0-9]+([/-][a-z0-9]+)*$/.test(value)) throw new BadRequestException('Invalid content slug');
-  if ((type === 'post' || type === 'category') && value.includes('/')) throw new BadRequestException('This content type requires a single slug segment');
+  if ((type === 'post' || type === 'log' || type === 'category') && value.includes('/')) throw new BadRequestException('This content type requires a single slug segment');
   if (type === 'page' && reservedPageRoots.has(value.split('/')[0]) || type === 'post' && value === 'category'
     || type === 'doc' && value.split('/')[0] === 'search')
     throw new BadRequestException('This slug belongs to an application route');

@@ -1,0 +1,56 @@
+// ─── Credit packs (WP 1.1) ───────────────────────────────────────────────────
+// Admin-editable one-time credit purchases. Like plans, each price is (currency, exact decimal
+// amount, provider references) and checkout freezes a snapshot of it on the order. When this table
+// is empty, BILLING_CATALOG_JSON payment offers are sold instead (seed and fallback).
+
+model creditPacks {
+  id              String   @id @default(cuid())
+  slug            String   @unique
+  title           String
+  titleI18n       Json     @default("{}")
+  description     String?
+  descriptionI18n Json     @default("{}")
+  /// Credits granted per purchase (> 0).
+  credits         Int
+  /// Days until the granted credits expire; NULL never expires.
+  expiresInDays   Int?
+  status          Boolean  @default(false)
+  order           Int      @default(0)
+  /// Incremented by every write; checkout snapshots and optimistic edits refer to it.
+  revision        Int      @default(0)
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  prices          creditPackPrices[]
+
+  @@index([status, order])
+  @@map("credit_packs")
+}
+
+/// One price of a credit pack; unique per pack by currency.
+model creditPackPrices {
+  id        String   @id @default(cuid())
+  packId    String
+  currency  String
+  /// Exact decimal in major units; formatted for the currency by the API.
+  amount    String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  pack      creditPacks @relation(fields: [packId], references: [id], onDelete: Cascade)
+  refs      creditPackPriceRefs[]
+
+  @@unique([packId, currency])
+  @@map("credit_pack_prices")
+}
+
+/// Provider catalog reference that sells one pack price.
+model creditPackPriceRefs {
+  id        String @id @default(cuid())
+  priceId   String
+  provider  String
+  reference String
+  price     creditPackPrices @relation(fields: [priceId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, reference])
+  @@unique([priceId, provider])
+  @@map("credit_pack_price_refs")
+}

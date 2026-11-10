@@ -4,10 +4,10 @@ import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
 import { Link, useRouter } from "@/i18n/navigation";
-import { useAuthStore } from "@/lib/stores/auth-store";
-import { accountPublicClient, httpClient } from "@/lib/http-client";
+import { accountPublicClient } from "@/lib/http-client";
 import { AccountForm, buttonClass, FormMessage, inputClass } from "../account/_components/AccountForm";
-import { accountErrorKey, accountPermissions, accountReturnPath, type AccountIdentity } from "../account/_components/account-flow";
+import { accountErrorKey, accountReturnPath } from "../account/_components/account-flow";
+import { establishSession } from "../account/_components/sign-in";
 
 export default function LoginPage() {
   const t = useTranslations("auth");
@@ -21,19 +21,11 @@ export default function LoginPage() {
     {searchParams.get("changed") === "1" && <div className="mb-4"><FormMessage message={t("passwordChanged")} /></div>}
     <form className="space-y-4" onSubmit={async (event) => {
       event.preventDefault(); setError(""); setLoading(true);
-      let issued = false;
       try {
         const result = await accountPublicClient.post<{ token: string }>("/authorize/login", { username, password });
-        if (!result.token) throw new Error("Missing access token");
-        issued = true;
-        useAuthStore.getState().updateToken(result.token);
-        const me = await httpClient.get<AccountIdentity>("/authorize/me");
-        useAuthStore.getState().setAuthState({ token: useAuthStore.getState().token || result.token,
-          user: { id: me.id, username: me.username, name: me.name, email: me.email },
-          permissions: accountPermissions(me) });
+        await establishSession(result.token);
         router.replace(accountReturnPath(searchParams.get("redirect")));
       } catch (failure) {
-        if (issued) useAuthStore.getState().logout();
         setError(t(accountErrorKey(failure, "loginFailed")));
       } finally { setLoading(false); }
     }}>

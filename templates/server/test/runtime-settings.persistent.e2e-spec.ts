@@ -206,17 +206,25 @@ run('encrypted connection settings PostgreSQL and administrator HTTP contracts',
     expect(JSON.stringify(result.body)).not.toContain('SYNTHETIC-PRIVATE');
     await request(app.getHttpServer()).put('/api/management/connection-settings/web-analytics').set('Origin', origin).send({ expectedRevision: 0 }).expect(401);
   });
-  it('saves public profiles through the same protected CAS API and exposes them only after an actual HTTP restart', async () => {
+  it('saves hot public profiles through the same protected CAS API and exposes them on the next request and after a restart', async () => {
     const fetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('External providers must not be called'));
     let restarted: INestApplication | undefined; let restartedDatabase: ApplicationDatabase | undefined;
     try {
       const analytics = await put('web-analytics', { expectedRevision: 0, values: { SITE_ANALYTICS_ENABLED: 'true', GOOGLE_ANALYTICS_ENABLED: 'true', GOOGLE_ANALYTICS_MEASUREMENT_ID: 'G-SYNTHETIC123',
         PLAUSIBLE_ENABLED: 'true', PLAUSIBLE_SCRIPT_URL: '/analytics/site.js?installation=synthetic', CLARITY_PROJECT_ID: 'SYNTHETIC-PRIVATE-DISABLED-CLARITY' } }).expect(200);
-      expect(analytics.body).toMatchObject({ pendingRestart: true, storedRevision: 1, appliedRevision: 0 });
+      expect(analytics.body).toMatchObject({ applyMode: 'hot', appliesOn: 'next-request', pendingRestart: false, storedRevision: 1, appliedRevision: 1 });
       await put('web-connections', { expectedRevision: 0, values: { SITE_CONNECTIONS_ENABLED: 'true', ADSENSE_ENABLED: 'true', ADSENSE_PUBLISHER_ID: 'ca-pub-1234567890123456',
         AFFONSO_ENABLED: 'true', AFFONSO_PROGRAM_ID: 'synthetic-program', AFFONSO_COOKIE_DURATION_DAYS: '30', CRISP_WEBSITE_ID: 'SYNTHETIC-PRIVATE-DISABLED-CRISP' } }).expect(200);
-      const prior = await request(app.getHttpServer()).get('/api/site/public/integrations').expect(200);
-      expect(prior.body).toEqual({ analytics: { enabled: false }, connections: { enabled: false }, revisions: { analytics: 0, connections: 0 } });
+      const expected = { analytics: { enabled: true, google: { enabled: true, measurementId: 'G-SYNTHETIC123' }, clarity: { enabled: false },
+        plausible: { enabled: true, scriptUrl: '/analytics/site.js?installation=synthetic' }, openPanel: { enabled: false }, vercel: { enabled: false } },
+        connections: { enabled: true, adsense: { enabled: true, publisherId: 'ca-pub-1234567890123456' }, affonso: { enabled: true, programId: 'synthetic-program', cookieDurationDays: 30 },
+        promoteKit: { enabled: false }, crisp: { enabled: false }, tawk: { enabled: false } }, revisions: { analytics: 1, connections: 1 } };
+      // Hot profiles: the saving process invalidates its cache on commit, so no restart is needed.
+      const live = await request(app.getHttpServer()).get('/api/site/public/integrations').expect(200);
+      expect(live.body).toEqual(expected); expect(JSON.stringify(live.body)).not.toContain('SYNTHETIC-PRIVATE');
+      const listed = await get().expect(200);
+      expect(listed.body.appliesOn).toBe('per-profile');
+      expect(listed.body.profiles.find((row: { id: string }) => row.id === 'payment-creem')).toMatchObject({ applyMode: 'restart', appliesOn: 'server-restart' });
       await put('web-analytics', { expectedRevision: 0, values: { SITE_ANALYTICS_ENABLED: 'false' } }).expect(409);
       restartedDatabase = new ApplicationDatabase(scopedUrl);
       const module = await Test.createTestingModule({ imports: [ZuckerCrudModule.forRootAsync({ useFactory: () => restartedDatabase! }),
@@ -226,10 +234,7 @@ run('encrypted connection settings PostgreSQL and administrator HTTP contracts',
         .overrideProvider(RUNTIME_SETTINGS_BASE_ENV).useValue(env).overrideProvider(ACCOUNT_MAILER).useValue(mailer).compile();
       restarted = module.createNestApplication(); restarted.setGlobalPrefix('api'); restarted.useGlobalFilters(new HttpExceptionFilter()); await restarted.listen(0, '127.0.0.1');
       const active = await request(restarted.getHttpServer()).get('/api/site/public/integrations').expect(200);
-      expect(active.body).toEqual({ analytics: { enabled: true, google: { enabled: true, measurementId: 'G-SYNTHETIC123' }, clarity: { enabled: false },
-        plausible: { enabled: true, scriptUrl: '/analytics/site.js?installation=synthetic' }, openPanel: { enabled: false }, vercel: { enabled: false } },
-        connections: { enabled: true, adsense: { enabled: true, publisherId: 'ca-pub-1234567890123456' }, affonso: { enabled: true, programId: 'synthetic-program', cookieDurationDays: 30 },
-        promoteKit: { enabled: false }, crisp: { enabled: false }, tawk: { enabled: false } }, revisions: { analytics: 1, connections: 1 } });
+      expect(active.body).toEqual(expected);
       await request(restarted.getHttpServer()).get('/api/site/public/integrations').expect(200);
       expect(JSON.stringify(active.body)).not.toContain('SYNTHETIC-PRIVATE'); expect(JSON.stringify(active.body)).not.toContain(key); expect(fetch).not.toHaveBeenCalled();
       await request(restarted.getHttpServer()).get('/api/management/connection-settings').expect(401);

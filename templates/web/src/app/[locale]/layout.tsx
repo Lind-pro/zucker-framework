@@ -13,19 +13,39 @@ import { readSafeSiteIntegrations } from "@/features/site/integrations.server";
 import { readSiteSettings } from "@/features/content/server";
 import { SiteTheme } from "@/features/site/SiteTheme";
 import { resolveSiteTheme } from "@zucker-framework/fe-site/content";
+import { LocaleSuggestion } from "@/components/LocaleSuggestion";
+import { LOCALE_TAGS, isLocale } from "@/lib/site/locales";
+import { parseAdminUrl, siteOrigin } from "@/lib/site/url";
 import "../globals.css";
 
+/**
+ * Site-wide defaults only. Canonical and hreflang are page-specific, so they come from each public
+ * page's buildMetadata() (lib/site/metadata.ts); a default here would be inherited by every page.
+ * The generated opengraph-image in this segment supplies og:image for pages that set no openGraph.
+ */
 export async function generateMetadata({
   params,
 }: {
   params: Promise<{ locale: string }>;
 }): Promise<Metadata> {
   const { locale } = await params;
-  const t = await getTranslations({ locale, namespace: "landing" });
-
+  const [t, site] = await Promise.all([
+    getTranslations({ locale, namespace: "landing" }),
+    readSiteSettings(locale),
+  ]);
+  const description = site.description || t("heroDescription");
   return {
-    title: t("heroTitle"),
-    description: t("heroDescription"),
+    metadataBase: new URL(siteOrigin()),
+    applicationName: site.name,
+    title: { default: site.name, template: `%s | ${site.name}` },
+    description,
+    openGraph: {
+      siteName: site.name,
+      type: "website",
+      locale: isLocale(locale) ? LOCALE_TAGS[locale].openGraph : undefined,
+      description,
+    },
+    twitter: { card: "summary_large_image" },
   };
 }
 
@@ -38,7 +58,7 @@ export default async function LocaleLayout({
 }) {
   const { locale } = await params;
 
-  if (!routing.locales.includes(locale as "zh" | "en")) {
+  if (!isLocale(locale) || !routing.locales.includes(locale)) {
     notFound();
   }
 
@@ -52,13 +72,16 @@ export default async function LocaleLayout({
   const theme = resolveSiteTheme(site.theme, ['default']);
   // Set by src/proxy.ts when a nonce-based CSP is enabled; undefined otherwise.
   const nonce = requestHeaders.get("x-nonce") ?? undefined;
+  // Rendered only for signed-in accounts holding permissions; the Server enforces access.
+  const adminUrl = parseAdminUrl(process.env.ADMIN_URL);
 
   return (
     <html lang={locale} suppressHydrationWarning>
       <body data-site-theme={theme.name}>
         <NextIntlClientProvider messages={messages}>
           <SiteTheme appearance={site.appearance}><div className="min-h-screen flex flex-col">
-          <Header site={site} />
+          <LocaleSuggestion />
+          <Header site={site} adminUrl={adminUrl} />
           <main className="flex-1">{children}</main>
           <Footer site={site} locale={locale} />
           <Toaster position="top-right" richColors />

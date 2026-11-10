@@ -14,6 +14,7 @@ import { RUNTIME_ENVIRONMENT, RUNTIME_SETTINGS_BASE_ENV } from './runtime-settin
       useFactory: (database: ApplicationDatabase, env: NodeJS.ProcessEnv) => new ConnectionSettingsService(database, env) },
     { provide: RUNTIME_ENVIRONMENT, inject: [ConnectionSettingsService], useFactory: (settings: ConnectionSettingsService) => settings.environment() },
   ],
-  exports: [ConnectionSettingsService, RUNTIME_ENVIRONMENT],
+  // The base environment is exported for other bootstrap readers (e.g. `POLICY_*` pins); never return it over HTTP.
+  exports: [ConnectionSettingsService, RUNTIME_ENVIRONMENT, RUNTIME_SETTINGS_BASE_ENV],
 })
 export class RuntimeSettingsModule {}

@@ -1,5 +1,5 @@
 import { BadRequestException, HttpException, Inject, Injectable } from '@nestjs/common';
-import { assertAllowedOutboundUrl } from '@zucker-framework/core';
+import { assertAllowedOutboundUrl, OutboundUrlRejectedError } from '@zucker-framework/core';
 import { FILES_OPTIONS, type FilesOptions } from './files.config';
 import { FILES_IMPORT_FETCH, FILES_TRANSFER_OPTIONS, type FilesImportFetch, type FilesTransferOptions } from './files-transfer.config';
 import { FilesService } from './files.service';
@@ -48,7 +48,14 @@ export class FilesImportService {
       }
       if (!length) throw unavailable();
       return Buffer.concat(chunks, length);
-    } catch (error) { if (error instanceof HttpException) throw error; throw unavailable(); }
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      // The production transport (core createPublicFetch) resolves the allow-listed host, refuses any
+      // non-public answer and pins the connection to the vetted addresses (DNS rebinding).
+      // Name check as well: a CJS/ESM dual load of core yields two distinct error classes.
+      if (error instanceof OutboundUrlRejectedError || error instanceof Error && error.name === 'OutboundUrlRejectedError') throw failure('FILE_IMPORT_SOURCE_FORBIDDEN', 'This file source is not allowed', 403);
+      throw unavailable();
+    }
     finally { clearTimeout(timeout); controller.abort(); if (reader) void reader.cancel().catch(() => {}); }
   }
 }

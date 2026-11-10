@@ -61,7 +61,7 @@ run('private account avatars with real PostgreSQL, local objects and image decod
     } finally { await pool.query(`DROP FUNCTION "${schema}".synthetic_avatar_failure()`); }
   }
   beforeAll(async () => {
-    const url = new URL(databaseUrl!); if (url.pathname !== '/cnipa_dev') throw new Error('Requires approved isolated development database');
+    const url = new URL(databaseUrl!); if (!/(?:_dev|_test|_tests)$/.test(url.pathname)) throw new Error('Use a designated development/test database');
     directory = mkdtempSync(join(tmpdir(), 'zucker-avatar-objects-')); manager = new LocalFileStorage({ basePath: directory });
     pool = new Pool({ connectionString: url.href, connectionTimeoutMillis: 5000 }); const client = await pool.connect();
     try { await client.query('BEGIN'); await client.query(`CREATE SCHEMA "${schema}"`); await client.query(`SET LOCAL search_path TO "${schema}"`);

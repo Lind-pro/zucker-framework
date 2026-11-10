@@ -8,12 +8,14 @@ import { Pool } from 'pg';
 
 /**
  * Guards that every correctness-bearing index/constraint of the back-office tables is representable
- * in schema.prisma: the migrations, applied to an empty schema, must not differ from schema.prisma
+ * in the Prisma schema (prisma/schema.prisma + prisma/models/*.prisma): the migrations, applied to an empty schema, must not differ from it
  * for these tables (`prisma migrate diff` would otherwise propose dropping, e.g., a partial unique
  * index on the next `migrate dev`). Older tables have known, unrelated drift and are not checked here.
  */
 const BACK_OFFICE_TABLES = ['subscription_plans', 'subscription_plan_prices', 'subscription_plan_price_refs', 'user_subscriptions',
-  'user_subscription_payments', 'email_templates', 'email_logs', 'quota_reservations', 'quota_usage', 'billing_orders'];
+  'user_subscription_payments', 'email_templates', 'email_logs', 'quota_reservations', 'quota_usage', 'billing_orders',
+  // Phase 1 feature fragments (prisma/models/*.prisma).
+  'credit_packs', 'credit_pack_prices', 'credit_pack_price_refs', 'user_acquisition', 'starter_data_markers'];
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 run('back-office schema has no drift between migrations and schema.prisma', () => {
@@ -50,7 +52,8 @@ run('back-office schema has no drift between migrations and schema.prisma', () =
     const scoped = new URL(url.href);
     scoped.searchParams.set('schema', schema);
     const { stdout } = await promisify(execFile)(resolve('node_modules/.bin/prisma'),
-      ['migrate', 'diff', '--from-config-datasource', '--to-schema', 'prisma/schema.prisma', '--script'],
+      // The whole prisma/ directory: schema.prisma plus every feature fragment in prisma/models/.
+      ['migrate', 'diff', '--from-config-datasource', '--to-schema', 'prisma', '--script'],
       { env: { ...process.env, DATABASE_URL: scoped.href }, timeout: 120_000, maxBuffer: 16 * 1024 * 1024 });
     const statements = stdout.split(';').map(statement => statement.replace(/--.*$/gm, '').trim()).filter(Boolean);
     // The table a statement changes: ALTER/CREATE/DROP TABLE "t", CREATE INDEX … ON "t", DROP INDEX "t_…".

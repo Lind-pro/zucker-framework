@@ -1,6 +1,9 @@
 import type { SiteColorMode, SiteDocument } from '@zucker-framework/fe-site/content';
+import { DEFAULT_LOCALE, isLocale, LOCALES } from '../../lib/site/locales';
+import { localizedPath } from '../../lib/site/url';
 
-export type ContentKind = 'page' | 'post' | 'doc';
+/** `log` entries are changelog releases, listed on /changelog. */
+export type ContentKind = 'page' | 'post' | 'doc' | 'log';
 export type ContentLocale = 'zh' | 'en';
 export interface SiteLink {
   label: string;
@@ -14,6 +17,10 @@ export interface PublicSiteSettings {
   navigation: SiteLink[];
   footerLinks: SiteLink[];
   siteUrl: string;
+  /** Present on current servers; absent from older ones and from the outage defaults. */
+  logoUrl?: string | null;
+  social?: { platform: string; href: string }[];
+  banner?: { text: string; href: string | null } | null;
 }
 export interface SiteSettings {
   name: string;
@@ -41,12 +48,14 @@ export interface Entry {
   publishedAt: string;
   updatedAt: string;
   categories: Category[];
+  /** `database` for CMS rows, `file` for documents shipped in the Server's content directory. */
+  source?: 'database' | 'file';
 }
 export interface EntryDetail extends Entry {
   document: SiteDocument;
 }
-export interface EntryPage {
-  data: Entry[];
+export interface EntryPage<T extends Entry = Entry> {
+  data: T[];
   total: number;
   page: number;
   pageSize: number;
@@ -73,14 +82,30 @@ export interface DraftCategory {
   revision: number;
   publishedRevision: number | null;
 }
+/** Page slug rendered at the site root instead of `/home`. */
+export const HOME_PAGE_SLUG = 'home';
+/** Locale-independent public path of an entry. */
 export function contentPath(kind: ContentKind, slug: string): string {
-  return `${kind === 'post' ? '/blog' : kind === 'doc' ? '/docs' : ''}/${slug}`;
+  if (kind === 'page' && slug === HOME_PAGE_SLUG) return '/';
+  const prefix = { page: '', post: '/blog', doc: '/docs', log: '/changelog' }[kind];
+  return `${prefix}/${slug}`;
 }
-/** Public site links use document navigation, including links into protected areas. */
+const localePrefix = new RegExp(`^/(${LOCALES.join('|')})(?=/|\\?|#|$)`);
+/**
+ * Site-relative href for `locale` following the `as-needed` rule (default locale unprefixed), so a
+ * link never costs a redirect hop. Hrefs already carrying a locale keep it, except a redundant
+ * default-locale prefix, which is dropped. External, protocol-relative and fragment hrefs are
+ * returned unchanged. Public site links use document navigation, including into protected areas.
+ */
 export function localizedHref(href: string, locale: string): string {
-  return href.startsWith('/') && !/^\/(?:en|zh)(?:\/|$)/.test(href)
-    ? `/${locale}${href === '/' ? '' : href}`
-    : href;
+  if (!href.startsWith('/') || href.startsWith('//')) return href;
+  const prefixed = localePrefix.exec(href);
+  if (prefixed) {
+    if (prefixed[1] !== DEFAULT_LOCALE) return href;
+    const rest = href.slice(prefixed[0].length);
+    return rest.startsWith('/') ? rest : `/${rest}`;
+  }
+  return isLocale(locale) ? localizedPath(locale, href) : href;
 }
 export function emptyDocument(): SiteDocument {
   return {

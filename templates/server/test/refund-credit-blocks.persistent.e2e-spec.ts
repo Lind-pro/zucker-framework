@@ -20,7 +20,7 @@ run('consumer refund source eligibility on actual PostgreSQL', () => {
   const coordinator = new PostgresCreditOperationCoordinator();
   beforeAll(async () => {
     const url = new URL(process.env.TEST_DATABASE_URL!);
-    if (url.pathname !== '/cnipa_dev') throw new Error('Requires approved development database');
+    if (!/(?:_dev|_test|_tests)$/.test(url.pathname)) throw new Error('Use a designated development/test database');
     pool = new Pool({ connectionString: url.href, connectionTimeoutMillis: 5000 });
     const client = await pool.connect();
     try {

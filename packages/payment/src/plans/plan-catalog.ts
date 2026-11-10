@@ -1,7 +1,13 @@
 import {
+  MAX_CREDIT_EXPIRY_DAYS,
+  MAX_PLAN_HIGHLIGHTS,
+  MAX_PLAN_HIGHLIGHT_LENGTH,
+  MAX_PLAN_PRICE_CREDITS,
   PLAN_PRICE_INTERVALS,
   RECURRING_PLAN_PRICE_INTERVALS,
   brandPortError,
+  type LocalizedText,
+  type PlanCreditExpiry,
   type PlanPrice,
   type PlanPriceInterval,
   type PortErrorReason,
@@ -16,7 +22,7 @@ import { currencyExponent, fromMinorUnits, toMinorUnits } from '../contract/mone
  * must satisfy is injected.
  */
 export type SubscriptionPlanRecord = SubscriptionPlan<Date>;
-export type { PlanPrice, PlanPriceInterval };
+export type { PlanPrice, PlanPriceInterval, PlanCreditExpiry, LocalizedText };
 export type SubscriptionPlanWrite = Omit<SubscriptionPlanRecord, 'id' | 'revision' | 'createdAt' | 'updatedAt'>;
 
 export type PlanCatalogErrorReason = Extract<PortErrorReason, 'invalid' | 'not_found' | 'conflict' | 'referenced'>;
@@ -80,12 +86,121 @@ const PROVIDER = /^[a-z][a-z0-9_-]{0,31}$/;
 const CURRENCY = /^[A-Z]{3}$/;
 const FIELDS = new Set<keyof SubscriptionPlanWrite>([
   'slug', 'name', 'description', 'status', 'order', 'features', 'quotas', 'prices',
+  'featured', 'badge', 'highlights', 'nameI18n', 'descriptionI18n', 'badgeI18n', 'highlightsI18n',
 ]);
+const PRICE_FIELDS = ['interval', 'currency', 'amount', 'termDays', 'providerRefs', 'credits', 'creditExpiry'];
+/** BCP 47-like locale keys of localized fields (`en`, `zh`, `zh-Hans`, `pt-BR`). */
+const LOCALE = /^[a-z]{2,3}(-[A-Za-z0-9]{2,8}){0,2}$/;
+export const MAX_LOCALIZED_ENTRIES = 32;
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 function printable(value: unknown, max: number): value is string {
   return typeof value === 'string' && !!value.trim() && value.length <= max && !/[\u0000-\u001f\u007f]/.test(value);
+}
+
+/** Credits granted by one price: an integer from 0; absent means 0. */
+export function validateCredits(value: unknown, at: string, issues: string[], minimum = 0): number {
+  if (value === undefined && minimum === 0) return 0;
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < minimum || value > MAX_PLAN_PRICE_CREDITS) {
+    issues.push(`${at} must be an integer from ${minimum} to ${MAX_PLAN_PRICE_CREDITS}`);
+    return 0;
+  }
+  return value;
+}
+
+/** Days until granted credits expire (1 … 36500) or null; absent means null. */
+export function validateExpiryDays(value: unknown, at: string, issues: string[]): number | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1 || value > MAX_CREDIT_EXPIRY_DAYS) {
+    issues.push(`${at} must be null or an integer from 1 to ${MAX_CREDIT_EXPIRY_DAYS}`);
+    return null;
+  }
+  return value;
+}
+
+/**
+ * Locale → text map. Keys are locale tags, values non-empty printable text up to `max` characters
+ * (line breaks allowed when `multiline`). `null`/absent is an empty map.
+ */
+export function validateLocalizedText(value: unknown, at: string, issues: string[], max: number, multiline = false): LocalizedText {
+  if (value === undefined || value === null) return {};
+  if (!isRecord(value)) {
+    issues.push(`${at} must be an object of locale to text`);
+    return {};
+  }
+  const entries = Object.entries(value);
+  if (entries.length > MAX_LOCALIZED_ENTRIES) issues.push(`${at} has more than ${MAX_LOCALIZED_ENTRIES} locales`);
+  const result: LocalizedText = {};
+  for (const [locale, text] of entries.slice(0, MAX_LOCALIZED_ENTRIES)) {
+    const control = multiline ? /[\u0000-\u0009\u000b-\u001f\u007f]/ : /[\u0000-\u001f\u007f]/;
+    if (!LOCALE.test(locale)) issues.push(`${at} has an invalid locale key`);
+    else if (typeof text !== 'string' || !text.trim() || text.length > max || control.test(text))
+      issues.push(`${at}.${locale} must be 1-${max} characters`);
+    else result[locale] = text.trim();
+  }
+  return result;
+}
+
+function validateHighlights(value: unknown, at: string, issues: string[]): string[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value) || value.length > MAX_PLAN_HIGHLIGHTS) {
+    issues.push(`${at} must be a list of at most ${MAX_PLAN_HIGHLIGHTS} entries`);
+    return [];
+  }
+  const result: string[] = [];
+  value.forEach((item, index) => {
+    if (!printable(item, MAX_PLAN_HIGHLIGHT_LENGTH)) issues.push(`${at}[${index}] must be 1-${MAX_PLAN_HIGHLIGHT_LENGTH} characters`);
+    else result.push(item.trim());
+  });
+  return result;
+}
+
+function validateLocalizedHighlights(value: unknown, at: string, issues: string[]): Record<string, string[]> {
+  if (value === undefined || value === null) return {};
+  if (!isRecord(value)) {
+    issues.push(`${at} must be an object of locale to a list`);
+    return {};
+  }
+  const entries = Object.entries(value);
+  if (entries.length > MAX_LOCALIZED_ENTRIES) issues.push(`${at} has more than ${MAX_LOCALIZED_ENTRIES} locales`);
+  const result: Record<string, string[]> = {};
+  for (const [locale, list] of entries.slice(0, MAX_LOCALIZED_ENTRIES)) {
+    if (!LOCALE.test(locale)) issues.push(`${at} has an invalid locale key`);
+    else result[locale] = validateHighlights(list, `${at}.${locale}`, issues);
+  }
+  return result;
+}
+
+/**
+ * Validates one provider-reference map (`provider → reference`; empty/null entries are dropped).
+ * `refs` collects `provider\u0000reference` across a whole price list so a reference sells one price.
+ */
+export function validateProviderRefs(
+  raw: unknown,
+  at: string,
+  issues: string[],
+  refs: Set<string>,
+  formats: Readonly<Record<string, RegExp>>,
+): Record<string, string> {
+  const providerRefs: Record<string, string> = {};
+  const rawRefs = raw ?? {};
+  if (!isRecord(rawRefs)) {
+    issues.push(`${at}.providerRefs must be an object`);
+    return providerRefs;
+  }
+  for (const [provider, ref] of Object.entries(rawRefs)) {
+    if (ref === null || ref === '') continue;
+    if (!PROVIDER.test(provider)) issues.push(`${at}.providerRefs has an invalid provider id`);
+    else if (!printable(ref, 255) || (Object.hasOwn(formats, provider) && !formats[provider].test(ref)))
+      issues.push(`${at}.providerRefs.${provider} is not a valid ${provider} reference`);
+    else if (refs.has(`${provider}\u0000${ref}`)) issues.push(`${at}.providerRefs.${provider} is used by another price`);
+    else {
+      refs.add(`${provider}\u0000${ref}`);
+      providerRefs[provider] = ref;
+    }
+  }
+  return providerRefs;
 }
 
 /** Exact decimal string for the currency, or null. Numbers are rejected so a float never becomes a price. */
@@ -114,7 +229,7 @@ export function validatePlanPrices(
   value.forEach((raw, index) => {
     const at = `prices[${index}]`;
     if (!isRecord(raw)) return void issues.push(`${at} must be an object`);
-    const unknown = Object.keys(raw).filter((key) => !['interval', 'currency', 'amount', 'termDays', 'providerRefs'].includes(key));
+    const unknown = Object.keys(raw).filter((key) => !PRICE_FIELDS.includes(key));
     if (unknown.length) issues.push(`${at} has unsupported field ${unknown[0]}`);
     const interval = raw.interval as PlanPriceInterval;
     if (!PLAN_PRICE_INTERVALS.includes(interval)) issues.push(`${at}.interval must be one of ${PLAN_PRICE_INTERVALS.join(', ')}`);
@@ -128,28 +243,25 @@ export function validatePlanPrices(
         issues.push(`${at}.termDays must be an integer from 1 to ${MAX_ONE_TIME_TERM_DAYS}`);
       else termDays = raw.termDays;
     } else if (raw.termDays !== undefined && raw.termDays !== null) issues.push(`${at}.termDays applies only to one_time prices`);
-    const providerRefs: Record<string, string> = {};
-    const rawRefs = raw.providerRefs ?? {};
-    if (!isRecord(rawRefs)) issues.push(`${at}.providerRefs must be an object`);
-    else
-      for (const [provider, ref] of Object.entries(rawRefs)) {
-        if (ref === null || ref === '') continue;
-        if (!PROVIDER.test(provider)) issues.push(`${at}.providerRefs has an invalid provider id`);
-        else if (!printable(ref, 255) || (Object.hasOwn(formats, provider) && !formats[provider].test(ref)))
-          issues.push(`${at}.providerRefs.${provider} is not a valid ${provider} reference`);
-        else if (refs.has(`${provider}\u0000${ref}`)) issues.push(`${at}.providerRefs.${provider} is used by another price`);
-        else {
-          refs.add(`${provider}\u0000${ref}`);
-          providerRefs[provider] = ref;
-        }
-      }
+    const providerRefs = validateProviderRefs(raw.providerRefs, at, issues, refs, formats);
+    const credits = validateCredits(raw.credits, `${at}.credits`, issues);
+    let creditExpiry: PlanCreditExpiry = null;
+    if (raw.creditExpiry === 'period') {
+      // A lifetime term has no end: "expire with the period" would silently mean "never".
+      if (interval === 'lifetime') issues.push(`${at}.creditExpiry 'period' does not apply to lifetime prices`);
+      else creditExpiry = 'period';
+    } else if (raw.creditExpiry !== undefined && raw.creditExpiry !== null) {
+      if (typeof raw.creditExpiry !== 'number') issues.push(`${at}.creditExpiry must be 'period', a number of days or null`);
+      else creditExpiry = validateExpiryDays(raw.creditExpiry, `${at}.creditExpiry`, issues);
+    }
     const key = `${interval}\u0000${currency}`;
     if (currency && PLAN_PRICE_INTERVALS.includes(interval)) {
       if (seen.has(key)) issues.push(`${at} duplicates the ${interval} ${currency} price`);
       seen.add(key);
     }
     if (amount !== null && currency && PLAN_PRICE_INTERVALS.includes(interval))
-      prices.push({ interval, currency, amount, termDays, providerRefs });
+      // Without credits there is nothing to expire; store the canonical null.
+      prices.push({ interval, currency, amount, termDays, providerRefs, credits, creditExpiry: credits ? creditExpiry : null });
   });
   return { prices, issues };
 }
@@ -192,6 +304,21 @@ export function validatePlanWrite(
       issues.push('order must be an integer');
     else data.order = input.order;
   }
+  if (has('featured')) {
+    if (typeof input.featured !== 'boolean') issues.push('featured must be a boolean');
+    else data.featured = input.featured;
+  }
+  if (has('badge') || input.badge === null) {
+    if (input.badge !== null && !printable(input.badge, 40)) issues.push('badge must be 1-40 characters or null');
+    else data.badge = input.badge === null ? null : (input.badge as string).trim();
+  }
+  if (has('highlights') || input.highlights === null) data.highlights = validateHighlights(input.highlights, 'highlights', issues);
+  if (has('nameI18n') || input.nameI18n === null) data.nameI18n = validateLocalizedText(input.nameI18n, 'nameI18n', issues, 100);
+  if (has('descriptionI18n') || input.descriptionI18n === null)
+    data.descriptionI18n = validateLocalizedText(input.descriptionI18n, 'descriptionI18n', issues, 2000, true);
+  if (has('badgeI18n') || input.badgeI18n === null) data.badgeI18n = validateLocalizedText(input.badgeI18n, 'badgeI18n', issues, 40);
+  if (has('highlightsI18n') || input.highlightsI18n === null)
+    data.highlightsI18n = validateLocalizedHighlights(input.highlightsI18n, 'highlightsI18n', issues);
   if (has('prices') || !options.partial) {
     const result = validatePlanPrices(input.prices ?? [], options);
     issues.push(...result.issues);
@@ -214,6 +341,13 @@ export function validatePlanWrite(
     data.status ??= false;
     data.order ??= 0;
     data.prices ??= [];
+    data.featured ??= false;
+    data.badge ??= null;
+    data.highlights ??= [];
+    data.nameI18n ??= {};
+    data.descriptionI18n ??= {};
+    data.badgeI18n ??= {};
+    data.highlightsI18n ??= {};
   }
   return data;
 }
@@ -249,6 +383,9 @@ export interface PlanPriceSnapshot {
   termDays: number | null;
   providerId: string;
   providerRef: string;
+  /** Credits each paid period grants (0 for snapshots frozen before plans granted credits). */
+  credits: number;
+  creditExpiry: PlanCreditExpiry;
 }
 
 /**
@@ -264,12 +401,18 @@ function isStoredSnapshotAmount(amount: string, currency: string): boolean {
 export function readPlanPriceSnapshot(value: unknown): PlanPriceSnapshot | null {
   if (!isRecord(value)) return null;
   const { planId, slug, revision, interval, currency, amount, termDays, providerId, providerRef } = value;
+  // Absent on orders created before plans granted credits: those orders grant none.
+  const credits = value.credits ?? 0, creditExpiry = value.creditExpiry ?? null;
   if (typeof planId !== 'string' || !planId || typeof slug !== 'string' || typeof revision !== 'number'
     || !PLAN_PRICE_INTERVALS.includes(interval as PlanPriceInterval) || typeof currency !== 'string' || !CURRENCY.test(currency)
     || typeof amount !== 'string' || !isStoredSnapshotAmount(amount, currency)
     || (interval === 'one_time' ? typeof termDays !== 'number' || !Number.isSafeInteger(termDays) || termDays < 1 : termDays !== null)
-    || typeof providerId !== 'string' || typeof providerRef !== 'string' || !providerRef) return null;
-  return { planId, slug, revision, interval: interval as PlanPriceInterval, currency, amount, termDays: termDays as number | null, providerId, providerRef };
+    || typeof providerId !== 'string' || typeof providerRef !== 'string' || !providerRef
+    || typeof credits !== 'number' || !Number.isSafeInteger(credits) || credits < 0 || credits > MAX_PLAN_PRICE_CREDITS
+    || !(creditExpiry === null || (creditExpiry === 'period' && interval !== 'lifetime')
+      || (typeof creditExpiry === 'number' && Number.isSafeInteger(creditExpiry) && creditExpiry >= 1 && creditExpiry <= MAX_CREDIT_EXPIRY_DAYS))) return null;
+  return { planId, slug, revision, interval: interval as PlanPriceInterval, currency, amount, termDays: termDays as number | null, providerId, providerRef,
+    credits, creditExpiry: creditExpiry as PlanCreditExpiry };
 }
 
 export interface ResolvedPlanOffer {
@@ -349,6 +492,7 @@ export class PlanCatalogService {
       snapshot: {
         planId: plan.id, slug: plan.slug, revision: plan.revision, interval: price.interval, currency: price.currency,
         amount: price.amount, termDays: price.termDays, providerId, providerRef,
+        credits: price.credits ?? 0, creditExpiry: price.credits ? price.creditExpiry ?? null : null,
       },
     };
   }

@@ -1,0 +1,11 @@
+# Used when this app is built with itself as the context; a workspace build uses the root .dockerignore.
+.env*
+!.env.example
+node_modules
+dist
+uploads
+src/generated
+*.tsbuildinfo
+.turbo
+coverage
+test-results

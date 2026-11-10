@@ -3,7 +3,7 @@ import { PostgresCreditOperationCoordinator } from '@zucker-framework/credit';
 import { DatabaseOrderPersistence, HostedCheckoutError } from '@zucker-framework/payment';
 import type { HostedCheckoutOrder, HostedCheckoutPersistence } from '@zucker-framework/payment';
 import { ApplicationDatabase, ApplicationTransaction } from '../database';
-import { checkoutCreditOperation, createCreditLedger, validateCreditFulfillmentPolicy } from './ledger';
+import { checkoutCreditOperation, createCreditLedger, creditExpiresAt, paidPeriodEnd, validateCreditFulfillmentPolicy } from './ledger';
 import { bindCheckoutSubscription } from './subscription-persistence';
 import { refundCheckoutGrant } from './refunds/refunds.grant';
 import { assertPlanFulfillment, type BillingExtensions } from './billing-extensions';
@@ -75,9 +75,9 @@ export function createCheckoutPersistence(database: ApplicationDatabase, options
           }
           const policy = validateCreditFulfillmentPolicy(order.offer.fulfillmentData);
           const source = 'purchase';
-          const expiresAt = policy.expiresInDays === null ? undefined
-            : new Date(order.fulfilledAt.getTime() + policy.expiresInDays * 86_400_000);
-          if (expiresAt && !Number.isFinite(expiresAt.getTime())) throw new TypeError('Credit expiry exceeds the supported date range');
+          const fulfilledAt = order.fulfilledAt;
+          // Plan credits with `creditExpiry: 'period'` end with the one-time term (never for lifetime).
+          const expiresAt = creditExpiresAt(policy, fulfilledAt, () => paidPeriodEnd(order.offer.fulfillmentData, fulfilledAt)) ?? undefined;
 
           // A prior partial/manual write is not an idempotent success. A normal replay
           // is handled by the paid order CAS before this callback is entered.

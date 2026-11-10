@@ -1,0 +1,25 @@
+packages:
+  - "apps/*"
+
+# Wait a day before adopting newly published versions of third-party packages.
+minimumReleaseAge: 1440
+# Framework releases are pinned to one fixed version line; adopt them as soon as they are published.
+minimumReleaseAgeExclude:
+  - "@zucker-framework/*"
+
+# `pnpm deploy` copies each app with its own production dependencies into its image.
+injectWorkspacePackages: true
+
+# Native/binary dependencies of the server (Prisma engines, sharp, SWC) and the frontend toolchains.
+allowBuilds:
+  "@google/genai": true
+  "@parcel/watcher": true
+  "@prisma/engines": true
+  "@scarf/scarf": false
+  "@swc/core": true
+  esbuild: true
+  msgpackr-extract: true
+  prisma: true
+  protobufjs: true
+  sharp: true
+  unrs-resolver: true

@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@zucker-framework/fe-admin": "workspace:*",
+    "@zucker-framework/fe-blocks": "workspace:*",
     "@zucker-framework/fe-site": "workspace:*",
     "lucide-react": "^1.39.0",
     "react": "19.2.8",

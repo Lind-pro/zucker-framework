@@ -12,15 +12,15 @@
 4. 执行 `pnpm dev`。Server 默认 `4200`，API 前缀 `/api`。SMTP 不是启动依赖；可以先用显式初始化的已验证管理员检查管理端登录。启用普通注册、邮箱验证或找回密码前再配置账户 `SMTP_*`，缺少配置时这些操作明确返回不可用。
 5. Web 默认 `4202`、Admin 默认 `4201`；ACCOUNT_ORIGINS 要包含实际浏览器 origin。开发代理保持同源请求，生产须明确 HTTPS 与转发配置。
 
-应用启动不创建默认账户、角色或固定密码。需要首位管理员时，在私密环境中设置 BOOTSTRAP_ADMIN_USERNAME/EMAIL/PASSWORD，显式执行 `pnpm account:admin`；使用满足正常用户名/密码策略的账户名。命令拒绝覆盖或提升已有账户，并补齐带读取权限的初始菜单而不覆盖用户已有菜单；成功后删除引导密码配置。该命令只供应用所有者受控初始化，不是公开注册入口。
+应用启动不创建默认账户、角色或固定密码。需要首位管理员时，在私密环境中设置 BOOTSTRAP_ADMIN_USERNAME/EMAIL/PASSWORD，显式执行 `pnpm account:admin`；使用满足正常用户名/密码策略的账户名。命令拒绝覆盖或提升已有账户，并补齐带读取权限的初始菜单而不覆盖用户已有菜单；成功后删除引导密码配置。该命令只供应用所有者受控初始化，不是公开注册入口。同一事务还写入一次性起始数据：`BILLING_CATALOG_JSON` 的订阅商品成为套餐、一次性商品成为积分包（只写一次，记录在 `starter_data_markers`，管理员删除后不会重建），`content/` 下的起始页面、博客、文档和更新日志发布进 CMS（已存在的条目不变）。之后 `pnpm content:seed [--publish]` 可再次复制 `content/` 中新增的文档；`pnpm account:role -- --email <地址> --role <角色名或 ID>` 给已有账户授予已有角色。
 
-账户邮件和持久任务通知分别配置：账户邮件使用 `SMTP_*`；任务通知使用 `DELIVERY_PROVIDER=none|smtp|resend` 与 `DELIVERY_*`，默认不投递。配置一种不会自动启用另一种，字段见本项目 `.env.example`。
+账户邮件和持久任务通知分别配置：账户、欢迎、回执与 MailService 邮件按 `MAIL_PROVIDER`（`smtp` 默认，或 `resend` + `MAIL_RESEND_API_KEY`）发送，发件人为 `SMTP_FROM`，`SMTP_USER/SMTP_PASSWORD` 都为空时不做 SMTP 认证；任务通知使用 `DELIVERY_PROVIDER=none|smtp|resend` 与 `DELIVERY_*`，默认不投递。配置一种不会自动启用另一种，字段见本项目 `.env.example`。
 
 ## 账户协议
 
 | 入口（均以 `/api/authorize` 开头） | 行为 |
 | --- | --- |
-| `POST /register` | username/email/password/locale；注册普通成员，需邮箱验证 |
+| `POST /register` | username/email/password/locale/utm；注册普通成员。产品策略 `account` 决定是否开放注册、是否需要邮箱验证（默认需要，返回 `{verificationRequired:true}`；关闭时直接登录，返回 `{verificationRequired:false,userId,token,expires}` 与刷新 Cookie）、初始角色与欢迎积分（与用户同一事务发放，失败时在同一事务提交重试任务，只发放一次） |
 | `POST /verification`、`POST /forgot-password` | 发送验证/找回链接；未知邮箱返回同样的 accepted 响应 |
 | `POST /verify-email`、`POST /reset-password` | 消费一次性票据；票据与账户变更在同一数据库事务中提交 |
 | `POST /login` | 返回短期 token，将刷新令牌放入 HttpOnly `zucker-session` Cookie |

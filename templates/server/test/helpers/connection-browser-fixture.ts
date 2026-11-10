@@ -36,6 +36,8 @@ import {
   ConnectionSettingsService,
   CONNECTION_SETTINGS_SCOPE,
 } from '../../src/runtime-settings/connection-settings.service';
+import { PolicyModule } from '../../src/policy/policy.module';
+import type { PolicyDefinition } from '../../src/policy/policy.registry';
 import {
   RUNTIME_ENVIRONMENT,
   RUNTIME_SETTINGS_BASE_ENV,
@@ -46,6 +48,8 @@ export async function connectionBrowserFixture(
   databaseUrl: string,
   origin: string,
   options: {
+    /** Test-only policy definitions; mounts the product policy module (`/api/management/policies`). */
+    policies?: readonly PolicyDefinition[];
     nativeAI?: { factory?: NativeModelFactory; routes?: Readonly<Record<string, string>> };
   } = {},
 ) {
@@ -117,6 +121,7 @@ export async function connectionBrowserFixture(
           },
         }),
         RuntimeSettingsModule,
+        ...(options.policies ? [PolicyModule.forRoot({ policies: options.policies })] : []),
         AccountModule,
         ...(options.nativeAI
           ? [

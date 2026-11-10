@@ -3,6 +3,7 @@ import {
   EmailProvider, type MailDeliveryContext, type MailProvider, type SendMailOptions, type SendMailResult,
 } from '@zucker-framework/notification';
 import { RUNTIME_ENVIRONMENT } from '../runtime-settings/runtime-settings.tokens';
+import { ApplicationMailTransport, mailTransportSettingsFromConnection } from './mail-transport';
 
 /** The runtime connection profile (runtime-settings descriptors) that configures this transport. */
 export const SMTP_CONNECTION_PROFILE = 'account-email';
@@ -17,7 +18,8 @@ export function smtpSettingsFromConnection(environment: Readonly<NodeJS.ProcessE
 }
 
 /**
- * The application's one SMTP transport, shared by account mail and MailService. It resolves its
+ * The application's one SMTP transport. MailService (account and transactional mail) reaches it through
+ * ApplicationMailTransport when `MAIL_PROVIDER` is `smtp`. It resolves its
  * settings through `resolve` on use and rebuilds the underlying provider only when they change, so
  * the runtime-settings hot-reload work (RuntimeProviderSlot) only has to supply a live resolver.
  */
@@ -54,10 +56,16 @@ export class SmtpTransport implements MailProvider, OnModuleDestroy {
   async onModuleDestroy(): Promise<void> { await this.close(); }
 }
 
-/** Provides the shared SmtpTransport from the runtime connection settings (environment when absent). */
+/**
+ * Provides the shared SmtpTransport and the selecting ApplicationMailTransport (SMTP or Resend, from
+ * `MAIL_PROVIDER`) from the runtime connection settings (environment when absent).
+ */
 @Module({
   providers: [{ provide: SmtpTransport, inject: [{ token: RUNTIME_ENVIRONMENT, optional: true }],
-    useFactory: (environment?: Readonly<NodeJS.ProcessEnv>) => new SmtpTransport(() => smtpSettingsFromConnection(environment ?? process.env)) }],
-  exports: [SmtpTransport],
+    useFactory: (environment?: Readonly<NodeJS.ProcessEnv>) => new SmtpTransport(() => smtpSettingsFromConnection(environment ?? process.env)) },
+  { provide: ApplicationMailTransport, inject: [SmtpTransport, { token: RUNTIME_ENVIRONMENT, optional: true }],
+    useFactory: (smtp: SmtpTransport, environment?: Readonly<NodeJS.ProcessEnv>) =>
+      new ApplicationMailTransport(smtp, () => mailTransportSettingsFromConnection(environment ?? process.env)) }],
+  exports: [SmtpTransport, ApplicationMailTransport],
 })
 export class SmtpTransportModule {}

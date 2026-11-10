@@ -72,7 +72,7 @@ test('keeps callback proof in memory, waits for confirmation and installs only t
   await expect(page).not.toHaveURL(/#ticket=/); expect(completions).toHaveLength(0);
   await expect(page.locator('script[id^="zucker-analytics-"]')).toHaveCount(0);
   await page.getByRole('button', { name: 'Continue signing in', exact: true }).click();
-  await expect(page).toHaveURL(/\/en\/account$/); await expect(page.getByLabel('Display name')).toHaveValue('Synthetic member');
+  await expect(page).toHaveURL(/\/account$/); await expect(page.getByLabel('Display name')).toHaveValue('Synthetic member');
   expect(completions).toEqual([{ proof: ticket }]);
   expect(await page.evaluate(() => JSON.stringify(localStorage))).not.toContain(ticket);
   expect(external).toEqual([]);
@@ -95,7 +95,7 @@ test('explicit binding failure remains retryable and sends the current account a
   await page.getByRole('button', { name: 'Confirm account connection', exact: true }).click();
   await expect(page.getByRole('main').getByRole('alert')).toBeVisible();
   failure = false; await page.getByRole('button', { name: 'Confirm account connection', exact: true }).click();
-  await expect(page).toHaveURL(/\/en\/account$/);
+  await expect(page).toHaveURL(/\/account$/);
   expect(calls).toEqual(Array(2).fill({ body: { proof: ticket }, authorization: 'Bearer synthetic-access' }));
 });
 
@@ -112,7 +112,7 @@ test('One Tap uses the server nonce and sends credential only in a same-origin P
     return ordinary(route);
   });
   await page.goto('/en/login'); await page.getByRole('button', { name: 'Sign in with Google One Tap' }).click();
-  await expect(page).toHaveURL(/\/en\/account$/);
+  await expect(page).toHaveURL(/\/account$/);
   expect(sent).toEqual([{ path: '/api/authorize/oauth/google/onetap', body: { intent: ticket, credential: 'synthetic-id-token' } }]);
   expect(await page.evaluate(() => (Reflect.get(window, '__googleOptions') as { nonce: string }).nonce)).toBe('server-created-nonce');
   expect(await page.evaluate(() => JSON.stringify(localStorage))).not.toContain('synthetic-id-token');
@@ -162,7 +162,7 @@ test('disconnect failure preserves the connection and revoking the current provi
   await expect(section.getByRole('alert')).toContainText('Could not disconnect');
   await expect(section.getByText('member@example.test')).toBeVisible();
   failure = false; await section.getByRole('button', { name: 'Disconnect', exact: true }).click();
-  await expect(page).toHaveURL(/\/en\/login$/); expect(disconnects).toBe(2);
+  await expect(page).toHaveURL(/\/login$/); expect(disconnects).toBe(2);
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('auth-storage') || '{}').state.isAuthenticated)).toBe(false);
 });
 

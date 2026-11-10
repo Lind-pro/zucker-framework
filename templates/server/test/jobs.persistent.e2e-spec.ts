@@ -56,7 +56,7 @@ run('durable runtime with actual PostgreSQL and synthetic providers', () => {
   }
   beforeAll(async () => {
     const url = new URL(databaseUrl!);
-    if (url.pathname !== '/cnipa_dev') throw new Error('This fixture requires the approved isolated development database');
+    if (!/(?:_dev|_test|_tests)$/.test(url.pathname)) throw new Error('Use a designated development/test database');
     directory = mkdtempSync(join(tmpdir(), 'zucker-job-objects-'));
     pool = new Pool({ connectionString: url.href, connectionTimeoutMillis: 5000 });
     const connection = await pool.connect();

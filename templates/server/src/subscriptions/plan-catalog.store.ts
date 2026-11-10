@@ -7,10 +7,14 @@ import type { ApplicationDatabase, ApplicationTransaction } from '../database';
 
 interface StoredPrice {
   id: string; interval: PlanPrice['interval']; currency: string; amount: string; termDays: number | null;
+  credits?: number; creditExpiryPeriod?: boolean; creditExpiryDays?: number | null;
   refs?: Array<{ provider: string; reference: string }>;
 }
-export interface StoredPlan extends Omit<SubscriptionPlanRecord, 'features' | 'quotas' | 'prices'> {
+type PresentationField = 'featured' | 'badge' | 'highlights' | 'nameI18n' | 'descriptionI18n' | 'badgeI18n' | 'highlightsI18n';
+export interface StoredPlan extends Omit<SubscriptionPlanRecord, 'features' | 'quotas' | 'prices' | PresentationField> {
   features: unknown; quotas: unknown; prices?: StoredPrice[];
+  featured?: boolean; badge?: string | null; highlights?: unknown; nameI18n?: unknown; descriptionI18n?: unknown;
+  badgeI18n?: unknown; highlightsI18n?: unknown;
 }
 /** Prisma include that loads a plan with its prices and provider references. */
 export const PLAN_INCLUDE = { prices: { include: { refs: true } } } as const;
@@ -23,13 +27,29 @@ function money(value: string, currency: string): string {
   try { return fromMinorUnits(toMinorUnits(value, currency), currency); } catch { return value; }
 }
 const intervalOrder = (interval: string) => PLAN_PRICE_INTERVALS.indexOf(interval as PlanPrice['interval']);
+/** Plan price credit expiry ↔ its two typed columns. */
+export function creditExpiryColumns(price: Pick<PlanPrice, 'credits' | 'creditExpiry'>) {
+  const expiry = price.credits ? price.creditExpiry ?? null : null;
+  return { credits: price.credits ?? 0, creditExpiryPeriod: expiry === 'period', creditExpiryDays: typeof expiry === 'number' ? expiry : null };
+}
 export function presentPrice(price: StoredPrice): PlanPrice {
   return { interval: price.interval, currency: price.currency, amount: money(price.amount, price.currency), termDays: price.termDays ?? null,
-    providerRefs: Object.fromEntries((price.refs ?? []).map(ref => [ref.provider, ref.reference]).sort(([a], [b]) => a.localeCompare(b))) };
+    providerRefs: Object.fromEntries((price.refs ?? []).map(ref => [ref.provider, ref.reference]).sort(([a], [b]) => a.localeCompare(b))),
+    credits: price.credits ?? 0,
+    creditExpiry: price.creditExpiryPeriod ? 'period' : price.creditExpiryDays ?? null };
+}
+function texts(value: unknown): Record<string, string> {
+  return Object.fromEntries(Object.entries(record(value) as Record<string, unknown>).filter((entry): entry is [string, string] => typeof entry[1] === 'string'));
+}
+function list(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 }
 export function presentPlan(row: StoredPlan): SubscriptionPlanRecord {
-  const { prices, features, quotas, ...plan } = row;
+  const { prices, features, quotas, featured, badge, highlights, nameI18n, descriptionI18n, badgeI18n, highlightsI18n, ...plan } = row;
   return { ...plan, features: record(features), quotas: record(quotas),
+    featured: featured === true, badge: badge ?? null, highlights: list(highlights), nameI18n: texts(nameI18n),
+    descriptionI18n: texts(descriptionI18n), badgeI18n: texts(badgeI18n),
+    highlightsI18n: Object.fromEntries(Object.entries(record(highlightsI18n) as Record<string, unknown>).map(([locale, items]) => [locale, list(items)])),
     prices: [...(prices ?? [])].sort((a, b) => intervalOrder(a.interval) - intervalOrder(b.interval) || a.currency.localeCompare(b.currency))
       .map(presentPrice) };
 }
@@ -61,7 +81,7 @@ async function replacePrices(tx: ApplicationTransaction, planId: string, prices:
   if (removed.length) await rows.deleteMany({ where: { id: { in: removed } } });
   for (const price of prices) {
     const existing = current.find(row => row.interval === price.interval && row.currency === price.currency);
-    const fields = { amount: price.amount, termDays: price.termDays };
+    const fields = { amount: price.amount, termDays: price.termDays, ...creditExpiryColumns(price) };
     const saved = existing
       ? await rows.update({ where: { id: existing.id }, data: { ...fields, updatedAt: new Date() } }) as StoredPrice
       : await rows.create({ data: { planId, interval: price.interval, currency: price.currency, ...fields } }) as StoredPrice;

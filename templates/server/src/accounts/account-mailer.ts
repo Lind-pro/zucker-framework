@@ -1,27 +1,32 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
-import type { SmtpTransport } from '../mail/smtp-transport';
+import { MAIL_TEMPLATE_KEYS } from '../mail/mail-templates';
+import { TransactionalMail } from '../mail/transactional-mail';
 import type { AccountMailer } from './account.service';
 
-/** Template-owned account message text; transport is the application's shared SMTP transport. */
+/**
+ * Account mail through the shared MailService (`account.verify`, `account.reset`, `account.welcome`
+ * templates, `email_logs` history). Tickets travel only in the URL fragment, so they never reach
+ * HTTP access logs or referrers, and are never written to the mail log metadata.
+ */
 @Injectable()
-export class SmtpAccountMailer implements AccountMailer {
-  constructor(private readonly transport: SmtpTransport, private readonly webUrl: string) {}
+export class MailAccountMailer implements AccountMailer {
+  constructor(private readonly mail: TransactionalMail) {}
   assertConfigured(): void {
-    if (!this.transport.isConfigured() || !this.webUrl) {
-      throw new ServiceUnavailableException('Account email is not configured');
-    }
+    if (!this.mail.isEnabled()) throw new ServiceUnavailableException('Account email is not configured');
   }
-  async send(email: string, purpose: 'verify-email' | 'reset-password', ticket: string, locale: string): Promise<void> {
+  async send(email: string, purpose: 'verify-email' | 'reset-password', ticket: string, locale: string, userId?: string): Promise<void> {
     this.assertConfigured();
-    const base = new URL(this.webUrl);
-    if (!['https:', 'http:'].includes(base.protocol) || base.username || base.password) throw new ServiceUnavailableException('Invalid account site URL');
-    const link = new URL(`/${locale === 'zh' ? 'zh' : 'en'}/${purpose}`, base);
-    // Keep bearer tickets out of HTTP access logs and referrers; the page reads the fragment.
-    link.hash = new URLSearchParams({ ticket }).toString();
-    const result = await this.transport.deliver({ to: email,
-      subject: purpose === 'verify-email' ? 'Verify your email' : 'Reset your password',
-      text: `${purpose === 'verify-email' ? 'Verify your email' : 'Reset your password'} using this link (valid for 30 minutes):\n${link.href}`,
+    const result = await this.mail.send(purpose === 'verify-email' ? MAIL_TEMPLATE_KEYS.verify : MAIL_TEMPLATE_KEYS.reset, {
+      to: email, locale, userId, data: { link: this.mail.link(locale, `/${purpose}`, { ticket }) },
+      logMetadata: { purpose },
     });
     if (!result.success) throw new ServiceUnavailableException('Account email delivery failed; request a new link');
+  }
+  async welcome(email: string, locale: string, name: string, userId: string): Promise<void> {
+    if (!this.mail.isEnabled()) return;
+    const result = await this.mail.send(MAIL_TEMPLATE_KEYS.welcome, {
+      to: email, locale, userId, data: { name, link: this.mail.link(locale, '/account') },
+    });
+    if (!result.success) throw new Error('Welcome mail delivery failed');
   }
 }

@@ -1,8 +1,10 @@
 import { createAdminApp } from '@zucker-framework/fe-admin';
-import { FileText, FormInput, Settings2, Tags } from 'lucide-react';
+import { FileText, FormInput, Settings2, SlidersHorizontal, Tags } from 'lucide-react';
+import { extraPages } from './features';
 import { CategoriesPage } from './pages/categories';
 import { ContentPage } from './pages/content';
 import { FormEnginePage } from './pages/form-engine';
+import { PoliciesPage } from './pages/policies';
 import { SiteSettingsPage } from './pages/site-settings';
 import { serverLabelsEnUS } from './server-labels';
 
@@ -14,6 +16,9 @@ import { serverLabelsEnUS } from './server-labels';
 export const admin = createAdminApp({
   // Same-origin `/api`; the Vite dev server proxies it to API_PROXY_TARGET.
   apiBase: '/api',
+  // Initial language from the workspace's build-time default (VITE_DEFAULT_LOCALE=en|zh); a language
+  // the user picks in the shell is remembered by the browser and wins over this default.
+  locale: import.meta.env.VITE_DEFAULT_LOCALE === 'zh' ? 'zh-CN' : 'en-US',
   locales: {
     'zh-CN': { label: '中文', messages: {} },
     'en-US': { label: 'English', messages: {} },
@@ -66,6 +71,16 @@ export const admin = createAdminApp({
       component: FormEnginePage,
       icon: FormInput,
     },
+    {
+      key: 'policies',
+      path: '/policies',
+      title: { 'zh-CN': '产品策略', 'en-US': 'Policies' },
+      permission: 'config:query',
+      component: PoliciesPage,
+      icon: SlidersHorizontal,
+    },
+    // Feature pages register in ./features/index.ts instead of this file.
+    ...extraPages,
   ],
 });
 

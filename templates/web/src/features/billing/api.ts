@@ -1,8 +1,9 @@
 import { accountPublicClient, httpClient } from '@/lib/http-client';
-import type { BillingOffer, BillingSubscription, CheckoutOrder, CheckoutOrderPage, CheckoutSelection, SubscriptionCancelMode, SubscriptionPage, SubscriptionReceiptPage } from './types';
+import type { BillingSubscription, CheckoutOrder, CheckoutOrderPage, CheckoutSelection, SubscriptionCancelMode, SubscriptionPage, SubscriptionReceiptPage } from './types';
 
 export const billingApi = {
-  catalog: () => accountPublicClient.get<BillingOffer[]>('/billing/catalog'),
+  /** Anonymous `GET /billing/plans`; parse with parsePricingCatalog. */
+  plans: (locale: string) => accountPublicClient.get<unknown>('/billing/plans', { locale }),
   identity: () => httpClient.get<{ id: string }>('/authorize/me'),
   orders: (page: number) => httpClient.get<CheckoutOrderPage>('/billing/orders', { page }),
   order: (id: string) => httpClient.get<CheckoutOrder>(`/billing/orders/${encodeURIComponent(id)}`),
