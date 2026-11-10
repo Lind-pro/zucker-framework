@@ -149,6 +149,7 @@ test('console sidebar marks the current section', async ({ page, context, baseUR
   await page.route('**/api/**', route => route.fulfill({ json: { status: 200, result: {} } }));
   await page.goto('/zh/account/credits');
   const nav = page.getByTestId('console-nav');
-  await expect(nav.locator('a')).toHaveCount(7);
+  // 7 core sections + AI tasks + Chats.
+  await expect(nav.locator('a')).toHaveCount(9);
   await expect(nav.locator('[aria-current="page"]')).toHaveAttribute('data-console-nav', 'credits');
 });

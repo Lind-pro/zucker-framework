@@ -1,0 +1,23 @@
+// ─── Public assets (WP 2.6) ──────────────────────────────────────────────────
+// Content-addressed public raster images (CMS covers, logos, landing images). The stored bytes are a
+// server-side re-encode of the upload; `sha256` is their digest and the object key is
+// `public-assets/<sha256>.<ext>`, so identical content is stored once. The URL is derived at read
+// time from the configured public base (or the application route), never stored, so moving to a
+// CDN does not rewrite rows. `ownerId` is the first uploader, whose file quota the bytes count against.
+
+model publicAssets {
+  sha256    String   @id @db.Char(64)
+  ownerId   String
+  objectKey String   @unique
+  size      Int
+  mimeType  String
+  width     Int
+  height    Int
+  /// pending until the object is written and verified, then ready (served).
+  state     String   @default("pending")
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+
+  @@index([ownerId, createdAt])
+  @@map("public_assets")
+}

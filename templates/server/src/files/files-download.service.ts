@@ -40,8 +40,11 @@ export class FilesDownloadService {
     const initial = await this.files.inspect(claims.sub, assetId);
     if (initial.state === 'deleted') throw new FileAssetError('ASSET_DELETED');
     if (initial.revision !== claims.assetRevision) throw new ConflictException({ code: 'FILE_DOWNLOAD_STALE', message: 'The file changed; create a new download ticket' });
-    const result = await this.files.read(claims.sub, assetId);
-    if (result.asset.revision !== claims.assetRevision) throw new ConflictException({ code: 'FILE_DOWNLOAD_STALE', message: 'The file changed while downloading' });
-    await authorize(); if (Math.floor(Date.now() / 1000) >= claims.exp) throw invalid(); return result;
+    // Large server-generated files (AI outputs) come back as a verified stream; close it if a recheck fails.
+    const result = await this.files.open(claims.sub, assetId);
+    try {
+      if (result.asset.revision !== claims.assetRevision) throw new ConflictException({ code: 'FILE_DOWNLOAD_STALE', message: 'The file changed while downloading' });
+      await authorize(); if (Math.floor(Date.now() / 1000) >= claims.exp) throw invalid(); return result;
+    } catch (error) { if ('stream' in result) result.stream.destroy(); throw error; }
   }
 }

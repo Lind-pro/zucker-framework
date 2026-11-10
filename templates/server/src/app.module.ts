@@ -22,6 +22,9 @@ import { MailModule } from './mail/mail.module';
 import { RuntimeSettingsModule } from './runtime-settings/runtime-settings.module';
 import { RUNTIME_ENVIRONMENT } from './runtime-settings/runtime-settings.tokens';
 import { AIConnectionsModule } from './ai-connections/ai-connections.module';
+import { AITasksModule, AI_POLICIES, AI_TASK_RATE_LIMITERS } from './ai-tasks';
+import { ChatModule, CHAT_RATE_LIMITERS } from './chat';
+import { PUBLIC_ASSET_RATE_LIMITERS } from './files/public-assets.controller';
 import { aiModuleOptionsFromEnvironment } from './ai-connections/runtime-ai-config.source';
 import { ZuckerLoggingModule } from '@zucker-framework/logging';
 import { ZuckerConfigModule } from '@zucker-framework/config';
@@ -72,7 +75,7 @@ if (!jwtSecret || jwtSecret.length < 32) throw new Error('JWT_SECRET must be an 
     ZuckerCrudModule.forRootAsync({ useFactory: () => new ApplicationDatabase(databaseUrl) }),
     RuntimeSettingsModule,
     // Hot-applied product policies; features append their exported definitions to `policies`.
-    PolicyModule.forRoot({ policies: [...ACCOUNT_POLICIES, ...BILLING_POLICIES] }),
+    PolicyModule.forRoot({ policies: [...ACCOUNT_POLICIES, ...BILLING_POLICIES, ...AI_POLICIES] }),
     ZuckerAuthModule.forRoot({ jwtSecret, registerControllers: false }),
     AccountModule,
     AccountAvatarModule,
@@ -93,10 +96,11 @@ if (!jwtSecret || jwtSecret.length < 32) throw new Error('JWT_SECRET must be an 
     ZuckerDictionaryModule.forRoot(),
     ZuckerCacheModule.forRoot({ provider: 'memory' }),
     ZuckerRateLimiterModule.forRoot({
-      // Controllers run this guard after authentication; a global copy would consume twice.
+      // Controllers list this guard so it runs after authentication (user-keyed limits). A request is
+      // charged once per limiter even if the guard runs twice, but the global copy is not needed.
       globalGuard: false,
       // Feature fragments are appended here: composeRateLimiters(APP_RATE_LIMITERS, FEATURE_RATE_LIMITERS, ...).
-      limiters: { ...composeRateLimiters(APP_RATE_LIMITERS) },
+      limiters: { ...composeRateLimiters(APP_RATE_LIMITERS, PUBLIC_ASSET_RATE_LIMITERS, AI_TASK_RATE_LIMITERS, CHAT_RATE_LIMITERS) },
       // Shared budgets across replicas/restarts; requires the optional `ioredis` package. Memory otherwise.
       ...(process.env.RATE_LIMIT_REDIS_URL?.trim() ? { redis: { url: process.env.RATE_LIMIT_REDIS_URL.trim() } } : {}),
     }),
@@ -109,6 +113,9 @@ if (!jwtSecret || jwtSecret.length < 32) throw new Error('JWT_SECRET must be an 
     ZuckerAIModule.forRootAsync({ inject: [RUNTIME_ENVIRONMENT],
       useFactory: environment => aiModuleOptionsFromEnvironment(environment as Readonly<NodeJS.ProcessEnv>) }),
     AIConnectionsModule,
+    // Metered media generation (/ai/*, /v1/ai/*) and streaming chat (/chat*) on the shared Jobs host.
+    AITasksModule,
+    ChatModule,
 
     // ============ Layer 4: 高级能力 ============
     ZuckerProviderModule,

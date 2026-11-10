@@ -1,0 +1,94 @@
+// ─── AI tasks and chat (WP 2.3) ──────────────────────────────────────────────
+// `AITask` / `AITaskOutput` mirror `@zucker-framework/ai-tasks` (assets/ai-tasks.prisma). `AITask.id`
+// is the durable `async_jobs.id`: that row owns status, lease and fencing, and keeps the prompt in its
+// payload. Outputs point at the owner's private file assets (`storageKey` = file asset id), so
+// downloads reuse the ticketed private file service. Owners are referenced by scalar id.
+// CHECK constraints live in the migration SQL (kind, holdState, hold consistency, non-negative amounts).
+
+model AITask {
+  id              String         @id
+  ownerId         String
+  kind            String
+  providerId      String
+  model           String
+  cost            Int
+  holdId          String?
+  holdState       String
+  providerTaskId  String?
+  pollCount       Int            @default(0)
+  pollErrors      Int            @default(0)
+  deferrals       Int            @default(0)
+  nextPollAt      DateTime?      @db.Timestamptz(3)
+  wakeRequestedAt DateTime?      @db.Timestamptz(3)
+  deadlineAt      DateTime       @db.Timestamptz(3)
+  callbackOutcome Json?
+  createdAt       DateTime       @db.Timestamptz(3)
+  updatedAt       DateTime       @db.Timestamptz(3)
+  outputs         AITaskOutput[]
+
+  @@unique([providerId, providerTaskId], map: "ai_tasks_provider_task_key")
+  @@index([ownerId, createdAt(sort: Desc), id(sort: Desc)], map: "ai_tasks_owner_created_idx")
+  @@index([holdState], map: "ai_tasks_hold_state_idx")
+  @@map("ai_tasks")
+}
+
+model AITaskOutput {
+  taskId      String
+  index       Int
+  storageKey  String
+  contentType String
+  bytes       Int
+  sha256      String
+  createdAt   DateTime @db.Timestamptz(3)
+  task        AITask   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, index])
+  @@map("ai_task_outputs")
+}
+
+/// One chat session. `messageCount` and `cost` (credits charged) are kept with each settled message
+/// so the read-only management projection needs no aggregate.
+model chats {
+  id           String         @id
+  ownerId      String
+  title        String
+  providerId   String
+  model        String
+  messageCount Int            @default(0)
+  cost         Int            @default(0)
+  createdAt    DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime       @default(now()) @db.Timestamptz(3)
+  messages     chatMessages[]
+
+  @@index([ownerId, updatedAt(sort: Desc), id(sort: Desc)], map: "chats_owner_updated_idx")
+  @@map("chats")
+}
+
+/// A user or assistant turn. `parts` holds `[{type:'text',text}]` plus an optional
+/// `{type:'reasoning',text}` (never billed or replayed as the answer). An assistant row is created
+/// STREAMING with its credit hold and settled exactly once (status CAS) to COMPLETE/FAILED/ABORTED.
+model chatMessages {
+  id           String    @id
+  chatId       String
+  ownerId      String
+  seq          Int
+  role         String
+  parts        Json
+  providerId   String?
+  model        String?
+  status       String
+  inputTokens  Int       @default(0)
+  outputTokens Int       @default(0)
+  cost         Int       @default(0)
+  holdId       String?
+  holdAmount   Int       @default(0)
+  errorCode    String?
+  createdAt    DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime  @default(now()) @db.Timestamptz(3)
+  completedAt  DateTime? @db.Timestamptz(3)
+  chat         chats     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  @@unique([chatId, seq], map: "chat_messages_chat_seq_key")
+  @@index([status, updatedAt], map: "chat_messages_status_updated_idx")
+  @@map("chat_messages")
+}

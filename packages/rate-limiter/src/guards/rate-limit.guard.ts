@@ -7,6 +7,7 @@ import {
   Optional,
   UnauthorizedException,
 } from '@nestjs/common';
+import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { Reflector } from '@nestjs/core';
 import { RATE_LIMIT_KEY, type RateLimitOptions } from '../decorators/rate-limit.decorator';
 import { TooManyRequestsException } from '../rate-limiter.service';
@@ -21,6 +22,11 @@ import { TooManyRequestsException } from '../rate-limiter.service';
  * `@UseGuards(AuthGuard, RateLimitGuard)` for user-keyed limits. Without a user the
  * request is limited under a separate `anon-ip:` bucket (never mixed with a user's
  * bucket), or rejected with 401 when `requireUser: true`.
+ *
+ * Invariant: one request consumes at most one point per limiter, however often the guard runs
+ * for it (listed on the class and the handler, or global plus `@UseGuards`). The global copy
+ * (`GlobalRateLimitGuard`) defers to a route that lists the guard itself, so user-keyed limits are
+ * consumed after authentication rather than in the anonymous bucket.
  */
 @Injectable()
 export class RateLimitGuard implements CanActivate {
@@ -58,9 +64,13 @@ export class RateLimitGuard implements CanActivate {
 
     const http = context.switchToHttp();
     const request = http.getRequest();
+    const counted = countedLimiters(request);
+    if (counted?.has(options.limiter)) return true;
     const key = this.extractKey(request, options);
 
     try {
+      // Marked before consuming: a rejected request ends here, an admitted one is never charged twice.
+      counted?.add(options.limiter);
       await this.rateLimiterService.consume(options.limiter, key);
       return true;
     } catch (err) {
@@ -101,5 +111,47 @@ export class RateLimitGuard implements CanActivate {
     if (this.warned.has(key)) return;
     this.warned.add(key);
     this.logger.warn(message);
+  }
+}
+
+/** Per-request record of the limiters already charged (non-enumerable, never serialised). */
+const COUNTED_LIMITERS = Symbol.for('@zucker-framework/rate-limiter:counted');
+
+function countedLimiters(request: unknown): Set<string> | undefined {
+  if (!request || typeof request !== 'object') return undefined;
+  const holder = request as { [COUNTED_LIMITERS]?: Set<string> };
+  if (!holder[COUNTED_LIMITERS]) {
+    Object.defineProperty(holder, COUNTED_LIMITERS, { value: new Set<string>(), enumerable: false, configurable: true });
+  }
+  return holder[COUNTED_LIMITERS];
+}
+
+/**
+ * The `APP_GUARD` registered by `ZuckerRateLimiterModule` unless `globalGuard: false`. It skips routes
+ * whose class or handler lists `RateLimitGuard` (or a subclass) in `@UseGuards`: that copy runs after
+ * the authentication guards and counts the request exactly once.
+ */
+@Injectable()
+export class GlobalRateLimitGuard extends RateLimitGuard {
+  constructor(private readonly guardsReflector: Reflector,
+    @Inject('RATE_LIMITER_SERVICE') @Optional() rateLimiterService: any) {
+    super(guardsReflector, rateLimiterService);
+  }
+
+  override async canActivate(context: ExecutionContext): Promise<boolean> {
+    if (this.routeListsGuard(context)) return true;
+    return super.canActivate(context);
+  }
+
+  private routeListsGuard(context: ExecutionContext): boolean {
+    const targets = [context.getHandler(), context.getClass()].filter(target => target !== undefined && target !== null);
+    for (const target of targets) {
+      const guards = this.guardsReflector.get<unknown[] | undefined>(GUARDS_METADATA, target) ?? [];
+      for (const guard of guards) {
+        if (guard === RateLimitGuard || (typeof guard === 'function' && guard.prototype instanceof RateLimitGuard)
+          || guard instanceof RateLimitGuard) return true;
+      }
+    }
+    return false;
   }
 }

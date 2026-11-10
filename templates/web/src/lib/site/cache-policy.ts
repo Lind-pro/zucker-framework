@@ -1,7 +1,10 @@
 import { LOCALES } from './locales';
 
-/** Session-gated areas: the proxy redirects to login when no session cookie is present. */
-export const PROTECTED_PREFIXES = ['/dashboard', '/account', '/billing', '/content/manage'] as const;
+/**
+ * Session-gated areas: the proxy redirects to login when no session cookie is present. AI generation
+ * and chat render per-user state (tasks, balances, conversations), so they must never be shared-cached.
+ */
+export const PROTECTED_PREFIXES = ['/dashboard', '/account', '/billing', '/content/manage', '/ai', '/chat'] as const;
 
 /** Per-user or credential-bearing pages: never stored by shared caches, never indexed. */
 export const PRIVATE_PREFIXES = [

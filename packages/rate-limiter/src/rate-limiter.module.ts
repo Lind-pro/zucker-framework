@@ -9,11 +9,11 @@ import {
 } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { RateLimiterService, type RateLimiterModuleOptions } from './rate-limiter.service';
-import { RateLimitGuard } from './guards/rate-limit.guard';
+import { GlobalRateLimitGuard, RateLimitGuard } from './guards/rate-limit.guard';
 
 export interface RateLimiterModuleAsyncOptions {
   imports?: Array<Type | DynamicModule>;
-  /** Register the rate-limit guard globally. Defaults to true. */
+  /** Register the rate-limit guard globally (routes listing `RateLimitGuard` keep their own copy). Defaults to true. */
   globalGuard?: boolean;
   useFactory?: (...args: unknown[]) => RateLimiterModuleOptions | Promise<RateLimiterModuleOptions>;
   useClass?: Type<RateLimiterModuleOptionsFactory>;
@@ -40,7 +40,8 @@ export class ZuckerRateLimiterModule {
       RateLimitGuard,
     ];
     if (options.globalGuard !== false) {
-      providers.push({ provide: APP_GUARD, useExisting: RateLimitGuard });
+      // Defers to routes that list RateLimitGuard themselves, so a request is never charged twice.
+      providers.push(GlobalRateLimitGuard, { provide: APP_GUARD, useExisting: GlobalRateLimitGuard });
     }
     return {
       module: ZuckerRateLimiterModule,
@@ -63,7 +64,8 @@ export class ZuckerRateLimiterModule {
       RateLimitGuard,
     ];
     if (options.globalGuard !== false) {
-      providers.push({ provide: APP_GUARD, useExisting: RateLimitGuard });
+      // Defers to routes that list RateLimitGuard themselves, so a request is never charged twice.
+      providers.push(GlobalRateLimitGuard, { provide: APP_GUARD, useExisting: GlobalRateLimitGuard });
     }
     return {
       module: ZuckerRateLimiterModule,

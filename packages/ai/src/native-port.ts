@@ -15,7 +15,12 @@ export interface NativeChatRequest {
   reasoning?: { effort?: 'low' | 'medium' | 'high'; budgetTokens?: number };
 }
 export interface NativeChatResult { content: string; usage?: TokenUsage; model?: string; finishReason?: string }
-export interface NativeChunk { content?: string; usage?: TokenUsage }
+/**
+ * One streamed delta. `reasoning` carries model thinking/reasoning text where the provider SDK
+ * exposes it (DeepSeek `reasoning_content`, Anthropic `thinking_delta`, Gemini thought parts);
+ * it is never part of `content` and must not be billed or stored as the answer.
+ */
+export interface NativeChunk { content?: string; reasoning?: string; usage?: TokenUsage }
 export interface NativeEmbeddingResult { embeddings: number[][]; usage?: TokenUsage; model?: string }
 export interface NativeAIModel {
   chat(request: NativeChatRequest, signal: AbortSignal): Promise<NativeChatResult>;
@@ -29,6 +34,14 @@ export interface NativeRouteOptions {
   modelId?: string;
 }
 export interface NativeCallOptions extends CallOptions<NativeChatResult>, NativeRouteOptions {}
+export interface NativeStreamOptions extends StreamCallOptions, NativeRouteOptions {
+  /**
+   * Receives every chunk (content, reasoning, usage) as it arrives, awaited before the next one is
+   * read, so a slow consumer applies backpressure. A throw aborts the stream (the provider iterator
+   * is closed). The aggregated result still contains content and the last usage only.
+   */
+  onChunk?: (chunk: NativeChunk) => void | Promise<void>;
+}
 
 /** Single retry/abort/observer owner. Adapters disable SDK retries; streams never replay. */
 export class NativeAIClient {
@@ -48,13 +61,17 @@ export class NativeAIClient {
     return { ...result, config: this.identity(config) };
   }
 
-  async stream(scenario: string, request: NativeChatRequest, options: StreamCallOptions & NativeRouteOptions = {}) {
+  async stream(scenario: string, request: NativeChatRequest, options: NativeStreamOptions = {}) {
     const config = await this.resolve(scenario, options);
     const port = await this.factory(config);
+    const { onChunk } = options;
     const result = await this.calls.callWithStream(
-      ({ signal }) => port.stream(this.request(config, request), signal),
+      async ({ signal }) => {
+        const chunks = await port.stream(this.request(config, request), signal);
+        return onChunk ? tapChunks(chunks, onChunk) : chunks;
+      },
       (chunk) => chunk,
-      { ...options, context: scenario, timeoutMs: options.timeoutMs ?? config.timeoutMs },
+      { ...withoutOnChunk(options), context: scenario, timeoutMs: options.timeoutMs ?? config.timeoutMs },
     );
     return { ...result, config: this.identity(config) };
   }
@@ -92,4 +109,17 @@ export class NativeAIClient {
   private request(config: AIModelConfig, request: NativeChatRequest): NativeChatRequest {
     return { temperature: config.temperature, maxTokens: config.maxTokens, topP: config.topP, ...request };
   }
+}
+
+async function* tapChunks(chunks: AsyncIterable<NativeChunk>, onChunk: (chunk: NativeChunk) => void | Promise<void>) {
+  // for-await closes the provider iterator when the consumer stops early or onChunk throws.
+  for await (const chunk of chunks) {
+    await onChunk(chunk);
+    yield chunk;
+  }
+}
+
+function withoutOnChunk(options: NativeStreamOptions): StreamCallOptions & NativeRouteOptions {
+  const { onChunk: _onChunk, ...rest } = options;
+  return rest;
 }

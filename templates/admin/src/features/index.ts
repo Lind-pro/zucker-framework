@@ -1,4 +1,5 @@
 import type { AdminPageDefinition } from '@zucker-framework/fe-admin';
+import { aiPages } from './ai';
 
 /**
  * Registration point for feature-owned back-office pages.
@@ -9,5 +10,5 @@ import type { AdminPageDefinition } from '@zucker-framework/fe-admin';
  * permission it requires; the menu entry itself comes from the server's menu records.
  */
 export const extraPages: readonly AdminPageDefinition[] = [
-  // ...aiTaskPages,
+  ...aiPages,
 ];

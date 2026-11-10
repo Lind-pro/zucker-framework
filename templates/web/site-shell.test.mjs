@@ -238,3 +238,15 @@ test('isConsoleNavActive', () => {
   assert.deepEqual(consoleNav.map((n) => n.order), [...consoleNav.map((n) => n.order)].sort((a, b) => a - b));
   assert.equal(new Set(consoleNav.map((n) => n.id)).size, consoleNav.length);
 });
+
+test('AI generation and chat pages are session-gated and never shared-cached', () => {
+  for (const path of ['/ai', '/ai/image', '/ai/video', '/chat', '/account/tasks', '/account/chats']) {
+    assert.equal(isProtectedPath(path), true, path);
+    assert.equal(cacheControlFor({ method: 'GET', path }), PRIVATE_CACHE_CONTROL, path);
+  }
+  assert.equal(isProtectedPath('/aiden'), false);
+  assert.equal(isProtectedPath('/chatter'), false);
+  const ids = consoleNav.map((item) => item.id);
+  assert.ok(ids.includes('ai-tasks') && ids.includes('chats'));
+  assert.equal(new Set(ids).size, ids.length);
+});

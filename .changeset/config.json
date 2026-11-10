@@ -7,6 +7,7 @@
       "@zucker-framework/admin",
       "@zucker-framework/ai",
       "@zucker-framework/ai-access",
+      "@zucker-framework/ai-tasks",
       "@zucker-framework/auth",
       "@zucker-framework/buffer",
       "@zucker-framework/cache",

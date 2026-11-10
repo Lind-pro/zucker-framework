@@ -81,3 +81,57 @@ Import the provider-neutral `NativeAIClient` and port types from `@zucker-framew
 The returned `finishReason` is the last explicit `finish_reason` or `stop_reason` from streamed message metadata. It remains absent when the provider did not supply one. Consumers that require completion must check this value; background logging observers are not an authoritative completion signal.
 
 `collectGraphUpdates` invokes `onNodeComplete(node, update)` with the actual node update before reading the next graph event. Use this payload for immediate progress; checkpoint storage may not yet expose it. The collector does not interpret graph reducers or take over checkpoint persistence. The second argument is optional for empty updates, and existing callbacks accepting only `node` continue to work.
+
+## Generic async media adapter (`HttpAsyncTaskMediaProvider`)
+
+For video/music/image vendors whose API is "submit a job, then poll it", declare the mapping instead
+of writing a provider class. The adapter is vendor neutral and fails closed:
+
+```ts
+import { HttpAsyncTaskMediaProvider, MediaType } from '@zucker-framework/ai';
+
+const provider = new HttpAsyncTaskMediaProvider({
+  id: 'acme-video', mediaType: MediaType.VIDEO,
+  models: [{ id: 'acme-v1', name: 'Acme v1', mediaType: MediaType.VIDEO }],
+  baseUrl: 'https://api.acme.example',          // https only; no credentials, IP literals or localhost
+  auth: { type: 'bearer' },                      // or { type: 'header', name: 'x-api-key' } / { type: 'none' }
+  submit: { path: '/v1/videos', fields: { prompt: 'input.prompt', duration: 'input.seconds', callbackUrl: 'webhook' },
+            taskIdPath: 'data.id' },
+  poll: { path: '/v1/videos/{taskId}', statusPath: 'data.status',
+          status: { pending: ['queued'], processing: ['running'], completed: ['succeeded'], failed: ['failed'] },
+          outputPath: 'data.outputs', outputItemUrlField: 'url', progressPath: 'data.progress', progressScale: 100,
+          errorPath: 'data.error.message' },
+});
+```
+
+- Requests go through core's `createPublicFetch` (DNS-pinned public addresses, port 443 unless
+  `allowedPorts`, no redirects) and are locked to the `baseUrl` host; responses are capped at
+  `maxResponseBytes` (1 MiB). Unknown statuses count as failed; output URLs must be https.
+- Task ids are printable ASCII up to 256 characters and never `.` or `..`, so they cannot climb out of
+  the poll path.
+- `createCallbackVerifier({ secret, signatureHeader, timestampHeader?, toleranceSeconds?, ... })`
+  returns an `AIProviderCallbackVerifier` (HMAC SHA-256/512, hex/base64). `verify()` returns `null`
+  for anything unauthenticated and never throws; treat a verified callback as a wake-up hint and
+  settle idempotently (replays happen). `hint()` may name a task to poll early, never to change state.
+
+The server template reads these declarations from `AI_MEDIA_ADAPTERS` (JSON array) with
+`AI_MEDIA_<ID>_API_KEY` and `AI_MEDIA_<ID>_CALLBACK_SECRET`; see `docs/ai-quickstart.md`.
+
+## Test doubles (`@zucker-framework/ai/testing`)
+
+Deterministic fakes for consumers' unit and end-to-end tests. They import no optional SDK peer and
+never touch the network.
+
+- `FakeChatModel` implements `NativeAIModel`. Pass `fake.factory` as the model factory:
+  `new NativeAIClient(configs, calls, fake.factory)`. Script replies with `enqueue({ content, chunks,
+  reasoning, usage, delayMs, error, failAfterChunks })` or `defaultStep`; streams yield an optional
+  reasoning chunk, the content chunks (each after `delayMs`) and one usage chunk; abort ends the stream
+  with the signal's reason. `calls` records requests (never the API key).
+- `FakeMediaProvider` implements image/video/audio generation (`AudioGenerationProvider`). Steps choose
+  `sync`/`async`, `pollsUntilDone`, `outputs`, `outputKind` (`base64` or `url`), `cost`, failures
+  (`outcome: 'failure'`, `throwStatus`, `submitStatus`).
+- `FakeCallbackVerifier` accepts a request whose `x-fake-signature` header equals its token and whose
+  body is `{"taskId": "..."}`; it never returns a task, so callers must poll.
+- `reset()` on the chat and media fakes drops unconsumed steps and recorded calls so one instance can
+  be reused across tests. `fakeTokenCount(text)` (`ceil(length / 4)`) and `FAKE_PNG_BASE64` help
+  compute expectations.

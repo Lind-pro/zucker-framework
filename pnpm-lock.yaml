@@ -201,6 +201,33 @@ importers:
         specifier: 8.23.0
         version: 8.23.0
 
+  packages/ai-tasks:
+    devDependencies:
+      '@types/node':
+        specifier: 20.19.43
+        version: 20.19.43
+      '@types/pg':
+        specifier: 8.23.1
+        version: 8.23.1
+      '@zucker-framework/ai':
+        specifier: workspace:*
+        version: link:../ai
+      '@zucker-framework/core':
+        specifier: workspace:*
+        version: link:../core
+      '@zucker-framework/credit':
+        specifier: workspace:*
+        version: link:../credit
+      '@zucker-framework/storage':
+        specifier: workspace:*
+        version: link:../storage
+      '@zucker-framework/task':
+        specifier: workspace:*
+        version: link:../task
+      pg:
+        specifier: 8.23.0
+        version: 8.23.0
+
   packages/auth:
     dependencies:
       '@nestjs/common':
@@ -1285,6 +1312,9 @@ importers:
       '@zucker-framework/ai':
         specifier: workspace:*
         version: link:../../packages/ai
+      '@zucker-framework/ai-tasks':
+        specifier: workspace:*
+        version: link:../../packages/ai-tasks
       '@zucker-framework/auth':
         specifier: workspace:*
         version: link:../../packages/auth

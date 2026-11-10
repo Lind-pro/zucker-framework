@@ -66,3 +66,17 @@ export type {
   FileAssetRepository, PrivateFileObjectStore, FileAssetAccessRequest,
   PrivateFileAssetOptions, FileAssetErrorCode,
 } from './file-asset';
+export { PublicAssetService } from './public-asset.service';
+export {
+  PublicAssetError,
+  PUBLIC_ASSET_PREFIX,
+  detectRasterImageMime,
+  looksLikeSvg,
+  publicAssetObjectKey,
+  publicAssetFileName,
+  parsePublicAssetFileName,
+} from './public-asset';
+export type {
+  RasterImageMime, PublicAssetState, PublicAssetRecord, PublicAssetCandidate, PublicAssetRepository,
+  PublicImageNormalizer, PublicAssetServiceOptions, PublicAssetView, PublicAssetErrorCode,
+} from './public-asset';

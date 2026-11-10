@@ -1,6 +1,9 @@
 import type { ComponentType } from 'react';
 import { CreditCard, Coins, FolderOpen, KeyRound, Receipt, ShieldCheck, UserRound } from 'lucide-react';
 import type { Locale } from './locales';
+// Relative (not @/) so node --test can import this module without the bundler alias.
+import { aiConsoleNav } from '../../features/ai/console-nav';
+import { chatConsoleNav } from '../../features/chat/console-nav';
 
 export interface ConsoleNavItem {
   /** Stable id, unique across features (also the React key and `data-console-nav` attribute). */
@@ -34,7 +37,8 @@ export const coreConsoleNav: readonly ConsoleNavItem[] = [
  */
 export const consoleNav: readonly ConsoleNavItem[] = [
   ...coreConsoleNav,
-  // ...aiConsoleNav,
+  ...aiConsoleNav,
+  ...chatConsoleNav,
 ].sort((a, b) => a.order - b.order);
 
 /** Active item for a locale-free pathname; fragments never decide the match. */

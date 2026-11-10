@@ -23,15 +23,32 @@ export class FileQuotaExceededError extends Error {
 export interface FileOwnerQuota { maxBytes: number; maxFiles: number }
 export interface FileOwnerUsage { bytes: number; files: number }
 
+/**
+ * One owner's storage usage under the shared per-owner limits: live private files plus the public
+ * assets that owner was charged for (first uploader of the content). Callers that enforce the quota
+ * hold `lockOwnerQuota` in the same transaction.
+ */
+export async function ownerStorageUsage(database: ApplicationDatabase, ownerId: string, tx?: ApplicationTransaction): Promise<FileOwnerUsage> {
+  if (!tx) return database.transaction(inner => ownerStorageUsage(database, ownerId, inner));
+  const result = await tx.query<{ bytes: string | null; files: string }>(`
+    SELECT (COALESCE((SELECT SUM(size) FROM file_assets WHERE "ownerId"=$1 AND state<>'deleted'),0)
+      + COALESCE((SELECT SUM(size) FROM public_assets WHERE "ownerId"=$1),0))::text AS bytes,
+      ((SELECT COUNT(*) FROM file_assets WHERE "ownerId"=$1 AND state<>'deleted')
+      + (SELECT COUNT(*) FROM public_assets WHERE "ownerId"=$1))::text AS files`, [ownerId]);
+  return { bytes: Number(result.rows[0]?.bytes ?? 0), files: Number(result.rows[0]?.files ?? 0) };
+}
+
+/** Serializes quota-checked reservations of one owner (private files and public assets share it). */
+export async function lockOwnerQuota(tx: ApplicationTransaction, ownerId: string): Promise<void> {
+  await tx.query("SELECT pg_advisory_xact_lock(hashtextextended(current_schema() || ':file-quota:' || $1, 0))::text AS locked", [ownerId]);
+}
+
 export class PostgresFileAssetRepository implements FileAssetRepository {
   constructor(private readonly database: ApplicationDatabase, private readonly quota?: FileOwnerQuota) {}
 
   /** Live (non-deleted) bytes and file count of one owner. */
   async usage(ownerId: string, tx?: ApplicationTransaction): Promise<FileOwnerUsage> {
-    if (!tx) return this.database.transaction(inner => this.usage(ownerId, inner));
-    const result = await tx.query<{ bytes: string | null; files: string }>(
-      `SELECT COALESCE(SUM(size),0)::text AS bytes, COUNT(*)::text AS files FROM file_assets WHERE "ownerId"=$1 AND state<>'deleted'`, [ownerId]);
-    return { bytes: Number(result.rows[0]?.bytes ?? 0), files: Number(result.rows[0]?.files ?? 0) };
+    return ownerStorageUsage(this.database, ownerId, tx);
   }
 
   static exceeds(quota: FileOwnerQuota, usage: FileOwnerUsage, size: number): boolean {
@@ -44,7 +61,7 @@ export class PostgresFileAssetRepository implements FileAssetRepository {
         // Replays of an existing request key are never refused. New reservations of one owner are serialized
         // by a dedicated advisory lock (not the users row, which avatar binding and deletion lock) so
         // concurrent uploads cannot overshoot; deletions only lower usage and need no coordination.
-        await tx.query("SELECT pg_advisory_xact_lock(hashtextextended(current_schema() || ':file-quota:' || $1, 0))::text AS locked", [input.scope]);
+        await lockOwnerQuota(tx, input.scope);
         const replay = await tx.query<FileAssetRow>('SELECT * FROM file_assets WHERE "ownerId"=$1 AND "idempotencyKey"=$2', [input.scope, input.idempotencyKey]);
         if (replay.rows[0]) return fromRow(replay.rows[0]);
         if (PostgresFileAssetRepository.exceeds(this.quota, await this.usage(input.scope, tx), input.size)) throw new FileQuotaExceededError();
@@ -60,6 +77,33 @@ export class PostgresFileAssetRepository implements FileAssetRepository {
         'SELECT * FROM file_assets WHERE "ownerId"=$1 AND "idempotencyKey"=$2', [input.scope, input.idempotencyKey]);
       if (!existing.rows[0]) throw new Error('Reserved file metadata disappeared');
       return fromRow(existing.rows[0]);
+    });
+  }
+
+  /** The row bound to one owner request key, if any (any state). */
+  async findByRequest(scope: string, idempotencyKey: string): Promise<FileAsset | null> {
+    const rows = await this.database.transaction(tx => tx.query<FileAssetRow>(
+      'SELECT * FROM file_assets WHERE "ownerId"=$1 AND "idempotencyKey"=$2', [scope, idempotencyKey]));
+    return rows.rows[0] ? fromRow(rows.rows[0]) : null;
+  }
+
+  /**
+   * Records an object that was already streamed and verified (server-generated content such as AI
+   * outputs) directly as `ready`. Quota is checked with the actual size under the same owner advisory
+   * lock as `reserve`, so concurrent uploads/outputs cannot overshoot. An existing row for the request
+   * key is returned unchanged (the caller then discards its own object).
+   */
+  insertReady(input: FileAssetReservation): Promise<FileAsset> {
+    return this.database.transaction(async tx => {
+      await lockOwnerQuota(tx, input.scope);
+      const replay = await tx.query<FileAssetRow>('SELECT * FROM file_assets WHERE "ownerId"=$1 AND "idempotencyKey"=$2', [input.scope, input.idempotencyKey]);
+      if (replay.rows[0]) return fromRow(replay.rows[0]);
+      if (this.quota && PostgresFileAssetRepository.exceeds(this.quota, await this.usage(input.scope, tx), input.size)) throw new FileQuotaExceededError();
+      const inserted = await tx.query<FileAssetRow>(`
+        INSERT INTO file_assets ("id", "ownerId", "idempotencyKey", "objectKey", "fileName", "sha256", "size", "mimeType", "state", "createdAt", "updatedAt")
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'ready',$9,$9) RETURNING *
+      `, [input.id, input.scope, input.idempotencyKey, input.objectKey, input.fileName, input.sha256, input.size, input.mimeType, new Date(input.createdAt)]);
+      return fromRow(inserted.rows[0]);
     });
   }
 

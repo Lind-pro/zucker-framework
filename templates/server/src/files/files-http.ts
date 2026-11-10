@@ -1,3 +1,4 @@
+import type { Readable } from 'node:stream';
 import { HttpException, ServiceUnavailableException, StreamableFile } from '@nestjs/common';
 import { FileAssetError, StorageTransferError, type FileAsset } from '@zucker-framework/storage';
 export interface DownloadResponse { setHeader(name: string, value: string): void }
@@ -18,9 +19,12 @@ export async function fileResult<T>(work: () => Promise<T>): Promise<T> {
     throw new ServiceUnavailableException('Private file operation is unavailable; inspect the request before retrying');
   }
 }
-export function fileAttachment(result: { asset: FileAsset; body: Buffer }, response: DownloadResponse): StreamableFile {
-  const { asset, body } = result;
+export function fileAttachment(result: { asset: FileAsset; body: Buffer } | { asset: FileAsset; stream: Readable; size: number }, response: DownloadResponse): StreamableFile {
+  const { asset } = result;
   response.setHeader('Cache-Control', 'private, no-store'); response.setHeader('X-Content-Type-Options', 'nosniff'); response.setHeader('Referrer-Policy', 'no-referrer');
   const name = encodeURIComponent(Buffer.from(asset.fileName, 'utf8').toString('utf8')).replace(/['()*]/g, character => `%${character.charCodeAt(0).toString(16).toUpperCase()}`);
-  return new StreamableFile(body, { type: asset.mimeType, length: body.length, disposition: `attachment; filename="download"; filename*=UTF-8''${name}` });
+  const options = { type: asset.mimeType, length: 'body' in result ? result.body.length : result.size,
+    disposition: `attachment; filename="download"; filename*=UTF-8''${name}` };
+  // Large server-generated files stream (verified as they flow); everything else is a verified buffer.
+  return 'body' in result ? new StreamableFile(result.body, options) : new StreamableFile(result.stream, options);
 }

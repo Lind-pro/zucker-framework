@@ -38,6 +38,10 @@ jobs:
       - name: Test
         run: pnpm test
 
+      - name: Web template node tests
+        # node --test discovers **/*.test.mjs (site shell, proxy, AI polling, chat state, ...); nothing else runs them.
+        run: pnpm --filter @zucker-framework/template-web test
+
       - name: Lint
         run: pnpm lint
 

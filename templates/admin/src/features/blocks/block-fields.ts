@@ -40,7 +40,7 @@ export type FieldSpec =
   /** Integer; an empty input removes the key (the schema then applies its default or omits it). */
   | (FieldBase & { kind: 'integer'; min: number; max: number })
   /** Link or media URL checked by `safeSiteHref`; optional links are removed when empty. */
-  | (FieldBase & { kind: 'href'; required?: boolean })
+  | (FieldBase & { kind: 'href'; required?: boolean; /** Offer a public-asset image upload that fills the URL. */ upload?: boolean })
   /** `{ src, alt, width?, height? }`; optional images are toggled on/off. */
   | (FieldBase & { kind: 'image'; required?: boolean })
   /** `{ label, href }` button; optional actions are toggled on/off. */
@@ -458,7 +458,7 @@ export const BLOCK_SPECS: Readonly<Record<SiteBlockType, BlockSpec>> = {
           { value: 'video', label: ['视频', 'Video'] },
         ],
       },
-      { kind: 'href', key: 'src', label: ['文件地址', 'File URL'], required: true },
+      { kind: 'href', key: 'src', label: ['文件地址', 'File URL'], required: true, upload: true },
       {
         kind: 'text',
         key: 'alt',
@@ -471,7 +471,7 @@ export const BLOCK_SPECS: Readonly<Record<SiteBlockType, BlockSpec>> = {
         ],
       },
       { kind: 'text', key: 'caption', label: ['图注', 'Caption'], max: 500 },
-      { kind: 'href', key: 'poster', label: ['视频封面图', 'Video poster image'] },
+      { kind: 'href', key: 'poster', label: ['视频封面图', 'Video poster image'], upload: true },
       {
         kind: 'integer',
         key: 'width',
@@ -496,7 +496,7 @@ export const BLOCK_TYPE_ORDER: readonly SiteBlockType[] = SITE_BLOCK_TYPES;
 
 /** Fields of an image object (`kind: 'image'`). */
 export const IMAGE_FIELDS: readonly FieldSpec[] = [
-  { kind: 'href', key: 'src', label: ['图片地址', 'Image URL'], required: true },
+  { kind: 'href', key: 'src', label: ['图片地址', 'Image URL'], required: true, upload: true },
   {
     kind: 'text',
     key: 'alt',

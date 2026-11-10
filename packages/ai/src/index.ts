@@ -117,13 +117,27 @@ export { DeepSeekProvider } from './providers/deepseek.provider';
 
 // Media generation
 export type {
+  AudioGenerationProvider,
   MediaGenerationConfig,
   MediaGenerationResult,
   MediaTaskResult,
   MediaModelInfo,
   MediaProvider,
 } from './media.interface';
-export { MediaType, MediaTaskStatus } from './media.interface';
+export { MediaType, MediaTaskStatus, isAudioGenerationProvider } from './media.interface';
+export type {
+  AIProviderCallbackHeaders,
+  AIProviderCallbackVerification,
+  AIProviderCallbackVerifier,
+} from './ai-provider-callback';
+export type {
+  HttpAsyncTaskAdapterConfig,
+  HttpAsyncTaskAuth,
+  HttpAsyncTaskCallbackVerifierOptions,
+  HttpAsyncTaskRequestParam,
+  HttpAsyncTaskTransport,
+} from './providers/http-async-task.config';
+export { HttpAsyncTaskMediaProvider, HttpAsyncTaskConfigError } from './providers/http-async-task.provider';
 export { MediaProviderManager } from './media-provider-manager';
 export { MediaGenerationService } from './media-generation.service';
 export type {

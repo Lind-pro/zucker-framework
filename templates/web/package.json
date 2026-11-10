@@ -6,7 +6,8 @@
     "dev": "next dev -p 4202",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "node --test"
   },
   "dependencies": {
     "markdown-it": "15.0.3",

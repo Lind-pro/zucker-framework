@@ -4,6 +4,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
 import { AccountLink } from '@/components/AccountLink';
 import { consoleNav } from '@/lib/site/console-nav';
+import { CREDITS_CHANGED_EVENT } from '@/lib/site/credit-events';
 import { isLocale, DEFAULT_LOCALE } from '@/lib/site/locales';
 import { readCreditBalance, signOut, useAuthHydrated } from '@/lib/site/session';
 import { useAuthStore } from '@/lib/stores/auth-store';
@@ -31,6 +32,13 @@ function useCreditBalance(enabled: boolean) {
       active = false;
     };
   }, [enabled, revision]);
+  // Charges elsewhere on the page (AI task submitted, chat answer settled) announce a balance change.
+  useEffect(() => {
+    if (!enabled) return;
+    const onChange = () => setRevision((value) => value + 1);
+    window.addEventListener(CREDITS_CHANGED_EVENT, onChange);
+    return () => window.removeEventListener(CREDITS_CHANGED_EVENT, onChange);
+  }, [enabled]);
   return { balance: enabled ? balance : undefined, refresh: () => setRevision((value) => value + 1) };
 }
 

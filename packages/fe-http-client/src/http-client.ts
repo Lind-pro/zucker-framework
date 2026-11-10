@@ -879,13 +879,25 @@ export class HttpClient {
       if (!response.ok) {
         const errorText = await response.text().catch(() => '请求失败');
         let errorMessage = errorText;
+        let errorJson: unknown;
         try {
-          const errorJson = JSON.parse(errorText);
-          errorMessage = errorJson.message || errorJson.error || errorText;
+          errorJson = JSON.parse(errorText);
+          const body = errorJson as { message?: unknown; error?: unknown } | null;
+          const text = body && typeof body === 'object' ? (body.message || body.error) : undefined;
+          errorMessage = typeof text === 'string' && text ? text : errorText;
         } catch {
           // 不是 JSON，使用原始文本
+          errorJson = undefined;
         }
-        throw Object.assign(new Error(errorMessage), { status: response.status, _httpStatus: response.status });
+        // Same shape as axios-normalised errors (`code`, `response.data`), so callers can map the
+        // server's error code (e.g. AI_CHAT_BUSY) instead of guessing from the bare status.
+        const code = errorJson && typeof errorJson === 'object' && typeof (errorJson as { code?: unknown }).code === 'string'
+          ? (errorJson as { code: string }).code : undefined;
+        throw Object.assign(new Error(errorMessage), {
+          status: response.status, _httpStatus: response.status,
+          ...(code ? { code } : {}),
+          ...(errorJson !== undefined ? { response: { status: response.status, data: errorJson } } : {}),
+        });
       }
 
       return response;

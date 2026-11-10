@@ -83,6 +83,7 @@ pnpm dev
 | 注册开关、邮箱验证、初始角色、欢迎积分、默认支付渠道 | Admin「系统设置 → 产品策略」（`account`、`billing`），或 `POLICY_<策略>_<字段>` 环境变量固定 | 保存后无需重启，最长 30 秒内生效；被环境变量固定的字段在后台只读 |
 | 任务完成通知 | 独立的 `DELIVERY_PROVIDER` 为 `none`、`smtp` 或 `resend`，以及 `DELIVERY_*` 配置 | 默认 `none`；填账户 SMTP 不会自动开启持久任务通知 |
 | 付款、OAuth、私有存储、AI 连接 | Admin「系统设置 → 连接配置」或 Server 的对应环境配置 | 后台保存后重启 Server，再核对已应用版本和真实渠道行为 |
+| AI 生成（图片/视频/音乐）与对话、模型目录与定价 | Server AI 连接与 `AI_MEDIA_ADAPTERS`；Admin「AI → 模型与定价」（`ai-catalog`、`ai-pricing` 策略） | 策略保存后无需重启；详见 [AI 快速上手](ai-quickstart.md) |
 | 分析、广告、联盟、客服 | 后台公开网站连接 | 默认 Web 的 `SITE_CONFIGURATION_SOURCE=server` 读取 Server 已应用快照；只改 Web 环境变量不会覆盖该来源 |
 
 任务邮件的 SMTP、Resend 都需要 `DELIVERY_ACCOUNT_SCOPE` 和 `DELIVERY_FROM`；Resend 另配置 `DELIVERY_RESEND_API_KEY`，SMTP 另配置 `DELIVERY_SMTP_*`。账户邮件是即时发送，持久投递仓储的恢复保证只适用于实际接入它的任务通知。各字段和失败契约见[Server 模板说明](../templates/server/README.md)。

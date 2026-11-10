@@ -19,6 +19,7 @@ import {
 import { safeSiteHref } from '@zucker-framework/fe-site/content';
 import { Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { PublicAssetUploadButton } from '../features/public-assets/upload-button';
 import { useText } from '../text';
 
 type LinkValue = { label: string; href: string };
@@ -225,6 +226,7 @@ export function SiteSettingsPage() {
               {({ id, describedBy }) => (
                 <div className="flex flex-wrap items-center gap-3">
                   <Input id={id} aria-describedby={describedBy} className="max-w-xl" maxLength={2048} placeholder="/logo.svg · https://…" disabled={saving} value={draft.logoUrl} onChange={(event) => update({ logoUrl: event.target.value })} />
+                  <PublicAssetUploadButton disabled={saving} label={tx('上传 Logo', 'Upload logo')} onUploaded={(url) => update({ logoUrl: url })} />
                   {safeSiteHref(draft.logoUrl) && <img src={draft.logoUrl} alt="" referrerPolicy="no-referrer" className="h-10 max-w-40 rounded border bg-muted object-contain" />}
                 </div>
               )}

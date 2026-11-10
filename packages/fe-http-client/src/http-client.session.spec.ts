@@ -314,3 +314,21 @@ describe('fetchStream timeout with a caller signal (L12)', () => {
     }
   });
 });
+
+describe('fetchStream error body', () => {
+  it('exposes the JSON error code and body of a refused stream like an axios error', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ status: 409, code: 'AI_CHAT_BUSY', message: 'Busy' }), { status: 409 })));
+    const client = new HttpClient({ baseURL: '', getToken: () => 'secret' });
+    const error = await client.fetchStream('/chat/x/messages').catch((caught) => caught);
+    expect(error).toMatchObject({ message: 'Busy', status: 409, code: 'AI_CHAT_BUSY', response: { status: 409, data: { code: 'AI_CHAT_BUSY' } } });
+  });
+
+  it('keeps status only for a non-JSON body', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('bad gateway', { status: 502 })));
+    const client = new HttpClient({ baseURL: '', getToken: () => 'secret' });
+    const error = await client.fetchStream('/chat/x/messages').catch((caught) => caught);
+    expect(error).toMatchObject({ message: 'bad gateway', status: 502 });
+    expect(error.code).toBeUndefined();
+    expect(error.response).toBeUndefined();
+  });
+});

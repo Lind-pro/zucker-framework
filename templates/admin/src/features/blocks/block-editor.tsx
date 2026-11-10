@@ -17,6 +17,7 @@ import {
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Plus, Trash2 } from 'lucide-react';
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { useText } from '../../text';
+import { PublicAssetUploadButton } from '../public-assets/upload-button';
 import {
   ACTION_FIELDS,
   BLOCK_SPECS,
@@ -477,18 +478,28 @@ export function FieldControl({
           }
           error={error}
         >
-          {({ id, describedBy, invalid }) => (
-            <Input
-              id={id}
-              maxLength={SITE_CONTENT_LIMITS.href}
-              placeholder="/pricing · https://…"
-              {...common(describedBy, invalid)}
-              value={asText(value)}
-              onChange={(event) =>
-                onChange(!spec.required && !event.target.value ? undefined : event.target.value)
-              }
-            />
-          )}
+          {({ id, describedBy, invalid }) => {
+            const input = (
+              <Input
+                id={id}
+                maxLength={SITE_CONTENT_LIMITS.href}
+                placeholder="/pricing · https://…"
+                {...common(describedBy, invalid)}
+                value={asText(value)}
+                onChange={(event) =>
+                  onChange(!spec.required && !event.target.value ? undefined : event.target.value)
+                }
+              />
+            );
+            return spec.upload ? (
+              <div className="flex flex-wrap items-start gap-2">
+                <div className="min-w-48 flex-1">{input}</div>
+                <PublicAssetUploadButton disabled={disabled} onUploaded={(url) => onChange(url)} />
+              </div>
+            ) : (
+              input
+            );
+          }}
         </Field>
       );
     case 'integer':

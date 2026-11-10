@@ -2,8 +2,8 @@
 
 `FilesService` keeps application ownership and metadata in PostgreSQL and delegates verified private
 object operations to the existing `PrivateFileAssetService`. The bounded HTTP attachment limit is
-10 MiB; `FILES_MAX_BYTES` can lower it. Upload/import/read use bounded buffers. This template does
-not claim constant-memory large-file streaming or create public bucket permissions.
+10 MiB; `FILES_MAX_BYTES` can lower it. Upload/import/read use bounded buffers; only server-generated
+AI outputs are streamed (see below). This template does not create public bucket permissions.
 
 ## Owner metadata and operations
 
@@ -23,6 +23,27 @@ If the file is the current avatar, it returns 409 `ASSET_IN_USE`. The user must 
 reference first. Otherwise deletion commits a permanent tombstone before object cleanup. Concurrent
 avatar binding cannot attach that deleted object, and a committed avatar cannot be deleted by a
 stale preflight check. Cleanup remains retryable through the existing recovery flow.
+
+## AI outputs (server-generated private files)
+
+AI task outputs are stored as the owner's ready private files by `FilesService.storeGenerated`, under
+their own cap `AI_OUTPUT_MAX_BYTES` (default 209715200 = 200 MiB, at most 1 GiB; images use at most
+20 MiB) instead of the 10 MiB HTTP upload limit. The output is streamed to a fresh object key while it
+is hashed and capped, read back and verified, then recorded `ready` in one transaction. The request
+key `ait-<task hash>-<index>` makes it idempotent per task output: an existing ready file is reused.
+Any failure (cap exceeded, stream error, verification, quota) removes the object; only a process crash
+between the write and the metadata insert can leave an unreferenced object.
+
+Quota decision: AI outputs count toward the owner's file quota (bytes and files), like uploads. The
+check uses the actual size under the same per-owner advisory lock as `reserve`, so concurrent uploads
+and outputs cannot overshoot. A full quota fails the task with `AI_OUTPUT_QUOTA_EXCEEDED` and releases
+its credit hold; owners free space by deleting files.
+
+Files larger than `FILES_MAX_BYTES` (only server-generated ones) download through the same ticket
+route as a stream: size is checked before the first byte and SHA-256 at the end (a mismatch aborts the
+response). Smaller files keep the buffered verified-before-release read. The S3 provider's
+`uploadStream` still collects the object in memory before its single PUT (bounded by the cap);
+local storage streams to disk.
 
 ## Short-lived authenticated download tickets
 
@@ -85,3 +106,28 @@ expiry/signature/audience/purpose, revocation, file revision/deletion/corruption
 allowlist/redirect/byte/deadline limits, object-before-metadata recovery and both avatar/delete lock
 orders. Existing `files.persistent.e2e-spec.ts` and `avatars.persistent.e2e-spec.ts` remain regressions
 for the original contracts. No real remote file source or S3/R2 account is called by these tests.
+
+## Public assets (content-addressed images)
+
+`PublicAssetsService` wraps the storage package's `PublicAssetService` for public raster images used
+by CMS content and site settings. Only PNG, JPEG, WebP and GIF (single frame) are accepted, detected
+from magic bytes; the client type and file name are ignored and SVG is refused (415). Every image is
+decoded and re-encoded with `sharp` (orientation applied, EXIF/XMP/ICC dropped, longest edge at most
+4096 px, GIF stored as PNG). The stored bytes' SHA-256 is the identity: object key
+`public-assets/<sha256>.<ext>`, one `public_assets` row per hash, so identical uploads (also
+concurrent ones) produce one object and one row and later uploads return the stored URL with
+`deduplicated: true`. The first uploader is charged against the shared per-owner file quota
+(`FILES_OWNER_MAX_BYTES`/`FILES_OWNER_MAX_FILES`, same advisory lock as private uploads).
+`PUBLIC_ASSETS_MAX_BYTES` (default 5 MiB, at most 10 MiB) bounds the input. There is no delete
+endpoint yet: content references assets by URL.
+
+`POST /api/management/public-assets` (multipart, single field `file`) requires `content:manage`, a
+trusted Origin and the `public-asset-upload` limiter; it returns
+`{sha256, url, mimeType, size, width, height, deduplicated}`.
+
+URLs: with `PUBLIC_ASSETS_BASE_URL` (bucket root behind a CDN or public endpoint; the bucket policy
+must allow anonymous reads of `public-assets/*` only) the URL is `<base>/public-assets/<file>`.
+Without it the URL is the relative application route `/api/public-assets/<sha256>.<ext>`, served by
+a public, rate-limited GET that accepts only that exact name of a ready row, verifies the bytes'
+hash, and answers with the stored type, `nosniff`, `Cache-Control: public, max-age=31536000,
+immutable`, a strong ETag and `Content-Security-Policy: default-src 'none'; sandbox`.

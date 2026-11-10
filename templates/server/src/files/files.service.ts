@@ -1,9 +1,11 @@
-import { BadRequestException, HttpException, Inject, Injectable, NotFoundException, PayloadTooLargeException } from '@nestjs/common';
+import { createHash, randomUUID } from 'node:crypto';
+import { Readable, Transform } from 'node:stream';
+import { BadRequestException, HttpException, Inject, Injectable, Logger, NotFoundException, PayloadTooLargeException } from '@nestjs/common';
 import { DATABASE_ADAPTER } from '@zucker-framework/core';
 import { BufferedFileManagerStore, FILE_MANAGER, FileAssetError, PrivateFileAssetService, sanitizeFileName } from '@zucker-framework/storage';
 import type { FileAsset, FileManager } from '@zucker-framework/storage';
 import { ApplicationDatabase } from '../database';
-import { PostgresFileAssetRepository, type FileOwnerQuota } from './file-asset.repository';
+import { FileQuotaExceededError, PostgresFileAssetRepository, type FileOwnerQuota } from './file-asset.repository';
 import { DEFAULT_OWNER_MAX_BYTES, DEFAULT_OWNER_MAX_FILES, detectPrivateFileMime, FILES_OPTIONS, type FilesOptions, MAX_FILE_BYTES } from './files.config';
 
 function quotaExceeded(): HttpException {
@@ -12,13 +14,31 @@ function quotaExceeded(): HttpException {
 
 export interface UploadedPrivateFile { originalname: string; buffer: Buffer }
 
+/**
+ * Largest server-generated private file (AI outputs) this service stores or streams back. Uploads
+ * through HTTP stay bounded by `FilesOptions.maxObjectBytes`; `file_assets.size` is a 32-bit integer.
+ */
+export const MAX_GENERATED_FILE_BYTES = 1024 * 1024 * 1024;
+
+export interface GeneratedFileInput {
+  fileName: string;
+  /** Bytes to store; consumed once. A stream error aborts the write and removes the partial object. */
+  stream: Readable;
+  /** Hard cap for this object (<= MAX_GENERATED_FILE_BYTES), enforced while streaming. */
+  maxBytes: number;
+}
+
+/** A private file read: small files buffered and verified up front, large ones streamed and verified as they flow. */
+export type PrivateFileRead = { asset: FileAsset; body: Buffer } | { asset: FileAsset; stream: Readable; size: number };
+
 @Injectable()
 export class FilesService {
   private readonly repository: PostgresFileAssetRepository;
   private readonly assets: PrivateFileAssetService<{ ownerId: string }>;
   private readonly quota: FileOwnerQuota;
+  private readonly logger = new Logger(FilesService.name);
   constructor(@Inject(DATABASE_ADAPTER) private readonly database: ApplicationDatabase,
-    @Inject(FILE_MANAGER) manager: FileManager, @Inject(FILES_OPTIONS) private readonly options: FilesOptions) {
+    @Inject(FILE_MANAGER) private readonly manager: FileManager, @Inject(FILES_OPTIONS) private readonly options: FilesOptions) {
     if (options.maxObjectBytes > MAX_FILE_BYTES) throw new Error('Private file limit exceeds the HTTP upload boundary');
     this.quota = { maxBytes: options.maxOwnerBytes ?? DEFAULT_OWNER_MAX_BYTES, maxFiles: options.maxOwnerFiles ?? DEFAULT_OWNER_MAX_FILES };
     this.repository = new PostgresFileAssetRepository(database, this.quota);
@@ -62,6 +82,118 @@ export class FilesService {
       return { data: rows, total, page, pageSize: 20 };
     });
   }
+  /**
+   * Stores server-generated content (AI outputs) as the owner's ready private file without buffering
+   * it: the stream is written to a fresh object key while it is hashed and capped, read back and
+   * verified, then recorded `ready` in one quota-checked transaction (the actual size counts toward
+   * the owner's file quota). Any failure removes the object. Idempotent per (owner, key): an existing
+   * ready file is returned without consuming the stream.
+   */
+  async storeGenerated(ownerId: string, key: string, input: GeneratedFileInput): Promise<FileAsset> {
+    const idempotencyKey = this.validateRequestKey(key);
+    if (!Number.isSafeInteger(input.maxBytes) || input.maxBytes < 1 || input.maxBytes > MAX_GENERATED_FILE_BYTES)
+      throw new RangeError('Invalid generated file limit');
+    let fileName: string;
+    try { fileName = sanitizeFileName(input.fileName); } catch { throw new BadRequestException('Invalid filename'); }
+    const existing = await this.repository.findByRequest(ownerId, idempotencyKey);
+    if (existing) {
+      input.stream.destroy();
+      if (existing.state === 'ready') return existing;
+      // A pending row from an interrupted buffered upload: finish it from its stored object.
+      const recovered = await this.assets.recover({ ownerId }, ownerId, existing.id);
+      if (recovered.state === 'ready') return recovered;
+      throw new FileAssetError(recovered.state === 'deleted' ? 'ASSET_DELETED' : 'ASSET_NOT_READY');
+    }
+    const id = randomUUID(), objectKey = `private-assets/${id}`;
+    const hash = createHash('sha256');
+    let size = 0, head = Buffer.alloc(0);
+    const limit = input.maxBytes;
+    const counted = Readable.from((async function* () {
+      for await (const chunk of input.stream) {
+        const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
+        size += buffer.length;
+        if (size > limit) throw new PayloadTooLargeException({ code: 'FILE_TOO_LARGE', message: 'Generated file exceeds the configured size limit' });
+        hash.update(buffer);
+        if (head.length < 16) head = Buffer.concat([head, buffer.subarray(0, 16 - head.length)]);
+        yield buffer;
+      }
+    })());
+    try {
+      await this.manager.uploadStream(counted, objectKey, { contentType: 'application/octet-stream', acl: 'private' });
+      if (size < 1) throw new FileAssetError('INVALID_ARGUMENT');
+      const sha256 = hash.digest('hex');
+      await this.verifyObject(objectKey, size, sha256);
+      const asset = await this.repository.insertReady({ id, scope: ownerId, idempotencyKey, objectKey, fileName, sha256, size,
+        mimeType: detectPrivateFileMime(head), createdAt: Date.now() });
+      if (asset.id !== id) {
+        // A concurrent attempt recorded this request first; keep its object, drop ours.
+        await this.discardObject(objectKey);
+        if (asset.state !== 'ready') throw new FileAssetError('ASSET_NOT_READY');
+      }
+      return asset;
+    } catch (error) {
+      input.stream.destroy();
+      // Remove a partial or unrecorded object (a no-op when nothing was written).
+      await this.discardObject(objectKey);
+      if (error instanceof FileQuotaExceededError) throw quotaExceeded();
+      throw error;
+    }
+  }
+
+  /** Re-reads a just-written object as a stream and checks its size and SHA-256. */
+  private async verifyObject(objectKey: string, size: number, sha256: string): Promise<void> {
+    const object = await this.manager.download(objectKey);
+    const hash = createHash('sha256');
+    let read = 0;
+    try {
+      for await (const chunk of object.stream) {
+        const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
+        read += buffer.length;
+        if (read > size) break;
+        hash.update(buffer);
+      }
+    } finally { object.stream.destroy(); }
+    if (read !== size || hash.digest('hex') !== sha256) throw new FileAssetError('UPLOAD_UNVERIFIED');
+  }
+
+  private async discardObject(objectKey: string): Promise<void> {
+    try { await this.manager.delete(objectKey); }
+    catch { this.logger.warn('generated_file_cleanup_failed'); }
+  }
+
+  /**
+   * Reads a ready private file for an attachment response. Files within the HTTP object limit keep the
+   * buffered, verified-before-release path; larger (server-generated) files are streamed with their size
+   * checked up front and their SHA-256 checked at the end (a mismatch aborts the response).
+   */
+  async open(ownerId: string, id: string): Promise<PrivateFileRead> {
+    const asset = await this.assets.inspect({ ownerId }, ownerId, id);
+    if (asset.state === 'deleted') throw new FileAssetError('ASSET_DELETED');
+    if (asset.state !== 'ready') throw new FileAssetError('ASSET_NOT_READY');
+    if (asset.size <= this.options.maxObjectBytes) return this.read(ownerId, id);
+    if (!Number.isSafeInteger(asset.size) || asset.size > MAX_GENERATED_FILE_BYTES) throw new FileAssetError('INVALID_ARGUMENT');
+    let object: { stream: Readable; size: number };
+    try { object = await this.manager.download(asset.objectKey); }
+    catch { throw new FileAssetError('CONTENT_UNAVAILABLE'); }
+    if (object.size !== asset.size) { object.stream.destroy(); throw new FileAssetError('CONTENT_UNAVAILABLE'); }
+    const hash = createHash('sha256');
+    let read = 0;
+    const verified = new Transform({
+      transform(chunk: Buffer, _encoding, done) {
+        read += chunk.length;
+        if (read > asset.size) return done(new FileAssetError('CONTENT_UNAVAILABLE'));
+        hash.update(chunk);
+        done(null, chunk);
+      },
+      flush(done) {
+        done(read === asset.size && hash.digest('hex') === asset.sha256 ? null : new FileAssetError('CONTENT_UNAVAILABLE'));
+      },
+    });
+    object.stream.on('error', error => verified.destroy(error));
+    object.stream.pipe(verified);
+    return { asset, stream: verified, size: asset.size };
+  }
+
   inspect(ownerId: string, id: string) { return this.assets.inspect({ ownerId }, ownerId, id); }
   read(ownerId: string, id: string) { return this.assets.read({ ownerId }, ownerId, id); }
   async delete(ownerId: string, id: string) {

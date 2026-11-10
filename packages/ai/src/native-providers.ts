@@ -38,10 +38,16 @@ export function openAINativeModel(client: OpenAI, config: AIModelConfig): Native
     async stream(request, signal) {
       const stream = await client.chat.completions.create({ ...params(request), stream: true, stream_options: { include_usage: true } }, { signal, maxRetries: 0 });
       return (async function* () {
-        for await (const chunk of stream) yield {
-          content: chunk.choices[0]?.delta.content ?? '',
-          usage: chunk.usage ? usage(chunk.usage.prompt_tokens, chunk.usage.completion_tokens, chunk.usage.total_tokens) : undefined,
-        };
+        for await (const chunk of stream) {
+          const delta = chunk.choices[0]?.delta;
+          // DeepSeek (and compatible servers) stream reasoning as a non-standard `reasoning_content` delta.
+          const reasoning = (delta as { reasoning_content?: unknown } | undefined)?.reasoning_content;
+          yield {
+            content: delta?.content ?? '',
+            ...(typeof reasoning === 'string' && reasoning ? { reasoning } : {}),
+            usage: chunk.usage ? usage(chunk.usage.prompt_tokens, chunk.usage.completion_tokens, chunk.usage.total_tokens) : undefined,
+          };
+        }
       })();
     },
     async embed(input, dimensions, signal) {
@@ -90,6 +96,8 @@ export function anthropicNativeModel(client: Anthropic, config: AIModelConfig): 
             yield { usage: usage(input, event.message.usage.output_tokens) };
           } else if (!request.json && event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
             yield { content: event.delta.text };
+          } else if (event.type === 'content_block_delta' && event.delta.type === 'thinking_delta') {
+            yield { reasoning: event.delta.thinking };
           } else if (request.json && event.type === 'content_block_delta' && event.delta.type === 'input_json_delta') {
             yield { content: event.delta.partial_json };
           } else if (event.type === 'message_delta') {
@@ -127,7 +135,14 @@ export function geminiNativeModel(client: GoogleGenAI, config: AIModelConfig): N
     async chat(request, signal) { return extract(await client.models.generateContent(params(request, signal))); },
     async stream(request, signal) {
       const stream = await client.models.generateContentStream(params(request, signal));
-      return (async function* () { for await (const chunk of stream) yield extract(chunk); })();
+      return (async function* (): AsyncGenerator<NativeChunk> {
+        for await (const chunk of stream) {
+          // Thought parts (only sent when thought summaries are enabled) are reasoning, never content.
+          const reasoning = (chunk.candidates?.[0]?.content?.parts ?? [])
+            .filter((part) => part.thought && typeof part.text === 'string').map((part) => part.text).join('');
+          yield { ...extract(chunk), ...(reasoning ? { reasoning } : {}) };
+        }
+      })();
     },
     async embed(input, dimensions, signal) {
       const result = await client.models.embedContent({ model: config.modelId, contents: input,

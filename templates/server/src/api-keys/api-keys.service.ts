@@ -2,7 +2,8 @@ import { BadRequestException, Inject, Injectable, UnauthorizedException } from '
 import { ApiKeyService } from '@zucker-framework/auth';
 import { DATABASE_ADAPTER, type DatabaseAdapter } from '@zucker-framework/core';
 
-export const ACCOUNT_KEY_SCOPES = ['account:read'] as const;
+/** `ai:generate` admits `/v1/ai/tasks*` (AI_GENERATE_SCOPE in ../ai-tasks). */
+export const ACCOUNT_KEY_SCOPES = ['account:read', 'ai:generate'] as const;
 export const ACCOUNT_KEY_EXPIRY_DAYS = [7, 30, 90, 365] as const;
 
 @Injectable()
@@ -20,7 +21,8 @@ export class AccountApiKeysService {
     if (Object.keys(input).some(key => !['name', 'scopes', 'expiresInDays'].includes(key))) throw new BadRequestException('Unsupported API key fields');
     const name = typeof input.name === 'string' ? input.name.trim() : '';
     if (!name || name.length > 80 || /[\u0000-\u001f]/.test(name)) throw new BadRequestException('Invalid API key name');
-    const scopes = input.scopes === undefined ? [...ACCOUNT_KEY_SCOPES] : input.scopes;
+    // Spending scopes (ai:generate) are opt-in; a key created without scopes can only read the account.
+    const scopes = input.scopes === undefined ? ['account:read'] : input.scopes;
     if (!Array.isArray(scopes) || !scopes.length || scopes.length > ACCOUNT_KEY_SCOPES.length ||
       scopes.some(scope => typeof scope !== 'string' || !ACCOUNT_KEY_SCOPES.includes(scope as typeof ACCOUNT_KEY_SCOPES[number]))) {
       throw new BadRequestException('Unsupported API key scopes');

@@ -17,7 +17,7 @@ export type {
 
 export { RateLimit, RATE_LIMIT_KEY } from './decorators/rate-limit.decorator';
 export type { RateLimitOptions } from './decorators/rate-limit.decorator';
-export { RateLimitGuard } from './guards/rate-limit.guard';
+export { GlobalRateLimitGuard, RateLimitGuard } from './guards/rate-limit.guard';
 
 export { DynamicLimiterManager } from './dynamic-limiter';
 export type { DynamicLimiterRule } from './dynamic-limiter';

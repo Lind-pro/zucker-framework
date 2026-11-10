@@ -28,6 +28,7 @@
     "@prisma/client": "^7.10.0",
     "@zucker-framework/admin": "workspace:*",
     "@zucker-framework/ai": "workspace:*",
+    "@zucker-framework/ai-tasks": "workspace:*",
     "@zucker-framework/auth": "workspace:*",
     "@zucker-framework/cache": "workspace:*",
     "@zucker-framework/common": "workspace:*",

@@ -64,6 +64,23 @@ export interface MediaGenerationConfig {
   lastFrameUrl?: string;
   /** 运镜模式 */
   cameraMotion?: string;
+
+  // ---- 音频参数 ----
+  /** 歌词（音乐生成） */
+  lyrics?: string;
+  /** 纯音乐，无人声 */
+  instrumental?: boolean;
+  /** 音色 / 声音标识（语音合成） */
+  voice?: string;
+  /** 风格标签（如流派、情绪） */
+  audioTags?: string[];
+
+  // ---- 异步任务 ----
+  /**
+   * Provider 完成任务后回调的地址（仅对支持回调的异步 provider 有效）。
+   * 回调只是唤醒提示：结果以验证过的回调或主动轮询为准，见 AIProviderCallbackVerifier。
+   */
+  callbackUrl?: string;
 }
 
 /** 媒体生成结果 */
@@ -112,8 +129,13 @@ export interface MediaTaskResult {
   status: MediaTaskStatus;
   /** 进度 (0-100) */
   progress?: number;
-  /** 生成结果（完成时） */
+  /** 生成结果（完成时）；多输出时为第一项 */
   result?: MediaGenerationResult;
+  /**
+   * 全部输出（完成时，按 provider 返回顺序）。未提供时消费者以 `result` 作为唯一输出。
+   * URL 来自 provider，消费者转存前必须经 `assertPublicOutboundUrl` / `createPublicFetch` 校验。
+   */
+  outputs?: MediaGenerationResult[];
   /** 错误信息（失败时） */
   error?: string;
   /** Provider */
@@ -160,4 +182,25 @@ export interface MediaProvider {
 
   /** 获取此 provider 支持的模型列表 */
   getModels(): MediaModelInfo[];
+}
+
+/**
+ * 音频（音乐 / 语音 / 音效）生成 Provider。
+ *
+ * 与图片、视频一样通过 {@link MediaProvider} 契约接入；`supportedTypes` 必须包含
+ * `MediaType.AUDIO`。音频生成通常是异步任务，`generate` 多返回 `MediaTaskResult`，
+ * 因此此类 provider 必须实现 `getTaskStatus`。音频参数见 `MediaGenerationConfig` 的
+ * `lyrics` / `instrumental` / `voice` / `audioTags` / `duration`。
+ */
+export interface AudioGenerationProvider extends MediaProvider {
+  generate(
+    prompt: string,
+    config: MediaGenerationConfig,
+  ): Promise<MediaGenerationResult | MediaTaskResult>;
+  getTaskStatus(taskId: string, config: MediaGenerationConfig): Promise<MediaTaskResult>;
+}
+
+/** 判断 provider 是否可用于音频生成（声明 AUDIO 且能查询异步任务）。 */
+export function isAudioGenerationProvider(provider: MediaProvider): provider is AudioGenerationProvider {
+  return provider.supportedTypes.includes(MediaType.AUDIO) && typeof provider.getTaskStatus === 'function';
 }

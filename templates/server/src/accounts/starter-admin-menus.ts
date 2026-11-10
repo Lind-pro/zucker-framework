@@ -86,6 +86,10 @@ export const starterAdminMenus = [
     parent: 'commerce',
     permission: 'billing:refund',
   },
+  { key: 'ai', name: 'AI' },
+  { key: 'ai-tasks', name: '生成任务', path: '/ai/tasks', parent: 'ai', permission: 'ai-tasks:query' },
+  { key: 'ai-chats', name: 'AI 对话', path: '/ai/chats', parent: 'ai', permission: 'chats:query' },
+  { key: 'ai-pricing', name: '模型与定价', path: '/ai/pricing', parent: 'ai', permission: 'config:update' },
   { key: 'operations', name: '运行与审计' },
   {
     key: 'jobs',

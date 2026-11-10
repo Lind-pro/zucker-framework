@@ -23,10 +23,11 @@ export interface SiteSettings {
   /** href '' means the banner is plain text. */
   banner: SiteBanner;
 }
+/** Starter defaults; operators edit navigation (including the AI links, which need a session) in the admin. */
 export function defaultSiteSettings(): SiteSettings {
   return { name: 'Zucker', theme: 'default', appearance: 'dark', description: { zh: '网站内容与文档', en: 'Site content and documentation' },
-    navigation: { zh: [{ label: '首页', href: '/' }, { label: '套餐', href: '/pricing' }, { label: '博客', href: '/blog' }, { label: '文档', href: '/docs' }],
-      en: [{ label: 'Home', href: '/' }, { label: 'Pricing', href: '/pricing' }, { label: 'Blog', href: '/blog' }, { label: 'Docs', href: '/docs' }] },
+    navigation: { zh: [{ label: '首页', href: '/' }, { label: 'AI 创作', href: '/ai/image' }, { label: 'AI 对话', href: '/chat' }, { label: '套餐', href: '/pricing' }, { label: '博客', href: '/blog' }, { label: '文档', href: '/docs' }],
+      en: [{ label: 'Home', href: '/' }, { label: 'AI studio', href: '/ai/image' }, { label: 'Chat', href: '/chat' }, { label: 'Pricing', href: '/pricing' }, { label: 'Blog', href: '/blog' }, { label: 'Docs', href: '/docs' }] },
     footerLinks: { zh: [{ label: '更新日志', href: '/changelog' }, { label: '隐私政策', href: '/privacy' }, { label: '服务条款', href: '/terms' }, { label: '退款政策', href: '/refund' }],
       en: [{ label: 'Changelog', href: '/changelog' }, { label: 'Privacy', href: '/privacy' }, { label: 'Terms', href: '/terms' }, { label: 'Refunds', href: '/refund' }] },
     logoUrl: '', social: [], banner: { enabled: false, text: { zh: '', en: '' }, href: '' } };
