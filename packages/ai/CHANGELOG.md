@@ -1,5 +1,14 @@
 # @zucker-framework/ai
 
+## 1.0.19
+
+### Patch Changes
+
+- Apply the existing official OpenAI Chat Completions parameter normalization to native SDK chat and stream calls. Use max_completion_tokens independently of reasoning, remove unsupported GPT-6 sampling parameters, and share the normalization with LangChain while preserving compatible-provider requests and configured transport behavior.
+- @zucker-framework/ai-access@1.0.19
+  - @zucker-framework/common@1.0.19
+  - @zucker-framework/core@1.0.19
+
 ## 1.0.18
 
 ### Patch Changes

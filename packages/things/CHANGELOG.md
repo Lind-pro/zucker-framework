@@ -1,5 +1,13 @@
 # @zucker-framework/things
 
+## 1.0.19
+
+### Patch Changes
+
+- @zucker-framework/core@1.0.19
+  - @zucker-framework/event@1.0.19
+  - @zucker-framework/timeseries@1.0.19
+
 ## 1.0.18
 
 ### Patch Changes

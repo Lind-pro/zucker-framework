@@ -4,14 +4,18 @@ import type Anthropic from '@anthropic-ai/sdk';
 import type { GoogleGenAI, GenerateContentParameters, GenerateContentResponse } from '@google/genai';
 import type { AIModelConfig, TokenUsage } from './ai-provider.interface';
 import type { NativeAIModel, NativeChatRequest, NativeChunk } from './native-port';
+import { isOfficialOpenAIChatEndpoint, normalizeOpenAIChatParameters } from './openai-chat-parameters';
 
 const usage = (input: number, output: number, total = input + output): TokenUsage => ({ input, output, total });
 
 /** Adapters accept actual SDK clients, never cast another provider to the OpenAI protocol. */
 export function openAINativeModel(client: OpenAI, config: AIModelConfig): NativeAIModel {
+  const baseURL = client.baseURL ?? config.baseURL ?? (config.providerId === 'deepseek'
+    ? 'https://api.deepseek.com/v1' : 'https://api.openai.com/v1');
+  const officialOpenAI = isOfficialOpenAIChatEndpoint(new URL(`${baseURL.replace(/\/+$/, '')}/chat/completions`));
   const params = (request: NativeChatRequest): OpenAI.Chat.ChatCompletionCreateParamsNonStreaming => {
     if (request.reasoning?.budgetTokens !== undefined) throw new NativeAIContractError('OpenAI requires reasoning effort, not a token budget');
-    return {
+    const body: OpenAI.Chat.ChatCompletionCreateParamsNonStreaming = {
       model: config.modelId, messages: request.messages,
       temperature: request.reasoning ? undefined : request.temperature,
       ...(request.reasoning && config.providerId !== 'deepseek' ? { max_completion_tokens: request.maxTokens } : { max_tokens: request.maxTokens }),
@@ -19,6 +23,8 @@ export function openAINativeModel(client: OpenAI, config: AIModelConfig): Native
       ...(request.json ? { response_format: { type: 'json_object' } } : {}),
       ...(request.reasoning?.effort ? { reasoning_effort: request.reasoning.effort } : {}),
     };
+    if (officialOpenAI) normalizeOpenAIChatParameters(body);
+    return body;
   };
   return {
     async chat(request, signal) {

@@ -1,5 +1,6 @@
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import type { OpenAIEmbeddings } from '@langchain/openai';
+import { isOfficialOpenAIChatEndpoint, normalizeOpenAIChatParameters } from './openai-chat-parameters';
 
 export interface LangChainProviderDefaults {
   protocol: 'anthropic' | 'openai-compatible';
@@ -61,28 +62,14 @@ function validateTransport(options: { proxyUrl?: string; fetch?: typeof fetch })
 function openAIChatFetch(transport: typeof fetch = globalThis.fetch): typeof fetch {
   return (input, init) => {
     const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url);
-    if (url.origin !== 'https://api.openai.com' ||
-        url.pathname.replace(/\/$/, '') !== '/v1/chat/completions' ||
-        typeof init?.body !== 'string') return transport(input, init);
+    if (!isOfficialOpenAIChatEndpoint(url) || typeof init?.body !== 'string') return transport(input, init);
 
     // Use the public SDK transport boundary: LangChain's model-name allowlist
     // also governs its cloned completion clients and misses newer OpenAI models.
     const body: unknown = JSON.parse(init.body);
     if (!body || typeof body !== 'object' || Array.isArray(body)) return transport(input, init);
     const params = body as Record<string, unknown>;
-    if (params.max_tokens !== undefined) {
-      params.max_completion_tokens ??= params.max_tokens;
-      delete params.max_tokens;
-    }
-    // `thinking` belongs to compatible providers; OpenAI uses reasoning_effort.
-    delete params.thinking;
-    if (typeof params.model === 'string' && /^gpt-6(?:[.-]|$)/.test(params.model) &&
-        params.reasoning_effort !== 'none') {
-      delete params.temperature;
-      delete params.top_p;
-      delete params.logprobs;
-      delete params.top_logprobs;
-    }
+    normalizeOpenAIChatParameters(params);
     return transport(input, { ...init, body: JSON.stringify(params) });
   };
 }
