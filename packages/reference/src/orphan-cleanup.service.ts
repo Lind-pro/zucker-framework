@@ -48,7 +48,9 @@ export class OrphanCleanupService {
   }
 
   /**
-   * 清理孤儿引用
+   * 清理孤儿引用。
+   *
+   * 实际删除由 `onCleanup` 完成；未提供时只记录告警，返回值仍为发现的孤儿数量。
    */
   async cleanup(
     referenceType: string,
@@ -60,8 +62,13 @@ export class OrphanCleanupService {
     for (const orphan of orphans) {
       if (onCleanup) {
         await onCleanup(orphan);
+        this.logger.log(`Orphan reference cleaned: ${referenceType}/${orphan.id} -> ${orphan.targetType}/${orphan.targetId}`);
+      } else {
+        // 没有提供 onCleanup 时服务本身不会删除任何东西，只报告发现的孤儿引用
+        this.logger.warn(
+          `Orphan reference found but not removed (no onCleanup callback): ${referenceType}/${orphan.id} -> ${orphan.targetType}/${orphan.targetId}`,
+        );
       }
-      this.logger.log(`Orphan reference cleaned: ${referenceType}/${orphan.id} -> ${orphan.targetType}/${orphan.targetId}`);
     }
 
     return orphans.length;

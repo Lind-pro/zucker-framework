@@ -48,7 +48,7 @@ run('consumer refund source eligibility on actual PostgreSQL', () => {
   });
   afterAll(async () => {
     try {
-      await database?.onModuleDestroy();
+      await database?.disconnect();
     } finally {
       if (pool) {
         try {

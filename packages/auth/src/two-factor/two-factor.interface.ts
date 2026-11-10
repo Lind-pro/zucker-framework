@@ -28,5 +28,5 @@ export interface TwoFactorValidatorProvider {
   /**
    * Create a validator instance for a specific user and operation.
    */
-  createTwoFactorValidator(userId: string, operation: string): TwoFactorValidator;
+  createTwoFactorValidator(userId: string, operation: string, sessionId?: string): TwoFactorValidator;
 }

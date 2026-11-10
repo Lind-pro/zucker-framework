@@ -118,10 +118,25 @@ export interface FindExpiredTaskLeasesInput {
   limit: number;
 }
 
+/** Keyset position of the last row of the previous page (ordering: availableAt, createdAt, id). */
+export interface ReadyTaskCursor {
+  availableAt: Date;
+  createdAt: Date;
+  id: string;
+}
+
 export interface FindReadyQueuedTasksInput {
   now: Date;
   limit: number;
+  /** Prefer `after`; OFFSET pages skip rows when earlier rows are claimed between calls. */
   offset?: number;
+  /** Return only rows ordered after this cursor. Takes precedence over `offset`. */
+  after?: ReadyTaskCursor;
+  /**
+   * Also return RETRYING rows whose availableAt has passed. RETRYING holds no lease, so a
+   * worker that stopped between RETRYING and QUEUED would otherwise strand the row.
+   */
+  includeRetrying?: boolean;
 }
 
 export interface RecoverExpiredTaskLeaseInput {

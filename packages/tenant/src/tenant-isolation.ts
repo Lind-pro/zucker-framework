@@ -1,4 +1,22 @@
-import { getCurrentTenantId } from './tenant-context';
+import { TenantContext, getCurrentTenantId } from './tenant-context';
+import { DEFAULT_TENANT_ID_PATTERN } from './tenant-resolver';
+
+/** Thrown when tenant-scoped data access runs without a tenant context (fail closed). */
+export class TenantContextRequiredError extends Error {
+  readonly code = 'TENANT_CONTEXT_REQUIRED';
+  constructor(operation: string) {
+    super(`Tenant context is required for ${operation}; use TenantContext.runWithoutTenantIsolation() for system access`);
+    this.name = 'TenantContextRequiredError';
+  }
+}
+
+export interface RowLevelIsolationOptions {
+  /**
+   * Restore the pre-1.0.19 fail-open behaviour: without a tenant context, queries are not
+   * filtered and created rows get no tenant. Defaults to false (throw).
+   */
+  allowMissingTenant?: boolean;
+}
 
 /**
  * 租户隔离策略接口
@@ -24,18 +42,28 @@ export interface TenantIsolationStrategy {
 export class RowLevelIsolation implements TenantIsolationStrategy {
   readonly name = 'row-level';
 
-  constructor(private readonly tenantField = 'tenantId') {}
+  constructor(
+    private readonly tenantField = 'tenantId',
+    private readonly options: RowLevelIsolationOptions = {},
+  ) {}
 
   applyQueryFilter(where: Record<string, unknown>): Record<string, unknown> {
-    const tenantId = getCurrentTenantId();
+    const tenantId = this.requireTenant('query');
     if (!tenantId) return where;
     return { ...where, [this.tenantField]: tenantId };
   }
 
   applyCreateData(data: Record<string, unknown>): Record<string, unknown> {
-    const tenantId = getCurrentTenantId();
+    const tenantId = this.requireTenant('create');
     if (!tenantId) return data;
     return { ...data, [this.tenantField]: tenantId };
+  }
+
+  private requireTenant(operation: string): string | undefined {
+    const tenantId = getCurrentTenantId();
+    if (tenantId) return tenantId;
+    if (this.options.allowMissingTenant || TenantContext.isTenantIsolationBypassed()) return undefined;
+    throw new TenantContextRequiredError(operation);
   }
 }
 
@@ -53,6 +81,11 @@ export class SchemaLevelIsolation implements TenantIsolationStrategy {
   getSchemaName(): string | undefined {
     const tenantId = getCurrentTenantId();
     if (!tenantId) return undefined;
+    // Schema names cannot be bound parameters; never build one from an unvalidated ID.
+    // Still quote the identifier when interpolating it into SQL.
+    if (!DEFAULT_TENANT_ID_PATTERN.test(tenantId)) {
+      throw new Error('Tenant ID is not a valid schema name component');
+    }
     return `${this.schemaPrefix}${tenantId}`;
   }
 

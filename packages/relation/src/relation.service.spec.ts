@@ -95,3 +95,21 @@ describe('RelationService with InMemoryRelationStore', () => {
     expect(related[0].targetKey).toBe(generateRelationKey('device', 'd1'));
   });
 });
+
+describe('RelationService.saveRelated (review L9)', () => {
+  it('uses the store\'s atomic replaceRelated when available', async () => {
+    const store = new InMemoryRelationStore();
+    const replaced: unknown[] = [];
+    const atomic = Object.assign(store, {
+      replaceRelated: async (_st: string, _si: string, _r: string, _tt: string, relations: unknown[]) => {
+        replaced.push(...relations);
+      },
+    });
+    const service = new RelationService(atomic);
+    await service.saveRelated('user', 'u1', 'member', 'org', [{ id: 'o1', name: 'Org' }]);
+    expect(replaced).toEqual([
+      expect.objectContaining({ sourceId: 'u1', targetId: 'o1', targetName: 'Org', targetKey: generateRelationKey('org', 'o1') }),
+    ]);
+    expect(await store.findRelated('user', 'u1')).toHaveLength(0);
+  });
+});

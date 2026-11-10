@@ -392,4 +392,58 @@ describe('hosted checkout durable initial fulfillment', () => {
     await Promise.all([f.service.capture(selection), f.service.capture(selection)]);
     expect(f.adapter.capture).toHaveBeenCalledOnce(); expect(f.fulfilled()).toEqual(['order-1']);
   });
+
+  it('releases the creation claim after a definite provider rejection, never after an unknown one (M9)', async () => {
+    const f = fixture();
+    vi.mocked(f.adapter.create).mockRejectedValueOnce(Object.assign(new Error('Invalid price'), { statusCode: 400 }));
+    await expect(f.service.create(selection)).rejects.toThrow('Invalid price');
+    expect(await f.service.get(selection.orderId, selection.ownerId)).toMatchObject({ creationState: 'prepared' });
+    expect(await f.service.create(selection)).toMatchObject({ creationState: 'created', checkoutUrl: 'https://checkout.example/1' });
+    expect(f.adapter.create).toHaveBeenCalledTimes(2);
+  });
+
+  it('resetDispatch re-opens an unknown creation claim for an idempotent re-dispatch (M9)', async () => {
+    const f = fixture();
+    vi.mocked(f.adapter.create).mockRejectedValueOnce(new Error('HTTP 503'));
+    await expect(f.service.create(selection)).rejects.toThrow('503');
+    expect(await f.service.resetDispatch(selection.orderId)).toMatchObject({ creationState: 'prepared' });
+    const order = await f.service.create(selection);
+    expect(order.creationState).toBe('created');
+    const keys = vi.mocked(f.adapter.create).mock.calls.map(([o]) => o.createKey);
+    expect(new Set(keys).size).toBe(1);
+  });
+
+  it('releases a declined capture only after a read-only check shows nothing was captured (M9)', async () => {
+    const f = fixture(); await f.service.create(selection);
+    vi.mocked(f.adapter.retrieve).mockResolvedValue(observed({ state: 'requires_capture', paidMoney: undefined }));
+    vi.mocked(f.adapter.capture!).mockRejectedValueOnce(Object.assign(new Error('INSTRUMENT_DECLINED'), { statusCode: 422 }));
+    await expect(f.service.capture(selection)).rejects.toThrow('INSTRUMENT_DECLINED');
+    expect(await f.service.get(selection.orderId, selection.ownerId)).toMatchObject({ captureState: 'idle' });
+    await f.service.capture(selection);
+    expect(f.adapter.capture).toHaveBeenCalledTimes(2); expect(f.fulfilled()).toEqual(['order-1']);
+  });
+
+  it('resetDispatch keeps a capture claim while the provider outcome is unknown and reconciles a paid one (M9)', async () => {
+    const f = fixture(); await f.service.create(selection);
+    vi.mocked(f.adapter.retrieve).mockResolvedValue(observed({ state: 'requires_capture', paidMoney: undefined }));
+    vi.mocked(f.adapter.capture!).mockRejectedValueOnce(new Error('timeout'));
+    await expect(f.service.capture(selection)).rejects.toThrow('timeout');
+    vi.mocked(f.adapter.retrieve).mockResolvedValueOnce(observed({ state: 'unknown', paidMoney: undefined }));
+    await expect(f.service.resetDispatch(selection.orderId)).rejects.toThrow('unknown');
+    vi.mocked(f.adapter.retrieve).mockResolvedValueOnce(observed());
+    expect(await f.service.resetDispatch(selection.orderId)).toMatchObject({ state: 'paid', captureState: 'confirmed' });
+    expect(f.adapter.capture).toHaveBeenCalledOnce();
+  });
+
+  it('reports paid money that differs from the offer through onPaymentMismatch without fulfilling (M10)', async () => {
+    const f = fixture();
+    const onPaymentMismatch = vi.fn();
+    const service = new HostedCheckoutService({ ...f.options, onPaymentMismatch });
+    await service.create(selection);
+    vi.mocked(f.adapter.retrieve).mockResolvedValueOnce(observed({ paidMoney: { amount: '35.09', currency: 'USD' } }));
+    await expect(service.confirm(selection)).rejects.toThrow('differs');
+    expect(onPaymentMismatch).toHaveBeenCalledWith(expect.objectContaining({ id: 'order-1' }),
+      expect.objectContaining({ paidMoney: { amount: '35.09', currency: 'USD' } }));
+    expect(f.fulfilled()).toEqual([]);
+  });
 });

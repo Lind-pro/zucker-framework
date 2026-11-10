@@ -13,7 +13,8 @@ import type {
   WebhookRequest,
 } from "../payment-contract";
 import type { SettlementState } from "../settlement";
-import { fromMinorUnits, toMinorUnits } from "../money";
+import { fromStripeMinorUnits, toStripeMinorUnits } from "../money";
+import { PaymentRejectedError } from "../rejection";
 
 export interface StripeAdapterOptions {
   client: Stripe;
@@ -47,7 +48,7 @@ export function createStripeAdapter(
     nextAction: raw.url ? { kind: "redirect", url: raw.url } : { kind: "none" },
     state: observeStripeState(raw),
     money: {
-      amount: fromMinorUnits(raw.amount_total ?? 0, raw.currency ?? "usd"),
+      amount: fromStripeMinorUnits(raw.amount_total ?? 0, raw.currency ?? "usd"),
       currency: (raw.currency ?? "").toUpperCase(),
     },
     raw,
@@ -69,7 +70,7 @@ export function createStripeAdapter(
               price_data: {
                 currency: input.money.currency.toLowerCase(),
                 product_data: { name: input.description || input.reference },
-                unit_amount: toMinorUnits(input.money.amount, input.money.currency),
+                unit_amount: toStripeMinorUnits(input.money.amount, input.money.currency),
               },
               quantity: 1,
             },
@@ -104,12 +105,12 @@ export function createStripeAdapter(
     async refund(input: RefundInput) {
       const session = await retrieveStripeCheckoutSession(client, input.providerRef);
       const paymentIntent = session.paymentIntentId;
-      if (!paymentIntent) throw new Error("该 Checkout 会话没有可退款的 PaymentIntent");
+      if (!paymentIntent) throw new PaymentRejectedError("该 Checkout 会话没有可退款的 PaymentIntent");
       const refund = await client.refunds.create(
         {
           payment_intent: paymentIntent,
           ...(input.money
-            ? { amount: toMinorUnits(input.money.amount, input.money.currency) }
+            ? { amount: toStripeMinorUnits(input.money.amount, input.money.currency) }
             : {}),
         },
         { idempotencyKey: input.idempotencyKey },
@@ -135,15 +136,33 @@ export function createStripeAdapter(
         signature,
         options.webhookSecret,
       );
+      if (event.type === "charge.refunded") {
+        // charge.refunded also fires for partial refunds, and its object is the Charge, not the
+        // Checkout Session this adapter uses as providerRef everywhere else.
+        const charge = event.data.object as Stripe.Charge;
+        const state: SettlementState = charge.refunded
+          ? "refunded"
+          : (charge.amount_refunded ?? 0) > 0
+            ? "partially_refunded"
+            : "unknown";
+        const paymentIntent =
+          typeof charge.payment_intent === "string" ? charge.payment_intent : charge.payment_intent?.id;
+        let providerRef: string | undefined;
+        if (paymentIntent) {
+          const sessions = await client.checkout.sessions.list({ payment_intent: paymentIntent, limit: 2 });
+          // Ambiguous or missing correlation stays undefined; the caller must alert, not guess.
+          if (sessions.data.length === 1) providerRef = sessions.data[0]?.id;
+        }
+        return { type: event.type, providerRef, state, raw: event };
+      }
       const object = event.data.object as { id?: string };
       const state: SettlementState =
-        event.type === "checkout.session.completed"
+        event.type === "checkout.session.completed" ||
+        event.type === "checkout.session.async_payment_succeeded"
           ? observeStripeState(event.data.object as Stripe.Checkout.Session)
           : event.type === "checkout.session.expired"
             ? "canceled"
-            : event.type === "charge.refunded"
-              ? "refunded"
-              : "unknown";
+            : "unknown";
       return { type: event.type, providerRef: object.id, state, raw: event };
     },
   };

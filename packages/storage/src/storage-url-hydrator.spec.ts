@@ -106,4 +106,16 @@ describe('hydrateStorageUrls', () => {
     ).rejects.toBe(error);
     expect(source).toEqual({ objectKey: 'private/a', downloadUrl: 'old' });
   });
+
+  it('rejects cyclic and overly deep graphs but accepts shared subgraphs', async () => {
+    const base = { allowedStorageKeys: new Set(['k']), getDownloadUrl: async () => 'u', storageKeyField: 'key', urlFields: ['url'] };
+    const cyclic: Record<string, unknown> = { key: 'k' };
+    cyclic.self = cyclic;
+    await expect(hydrateStorageUrls(cyclic, base)).rejects.toThrow('cyclic');
+    let deep: Record<string, unknown> = {};
+    for (let i = 0; i < 100; i += 1) deep = { child: deep };
+    await expect(hydrateStorageUrls(deep, base)).rejects.toThrow('depth');
+    const shared = { key: 'k' };
+    await expect(hydrateStorageUrls([shared, shared], base)).resolves.toEqual([{ key: 'k', url: 'u' }, { key: 'k', url: 'u' }]);
+  });
 });

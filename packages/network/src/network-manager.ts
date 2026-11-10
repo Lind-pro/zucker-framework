@@ -64,15 +64,30 @@ export class DefaultNetworkManager implements INetworkManager, OnModuleDestroy {
   /** type-id -> (network-id -> Network) */
   private readonly store = new Map<string, Map<string, Network>>();
 
+  /** type-id/network-id -> 正在进行的创建，保证并发 getNetwork 只创建一次 */
+  private readonly pending = new Map<string, Promise<Network>>();
+
+  /** 被显式 shutdown 的网络：保留在缓存中，但健康检查不再自动重载 */
+  private readonly stopped = new Set<string>();
+
   private checkTimer: ReturnType<typeof setInterval> | undefined;
+
+  /** 健康检查是否正在运行；慢速重载时跳过下一个 tick，避免重叠 */
+  private checking = false;
 
   constructor(private readonly configManager: NetworkConfigManager) {
     // 每 10 秒检查网络组件存活状态，与 jetlinks 的 10s 周期一致
     this.checkTimer = setInterval(() => {
-      this.checkNetworks().catch((err) =>
-        this.logger.error('Network health-check failed', err),
-      );
+      if (this.checking) return;
+      this.checking = true;
+      this.checkNetworks()
+        .catch((err) => this.logger.error('Network health-check failed', err))
+        .finally(() => {
+          this.checking = false;
+        });
     }, 10_000);
+    // 健康检查定时器不应单独阻止进程退出
+    this.checkTimer.unref?.();
   }
 
   /* ------------------------------------------------------------------ */
@@ -90,12 +105,24 @@ export class DefaultNetworkManager implements INetworkManager, OnModuleDestroy {
 
   async getNetwork<T extends Network = Network>(type: NetworkType, id: string): Promise<T> {
     const networkMap = this.getNetworkStore(type.id);
-    let network = networkMap.get(id) as T | undefined;
-    if (network) return network;
+    const cached = networkMap.get(id) as T | undefined;
+    if (cached) return cached;
 
-    network = (await this.createFromConfig(type, id)) as T;
-    networkMap.set(id, network);
-    return network;
+    // 并发调用共享同一个创建 Promise，避免重复创建（重复绑定端口或泄漏客户端连接）
+    const key = this.key(type.id, id);
+    let creating = this.pending.get(key);
+    if (!creating) {
+      creating = this.createFromConfig(type, id)
+        .then((network) => {
+          networkMap.set(id, network);
+          return network;
+        })
+        .finally(() => {
+          this.pending.delete(key);
+        });
+      this.pending.set(key, creating);
+    }
+    return (await creating) as T;
   }
 
   getNetworks(): Network[] {
@@ -119,7 +146,11 @@ export class DefaultNetworkManager implements INetworkManager, OnModuleDestroy {
   async reload(type: NetworkType, id: string): Promise<void> {
     const provider = this.requireProvider(type.id);
     const props = await this.configManager.getConfig(type, id);
-    if (!props || !props.enabled) return;
+    if (!props || !props.enabled) {
+      // 配置已删除或被禁用：关闭并移除仍在运行的实例，而不是让它继续运行
+      await this.destroy(type, id);
+      return;
+    }
 
     const config = await provider.createConfig(props);
     const networkMap = this.getNetworkStore(type.id);
@@ -129,11 +160,14 @@ export class DefaultNetworkManager implements INetworkManager, OnModuleDestroy {
       ? await provider.reload(existing, config)
       : await provider.createNetwork(config);
     networkMap.set(id, network);
+    this.stopped.delete(this.key(type.id, id));
   }
 
   async shutdown(type: NetworkType, id: string): Promise<void> {
     const network = this.getNetworkStore(type.id).get(id);
     if (network) {
+      // 显式关闭的网络保留在缓存中，但不能被健康检查自动重启；调用 reload 可恢复
+      this.stopped.add(this.key(type.id, id));
       await network.shutdown();
     }
   }
@@ -141,6 +175,7 @@ export class DefaultNetworkManager implements INetworkManager, OnModuleDestroy {
   async destroy(type: NetworkType, id: string): Promise<void> {
     const networkMap = this.getNetworkStore(type.id);
     const network = networkMap.get(id);
+    this.stopped.delete(this.key(type.id, id));
     if (network) {
       networkMap.delete(id);
       await network.shutdown();
@@ -169,11 +204,16 @@ export class DefaultNetworkManager implements INetworkManager, OnModuleDestroy {
     }
     await Promise.all(shutdowns);
     this.store.clear();
+    this.stopped.clear();
   }
 
   /* ------------------------------------------------------------------ */
   /*  内部方法                                                           */
   /* ------------------------------------------------------------------ */
+
+  private key(typeId: string, id: string): string {
+    return `${typeId}/${id}`;
+  }
 
   private getNetworkStore(typeId: string): Map<string, Network> {
     let map = this.store.get(typeId);
@@ -212,10 +252,15 @@ export class DefaultNetworkManager implements INetworkManager, OnModuleDestroy {
 
       for (const [id, network] of networkMap) {
         if (network.isAlive() || !network.isAutoReload()) continue;
+        if (this.stopped.has(this.key(typeId, id))) continue;
 
         try {
           const props = await this.configManager.getConfig(network.type, id);
-          if (!props || !props.enabled) continue;
+          if (!props || !props.enabled) {
+            // 配置被禁用/删除：不再保留死掉的实例
+            networkMap.delete(id);
+            continue;
+          }
 
           const config = await provider.createConfig(props);
           const reloaded = await provider.reload(network, config);

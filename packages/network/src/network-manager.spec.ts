@@ -237,6 +237,79 @@ describe('DefaultNetworkManager', () => {
     expect(provider.reload).not.toHaveBeenCalled();
   });
 
+  // ---- regressions (review M10) ----
+
+  it('creates a network once for concurrent getNetwork calls', async () => {
+    const provider = createMockProvider(NetworkTypes.TCP_SERVER);
+    manager.registerProvider(provider);
+
+    const [a, b] = await Promise.all([
+      manager.getNetwork(NetworkTypes.TCP_SERVER, 'c1'),
+      manager.getNetwork(NetworkTypes.TCP_SERVER, 'c1'),
+    ]);
+
+    expect(a).toBe(b);
+    expect(provider.createNetwork).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries creation after a failed concurrent create', async () => {
+    const provider = createMockProvider(NetworkTypes.TCP_SERVER);
+    (provider.createNetwork as any).mockRejectedValueOnce(new Error('bind failed'));
+    manager.registerProvider(provider);
+
+    await expect(manager.getNetwork(NetworkTypes.TCP_SERVER, 'f1')).rejects.toThrow('bind failed');
+    await expect(manager.getNetwork(NetworkTypes.TCP_SERVER, 'f1')).resolves.toBeDefined();
+  });
+
+  it('reload shuts down and removes a network whose config was disabled', async () => {
+    const shutdown = vi.fn();
+    const configs: Record<string, any> = {};
+    configManager = createMockConfigManager(configs);
+    await manager.onModuleDestroy();
+    manager = new DefaultNetworkManager(configManager);
+    const provider = createMockProvider(NetworkTypes.TCP_SERVER, () => createMockNetwork('r1', { shutdown }));
+    manager.registerProvider(provider);
+
+    await manager.getNetwork(NetworkTypes.TCP_SERVER, 'r1');
+    configs['TCP_SERVER/r1'] = { id: 'r1', type: 'TCP_SERVER', name: 'r1', enabled: false, configurations: {} };
+    await manager.reload(NetworkTypes.TCP_SERVER, 'r1');
+
+    expect(shutdown).toHaveBeenCalledTimes(1);
+    expect(manager.getNetworks()).toHaveLength(0);
+  });
+
+  it('does not auto-reload a network that was explicitly shut down', async () => {
+    let alive = true;
+    const provider = createMockProvider(NetworkTypes.TCP_SERVER, () =>
+      createMockNetwork('s2', { isAlive: () => alive, isAutoReload: () => true }),
+    );
+    manager.registerProvider(provider);
+
+    await manager.getNetwork(NetworkTypes.TCP_SERVER, 's2');
+    await manager.shutdown(NetworkTypes.TCP_SERVER, 's2');
+    alive = false;
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(provider.reload).not.toHaveBeenCalled();
+  });
+
+  it('does not overlap health-check ticks while a reload is slow', async () => {
+    let alive = true;
+    const provider = createMockProvider(NetworkTypes.TCP_SERVER, () =>
+      createMockNetwork('slow', { isAlive: () => alive, isAutoReload: () => true }),
+    );
+    (provider.reload as any).mockImplementation(
+      () => new Promise((resolve) => setTimeout(() => resolve(createMockNetwork('slow')), 25_000)),
+    );
+    manager.registerProvider(provider);
+
+    await manager.getNetwork(NetworkTypes.TCP_SERVER, 'slow');
+    alive = false;
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(provider.reload).toHaveBeenCalledTimes(1);
+  });
+
   // ---- onModuleDestroy ----
 
   it('should shutdown all networks on module destroy', async () => {

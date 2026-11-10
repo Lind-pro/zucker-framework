@@ -184,4 +184,35 @@ describe('DataSourceManager', () => {
   it('reload(不存在) 抛 DataSourceNotFoundException', async () => {
     await expect(manager.reload('ghost')).rejects.toThrow(DataSourceNotFoundException);
   });
+
+  // ---------- regressions (review M11) ----------
+
+  it('reload 工厂失败时保留旧 adapter 可用', async () => {
+    const adapterV1 = makeAdapter();
+    const factory = vi.fn().mockResolvedValueOnce(adapterV1).mockRejectedValueOnce(new Error('db down'));
+    manager.registerFactory('mock', factory);
+    await manager.addDataSource(makeConfig('ds1'));
+
+    await expect(manager.reload('ds1')).rejects.toThrow('db down');
+    expect(manager.getDataSource('ds1')).toBe(adapterV1);
+  });
+
+  it('reload/remove/close 会释放被替换的 adapter', async () => {
+    const v1 = { ...makeAdapter(), $disconnect: vi.fn().mockResolvedValue(undefined) };
+    const v2 = { ...makeAdapter(), close: vi.fn() };
+    const v3 = { ...makeAdapter(), $disconnect: vi.fn().mockRejectedValue(new Error('boom')) };
+    const factory = vi.fn().mockResolvedValueOnce(v1).mockResolvedValueOnce(v2);
+    manager.registerFactory('mock', factory);
+    await manager.addDataSource(makeConfig('ds1'));
+
+    await manager.reload('ds1');
+    manager.close('ds1');
+    manager.register('ds2', v3);
+    manager.remove('ds2');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(v1.$disconnect).toHaveBeenCalledOnce();
+    expect(v2.close).toHaveBeenCalledOnce();
+    expect(v3.$disconnect).toHaveBeenCalledOnce();
+  });
 });

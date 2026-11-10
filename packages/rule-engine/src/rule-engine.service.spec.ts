@@ -464,8 +464,8 @@ describe('RuleEngineService', () => {
       };
 
       await service.startRule(rule);
-      vi.advanceTimersByTime(3_000);
-      await Promise.resolve();
+      // Ticks are skipped while a previous run is in flight, so let promise jobs run between ticks.
+      await vi.advanceTimersByTimeAsync(3_000);
 
       expect(notifySender.mock.calls.length).toBeGreaterThanOrEqual(2);
     });

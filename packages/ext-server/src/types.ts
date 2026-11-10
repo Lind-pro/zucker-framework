@@ -18,6 +18,12 @@ export interface ExtStore {
   extensionOrder: StoreDelegate;
   extensionFreeUsage: StoreDelegate;
   extensionProduct: StoreDelegate;
+  /**
+   * Optional interactive transaction (Prisma `$transaction(async (tx) => ...)`). When present, order claim +
+   * license creation, device activation (with a row lock on the license) and resend repointing are atomic.
+   * A transaction client passed as the store (no `$transaction`) runs the same steps on that client directly.
+   */
+  $transaction?: (...args: any[]) => Promise<any>;
 }
 
 export interface ExtMailer {
@@ -51,6 +57,31 @@ export interface ExtServerOptions {
   fallbackProducts: Record<string, ProductInfo>;
   /** 以上都不匹配时的兜底品牌 */
   fallbackBrand: ProductInfo;
+  /**
+   * Which Stripe checkout sessions this endpoint may fulfil. Without it every paid session delivered to the
+   * webhook mints a license (historical behaviour). Configure it when the Stripe account sells anything else.
+   */
+  checkout?: ExtCheckoutPolicy;
+  /**
+   * Device expiry anchor. `per-device` (default, historical): each newly activated device gets
+   * `now + durationDays`. `license`: later devices inherit the earliest activation's expiry, so the license
+   * lifetime starts once at first activation.
+   */
+  activationExpiry?: 'per-device' | 'license';
+}
+
+export interface ExtCheckoutPolicy {
+  /** Require `session.metadata.product`; sessions without it are ignored. */
+  requireProductMetadata?: boolean;
+  /** The resolved product slug (metadata.product / client_reference_id / defaultProduct) must be listed. */
+  allowedProducts?: string[];
+  /** `session.payment_link` must be one of these Payment Link ids. */
+  allowedPaymentLinks?: string[];
+  /**
+   * Extra predicate, e.g. to check price ids: line items are not part of the webhook payload, so a price
+   * allow-list needs a Stripe API lookup here. Returning false ignores the session (no license, HTTP 200).
+   */
+  accept?: (session: Record<string, any>, product: string) => boolean | Promise<boolean>;
 }
 
 export interface ActivateInput {

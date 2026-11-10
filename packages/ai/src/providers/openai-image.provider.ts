@@ -194,6 +194,8 @@ export class OpenAIImageProvider implements ImageProvider {
               apiKey: this.config.apiKey,
               baseURL: this.config.baseURL || undefined,
               timeout: this.config.timeout ?? EFFECTIVELY_UNBOUNDED_TIMEOUT_MS,
+              // Billable, non-idempotent calls: the SDK must not resubmit them on its own.
+              maxRetries: 0,
             }),
         )
         .catch((error: unknown) => {

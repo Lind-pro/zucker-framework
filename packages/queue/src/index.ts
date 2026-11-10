@@ -32,6 +32,8 @@ export type {
 } from './queue.module';
 
 export { QueueWorker, QUEUE_WORKER_KEY } from './worker.decorator';
+export { QueueWorkerExplorer, QUEUE_WORKER_HOST } from './queue-worker.explorer';
+export type { DiscoveredQueueWorker } from './queue-worker.explorer';
 export type { QueueWorkerOptions } from './worker.decorator';
 
 export { TaskLifecycleManager } from './task-lifecycle';

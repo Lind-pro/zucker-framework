@@ -165,7 +165,7 @@ export async function connectionBrowserFixture(
   async function close() {
     try {
       await app?.close();
-      await database?.onModuleDestroy();
+      await database?.disconnect();
     } finally {
       try {
         await pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
@@ -229,7 +229,7 @@ export async function connectionBrowserFixture(
             ]);
           });
         await app.close();
-        await database.onModuleDestroy();
+        await database.disconnect();
         if (options.withoutEncryptionKey) delete env.CONFIG_ENCRYPTION_KEY;
         await start(address.port);
       },

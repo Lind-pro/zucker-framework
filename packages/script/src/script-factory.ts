@@ -168,14 +168,14 @@ export class JavaScriptScriptFactory implements ScriptFactory {
     return {
       call: async (...args: unknown[]) => {
         const sandbox = createSandbox(sandboxOptions);
-        return sandbox.execute(script.content, { ...expose, __args: args });
+        return sandbox.executeAsync(script.content, { ...expose, __args: args });
       },
       callWithContext: async (
         context: Record<string, unknown>,
         ...args: unknown[]
       ) => {
         const sandbox = createSandbox(sandboxOptions);
-        return sandbox.execute(script.content, {
+        return sandbox.executeAsync(script.content, {
           ...expose,
           ...context,
           __args: args,
@@ -183,7 +183,7 @@ export class JavaScriptScriptFactory implements ScriptFactory {
       },
       callWithExecutionContext: async (execCtx: ExecutionContext) => {
         const sandbox = createSandbox(sandboxOptions);
-        return sandbox.execute(script.content, {
+        return sandbox.executeAsync(script.content, {
           ...expose,
           ...execCtx.toRecord(),
         });

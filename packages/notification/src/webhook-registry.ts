@@ -2,9 +2,11 @@ import { Injectable, Logger } from '@nestjs/common';
 import { createHmac, timingSafeEqual } from 'crypto';
 
 /**
- * Webhook 注册与可靠投递
+ * Webhook 注册与投递（进程内）
  *
- * 支持事件注册、HMAC 签名验证、重试、投递状态追踪。
+ * 支持事件注册、HMAC 签名验证、有限重试、投递状态追踪。
+ * Registry and delivery log are in-memory only: deliveries are lost on restart and not shared between
+ * replicas. Use the durable notification delivery repository for reliable delivery.
  *
  * 用法:
  * ```ts
@@ -105,15 +107,8 @@ export class WebhookRegistry {
    * 分发事件到所有匹配的 webhook
    */
   async dispatch(event: string, payload: unknown): Promise<DeliveryRecord[]> {
-    const matching = this.getByEvent(event);
-    const records: DeliveryRecord[] = [];
-
-    for (const wh of matching) {
-      const record = await this.deliver(wh, event, payload);
-      records.push(record);
-    }
-
-    return records;
+    // Endpoints are delivered concurrently so one slow/failing endpoint's backoff does not delay others.
+    return Promise.all(this.getByEvent(event).map((wh) => this.deliver(wh, event, payload)));
   }
 
   /**
@@ -127,6 +122,8 @@ export class WebhookRegistry {
    * 验证入站 webhook 签名
    */
   static verify(payload: string, signature: string, secret: string): boolean {
+    // Accepts the `X-Webhook-Signature` header value as sent (`sha256=<hex>`) or the bare hex digest.
+    if (signature.startsWith('sha256=')) signature = signature.slice('sha256='.length);
     const expected = WebhookRegistry.sign(payload, secret);
     const expectedBuf = Buffer.from(expected, 'utf8');
     const signatureBuf = Buffer.from(signature, 'utf8');
@@ -191,8 +188,8 @@ export class WebhookRegistry {
           break;
         }
 
-        // 4xx 不重试（客户端错误）
-        if (response.status >= 400 && response.status < 500) {
+        // 4xx 不重试（客户端错误），408/429 除外
+        if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429) {
           record.status = 'failed';
           record.error = `HTTP ${response.status}`;
           break;

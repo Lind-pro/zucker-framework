@@ -93,6 +93,8 @@ export class DalleProvider implements MediaProvider {
       apiKey: config.apiKey,
       baseURL: config.baseURL,
       timeout: config.timeoutMs ?? EFFECTIVELY_UNBOUNDED_TIMEOUT_MS,
+      // Image generation is billable and not idempotent; MediaGenerationService owns retries.
+      maxRetries: 0,
     });
   }
 

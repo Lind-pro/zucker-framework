@@ -152,7 +152,7 @@ run('subscription HTTP and durable reconciliation contract', () => {
     ({ app, service } = await startApp()); owner = await member('subscriptionowner'); other = await member('subscriptionother');
   });
   afterAll(async () => {
-    try { await app?.close(); await Promise.all([database?.onModuleDestroy(), second?.onModuleDestroy()]); }
+    try { await app?.close(); await Promise.all([database?.disconnect(), second?.disconnect()]); }
     finally { if (pool) { try { await pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`); } finally { await pool.end(); } } }
   });
 

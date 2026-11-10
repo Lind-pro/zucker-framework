@@ -5,7 +5,7 @@ export { exportToExcel, exportToExcelStream } from './export.service';
 export type { ExportOptions } from './export.service';
 
 export { importFromCsv, exportToCsv } from './csv.service';
-export type { CsvImportOptions } from './csv.service';
+export type { CsvImportOptions, CsvExportOptions } from './csv.service';
 
 export {
   ExcelColumn,

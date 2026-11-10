@@ -16,6 +16,7 @@ export type {
   CreateTaskResult,
   FindExpiredTaskLeasesInput,
   FindReadyQueuedTasksInput,
+  ReadyTaskCursor,
   HeartbeatTaskInput,
   ReportTaskProgressInput,
   RecoverExpiredTaskLeaseInput,
@@ -102,6 +103,7 @@ export { InMemoryTaskOutboxRepository } from './in-memory-task-outbox';
 export { PostgresTaskOutboxRepository } from './postgres-task-outbox';
 export { TaskOutboxDispatcher } from './task-outbox-dispatcher';
 export type {
+  TaskOutboxDispatcherLogger,
   TaskOutboxDispatcherOptions,
   TaskOutboxDispatchResult,
 } from './task-outbox-dispatcher';

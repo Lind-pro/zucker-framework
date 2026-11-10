@@ -10,6 +10,7 @@ export {
 export {
   type EntityEventListener,
   type CurrentUser,
+  type CreatorEventListenerOptions,
   CreatorEventListener,
   CompositeEventListener,
 } from './entity-event-listener';
@@ -27,6 +28,8 @@ export {
   DefaultTopicEventBus,
   matchesTopic,
 } from './topic-event-bus';
+
+export { EVENT_VETO, EventVetoError, vetoEvent, isEventVeto } from './event-veto';
 
 export {
   type AsyncEvent,

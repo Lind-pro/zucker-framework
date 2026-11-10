@@ -101,6 +101,8 @@ describe('zucker ai', () => {
     await command().parseAsync(['status', 'fake-provider'], { from: 'user' });
 
     expect(await store.get('fake-provider', 'team')).not.toBeNull();
+    // login creates the table once; the read-only status command runs no DDL.
+    expect(schemaInitializations).toBe(1);
     expect(output.join('\n')).toContain('fake-provider/team');
     expect(output.join('\n')).not.toContain('secret-value');
   });
@@ -128,6 +130,7 @@ describe('zucker ai', () => {
       'fake-model',
     ], { from: 'user' });
 
+    expect(schemaInitializations).toBe(0);
     expect(output).toEqual([
       'fake-model:ok',
       'Token：输入 2，输出 1，合计 3',

@@ -144,7 +144,7 @@ run('refund cash, receipt and exact credit-hold PostgreSQL HTTP contract', () =>
     await database.model('permissions').create({ data: { id: 'billing:refund', name: 'Synthetic refund permission' } });
     await database.model('userPermissions').create({ data: { userId: admin.id, permissionId: 'billing:refund', grantType: 'grant' } });
   });
-  afterAll(async () => { try { await app?.close(); await database?.onModuleDestroy(); } finally { if (pool) { try { await pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`); } finally { await pool.end(); } } } });
+  afterAll(async () => { try { await app?.close(); await database?.disconnect(); } finally { if (pool) { try { await pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`); } finally { await pool.end(); } } } });
 
   it('enforces refund permission, origin and server-derived target identity before dispatch', async () => {
     const f = await fixture(), before = creates.length;

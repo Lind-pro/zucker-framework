@@ -40,6 +40,15 @@ describe('mask utils', () => {
       expect(scrubSensitive('jwt: eyJ.payload.sig')).toContain('[redacted]');
       expect(scrubSensitive('cookie=session=abc')).toContain('[redacted]');
     });
+    it('redacts the credential after an auth scheme and "is" phrasing', () => {
+      const bearer = scrubSensitive('Authorization: Bearer abc123SECRET')!;
+      expect(bearer).not.toContain('abc123SECRET');
+      expect(bearer).toContain('[redacted]');
+      expect(scrubSensitive('authorization=Basic dXNlcjpwYXNz')).not.toContain('dXNlcjpwYXNz');
+      expect(scrubSensitive('password is hunter2')).not.toContain('hunter2');
+      expect(scrubSensitive('cookie: a=1; sid=topsecret')).not.toContain('topsecret');
+      expect(scrubSensitive('failed with eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2ln')).not.toContain('eyJzdWIiOiIxIn0');
+    });
     it('截断超长文本', () => {
       const long = 'x'.repeat(500);
       const out = scrubSensitive(long, 100)!;

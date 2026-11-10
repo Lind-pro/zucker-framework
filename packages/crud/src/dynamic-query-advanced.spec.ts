@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import {
   DynamicQueryParamService,
@@ -264,9 +265,9 @@ describe('DynamicQueryParamService.parseSelect', () => {
   });
 
   it('includes + excludes coexist', () => {
-    const result = svc.parseSelect(['name', 'age', 'password'], ['password']);
+    const result = svc.parseSelect(['name', 'age', 'nickname'], ['nickname']);
     // includes set true first, then excludes set false — excludes wins for overlap
-    expect(result).toEqual({ name: true, age: true, password: false });
+    expect(result).toEqual({ name: true, age: true, nickname: false });
   });
 });
 
@@ -395,21 +396,17 @@ describe('DynamicQueryParamService.termsToWhere', () => {
 // DynamicQueryService — findMany
 // ---------------------------------------------------------------------------
 describe('DynamicQueryService.findMany', () => {
-  it('invalid filters JSON does not crash', async () => {
+  it('invalid filters JSON fails closed with 400 instead of returning the unfiltered set', async () => {
     const { db, modelOps } = createMockDb();
-    modelOps.count.mockResolvedValue(0);
-    modelOps.findMany.mockResolvedValue([]);
     const service = new DynamicQueryService(db, createParamService());
 
-    const result = await service.findMany('users', {
+    await expect(service.findMany('users', {
       filters: 'NOT_VALID_JSON{{{',
       page: 1,
       pageSize: 10,
-    });
-
-    // Should not crash; falls back to empty where
-    expect(modelOps.count).toHaveBeenCalledWith({ where: {} });
-    expect(result.data).toEqual([]);
+    })).rejects.toBeInstanceOf(BadRequestException);
+    expect(modelOps.count).not.toHaveBeenCalled();
+    expect(modelOps.findMany).not.toHaveBeenCalled();
   });
 
   it('parallelPager mode runs count and findMany in parallel', async () => {
@@ -519,25 +516,18 @@ describe('DynamicQueryService.findMany', () => {
       {
         page: 1,
         pageSize: 10,
-        includes: ['name', 'email', 'password'],
-        excludes: ['secret'],
+        includes: ['name', 'email', 'phone'],
+        excludes: ['note'],
       },
       undefined,
       undefined,
-      ['password', 'secret', 'token'],
+      ['phone', 'note', 'salary'],
     );
 
-    // denyFields=['password','secret','token'], excludes=['secret']
-    // merged: ['secret', 'password', 'token'] (secret already in excludes, not duplicated)
+    // Included fields minus excluded / denied ones; Prisma rejects mixed true/false-only selects.
     expect(modelOps.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        select: {
-          name: true,
-          email: true,
-          password: false, // from both includes (true) then merged excludes (false) — excludes wins
-          secret: false,
-          token: false,
-        },
+        select: { name: true, email: true },
       }),
     );
   });
@@ -556,9 +546,10 @@ describe('DynamicQueryService.findMany', () => {
       ['password'],
     );
 
+    // Excludes-only projection uses omit (an all-false select is rejected by Prisma).
     expect(modelOps.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        select: { password: false },
+        omit: { password: true },
       }),
     );
   });
@@ -658,7 +649,7 @@ describe('DynamicQueryService.findOne', () => {
 
     expect(modelOps.findUnique).toHaveBeenCalledWith({
       where: { id: '1' },
-      select: { name: true, password: false },
+      select: { name: true },
     });
   });
 

@@ -195,10 +195,17 @@ const FIND_EXPIRED_LEASES_SQL = `
 const FIND_READY_QUEUED_TASKS_SQL = `
   SELECT *
   FROM async_jobs
-  WHERE "status" = 'QUEUED'
+  WHERE (
+      "status" = 'QUEUED'
+      OR ($4::boolean AND "status" = 'RETRYING')
+    )
     AND "availableAt" <= $1
     AND "attempt" < "maxAttempts"
-  ORDER BY "availableAt" ASC, "createdAt" ASC
+    AND (
+      $5::timestamptz IS NULL
+      OR ("availableAt", "createdAt", "id") > ($5::timestamptz, $6::timestamptz, $7::text)
+    )
+  ORDER BY "availableAt" ASC, "createdAt" ASC, "id" ASC
   LIMIT $2
   OFFSET $3
 `;
@@ -424,7 +431,11 @@ export class PostgresTaskRepository<
     const result = await this.client.query<AsyncJobRow>(FIND_READY_QUEUED_TASKS_SQL, [
       input.now,
       input.limit,
-      input.offset ?? 0,
+      input.after ? 0 : (input.offset ?? 0),
+      input.includeRetrying ?? false,
+      input.after?.availableAt ?? null,
+      input.after?.createdAt ?? null,
+      input.after?.id ?? null,
     ]);
     return result.rows.map((row) => this.toTask(row));
   }

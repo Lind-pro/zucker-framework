@@ -4,6 +4,7 @@ import type { PasswordEncoder } from '../password/password-encoder.interface';
 import { PasswordValidator } from '../password/password-validator';
 import { UsernameValidator } from '../password/username-validator';
 import { BcryptEncoder } from '../password/bcrypt-encoder';
+import { TokenService } from './token.service';
 import {
   AUTH_EVENT_TOPICS,
   createUserCreatedEvent,
@@ -68,10 +69,26 @@ export class UserService {
     @Inject(DATABASE_ADAPTER) private readonly db: DatabaseAdapter,
     @Optional() @Inject(PASSWORD_ENCODER) passwordEncoder?: PasswordEncoder,
     @Optional() @Inject(TOPIC_EVENT_BUS) private readonly topicEventBus?: TopicEventBusLike,
+    /**
+     * When present, disabling, deleting or changing the password of a user revokes all of
+     * that user's access tokens (cross-process when TokenService has a shared cache).
+     */
+    @Optional() private tokenService?: TokenService,
   ) {
     this.passwordEncoder = passwordEncoder ?? new BcryptEncoder();
     this.passwordValidator = new PasswordValidator();
     this.usernameValidator = new UsernameValidator();
+  }
+
+  /** Wire session revocation for constructions that bypass DI. */
+  setTokenService(tokenService: TokenService): void {
+    this.tokenService = tokenService;
+  }
+
+  private async revokeSessions(userId: string, reason: string): Promise<void> {
+    if (!this.tokenService) return;
+    await this.tokenService.revokeUserTokens(userId);
+    this.logger.log(`Revoked sessions of user ${userId} (${reason})`);
   }
 
   /** Override the password encoder (e.g. for testing or custom schemes) */
@@ -276,6 +293,12 @@ export class UserService {
 
     const updated = { ...old, ...updateData } as UserEntity;
 
+    if (passwordChanged) {
+      await this.revokeSessions(old.id, 'password changed');
+    } else if (old.status && updateData.status === false) {
+      await this.revokeSessions(old.id, 'disabled');
+    }
+
     // Publish UserModifiedEvent
     await this.publishEvent(
       AUTH_EVENT_TOPICS.USER_MODIFIED,
@@ -315,6 +338,10 @@ export class UserService {
       } catch {
         // skip non-existent users
       }
+    }
+
+    if (!boolState) {
+      for (const userId of userIds) await this.revokeSessions(userId, 'disabled');
     }
 
     // Publish UserStateChangedEvent
@@ -378,6 +405,8 @@ export class UserService {
       where: { id: userId },
       data: { password: encodedNewPassword },
     });
+    // Every existing session, including the caller's, must re-authenticate.
+    await this.revokeSessions(userId, 'password changed');
 
     // Publish UserModifiedEvent
     await this.publishEvent(
@@ -413,6 +442,7 @@ export class UserService {
       }
       await tx.model('users').delete({ where: { id: userId } });
     });
+    await this.revokeSessions(userId, 'deleted');
 
     // Publish UserDeletedEvent
     await this.publishEvent(

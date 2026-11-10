@@ -66,5 +66,8 @@ export type {
   FlagContext,
 } from './feature-flags';
 
+export { CONFIG_CACHE_OPTIONS } from './config-cache';
+export type { ConfigCacheOptions } from './config-cache';
+
 export { ConfigFileWatcher } from './config-watcher';
 export type { ConfigWatcherOptions } from './config-watcher';

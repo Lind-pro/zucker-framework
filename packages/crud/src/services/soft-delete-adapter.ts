@@ -1,6 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { withActiveRecordWhere } from './active-record-where';
 import type { DatabaseAdapter, ModelOperations } from '@zucker-framework/core';
+import { markTransactionRoot } from '../transaction-scope';
 
 const record = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -57,8 +58,9 @@ export function activeAdapter(db: DatabaseAdapter, modelName: string): DatabaseA
       ...(groupBy ? { groupBy: (args: Record<string, unknown>) => groupBy(scope(args)) } : {}),
     };
   };
-  return {
+  // Keep the transaction root of `db` so CrudService.transaction() binds the underlying adapter.
+  return markTransactionRoot<DatabaseAdapter>({
     model: name => name === modelName ? wrap(db.model(name)) : db.model(name),
     $transaction: fn => db.$transaction(tx => fn(activeAdapter(tx, modelName))),
-  };
+  }, db);
 }

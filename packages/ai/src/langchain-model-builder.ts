@@ -6,6 +6,22 @@ export interface LangChainProviderDefaults {
   protocol: 'anthropic' | 'openai-compatible';
   baseURL?: string;
   structuredOutputMethod: 'functionCalling' | 'jsonMode';
+  /**
+   * True for providers without a known endpoint. Callers must supply a Base URL: an
+   * OpenAI-compatible client without one targets api.openai.com and would send this
+   * provider's key there.
+   */
+  requiresBaseURL?: boolean;
+}
+
+const OFFICIAL_OPENAI_PROVIDERS = new Set(['openai']);
+
+function assertEndpointForProvider(provider: string | undefined, baseURL: string | undefined): void {
+  if (!provider || baseURL?.trim()) return;
+  if (OFFICIAL_OPENAI_PROVIDERS.has(provider.toLowerCase())) return;
+  throw new Error(
+    `Provider '${provider}' requires an explicit baseURL; refusing to default to api.openai.com`,
+  );
 }
 
 /** Protocol defaults only; applications still select models, routes and endpoint overrides. */
@@ -34,7 +50,7 @@ export function getLangChainProviderDefaults(provider: string): LangChainProvide
         structuredOutputMethod: 'jsonMode',
       };
     default:
-      return { protocol: 'openai-compatible', structuredOutputMethod: 'jsonMode' };
+      return { protocol: 'openai-compatible', structuredOutputMethod: 'jsonMode', requiresBaseURL: true };
   }
 }
 
@@ -53,6 +69,11 @@ export interface LangChainChatModelOptions {
   thinking?: { enabled: boolean; reasoningEffort?: string; budgetTokens?: number };
   /** SDK v7 uses fetch, not the removed httpAgent option. */
   fetch?: typeof fetch;
+  /**
+   * Configured provider name. When set, an OpenAI-compatible model for any provider other
+   * than `openai` must have `baseURL`, so its key is never sent to the OpenAI endpoint.
+   */
+  provider?: string;
 }
 
 function validateTransport(options: { proxyUrl?: string; fetch?: typeof fetch }): void {
@@ -79,6 +100,7 @@ export async function createLangChainChatModel(
   options: LangChainChatModelOptions,
 ): Promise<BaseChatModel> {
   validateTransport(options);
+  if (options.protocol === 'openai-compatible') assertEndpointForProvider(options.provider, options.baseURL);
   if (options.protocol === 'anthropic') {
     if (options.thinking?.enabled && options.thinking.budgetTokens === undefined) throw new Error('Anthropic thinking requires budgetTokens');
     const { ChatAnthropic } = await import('@langchain/anthropic');
@@ -133,6 +155,8 @@ export interface LangChainEmbeddingOptions {
   baseURL?: string;
   timeoutMs?: number;
   proxyUrl?: string;
+  /** See {@link LangChainChatModelOptions.provider}. */
+  provider?: string;
 }
 
 export async function createLangChainEmbeddingModel(
@@ -140,6 +164,7 @@ export async function createLangChainEmbeddingModel(
 ): Promise<OpenAIEmbeddings> {
   const { OpenAIEmbeddings: Embeddings } = await import('@langchain/openai');
   validateTransport(options);
+  assertEndpointForProvider(options.provider, options.baseURL);
   return new Embeddings({
     maxRetries: options.maxRetries ?? 0,
     apiKey: options.apiKey,

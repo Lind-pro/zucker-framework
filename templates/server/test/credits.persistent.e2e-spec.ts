@@ -72,7 +72,7 @@ run('canonical credits and persistent record quota', () => {
   });
   beforeEach(async () => { await pool.query(`TRUNCATE "${schema}".quota_reservations,"${schema}".quota_usage,"${schema}".credit_account,"${schema}".credit_transaction,"${schema}".credit_lots,"${schema}".credit_operation_receipts,"${schema}".async_jobs CASCADE`); });
   afterEach(async () => { await Promise.all(hosts.splice(0).map(host => host.stop())); vi.restoreAllMocks(); });
-  afterAll(async () => { try { await Promise.all([first?.onModuleDestroy(), second?.onModuleDestroy()]); }
+  afterAll(async () => { try { await Promise.all([first?.disconnect(), second?.disconnect()]); }
     finally { try { if (pool) { try { await pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`); } finally { await pool.end(); } } }
       finally { if (directory) rmSync(directory, { recursive: true, force: true }); } } });
 

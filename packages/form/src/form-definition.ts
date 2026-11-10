@@ -47,6 +47,9 @@ export interface FormDefinition {
   layout?: FormLayout;
   description?: string;
   version?: number;
+  /** Set by the database when the table has these columns (the server template does). */
+  createdAt?: Date | string;
+  updatedAt?: Date | string;
 }
 
 /**

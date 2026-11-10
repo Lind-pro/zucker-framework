@@ -79,14 +79,25 @@ export abstract class TransactionAwareDatabaseAdapter implements DatabaseAdapter
 
   async $transaction<T>(fn: (adapter: DatabaseAdapter) => Promise<T>): Promise<T> {
     return TransactionHolder.runInTransaction(async (ctx: TransactionContext) => {
+      let result: T;
       try {
-        const result = await this.doTransaction(fn);
-        await ctx.executeAfterCommit();
-        return result;
+        result = await this.doTransaction(fn);
       } catch (error) {
         await ctx.executeAfterRollback();
         throw error;
       }
+      // The transaction is committed at this point. An afterCommit callback failure must not
+      // fire rollback compensation or report the committed transaction as failed.
+      try {
+        await ctx.executeAfterCommit();
+      } catch (error) {
+        console.error(
+          `[TransactionAwareDatabaseAdapter] afterCommit callback failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+      return result;
     });
   }
 

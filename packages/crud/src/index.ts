@@ -4,6 +4,7 @@ export {
   type IFilterOperator,
   FILTER_OPERATORS,
   FilterOperatorFactory,
+  normalizeOperatorType,
   ALL_OPERATORS,
   EqualsOperator,
   NotEqualsOperator,
@@ -36,9 +37,35 @@ export { TermExpressionParser } from './expression/term-expression-parser';
 // Dynamic Query
 export {
   type DynamicQueryParam,
+  type DynamicQueryOptions,
+  type QueryProjection,
   DynamicQueryParamService,
   DynamicQueryService,
+  normalizeDynamicQueryParam,
 } from './dynamic-query.service';
+
+// Query / write policies (secure defaults for caller-supplied input)
+export {
+  CRUD_QUERY_POLICY,
+  type CrudQueryPolicy,
+  type QueryFieldUse,
+  DEFAULT_SENSITIVE_FIELD_PATTERN,
+  DEFAULT_MAX_PAGE_SIZE,
+  DEFAULT_MAX_UNPAGED_ROWS,
+  assertQueryField,
+  assertFilterValue,
+  isSensitiveField,
+  mergeQueryPolicy,
+} from './query/query-policy';
+export {
+  type CrudWritePolicy,
+  DEFAULT_SERVER_CONTROLLED_FIELDS,
+  sanitizeWriteBody,
+  sanitizeWriteBodies,
+  assertSafeBatchWhere,
+  looksLikeNestedWrite,
+} from './write-policy';
+export { transactionScoped, runInServiceTransaction } from './transaction-scope';
 
 // QueryParamEntity（DynamicQueryParam 增强封装）
 export { QueryParamEntity } from './query/dynamic-query-param-entity';
@@ -56,7 +83,7 @@ export {
 } from './query/query-builder';
 
 // Base Service & Controller
-export { BaseService, CrudService } from './base.service';
+export { BaseService, CrudService, type CrudQueryOptions } from './base.service';
 export { BaseController, BaseControllerHost } from './base.controller';
 
 // Cache Enabled Service
@@ -91,7 +118,9 @@ export { InMemoryAdapter } from './in-memory-adapter';
 export {
   CreatorEventListener,
   type CurrentUserProvider,
+  type CreatorEventListenerOptions,
   CURRENT_USER_PROVIDER,
+  CREATOR_LISTENER_OPTIONS,
 } from './listeners/creator-event-listener';
 
 // Validate Event Listener

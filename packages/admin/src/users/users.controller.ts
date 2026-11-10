@@ -28,6 +28,9 @@ import {
   NotFoundException,
   UseGuards,
   Logger,
+  Optional,
+  Req,
+  ForbiddenException,
 } from '@nestjs/common';
 import {
   JwtAuthGuard,
@@ -41,6 +44,19 @@ import { DATABASE_ADAPTER } from '@zucker-framework/crud';
 import { type DatabaseAdapter, ValidationException } from '@zucker-framework/core';
 import type { UserEntity } from '@zucker-framework/auth';
 import { adminPage, toAdminWhere, type AdminQueryFilterOptions } from '../query-filter';
+import {
+  ADMIN_USERS_OPTIONS,
+  ADMIN_USER_HOOKS,
+  USER_CREATE_FIELDS,
+  USER_PROFILE_FIELDS,
+  USER_READABLE_FIELDS,
+  USER_SENSITIVE_FIELDS,
+  type AdminUserHooks,
+  type UsersAdminOptions,
+} from './users.options';
+
+type AdminRequest = { user?: { id?: string } } | undefined;
+type UserView = Partial<Omit<UserEntity, 'password'>>;
 
 /**
  * Filterable user fields (allow-list). Credentials, login metadata and every column added later stay
@@ -76,7 +92,13 @@ export class UsersController {
     private readonly permissionService: PermissionService,
     private readonly dimensionUserService: DimensionUserService,
     @Inject(DATABASE_ADAPTER) private readonly db: DatabaseAdapter,
-  ) {}
+    @Optional() @Inject(ADMIN_USERS_OPTIONS) options?: UsersAdminOptions,
+    @Optional() @Inject(ADMIN_USER_HOOKS) private readonly hooks?: AdminUserHooks,
+  ) {
+    this.options = options ?? {};
+  }
+
+  private readonly options: UsersAdminOptions;
 
   /**
    * POST /users/_query — 分页查询用户
@@ -84,7 +106,7 @@ export class UsersController {
    */
   @Post('_query')
   @HttpCode(HttpStatus.OK)
-  async query(@Body() body: QueryRequest): Promise<PageResult<Omit<UserEntity, 'password'>>> {
+  async query(@Body() body: QueryRequest): Promise<PageResult<UserView>> {
     const { pageIndex, pageSize } = adminPage(body);
     const filter = toAdminWhere(body.filter, USER_FILTER);
     const users = this.db.model('users');
@@ -93,7 +115,7 @@ export class UsersController {
       users.findMany({ where: filter, orderBy: [{ id: 'asc' }], skip: pageIndex * pageSize, take: pageSize }) as Promise<UserEntity[]>,
       users.count({ where: filter }),
     ]);
-    const data = page.map(({ password: _pw, ...rest }) => rest);
+    const data = page.map(user => this.view(user));
 
     return { data, total, pageIndex, pageSize };
   }
@@ -113,13 +135,12 @@ export class UsersController {
    * GET /users/:id — 查询单个用户
    */
   @Get(':id')
-  async findOne(@Param('id') id: string): Promise<Omit<UserEntity, 'password'>> {
+  async findOne(@Param('id') id: string): Promise<UserView> {
     const user = await this.userService.findById(id);
     if (!user) {
       throw new NotFoundException(`User ${id} not found`);
     }
-    const { password: _pw, ...rest } = user;
-    return rest;
+    return this.view(user);
   }
 
   /**
@@ -128,30 +149,51 @@ export class UsersController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @Permissions('users:add')
-  async create(
-    @Body() body: Partial<UserEntity> & { username: string; password: string },
-  ): Promise<Omit<UserEntity, 'password'>> {
-    const created = await this.userService.addUser(body);
-    const { password: _pw, ...rest } = created;
-    return rest;
+  async create(@Body() body: unknown, @Req() request?: AdminRequest): Promise<UserView> {
+    const input = this.writableBody(body, [...USER_CREATE_FIELDS, ...(this.options.writableFields ?? [])]);
+    if (typeof input.username !== 'string' || !input.username.trim())
+      throw new ValidationException({ username: ['Required'] }, 'Invalid user');
+    if (typeof input.password !== 'string' || !input.password)
+      throw new ValidationException({ password: ['Required'] }, 'Invalid user');
+    // The creator is the authenticated administrator, never a client-supplied value.
+    const created = await this.userService.addUser({
+      ...(input as Partial<UserEntity> & { username: string; password: string }),
+      ...(request?.user?.id ? { creatorId: request.user.id } : {}),
+    });
+    return this.view(created);
   }
 
   /**
    * PUT /users/:id — 更新用户
+   *
+   * Only allow-listed fields are written. Changing `password`, `email`, `emailVerified`, `status`
+   * or `typeId` additionally requires `users:authorize`, and accounts holding `superadmin` can only
+   * be changed by a superadmin.
    */
   @Put(':id')
   @Permissions('users:update')
   async update(
     @Param('id') id: string,
-    @Body() body: Partial<UserEntity>,
-  ): Promise<Omit<UserEntity, 'password'>> {
+    @Body() body: unknown,
+    @Req() request?: AdminRequest,
+  ): Promise<UserView> {
+    const input = this.writableBody(body, [
+      ...USER_PROFILE_FIELDS, ...USER_SENSITIVE_FIELDS, ...(this.options.writableFields ?? []),
+    ]);
     const existing = await this.userService.findById(id);
     if (!existing) {
       throw new NotFoundException(`User ${id} not found`);
     }
-    const updated = await this.userService.saveUser({ ...body, id, username: existing.username });
-    const { password: _pw, ...rest } = updated;
-    return rest;
+    await this.requireNotOutranked(request, id);
+    const sensitive = (USER_SENSITIVE_FIELDS as readonly string[]).filter(field => field in input
+      && (field === 'password' ? !!input.password : input[field] !== existing[field]));
+    if (sensitive.length) await this.requirePermission(request, 'users:authorize',
+      `Changing ${sensitive.join(', ')} requires users:authorize`);
+    const updated = await this.userService.saveUser({ ...input, id, username: existing.username });
+    if (sensitive.length && this.hooks?.sensitiveFieldsChanged) {
+      await this.hooks.sensitiveFieldsChanged({ userId: id, fields: sensitive, actorId: request?.user?.id });
+    }
+    return this.view(updated);
   }
 
   /**
@@ -160,15 +202,21 @@ export class UsersController {
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @Permissions('users:delete')
-  async remove(@Param('id') id: string): Promise<void> {
+  async remove(@Param('id') id: string, @Req() request?: AdminRequest): Promise<void> {
     await this.ensureUserExists(id);
-    // 事务保障：删除关联数据和用户本身
+    await this.requireNotOutranked(request, id);
+    // Optional table: removed outside the transaction, because a failing statement would abort a
+    // PostgreSQL transaction and make the user undeletable when the table is absent.
+    await this.db.model('dimensionUsers').deleteMany({ where: { userId: id } }).catch((error: unknown) => {
+      this.logger.debug(`dimensionUsers cleanup skipped for ${id}: ${error instanceof Error ? error.message : String(error)}`);
+    });
     await this.db.$transaction(async (tx) => {
       await tx.model('userRoles').deleteMany({ where: { userId: id } });
       await tx.model('userPermissions').deleteMany({ where: { userId: id } });
-      await tx.model('dimensionUsers').deleteMany({ where: { userId: id } }).catch(() => { /* 表可能不存在 */ });
       await tx.model('users').delete({ where: { id } });
     });
+    this.permissionService.invalidatePermissionCache(id);
+    await this.hooks?.userDeleted?.(id, request?.user?.id);
   }
 
   // ─── 用户-角色关联 ────────────
@@ -198,6 +246,7 @@ export class UsersController {
   async setUserRoles(
     @Param('id') id: string,
     @Body() body: unknown,
+    @Req() request?: AdminRequest,
   ): Promise<{ roleIds: string[] }> {
     if (!body || typeof body !== 'object' || Array.isArray(body)
       || Object.keys(body).some(key => key !== 'roleIds')
@@ -205,6 +254,7 @@ export class UsersController {
       || body.roleIds.some(roleId => typeof roleId !== 'string' || !roleId.trim()))
       throw new ValidationException({ roleIds: ['Must be an array of non-empty role identifiers'] }, 'Invalid roles');
     const roleIds = [...new Set(body.roleIds as string[])];
+    await this.requireNotOutranked(request, id);
     await this.db.$transaction(async (tx) => {
       // A same-value parent update locks this user before reading/replacing child rows.
       // Locking only existing links would allow concurrent replacements of an empty set to merge.
@@ -245,20 +295,28 @@ export class UsersController {
   @Permissions('users:authorize')
   async setUserPermissions(
     @Param('id') id: string,
-    @Body() body: { permissionIds: string[]; grantType?: string },
+    @Body() body: unknown,
+    @Req() request?: AdminRequest,
   ): Promise<{ permissionIds: string[] }> {
-    await this.ensureUserExists(id);
-    const grantType = body.grantType ?? 'direct';
+    const input = this.stringListBody(body, 'permissionIds', ['grantType']);
+    const grantType = input.extra.grantType ?? 'direct';
+    if (typeof grantType !== 'string' || !grantType.trim() || grantType.length > 64)
+      throw new ValidationException({ grantType: ['Must be a non-empty string'] }, 'Invalid permissions');
+    const permissionIds = input.values;
+    await this.requireNotOutranked(request, id);
     await this.db.$transaction(async (tx) => {
-      await tx.model('userPermissions').deleteMany({ where: { userId: id } });
-      for (const permissionId of body.permissionIds) {
+      await this.lockUser(tx, id);
+      // Replace only the links of this grant type; other grant types are managed elsewhere.
+      await tx.model('userPermissions').deleteMany({ where: { userId: id, grantType } });
+      if (grantType === 'direct') await tx.model('userPermissions').deleteMany({ where: { userId: id, grantType: null } });
+      for (const permissionId of permissionIds) {
         await tx.model('userPermissions').create({
           data: { userId: id, permissionId, grantType },
         });
       }
     });
     this.permissionService.invalidatePermissionCache(id);
-    return { permissionIds: body.permissionIds };
+    return { permissionIds };
   }
 
   // ─── 用户-维度关联 ────────────────
@@ -280,19 +338,22 @@ export class UsersController {
   @Permissions('users:authorize')
   async setUserDimensions(
     @Param('id') id: string,
-    @Body() body: { dimensionIds: string[] },
+    @Body() body: unknown,
+    @Req() request?: AdminRequest,
   ): Promise<{ dimensionIds: string[] }> {
-    await this.ensureUserExists(id);
+    const dimensionIds = this.stringListBody(body, 'dimensionIds', []).values;
+    await this.requireNotOutranked(request, id);
     await this.db.$transaction(async (tx) => {
+      await this.lockUser(tx, id);
       await tx.model('dimensionUsers').deleteMany({ where: { userId: id } });
-      for (const dimensionId of body.dimensionIds) {
+      for (const dimensionId of dimensionIds) {
         await tx.model('dimensionUsers').create({
           data: { dimensionId, userId: id },
         });
       }
     });
     this.permissionService.invalidatePermissionCache(id);
-    return { dimensionIds: body.dimensionIds };
+    return { dimensionIds };
   }
 
   // ─── 私有方法 ──────────────────────────────────────────────────────────
@@ -302,5 +363,69 @@ export class UsersController {
     if (!user) {
       throw new NotFoundException(`User ${id} not found`);
     }
+  }
+
+  /** Explicit response projection: credentials and unlisted consumer columns are never returned. */
+  private view(user: UserEntity): UserView {
+    const fields = [...USER_READABLE_FIELDS, ...(this.options.readableFields ?? [])];
+    const result: Record<string, unknown> = {};
+    for (const field of fields) {
+      if (field !== 'password' && field in user) result[field] = user[field];
+    }
+    return result as UserView;
+  }
+
+  /** Reject non-objects and any key outside the allow-list (400 names the rejected keys). */
+  private writableBody(body: unknown, allowed: readonly string[]): Record<string, unknown> {
+    if (!body || typeof body !== 'object' || Array.isArray(body))
+      throw new ValidationException({ body: ['Must be an object'] }, 'Invalid user');
+    const rejected = Object.keys(body).filter(key => key !== 'id' && key !== 'username' && !allowed.includes(key));
+    if (rejected.length)
+      throw new ValidationException(Object.fromEntries(rejected.map(key => [key, ['Field is not writable']])), 'Invalid user');
+    const input = Object.fromEntries(Object.entries(body).filter(([key]) => allowed.includes(key)));
+    for (const key of ['name', 'email', 'locale', 'typeId', 'password', 'username'])
+      if (input[key] !== undefined && input[key] !== null && typeof input[key] !== 'string')
+        throw new ValidationException({ [key]: ['Must be a string'] }, 'Invalid user');
+    for (const key of ['status', 'emailVerified'])
+      if (input[key] !== undefined && typeof input[key] !== 'boolean')
+        throw new ValidationException({ [key]: ['Must be a boolean'] }, 'Invalid user');
+    return input;
+  }
+
+  private stringListBody(body: unknown, field: string, extraKeys: string[]): { values: string[]; extra: Record<string, unknown> } {
+    if (!body || typeof body !== 'object' || Array.isArray(body)
+      || Object.keys(body).some(key => key !== field && !extraKeys.includes(key)))
+      throw new ValidationException({ [field]: ['Unexpected body'] }, 'Invalid request');
+    const record = body as Record<string, unknown>;
+    const values = record[field];
+    if (!Array.isArray(values) || values.some(value => typeof value !== 'string' || !value.trim() || value.length > 191))
+      throw new ValidationException({ [field]: ['Must be an array of non-empty identifiers'] }, 'Invalid request');
+    const extra = Object.fromEntries(extraKeys.filter(key => key in record).map(key => [key, record[key]]));
+    return { values: [...new Set(values as string[])], extra };
+  }
+
+  /** Same-value parent update: locks the user row until commit, serializing link replacements. */
+  private async lockUser(tx: DatabaseAdapter, id: string): Promise<void> {
+    const locked = await tx.model('users').updateMany({ where: { id }, data: { id } });
+    if (!locked.count) throw new NotFoundException(`User ${id} not found`);
+  }
+
+  private async isSuperadmin(userId: string): Promise<boolean> {
+    const permissions = await this.permissionService.findUserPermissions(userId);
+    return permissions.includes('superadmin') || permissions.includes('*');
+  }
+
+  /** An account holding superadmin can only be changed by a superadmin. Fails closed without an actor. */
+  private async requireNotOutranked(request: AdminRequest, targetId: string): Promise<void> {
+    if (!await this.isSuperadmin(targetId)) return;
+    const actorId = request?.user?.id;
+    if (!actorId || !await this.isSuperadmin(actorId))
+      throw new ForbiddenException('Only a superadmin can change a superadmin account');
+  }
+
+  private async requirePermission(request: AdminRequest, code: string, message: string): Promise<void> {
+    const actorId = request?.user?.id;
+    if (!actorId || !await this.permissionService.hasPermission(actorId, [code]))
+      throw new ForbiddenException(message);
   }
 }

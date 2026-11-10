@@ -59,4 +59,15 @@ describe('requestSvgRender', () => {
       ).rejects.toBeInstanceOf(SvgRenderRequestError);
     },
   );
+
+  it('bounds response size and reports invalid JSON as invalid_response', async () => {
+    await expect(requestSvgRender({
+      url: 'http://renderer.test/draw', spec: {}, maxResponseBytes: 10,
+      fetcher: async () => new Response(JSON.stringify({ svg: '<svg>' + 'x'.repeat(100) + '</svg>' })),
+    })).rejects.toMatchObject({ stage: 'invalid_response' });
+    await expect(requestSvgRender({
+      url: 'http://renderer.test/draw', spec: {},
+      fetcher: async () => new Response('not json'),
+    })).rejects.toMatchObject({ name: 'SvgRenderRequestError', stage: 'invalid_response' });
+  });
 });

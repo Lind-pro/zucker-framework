@@ -12,12 +12,15 @@ import { ConfigScopeManager } from './config-scope-manager';
 import type { ConfigScopeCustomizer } from './config-scope-manager';
 import type { ConfigEncryptor } from './config.service';
 import { LayeredConfigService } from './layered-config.service';
+import { CONFIG_CACHE_OPTIONS, type ConfigCacheOptions } from './config-cache';
 
 export interface ZuckerConfigModuleOptions {
   /** Optional encryption adapter for sensitive config values */
   encryptor?: ConfigEncryptor;
   /** Optional scope customizers to register scopes during init */
   customizers?: ConfigScopeCustomizer[];
+  /** Process-local cache policy for ConfigService and LayeredConfigService (default TTL 60 s). */
+  cache?: ConfigCacheOptions;
 }
 
 export const CONFIG_MODULE_OPTIONS = Symbol('CONFIG_MODULE_OPTIONS');
@@ -43,6 +46,10 @@ export class ZuckerConfigModule {
       ConfigScopeManager,
       LayeredConfigService,
     ];
+
+    if (options?.cache) {
+      providers.push({ provide: CONFIG_CACHE_OPTIONS, useValue: options.cache });
+    }
 
     if (options?.encryptor) {
       providers.push({
@@ -70,6 +77,11 @@ export class ZuckerConfigModule {
         {
           provide: CONFIG_ENCRYPTOR,
           useFactory: (opts: ZuckerConfigModuleOptions) => opts.encryptor ?? null,
+          inject: [CONFIG_MODULE_OPTIONS],
+        },
+        {
+          provide: CONFIG_CACHE_OPTIONS,
+          useFactory: (opts: ZuckerConfigModuleOptions) => opts.cache ?? {},
           inject: [CONFIG_MODULE_OPTIONS],
         },
         ConfigService,

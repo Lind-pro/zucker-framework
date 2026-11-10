@@ -183,3 +183,42 @@ describe('runWithTraceContext', () => {
     expect(result?.parentSpanId).toBe('z'.repeat(16));
   });
 });
+
+describe('TraceMiddleware propagation hardening', () => {
+  it('links the response traceparent to the recorded server span and validates tracestate', async () => {
+    const { TraceMiddleware: Middleware, getCurrentSpanId: currentSpanId } = await import('./trace-middleware');
+    const { TraceInterceptor } = await import('./trace-interceptor');
+    const { InMemoryTracer } = await import('./tracer');
+    const { of, lastValueFrom } = await import('rxjs');
+    const tracer = new InMemoryTracer();
+    const interceptor = new TraceInterceptor(tracer);
+    const headers: Record<string, string> = {};
+    const res = { setHeader: (name: string, value: string) => void (headers[name] = value) };
+    let inner: string | undefined;
+    await new Promise<void>((resolve) => {
+      new Middleware().use(
+        {
+          headers: {
+            traceparent: '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01',
+            tracestate: 'vendor=ok,bad\r\ninjected',
+          },
+        },
+        res,
+        () => {
+          inner = currentSpanId();
+          const request = { method: 'GET', url: '/items?token=secret', headers: {} };
+          const context = {
+            switchToHttp: () => ({ getRequest: () => request, getResponse: () => ({ statusCode: 200 }) }),
+          } as never;
+          void lastValueFrom(interceptor.intercept(context, { handle: () => of('ok') })).then(() => resolve());
+        },
+      );
+    });
+    const [span] = tracer.getSpans();
+    expect(headers.traceparent).toBe(`00-4bf92f3577b34da6a3ce929d0e0e4736-${inner}-01`);
+    expect(span.spanId).toBe(inner);
+    expect(span.parentSpanId).toBe('00f067aa0ba902b7');
+    expect(span.attributes['http.url']).toBe('/items');
+    expect(headers.tracestate).toBeUndefined();
+  });
+});

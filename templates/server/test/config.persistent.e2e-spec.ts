@@ -38,7 +38,7 @@ run('protected configuration using real PostgreSQL', () => {
     url.searchParams.set('schema', schema); scopedUrl = url.href; database = new ApplicationDatabase(scopedUrl);
   });
   afterAll(async () => {
-    try { await database?.onModuleDestroy(); }
+    try { await database?.disconnect(); }
     finally { if (pool) { try { await pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`); } finally { await pool.end(); } } }
   });
 
@@ -51,7 +51,7 @@ run('protected configuration using real PostgreSQL', () => {
     expect(JSON.stringify([stored.rows, history.rows, f.changes])).not.toContain('SYNTHETIC-PRIVATE-');
     const restarted = new ApplicationDatabase(scopedUrl);
     try { expect(await settings(restarted).service.get('synthetic-connections', 'apiKey')).toBe('SYNTHETIC-PRIVATE-CURRENT'); }
-    finally { await restarted.onModuleDestroy(); }
+    finally { await restarted.disconnect(); }
   });
 
   it('keeps storage, cache and events at the old value after a later batch write fails', async () => {

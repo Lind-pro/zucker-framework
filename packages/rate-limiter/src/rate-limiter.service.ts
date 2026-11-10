@@ -31,6 +31,13 @@ export interface LimiterConfig {
 export interface RateLimiterRedisOptions {
   url: string;
   commandTimeoutMs?: number;
+  /**
+   * Initial delay before retrying a failed start-up connection. Retries back off
+   * exponentially up to `maxReconnectIntervalMs`. Defaults to `circuitBreakerMs` (5s).
+   */
+  reconnectIntervalMs?: number;
+  /** Upper bound for the start-up reconnect backoff. Defaults to 60s. */
+  maxReconnectIntervalMs?: number;
   createClient?: (url: string, options: RedisOptions) => Redis | Promise<Redis>;
 }
 
@@ -85,6 +92,8 @@ export class RateLimiterService implements OnModuleInit, OnModuleDestroy {
   private redisResetPending = false;
   private shuttingDown = false;
   private initialization?: Promise<void>;
+  private reconnectTimer?: ReturnType<typeof setTimeout>;
+  private reconnectAttempt = 0;
   private readonly onRedisError = (error: unknown) => this.markRedisDegraded('error', error);
   private readonly onRedisClose = () => this.markRedisDegraded('close');
   private readonly onRedisReady = () => {
@@ -108,32 +117,7 @@ export class RateLimiterService implements OnModuleInit, OnModuleDestroy {
       this.useRedis = true;
       this.observeRedis();
     } else if (this.options.redis) {
-      try {
-        const { url, createClient, commandTimeoutMs } = this.options.redis;
-        const create = createClient ?? (async (address: string, options: RedisOptions) => {
-          const { default: Redis } = await import('ioredis');
-          return new Redis(address, options);
-        });
-        this.redisClient = await create(url, {
-          maxRetriesPerRequest: 3,
-          commandTimeout: commandTimeoutMs ?? 500,
-          lazyConnect: true,
-          enableOfflineQueue: false,
-          autoResendUnfulfilledCommands: false,
-        });
-        if (this.shuttingDown) {
-          this.redisClient.disconnect(false);
-          this.redisClient = null;
-          return;
-        }
-        this.observeRedis();
-        await this.redisClient.connect();
-        this.useRedis = true;
-      } catch (error) {
-        this.markRedisDegraded('initial-connect', error);
-        this.redisClient?.disconnect(false);
-        this.redisClient = null;
-      }
+      await this.connectManagedRedis();
     }
     if (this.shuttingDown) return;
 
@@ -144,38 +128,106 @@ export class RateLimiterService implements OnModuleInit, OnModuleDestroy {
         );
         continue;
       }
-
-      const opts: IRateLimiterOptions = {
-        points: config.points,
-        duration: config.duration,
-        blockDuration: config.blockDuration ?? config.duration,
-      };
-
-      const insurance = new RateLimiterMemory(opts);
+      const insurance = new RateLimiterMemory(this.limiterOptions(config));
       this.insuranceLimiters.set(name, insurance);
-      if (this.useRedis) {
-        this.limiters.set(
-          name,
-          new RateLimiterRedis({
-            ...opts,
-            storeClient: this.redisClient,
-            rejectIfRedisNotReady: true,
-            keyPrefix: config.keyPrefix ?? `rl:${name}:`,
-          }),
-        );
-      } else {
-        this.limiters.set(name, insurance);
-      }
+      this.limiters.set(name, insurance);
     }
+    if (this.useRedis) this.attachRedisLimiters();
 
     this.logger.log(
       `RateLimiterService 初始化完成 (${this.useRedis ? 'Redis' : 'Memory'}), ${this.limiters.size} 个限流器`,
     );
   }
 
+  private limiterOptions(config: LimiterConfig): IRateLimiterOptions {
+    return {
+      points: config.points,
+      duration: config.duration,
+      blockDuration: config.blockDuration ?? config.duration,
+    };
+  }
+
+  /** Swap every configured limiter's primary to Redis; insurance limiters stay in memory. */
+  private attachRedisLimiters(): void {
+    for (const name of this.insuranceLimiters.keys()) {
+      const config = this.options.limiters[name];
+      this.limiters.set(name, new RateLimiterRedis({
+        ...this.limiterOptions(config),
+        storeClient: this.redisClient,
+        rejectIfRedisNotReady: true,
+        keyPrefix: config.keyPrefix ?? `rl:${name}:`,
+      }));
+    }
+  }
+
+  /**
+   * Connect the internally owned client. A failed start-up connection no longer degrades the
+   * process to memory limits for its whole lifetime: a background retry with exponential
+   * backoff keeps trying and switches the limiters to Redis once a connection succeeds.
+   */
+  private async connectManagedRedis(): Promise<boolean> {
+    const { url, createClient, commandTimeoutMs } = this.options.redis!;
+    let client: Redis | null = null;
+    try {
+      const create = createClient ?? (async (address: string, options: RedisOptions) => {
+        const { default: Redis } = await import('ioredis');
+        return new Redis(address, options);
+      });
+      client = await create(url, {
+        maxRetriesPerRequest: 3,
+        commandTimeout: commandTimeoutMs ?? 500,
+        lazyConnect: true,
+        enableOfflineQueue: false,
+        autoResendUnfulfilledCommands: false,
+      });
+      if (this.shuttingDown) {
+        client.disconnect(false);
+        return false;
+      }
+      this.redisClient = client;
+      this.observeRedis();
+      await client.connect();
+      if (this.shuttingDown) return false;
+      this.useRedis = true;
+      this.reconnectAttempt = 0;
+      return true;
+    } catch (error) {
+      this.markRedisDegraded('initial-connect', error);
+      if (client) {
+        client.removeListener?.('error', this.onRedisError);
+        client.removeListener?.('close', this.onRedisClose);
+        client.removeListener?.('ready', this.onRedisReady);
+        client.disconnect(false);
+      }
+      this.redisClient = null;
+      this.scheduleRedisReconnect();
+      return false;
+    }
+  }
+
+  private scheduleRedisReconnect(): void {
+    if (this.shuttingDown || this.reconnectTimer) return;
+    const base = this.options.redis?.reconnectIntervalMs ?? this.options.circuitBreakerMs ?? 5_000;
+    const max = this.options.redis?.maxReconnectIntervalMs ?? 60_000;
+    const delay = Math.min(max, base * 2 ** Math.min(this.reconnectAttempt, 16));
+    this.reconnectAttempt++;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = undefined;
+      void this.connectManagedRedis().then(connected => {
+        if (!connected || this.shuttingDown) return;
+        this.attachRedisLimiters();
+        this.markRedisRecovered();
+        this.logger.log('Redis rate limiter connected after start-up failure; distributed limits enabled');
+      });
+    }, delay);
+    this.reconnectTimer.unref?.();
+  }
+
   onModuleDestroy(): void {
     if (this.shuttingDown) return;
     this.shuttingDown = true;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = undefined;
     this.redisResetPending = false;
     this.redisClient?.removeListener?.('error', this.onRedisError);
     this.redisClient?.removeListener?.('close', this.onRedisClose);
@@ -406,9 +458,11 @@ export class RateLimiterService implements OnModuleInit, OnModuleDestroy {
   private getLimiter(limiterName: string): RateLimiterUnion {
     const limiter = this.limiters.get(limiterName);
     if (!limiter) {
-      throw new NotFoundException(
-        `限流器 '${limiterName}' 不存在 (可用: ${this.getLimiterNames().join(', ')})`,
+      // Do not echo configured limiter names to clients; log them server-side only.
+      this.logger.error(
+        `Unknown rate limiter '${limiterName}' (configured: ${this.getLimiterNames().join(', ') || 'none'})`,
       );
+      throw new NotFoundException(`限流器 '${limiterName}' 不存在`);
     }
     return limiter;
   }

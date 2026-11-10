@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { SubscribeFeature } from './subscribe.decorator';
+import { isEventVeto } from './event-veto';
 
 /**
  * Event handler function that receives a TopicPayload.
@@ -178,11 +179,34 @@ export class DefaultTopicEventBus implements TopicEventBus {
   private readonly logger = new Logger(DefaultTopicEventBus.name);
   private handlersByPattern = new Map<string, PrioritizedHandler[]>();
 
+  /**
+   * Dispatch to every matching subscriber in priority order.
+   * Ordinary subscriber errors are logged and isolated; errors marked with `vetoEvent()` stop the
+   * dispatch and are re-thrown so the publisher can abort (fail closed).
+   */
   async publish(topic: string, payload: unknown, headers?: Record<string, unknown>): Promise<void> {
+    await this.dispatch(topic, payload, headers, false);
+  }
+
+  /**
+   * Dispatch to every matching subscriber and re-throw subscriber failures after all have run
+   * (the single error, or an AggregateError when several failed). Vetoes still stop immediately.
+   */
+  async publishStrict(topic: string, payload: unknown, headers?: Record<string, unknown>): Promise<void> {
+    await this.dispatch(topic, payload, headers, true);
+  }
+
+  private async dispatch(
+    topic: string,
+    payload: unknown,
+    headers: Record<string, unknown> | undefined,
+    strict: boolean,
+  ): Promise<void> {
     if (!topic) {
       throw new Error('Topic must not be empty');
     }
     const topicPayload = createTopicPayload(topic, payload, headers);
+    const failures: unknown[] = [];
 
     // 收集匹配此 topic 的所有 pattern 下的 handler，按优先级排序后执行
     const matchingHandlers: PrioritizedHandler[] = [];
@@ -200,14 +224,19 @@ export class DefaultTopicEventBus implements TopicEventBus {
       try {
         await handler(topicPayload);
       } catch (error) {
+        if (isEventVeto(error)) throw error;
         // 订阅者异常不应影响主流程和其他订阅者
         // 隔离单个事件处理器的错误
         const errorMsg = error instanceof Error ? error.message : String(error);
         this.logger.error(
           `Subscriber error on topic "${topic}": ${errorMsg}`,
+          error instanceof Error ? error.stack : undefined,
         );
+        if (strict) failures.push(error);
       }
     }
+    if (failures.length === 1) throw failures[0];
+    if (failures.length > 1) throw new AggregateError(failures, `${failures.length} subscribers failed on "${topic}"`);
   }
 
   subscribe(
@@ -322,7 +351,7 @@ export function matchesTopic(pattern: string, topic: string): boolean {
 
   const patternParts = pattern.split('/');
   const topicParts = topic.split('/');
-  const result = matchParts(patternParts, 0, topicParts, 0);
+  const result = matchParts(patternParts, 0, topicParts, 0, new Set());
 
   // Evict oldest entry if cache is full
   if (matchCache.size >= MATCH_CACHE_MAX_SIZE) {
@@ -337,14 +366,19 @@ export function matchesTopic(pattern: string, topic: string): boolean {
 function matchParts(
   pattern: string[], pi: number,
   topic: string[], ti: number,
+  failed: Set<number>,
 ): boolean {
   while (pi < pattern.length && ti < topic.length) {
     if (pattern[pi] === '**') {
       // ** 匹配零个或多个级别
       if (pi === pattern.length - 1) return true;
+      // Memoize failed (pi, ti) states so several '**' segments stay polynomial.
+      const key = pi * (topic.length + 1) + ti;
+      if (failed.has(key)) return false;
       for (let i = ti; i <= topic.length; i++) {
-        if (matchParts(pattern, pi + 1, topic, i)) return true;
+        if (matchParts(pattern, pi + 1, topic, i, failed)) return true;
       }
+      failed.add(key);
       return false;
     }
     if (pattern[pi] === '*') {

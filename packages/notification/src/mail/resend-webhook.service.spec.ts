@@ -89,6 +89,15 @@ describe('ResendWebhookService', () => {
       expect(suppress).not.toHaveBeenCalled();
     });
 
+    it('does not suppress bounces without a permanent type or with several recipients', async () => {
+      await service.handleEvent({ type: 'email.bounced', data: { to: ['a@x.com'] } });
+      await service.handleEvent({
+        type: 'email.bounced',
+        data: { to: ['a@x.com', 'b@x.com'], bounce: { type: 'Permanent' } },
+      });
+      expect(suppress).not.toHaveBeenCalled();
+    });
+
     it('其它事件（delivered）→ 不处理', async () => {
       await service.handleEvent({ type: 'email.delivered', data: { to: ['ok@x.com'] } });
       expect(suppress).not.toHaveBeenCalled();

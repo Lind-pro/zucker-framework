@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { NextIntlClientProvider } from "next-intl";
 import { getMessages, getTranslations } from "next-intl/server";
 import { notFound } from "next/navigation";
+import { headers } from "next/headers";
 import { Toaster } from "sonner";
 import { routing } from "@/i18n/routing";
 import { Header } from "@/components/Header";
@@ -41,10 +42,16 @@ export default async function LocaleLayout({
     notFound();
   }
 
-  const messages = await getMessages();
-  const site = await readSiteSettings(locale);
+  // Independent reads run concurrently so an API outage costs one timeout, not the sum of them.
+  const [messages, site, integrations, requestHeaders] = await Promise.all([
+    getMessages(),
+    readSiteSettings(locale),
+    readSafeSiteIntegrations(),
+    headers(),
+  ]);
   const theme = resolveSiteTheme(site.theme, ['default']);
-  const integrations = await readSafeSiteIntegrations();
+  // Set by src/proxy.ts when a nonce-based CSP is enabled; undefined otherwise.
+  const nonce = requestHeaders.get("x-nonce") ?? undefined;
 
   return (
     <html lang={locale} suppressHydrationWarning>
@@ -55,8 +62,8 @@ export default async function LocaleLayout({
           <main className="flex-1">{children}</main>
           <Footer site={site} locale={locale} />
           <Toaster position="top-right" richColors />
-          <SiteAnalytics config={integrations.analytics} />
-          <SiteConnections config={integrations.connections} />
+          <SiteAnalytics config={integrations.analytics} nonce={nonce} />
+          <SiteConnections config={integrations.connections} nonce={nonce} />
           </div></SiteTheme>
         </NextIntlClientProvider>
       </body>

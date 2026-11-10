@@ -59,8 +59,22 @@ export class BullMqQueueProvider implements QueueProvider {
       if (state !== 'completed' && state !== 'failed') {
         return this.toJob(existing as BullMqJob<T>);
       }
-      await existing.remove();
+      try {
+        await existing.remove();
+      } catch (error) {
+        // A concurrent ensure() may have already replaced (or a worker locked) the job.
+        // Re-read and accept a live replacement instead of failing the caller.
+        const current = await queue.getJob(options.jobId);
+        if (current) {
+          const currentState = await current.getState();
+          if (currentState !== 'completed' && currentState !== 'failed') {
+            return this.toJob(current as BullMqJob<T>);
+          }
+          throw error;
+        }
+      }
     }
+    // BullMQ add() with an existing jobId returns the existing job rather than duplicating it.
     return this.add(queueName, data, options);
   }
 

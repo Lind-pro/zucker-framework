@@ -268,6 +268,12 @@ export interface NotifyMessage {
   variables: Record<string, unknown>;
   subject?: string;
   content?: string;
+  /**
+   * Recipient addresses for fallback channels. Addresses are channel-specific (an e-mail address
+   * is not a phone number), so `CompositeNotifierService` only degrades to another channel when
+   * the recipients for that channel are given here.
+   */
+  fallbackRecipients?: Partial<Record<NotifyChannel, string | string[]>>;
 }
 
 /**
@@ -380,4 +386,21 @@ export interface VariableSource {
   type: 'fixed' | 'upper' | 'relation';
   key: string;
   value: string;
+}
+
+/**
+ * Thrown by a provider when only part of a multi-recipient send failed. `failedRecipients` lists the
+ * recipients that did NOT receive the message so a fallback retries only those.
+ */
+export class PartialNotificationDeliveryError extends Error {
+  readonly code = 'NOTIFICATION_PARTIAL_DELIVERY';
+
+  constructor(
+    message: string,
+    readonly failedRecipients: string[],
+    readonly deliveredCount: number,
+  ) {
+    super(message);
+    this.name = 'PartialNotificationDeliveryError';
+  }
 }

@@ -90,6 +90,22 @@ export class NotifierEventDispatcher implements Notifier {
     try {
       const result = await this.target.send(message);
 
+      // Built-in notifiers report failures as `{ success: false }` rather than throwing.
+      if (!result.success) {
+        await this.emitEvent({
+          success: false,
+          errorType: 'NotifyResultFailure',
+          errorCode: 'NOTIFICATION_FAILED',
+          notifierId: this.notifierId,
+          channel: this.channel,
+          provider: this.provider,
+          templateId: message.templateId,
+          recipientCount,
+          timestamp: new Date(),
+        });
+        return result;
+      }
+
       // Emit success event
       await this.emitEvent({
         success: true,

@@ -131,6 +131,13 @@ export interface HostedCheckoutOptions {
    * fulfill port must still recheck persisted delivery restrictions under its own locks.
    */
   prepareFulfillment?(order: Readonly<HostedCheckoutOrder>, observation: Readonly<HostedCheckoutObservation>): Promise<void>;
+  /**
+   * Called when a provider reports paid money that differs from the frozen offer (for example a
+   * tax-exclusive Creem price charged with tax). The order is NOT fulfilled and reconciliation
+   * still throws `verification_failed`; use this to persist the case for refund or review.
+   * May run on every reconciliation of that order; make it idempotent. Must not dispatch refunds.
+   */
+  onPaymentMismatch?(order: Readonly<HostedCheckoutOrder>, observation: Readonly<HostedCheckoutObservation>): Promise<void> | void;
   now?: () => Date;
 }
 

@@ -1,5 +1,5 @@
 import { Injectable, Inject, Logger } from '@nestjs/common';
-import type { DatabaseAdapter } from '@zucker-framework/core';
+import { ValidationException, type DatabaseAdapter } from '@zucker-framework/core';
 import type { FormDefinition, FieldDefinition } from './form-definition';
 import { FieldTypeRegistry } from './field-type';
 
@@ -11,13 +11,29 @@ export interface FormValidationResult {
 }
 
 /** Compiled regex cache to avoid re-compiling the same pattern in validation loops */
-const regexCache = new Map<string, RegExp>();
+const regexCache = new Map<string, RegExp | null>();
 const REGEX_CACHE_MAX_SIZE = 256;
+/** Stored patterns are admin-supplied; bound their size and the size of the tested value. */
+export const FORM_PATTERN_MAX_LENGTH = 512;
+export const FORM_PATTERN_MAX_INPUT_LENGTH = 10_000;
+/** A quantified group that itself ends in a quantifier, e.g. `(a+)+`, `(\w*)*`, `(x|y+){2,}`. */
+const NESTED_QUANTIFIER = /\((?:[^()\\]|\\.)*[+*}]\)\s*(?:[+*]|\{\d+,?\d*\})/;
 
-function getCachedRegex(pattern: string): RegExp {
-  let regex = regexCache.get(pattern);
-  if (regex) return regex;
-  regex = new RegExp(pattern);
+/**
+ * Compiles a stored validator pattern, or returns null when it is invalid, too long or has a nested
+ * quantifier (catastrophic backtracking would block the event loop on every submission).
+ */
+export function compileFormPattern(pattern: unknown): RegExp | null {
+  if (typeof pattern !== 'string') return null;
+  if (regexCache.has(pattern)) return regexCache.get(pattern)!;
+  let regex: RegExp | null = null;
+  if (pattern.length <= FORM_PATTERN_MAX_LENGTH && !NESTED_QUANTIFIER.test(pattern)) {
+    try {
+      regex = new RegExp(pattern);
+    } catch {
+      regex = null;
+    }
+  }
   if (regexCache.size >= REGEX_CACHE_MAX_SIZE) {
     const firstKey = regexCache.keys().next().value!;
     regexCache.delete(firstKey);
@@ -26,17 +42,22 @@ function getCachedRegex(pattern: string): RegExp {
   return regex;
 }
 
+/** How long a form definition stays cached per instance; other replicas see updates after this. */
+const FORM_CACHE_TTL_MS = 30_000;
+
 @Injectable()
 export class FormService {
   private readonly logger = new Logger(FormService.name);
-  private readonly cache = new Map<string, FormDefinition>();
+  private readonly cache = new Map<string, { form: FormDefinition; expiresAt: number }>();
 
   constructor(
     @Inject(DATABASE_ADAPTER) private readonly db: DatabaseAdapter,
   ) {}
 
   async findById(id: string): Promise<FormDefinition | null> {
-    if (this.cache.has(id)) return this.cache.get(id)!;
+    const cached = this.cache.get(id);
+    if (cached && cached.expiresAt > Date.now()) return cached.form;
+    this.cache.delete(id);
 
     const record = await this.db.model('formDefinition').findUnique({
       where: { id },
@@ -45,7 +66,7 @@ export class FormService {
     if (!record) return null;
 
     const form = record as unknown as FormDefinition;
-    this.cache.set(id, form);
+    this.cache.set(id, { form, expiresAt: Date.now() + FORM_CACHE_TTL_MS });
     return form;
   }
 
@@ -54,6 +75,7 @@ export class FormService {
   }
 
   async create(form: FormDefinition): Promise<FormDefinition> {
+    assertValidPatterns(form.fields);
     const result = await this.db.model('formDefinition').create({
       data: form as unknown as Record<string, unknown>,
     });
@@ -65,6 +87,7 @@ export class FormService {
     id: string,
     data: Partial<FormDefinition>,
   ): Promise<FormDefinition> {
+    if (data.fields) assertValidPatterns(data.fields);
     const result = await this.db.model('formDefinition').update({
       where: { id },
       data: data as unknown as Record<string, unknown>,
@@ -172,8 +195,12 @@ export class FormService {
         break;
       case 'pattern':
         if (typeof value === 'string' && params?.pattern) {
-          const regex = getCachedRegex(params.pattern as string);
-          if (!regex.test(value)) return `Does not match pattern`;
+          const regex = compileFormPattern(params.pattern);
+          if (!regex) {
+            this.logger.warn('Form validator pattern is invalid or unsafe; value rejected');
+            return `Does not match pattern`;
+          }
+          if (value.length > FORM_PATTERN_MAX_INPUT_LENGTH || !regex.test(value)) return `Does not match pattern`;
         }
         break;
     }
@@ -229,4 +256,16 @@ export class FormService {
   clearCache(): void {
     this.cache.clear();
   }
+}
+
+function assertValidPatterns(fields: FieldDefinition[] | undefined): void {
+  const errors: Record<string, string[]> = {};
+  for (const field of fields ?? []) {
+    for (const validator of field.validators ?? []) {
+      if (validator.type === 'pattern' && !compileFormPattern(validator.params?.pattern)) {
+        (errors[field.key] ??= []).push('Validator pattern is invalid, too long or has nested quantifiers');
+      }
+    }
+  }
+  if (Object.keys(errors).length) throw new ValidationException(errors, 'Invalid form validator pattern');
 }

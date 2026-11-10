@@ -2,13 +2,30 @@ import type { StorageModuleOptions } from '@zucker-framework/storage';
 
 export const MAX_FILE_BYTES = 10 * 1024 * 1024;
 export const FILES_OPTIONS = Symbol('FILES_OPTIONS');
-export interface FilesOptions { maxObjectBytes: number }
+/** Per-owner storage defaults: 1 GiB and 1000 live (non-deleted) files. */
+export const DEFAULT_OWNER_MAX_BYTES = 1024 * 1024 * 1024;
+export const DEFAULT_OWNER_MAX_FILES = 1000;
+export interface FilesOptions {
+  maxObjectBytes: number;
+  /** Total bytes of an owner's non-deleted files (uploads, imports and avatars). Defaults to 1 GiB. */
+  maxOwnerBytes?: number;
+  /** Number of an owner's non-deleted files. Defaults to 1000. */
+  maxOwnerFiles?: number;
+}
+
+function positiveInteger(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
+  const value = env[name] === undefined || env[name] === '' ? fallback : Number(env[name]);
+  if (!Number.isSafeInteger(value) || value < 1) throw new Error(`${name} must be a positive integer`);
+  return value;
+}
 
 export function filesOptionsFromEnvironment(env: NodeJS.ProcessEnv): FilesOptions {
   const maxObjectBytes = env.FILES_MAX_BYTES === undefined ? MAX_FILE_BYTES : Number(env.FILES_MAX_BYTES);
   if (!Number.isSafeInteger(maxObjectBytes) || maxObjectBytes < 1 || maxObjectBytes > MAX_FILE_BYTES)
     throw new Error('FILES_MAX_BYTES must be a positive integer no greater than 10485760');
-  return { maxObjectBytes };
+  const maxOwnerBytes = positiveInteger(env, 'FILES_OWNER_MAX_BYTES', DEFAULT_OWNER_MAX_BYTES);
+  if (maxOwnerBytes < maxObjectBytes) throw new Error('FILES_OWNER_MAX_BYTES must be at least FILES_MAX_BYTES');
+  return { maxObjectBytes, maxOwnerBytes, maxOwnerFiles: positiveInteger(env, 'FILES_OWNER_MAX_FILES', DEFAULT_OWNER_MAX_FILES) };
 }
 
 function required(env: NodeJS.ProcessEnv, name: string): string {

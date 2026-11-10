@@ -26,6 +26,7 @@ import type {
 } from '../payment-contract';
 import type { SettlementState } from '../settlement';
 import { toMinorUnits } from '../money';
+import { PaymentRejectedError } from '../rejection';
 
 /**
  * PayPal Orders v2 适配器。
@@ -118,6 +119,15 @@ export function createPayPalAdapter(options: PayPalAdapterOptions): PaymentProvi
     };
   };
 
+  const refundStateOf = async (orderId: string): Promise<SettlementState> => {
+    const payment = await transport.getOrder({ id: orderId });
+    if (payment.raw.id !== orderId) return 'unknown';
+    const captures = payment.raw.purchaseUnits?.flatMap((unit) => unit.payments?.captures ?? []) ?? [];
+    if (captures.length !== 1) return 'unknown';
+    const status = captures[0]?.status;
+    return status === 'REFUNDED' ? 'refunded' : status === 'PARTIALLY_REFUNDED' ? 'partially_refunded' : 'unknown';
+  };
+
   return {
     id: 'paypal',
     supportedCurrencies: PAYPAL_SUPPORTED_CURRENCIES,
@@ -172,7 +182,7 @@ export function createPayPalAdapter(options: PayPalAdapterOptions): PaymentProvi
       // a capture ID, resolved by a read; never send the order ID to /captures/:id/refund.
       const payment = await transport.getOrder({ id: input.providerRef });
       if (payment.raw.id !== input.providerRef)
-        throw new Error('PayPal order reference does not match');
+        throw new PaymentRejectedError('PayPal order reference does not match');
       const captures =
         payment.raw.purchaseUnits?.flatMap((unit) => unit.payments?.captures ?? []) ?? [];
       const settled = captures.filter((capture) =>
@@ -185,7 +195,7 @@ export function createPayPalAdapter(options: PayPalAdapterOptions): PaymentProvi
         !capture?.id ||
         !['COMPLETED', 'PARTIALLY_REFUNDED'].includes(capture.status ?? '')
       ) {
-        throw new Error('PayPal order must identify one refundable capture');
+        throw new PaymentRejectedError('PayPal order must identify one refundable capture');
       }
       const currency = capture.amount?.currencyCode,
         amount = capture.amount?.value;
@@ -196,17 +206,17 @@ export function createPayPalAdapter(options: PayPalAdapterOptions): PaymentProvi
           currency as (typeof PAYPAL_SUPPORTED_CURRENCIES)[number],
         )
       ) {
-        throw new Error('PayPal capture amount is unavailable');
+        throw new PaymentRejectedError('PayPal capture amount is unavailable');
       }
       const unitCurrency = ['JPY', 'HUF', 'TWD'].includes(currency) ? 'JPY' : 'USD';
       const capturedAmount = toMinorUnits(amount, unitCurrency);
-      if (capturedAmount <= 0) throw new Error('PayPal capture amount must be positive');
+      if (capturedAmount <= 0) throw new PaymentRejectedError('PayPal capture amount must be positive');
       if (input.money !== undefined) {
         if (!input.money || input.money.currency !== currency)
-          throw new Error('PayPal refund currency does not match the capture');
+          throw new PaymentRejectedError('PayPal refund currency does not match the capture');
         const requested = toMinorUnits(input.money.amount, unitCurrency);
         if (requested <= 0 || requested > capturedAmount)
-          throw new Error('PayPal refund amount exceeds the capture or is not positive');
+          throw new PaymentRejectedError('PayPal refund amount exceeds the capture or is not positive');
       }
       const refund = await transport.refundCapture(
         capture.id,
@@ -253,16 +263,19 @@ export function createPayPalAdapter(options: PayPalAdapterOptions): PaymentProvi
       };
       const type = event.event_type ?? 'unknown';
       const providerRef = event.resource?.supplementary_data?.related_ids?.order_id;
-      const state: SettlementState =
+      let state: SettlementState =
         type === 'PAYMENT.CAPTURE.COMPLETED'
           ? 'captured'
           : type === 'PAYMENT.CAPTURE.DENIED' || type === 'PAYMENT.CAPTURE.DECLINED'
             ? 'failed'
-            : type === 'PAYMENT.CAPTURE.REFUNDED'
+            : type === 'PAYMENT.CAPTURE.REVERSED'
               ? 'refunded'
-              : type === 'PAYMENT.CAPTURE.REVERSED'
-                ? 'refunded'
-                : 'unknown';
+              : 'unknown';
+      if (type === 'PAYMENT.CAPTURE.REFUNDED') {
+        // The resource is one refund, possibly partial. Only the capture's own status tells
+        // whether the payment is fully refunded, so re-read the order instead of guessing.
+        state = providerRef ? await refundStateOf(providerRef) : 'unknown';
+      }
       return { type, providerRef, state, raw: event };
     },
   };

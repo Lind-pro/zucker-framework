@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { WebhookRequest } from '../contract/payment-contract';
+import { isDefinitePaymentRejection } from '../contract/rejection';
 import type { OrderPersistence } from '../order-persistence';
 import {
   HostedCheckoutError, type HostedCheckoutAdapter, type HostedCheckoutObservation,
@@ -88,10 +89,22 @@ export class HostedCheckoutService {
     });
     if (!claimed) return this.load(order.id);
     order = { ...order, creationState: 'submitting', revision: order.revision + 1 };
-    // Any exception after this point leaves a durable unknown dispatch. Never retry create automatically.
+    // Any unknown exception after this point leaves a durable unknown dispatch. Never retry create automatically.
     const providerOrder = structuredClone(order);
     delete providerOrder.offer.fulfillmentData;
-    const observed = await provider.create(providerOrder);
+    let observed: HostedCheckoutObservation;
+    try {
+      observed = await provider.create(providerOrder);
+    } catch (error) {
+      // A definite provider rejection (4xx validation) created nothing: release the claim so the
+      // same order ID can be dispatched again (with the same idempotency key) instead of being parked.
+      if (isDefinitePaymentRejection(error)) {
+        await store.compareAndSet(order.id, { revision: order.revision, creationState: 'submitting', checkoutId: null }, {
+          creationState: 'prepared', revision: order.revision + 1, updatedAt: this.now(),
+        }).catch(() => false);
+      }
+      throw error;
+    }
     this.verify(order, observed, false);
     // Reject a known catalog/configuration mismatch before releasing a payable URL.
     // A settled checkout may report zero outstanding money; its actual paid money is checked on reconciliation.
@@ -137,7 +150,50 @@ export class HostedCheckoutService {
     }, { captureState: 'submitting', revision: order.revision + 1, updatedAt: this.now() });
     if (!claimed) return this.load(order.id);
     order = { ...order, captureState: 'submitting', revision: order.revision + 1 };
-    return this.reconcile(order, await provider.capture(checkoutId, order.captureKey));
+    let captured: HostedCheckoutObservation;
+    try {
+      captured = await provider.capture(checkoutId, order.captureKey);
+    } catch (error) {
+      // e.g. PayPal 422 INSTRUMENT_DECLINED: the buyer may fix the instrument and capture again.
+      // The claim is released only after a read-only check shows nothing was captured.
+      if (isDefinitePaymentRejection(error)) await this.resetDispatch(order.id).catch(() => undefined);
+      throw error;
+    }
+    return this.reconcile(order, captured);
+  }
+
+  /**
+   * Operator/consumer escape hatch for a dispatch claim parked by an exception.
+   *
+   * - Capture claim: re-reads the checkout (read-only). A paid checkout is reconciled; a checkout
+   *   that is verifiably not captured (`requires_capture` / `pending` / `unpaid`) returns to
+   *   `captureState: 'idle'` so `capture()` may run again. An unknown observation keeps the claim.
+   * - Creation claim without a known checkout ID: returns to `prepared`, so the next `create()`
+   *   dispatches again with the SAME idempotency key. Call this only for providers with request
+   *   idempotency (Stripe, PayPal) or after confirming in the provider that no checkout exists.
+   */
+  async resetDispatch(orderId: string): Promise<HostedCheckoutOrder> {
+    const order = await this.load(orderId);
+    if (order.fulfilledAt) return order;
+    const store = this.options.persistence.orders;
+    const provider = this.boundProvider(order);
+    if (order.captureState === 'submitting' && order.checkoutId) {
+      const observed = await provider.retrieve(order.checkoutId);
+      this.verify(order, observed, true);
+      if (observed.state === 'paid') return this.reconcile(order, observed);
+      if (observed.state === 'unknown') throw new HostedCheckoutError('conflict', 'Capture outcome is still unknown; retry later');
+      await store.compareAndSet(order.id, { revision: order.revision, captureState: 'submitting', fulfilledAt: null }, {
+        captureState: 'idle', state: observed.state, revision: order.revision + 1, updatedAt: this.now(),
+      });
+      return this.load(order.id);
+    }
+    if (order.creationState === 'submitting' && !order.checkoutId) {
+      await store.compareAndSet(order.id, { revision: order.revision, creationState: 'submitting', checkoutId: null }, {
+        creationState: 'prepared', revision: order.revision + 1, updatedAt: this.now(),
+      });
+      return this.load(order.id);
+    }
+    return order;
   }
 
   /** Authenticity precedes lookup. Verified event payloads are not payment evidence. */
@@ -167,6 +223,9 @@ export class HostedCheckoutService {
     const paid = observed.state === 'paid' && observed.mode === order.offer.mode && !!observed.paidMoney && !!observed.paymentId && !!observed.paymentKind &&
       (order.offer.mode !== 'subscription' || !!observed.subscriptionId);
     if (observed.paidMoney && canonicalMoney(observed.paidMoney) !== canonicalMoney(order.offer.money)) {
+      // Money was taken but cannot be fulfilled (e.g. a provider added tax to a tax-exclusive price).
+      // Surface it so the consumer can persist it for refund/review instead of only seeing an error loop.
+      await this.options.onPaymentMismatch?.(structuredClone(order), structuredClone(observed));
       throw new HostedCheckoutError('verification_failed', 'Paid amount or currency differs from the frozen offer');
     }
     if (paid && !order.fulfilledAt) await this.options.prepareFulfillment?.(structuredClone(order), structuredClone(observed));

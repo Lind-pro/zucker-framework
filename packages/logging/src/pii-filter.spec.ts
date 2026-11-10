@@ -92,4 +92,139 @@ describe('PiiFilter', () => {
       __truncated__: '1 fields omitted',
     });
   });
+
+  it('redacts in linear time on adversarial input (no quadratic backtracking)', () => {
+    const filter = new PiiFilter();
+    const inputs = [
+      'a'.repeat(16_384),
+      'eyJ'.repeat(5_461),
+      `${'a'.repeat(63)}@${'b'.repeat(253)}`.repeat(52),
+      'a@'.repeat(8_192),
+      '-----BEGIN PRIVATE KEY-----'.repeat(600),
+      'Bearer '.repeat(2_000),
+      '1'.repeat(16_384),
+    ];
+    const started = performance.now();
+    for (let pass = 0; pass < 4; pass += 1) {
+      for (const input of inputs) filter.sanitize(input);
+    }
+    // The previous email pattern alone needed ~500 ms for one 16 KiB pass.
+    expect(performance.now() - started).toBeLessThan(400);
+  });
+
+  it('bounds the total string work of one record', () => {
+    const filter = new PiiFilter({ maxStringLength: 1_000, maxTotalStringLength: 2_000 });
+    const output = filter.sanitizeValue({
+      a: 'x'.repeat(1_000),
+      b: 'y'.repeat(1_000),
+      c: 'z'.repeat(1_000),
+    }) as Record<string, string>;
+    expect(output.a).toBe('x'.repeat(1_000));
+    expect(output.b).toBe('y'.repeat(1_000));
+    expect(output.c).toBe('[TRUNCATED]');
+  });
+
+  it('still redacts common values', () => {
+    const filter = new PiiFilter();
+    expect(
+      filter.sanitize(
+        'mail first.last+tag@mail.example.co.uk key sk-proj-abcdefghijklmnopqrstuvwxyz123 ' +
+          'jwt eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJl ' +
+          '-----BEGIN RSA PRIVATE KEY-----\nabc\n-----END RSA PRIVATE KEY----- done',
+      ),
+    ).toBe('mail [EMAIL] key [API_KEY] jwt [JWT] [PRIVATE_KEY] done');
+  });
+
+  it('keeps long numeric identifiers intact while redacting phone and ID numbers', () => {
+    const filter = new PiiFilter();
+    expect(filter.sanitize('/orders/1893274650123456789 at 1731234567890')).toBe(
+      '/orders/1893274650123456789 at 1731234567890',
+    );
+    expect(filter.sanitize('call 13800138000, id 11010519491231002X')).toBe(
+      'call [PHONE], id [IDCARD]',
+    );
+  });
+
+  it('redacts sensitive fields by normalized fragment and suffix, case-insensitively', () => {
+    const filter = new PiiFilter();
+    const output = filter.sanitizeValue({
+      newPassword: 'a',
+      OldPassword: 'b',
+      confirm_password: 'c',
+      pwd: 'd',
+      'x-api-key': 'e',
+      secretAccessKey: 'f',
+      SECRET_KEY: 'g',
+      idToken: 'h',
+      'X-CSRF-Token': 'i',
+      otp: 'j',
+      smsCode: 'k',
+      verificationCode: 'l',
+      sessionId: 'm',
+      captchaAnswer: 'n',
+      clientCredentials: 'o',
+      maxTokens: 512,
+      statusCode: 400,
+      keyword: 'safe',
+      code: 'P2002',
+    });
+    expect(output).toEqual({
+      newPassword: '[REDACTED]',
+      OldPassword: '[REDACTED]',
+      confirm_password: '[REDACTED]',
+      pwd: '[REDACTED]',
+      'x-api-key': '[REDACTED]',
+      secretAccessKey: '[REDACTED]',
+      SECRET_KEY: '[REDACTED]',
+      idToken: '[REDACTED]',
+      'X-CSRF-Token': '[REDACTED]',
+      otp: '[REDACTED]',
+      smsCode: '[REDACTED]',
+      verificationCode: '[REDACTED]',
+      sessionId: '[REDACTED]',
+      captchaAnswer: '[REDACTED]',
+      clientCredentials: '[REDACTED]',
+      maxTokens: 512,
+      statusCode: 400,
+      keyword: 'safe',
+      code: 'P2002',
+    });
+  });
+
+  it('redacts credential-like headers and keeps ordinary ones', () => {
+    const filter = new PiiFilter();
+    expect(
+      filter.sanitizeHeaders({
+        authorization: 'Bearer abc',
+        'x-api-key': 'k',
+        'x-auth-token': 't',
+        'x-amz-security-token': 's',
+        cookie: 'sid=1',
+        'x-goog-api-key': 'g',
+        'content-type': 'application/json',
+        'user-agent': 'test test@example.com',
+        accept: ['a', 'b'],
+      }),
+    ).toEqual({
+      authorization: '[REDACTED]',
+      'x-api-key': '[REDACTED]',
+      'x-auth-token': '[REDACTED]',
+      'x-amz-security-token': '[REDACTED]',
+      cookie: '[REDACTED]',
+      'x-goog-api-key': '[REDACTED]',
+      'content-type': 'application/json',
+      'user-agent': 'test [EMAIL]',
+      accept: 'a, b',
+    });
+  });
+
+  it('extend() keeps the base configuration and adds fields', () => {
+    const base = new PiiFilter({ sensitiveFields: ['prompt'] });
+    const extended = base.extend({ sensitiveFields: ['claims'] });
+    expect(extended.sanitizeValue({ prompt: 'p', claims: 'c', title: 't' })).toEqual({
+      prompt: '[REDACTED]',
+      claims: '[REDACTED]',
+      title: 't',
+    });
+  });
 });

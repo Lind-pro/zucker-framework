@@ -164,6 +164,7 @@ describe('HttpClient', () => {
       const response = {
         headers: { 'x-auth-token': 'new-token-from-header' },
         data: { some: 'data' },
+        config: { url: '/me', headers: { Authorization: 'Bearer test-token' } },
       };
       successHandler(response);
       expect(setToken).toHaveBeenCalledWith('new-token-from-header');

@@ -127,6 +127,54 @@ describe('PostgresTaskRepository', () => {
     await expect(repository.findReadyQueued({ now: at(40), limit: 1 })).resolves.toHaveLength(1);
   });
 
+  it('pages ready work by keyset and optionally includes stranded RETRYING rows', async () => {
+    for (let index = 1; index <= 3; index += 1) {
+      await repository.create(
+        createInput({
+          id: `task-${index}`,
+          idempotencyKey: `key-${index}`,
+          idempotencyFingerprint: `sha256:${index}`,
+          availableAt: at(1),
+          now: at(0),
+        }),
+      );
+    }
+    await repository.claim({
+      id: 'task-2',
+      workerId: 'worker-1',
+      leaseToken: 'lease-2',
+      leaseExpiresAt: at(30),
+      now: at(2),
+    });
+    await repository.transition({
+      id: 'task-2',
+      from: 'PROCESSING',
+      to: 'RETRYING',
+      leaseToken: 'lease-2',
+      error: { code: 'X', category: 'NETWORK', summary: 'x', retryable: true },
+      availableAt: at(3),
+      now: at(2),
+    });
+
+    const ids = async (input: Parameters<typeof repository.findReadyQueued>[0]) =>
+      (await repository.findReadyQueued(input)).map((task) => task.id);
+    await expect(ids({ now: at(10), limit: 10 })).resolves.toEqual(['task-1', 'task-3']);
+    await expect(ids({ now: at(10), limit: 10, includeRetrying: true })).resolves.toEqual([
+      'task-1',
+      'task-3',
+      'task-2',
+    ]);
+    const [first] = await repository.findReadyQueued({ now: at(10), limit: 1 });
+    await expect(
+      ids({
+        now: at(10),
+        limit: 10,
+        includeRetrying: true,
+        after: { availableAt: first.availableAt, createdAt: first.createdAt, id: first.id },
+      }),
+    ).resolves.toEqual(['task-3', 'task-2']);
+  });
+
   it('reloads an idempotent row when a concurrent conflict is outside the insert snapshot', async () => {
     let hideInsertResult = true;
     const snapshotClient: PostgresTaskClient = {

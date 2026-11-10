@@ -10,6 +10,8 @@ export interface DynamicFormMessages {
   selectPlaceholder: string;
   invalidJsonText: string;
   chooseFileText: string;
+  /** Shown under an ENUM field whose remote dictionary options could not be loaded. */
+  optionsLoadFailedText: string;
 }
 
 export const defaultFormMessages: Readonly<DynamicFormMessages> = {
@@ -20,6 +22,7 @@ export const defaultFormMessages: Readonly<DynamicFormMessages> = {
   selectPlaceholder: '请选择',
   invalidJsonText: '请输入合法的 JSON 格式',
   chooseFileText: '选择文件',
+  optionsLoadFailedText: '选项加载失败',
 };
 
 export function resolveFormMessages(messages?: Partial<DynamicFormMessages>): DynamicFormMessages {

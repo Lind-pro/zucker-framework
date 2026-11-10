@@ -126,8 +126,9 @@ run('actual application health and durable HTTP audit composition', () => {
           .set('Authorization', `Bearer ${authenticated.body.token}`).expect(200);
       }
       // `me` is read on every page load and has its own per-user budget (src/rate-limits.ts).
-      expect(consume.mock.calls.filter(([name, key]) => name === 'api-default' && key === userId)).toHaveLength(20);
-      expect(consume.mock.calls.filter(([name, key]) => name === 'session-read' && key === userId)).toHaveLength(5);
+      // The guard keys user-scoped limits as `user:<id>` (never shared with an IP bucket).
+      expect(consume.mock.calls.filter(([name, key]) => name === 'api-default' && key === `user:${userId}`)).toHaveLength(20);
+      expect(consume.mock.calls.filter(([name, key]) => name === 'session-read' && key === `user:${userId}`)).toHaveLength(5);
       expect(consume.mock.calls.filter(([name]) => name === 'accounts')).toHaveLength(1);
       await login().expect(200);
       expect(consume.mock.calls.filter(([name]) => name === 'accounts')).toHaveLength(2);

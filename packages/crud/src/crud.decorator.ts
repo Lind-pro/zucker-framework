@@ -1,4 +1,5 @@
-import { applyDecorators, Get, Post, Put, Delete, Body, Param, Query, SetMetadata } from '@nestjs/common';
+import { Get, Post, Put, Delete, Body, Param, SetMetadata } from '@nestjs/common';
+import { sanitizeWriteBody, type CrudWritePolicy } from './write-policy';
 
 /**
  * CRUD 自动生成装饰器 — 对标 Claude Code Tool 统一注册模式
@@ -42,6 +43,8 @@ export interface CrudOptions {
   };
   /** 软删除模式（delete 时调用 softDelete 而非 delete） */
   softDelete?: boolean;
+  /** Body policy for create / update (see BaseControllerOptions.writePolicy). */
+  writePolicy?: CrudWritePolicy;
 }
 
 /**
@@ -64,49 +67,46 @@ export function CrudControllerFactory<T>(
     }
   }
 
-  // 动态定义方法
-  if (routes.query?.enabled !== false) {
-    CrudController.prototype.query = async function (body: any) {
-      return this.service.findAll(body);
-    };
-    Post('_query')(CrudController, 'query', Object.getOwnPropertyDescriptor(CrudController.prototype, 'query')!);
-    if (routes.query?.decorators) {
-      for (const decorator of routes.query.decorators) {
-        decorator(CrudController.prototype, 'query', Object.getOwnPropertyDescriptor(CrudController.prototype, 'query')!);
-      }
+  const proto = CrudController.prototype as Record<string, unknown>;
+  type RouteName = keyof NonNullable<CrudOptions['routes']>;
+  const define = (
+    route: RouteName,
+    method: string,
+    handler: (this: CrudController, ...args: any[]) => Promise<unknown>,
+    verb: MethodDecorator,
+    params: Array<(target: object, key: string, index: number) => void>,
+  ) => {
+    if (routes[route]?.enabled === false) return;
+    proto[method] = handler;
+    // Parameter metadata must exist or Nest calls the handler without arguments.
+    params.forEach((param, index) => param(proto, method, index));
+    const descriptor = () => Object.getOwnPropertyDescriptor(proto, method)!;
+    verb(proto, method, descriptor());
+    for (const decorator of routes[route]?.decorators ?? []) decorator(proto, method, descriptor());
+  };
+
+  define('query', 'query', async function (body: any) {
+    return this.service.findAll(body);
+  }, Post('_query'), [Body()]);
+
+  define('findOne', 'findOne', async function (id: string) {
+    return this.service.findOne(id);
+  }, Get(':id'), [Param('id')]);
+
+  define('create', 'create', async function (body: any) {
+    return this.service.create(sanitizeWriteBody(body, options.writePolicy, 'create'));
+  }, Post(), [Body()]);
+
+  define('update', 'update', async function (id: string, body: any) {
+    return this.service.update(id, sanitizeWriteBody(body, options.writePolicy, 'update'));
+  }, Put(':id'), [Param('id'), Body()]);
+
+  define('delete', 'remove', async function (id: string) {
+    if (options.softDelete) {
+      return this.service.softDelete(id);
     }
-  }
-
-  if (routes.findOne?.enabled !== false) {
-    CrudController.prototype.findOne = async function (id: string) {
-      return this.service.findOne(id);
-    };
-    Get(':id')(CrudController, 'findOne', Object.getOwnPropertyDescriptor(CrudController.prototype, 'findOne')!);
-  }
-
-  if (routes.create?.enabled !== false) {
-    CrudController.prototype.create = async function (body: any) {
-      return this.service.create(body);
-    };
-    Post()(CrudController, 'create', Object.getOwnPropertyDescriptor(CrudController.prototype, 'create')!);
-  }
-
-  if (routes.update?.enabled !== false) {
-    CrudController.prototype.update = async function (id: string, body: any) {
-      return this.service.update(id, body);
-    };
-    Put(':id')(CrudController, 'update', Object.getOwnPropertyDescriptor(CrudController.prototype, 'update')!);
-  }
-
-  if (routes.delete?.enabled !== false) {
-    CrudController.prototype.remove = async function (id: string) {
-      if (options.softDelete) {
-        return this.service.softDelete(id);
-      }
-      return this.service.delete(id);
-    };
-    Delete(':id')(CrudController, 'remove', Object.getOwnPropertyDescriptor(CrudController.prototype, 'remove')!);
-  }
+    return this.service.delete(id);
+  }, Delete(':id'), [Param('id')]);
 
   SetMetadata(CRUD_METADATA, options)(CrudController);
 

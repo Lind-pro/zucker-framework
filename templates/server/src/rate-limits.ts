@@ -17,6 +17,22 @@ export const SESSION_REFRESH_NETWORK_LIMITER = 'session-refresh-network';
 /** `GET /authorize/me`, per signed-in user: read on every page load, kept apart from `api-default`. */
 export const SESSION_READ_LIMITER = 'session-read';
 
+/** Password login, per normalized username + client IP (brute force from one source). */
+export const LOGIN_LIMITER = 'login';
+/** Password login, per normalized username across every client (distributed guessing); looser to limit lockout abuse. */
+export const LOGIN_ACCOUNT_LIMITER = 'login-account';
+/** Normalized, bounded login identifier used as the per-account limiter key; undefined for malformed bodies. */
+export function loginAccountKey(body: unknown): string | undefined {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined;
+  const username = (body as Record<string, unknown>).username;
+  if (typeof username !== 'string') return undefined;
+  const normalized = username.trim().toLowerCase();
+  return normalized && normalized.length <= 256 ? normalized : undefined;
+}
+
+/** Signed payment-provider webhooks, per source address; kept apart from the per-user `billing` budget. */
+export const BILLING_WEBHOOK_LIMITER = 'billing-webhook';
+
 /** Rate-limit policy of this application (all windows in seconds). */
 export const APP_RATE_LIMITERS: Readonly<Record<string, LimiterConfig>> = {
   [ACCOUNTS_LIMITER]: { points: 20, duration: 60 },
@@ -25,6 +41,9 @@ export const APP_RATE_LIMITERS: Readonly<Record<string, LimiterConfig>> = {
   [SESSION_READ_LIMITER]: { points: 120, duration: 60 },
   'api-key': { points: 60, duration: 60, blockDuration: 0 },
   billing: { points: 60, duration: 60 },
-  login: { points: 5, duration: 900 }, // 15分钟最多5次登录
+  // Signed provider callbacks; signature verification is the real gate, this only bounds abuse per source.
+  [BILLING_WEBHOOK_LIMITER]: { points: 600, duration: 60 },
+  [LOGIN_LIMITER]: { points: 5, duration: 900 }, // failed logins per account + IP per 15 minutes
+  [LOGIN_ACCOUNT_LIMITER]: { points: 30, duration: 900 }, // failed logins per account per 15 minutes
   'api-default': { points: 100, duration: 60 }, // 每分钟100次API调用
 };

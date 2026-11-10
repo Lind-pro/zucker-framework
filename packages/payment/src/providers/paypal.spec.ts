@@ -35,9 +35,11 @@ describe('PayPal payment transport', () => {
           Authorization: `Basic ${Buffer.from('client:secret').toString('base64')}`,
         },
         body: 'grant_type=client_credentials',
+        signal: expect.any(AbortSignal),
       },
     ]);
     const [url, request] = fetcher.mock.calls[1];
+    expect(request.signal).toBeInstanceOf(AbortSignal);
     expect(url).toBe('https://api.sandbox.paypal.com/v1/notifications/verify-webhook-signature');
     expect(request.headers.Authorization).toBe('Bearer synthetic-access');
     expect(JSON.parse(request.body)).toEqual({
@@ -90,11 +92,23 @@ describe('PayPal payment transport', () => {
       'https://api.paypal.com/v2/payments/captures/capture/refund',
       {
         method: 'POST',
+        signal: expect.any(AbortSignal),
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer access' },
         body: JSON.stringify(request),
       },
     ]);
     expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports a non-JSON refund failure as an HTTP failure carrying its status (M8)', async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(json({ access_token: 'access' }))
+      .mockResolvedValueOnce(new Response('<html>bad gateway</html>', { status: 502 }));
+    const transport = new PayPalPaymentTransport({ clientId: 'client', clientSecret: 'secret', mode: 'live', fetcher });
+    await expect(transport.refundCapture('capture', {})).rejects.toMatchObject({
+      message: 'PayPal refund request failed (502)', statusCode: 502,
+    });
   });
 
   it('rejects missing OAuth tokens before sending a refund', async () => {

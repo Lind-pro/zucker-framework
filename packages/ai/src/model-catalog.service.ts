@@ -43,10 +43,19 @@ export interface AIModelCatalogOptions {
   afterChange?: () => void | Promise<void>;
   testConnection?: (model: AIModelRecord) => Promise<{ success: boolean; message: string }>;
   minimumMaxTokens?: number;
+  /**
+   * Reject `http:` Base URLs (except loopback hosts). Off by default for compatibility with
+   * existing plain-HTTP gateways; enable it in production so a stored key never travels in clear text.
+   */
+  requireHttpsBaseUrl?: boolean;
 }
+/** Fields that decide where the stored API key is sent. */
+const DESTINATION_FIELDS = ['provider', 'baseUrl', 'proxyHost', 'proxyPort'] as const;
 const TEXT_FIELDS = ['name', 'modelId', 'baseUrl', 'proxyHost', 'description'] as const;
 const BOOLEAN_FIELDS = ['isEnabled', 'isDefault', 'supportsThinking', 'enableThinking'] as const;
 const NUMBER_FIELDS = ['temperature', 'maxTokens', 'proxyPort'] as const;
+/** Optional generation settings an administrator may clear by sending `null`. */
+const CLEARABLE_NUMBER_FIELDS = new Set<string>(['temperature', 'maxTokens']);
 const CORE_FIELDS = new Set<string>([
   ...TEXT_FIELDS,
   ...BOOLEAN_FIELDS,
@@ -152,6 +161,11 @@ export class AIModelCatalogService {
     for (const key of NUMBER_FIELDS) {
       const value = data[key];
       if (value === undefined) continue;
+      if (value === null && CLEARABLE_NUMBER_FIELDS.has(key)) {
+        // Clears the stored value on update; on create it is the same as omitting the field.
+        if (current) out[key] = null;
+        continue;
+      }
       if (typeof value !== 'number' || !Number.isFinite(value))
         throw new BadRequestException(`${key} 必须是有限数字`);
       if (key === 'temperature' && (value < 0 || value > 2))
@@ -179,6 +193,21 @@ export class AIModelCatalogService {
       throw new BadRequestException('API Key 必须是字符串');
     const secret = data.apiKey?.trim();
     if (!current && !secret) throw new BadRequestException('API Key 不能为空');
+    if (current && !secret) {
+      // Without this, an operator who can edit models but cannot read keys could point
+      // baseUrl/proxy at a host they control and have "list models"/"test" send the key there.
+      const changed = DESTINATION_FIELDS.filter(
+        (key) => key in out && (out[key] ?? null) !== (current[key] ?? null),
+      );
+      if (changed.length)
+        throw new BadRequestException(
+          `修改 ${changed.join('/')} 后必须重新填写 API Key`,
+        );
+    }
+    if (this.options.requireHttpsBaseUrl) {
+      const baseUrl = 'baseUrl' in out ? out.baseUrl : current?.baseUrl;
+      if (typeof baseUrl === 'string' && baseUrl) assertHttpsBaseUrl(baseUrl);
+    }
     if (secret) out.apiKey = this.options.encryptSecret(secret);
     if (!(out.supportsThinking ?? current?.supportsThinking)) out.enableThinking = false;
     if ((out.isDefault ?? current?.isDefault) && (out.isEnabled ?? current?.isEnabled) === false)
@@ -256,4 +285,16 @@ export class AIModelCatalogService {
       return { success: false, message: '未配置连接检测，尚未验证模型连通性' };
     return this.options.testConnection(this.present(model, true));
   }
+}
+
+function assertHttpsBaseUrl(value: string): void {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new BadRequestException('Base URL 格式无效');
+  }
+  const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback))
+    throw new BadRequestException('Base URL 必须使用 HTTPS');
 }

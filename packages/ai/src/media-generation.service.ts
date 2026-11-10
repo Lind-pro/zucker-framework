@@ -43,6 +43,11 @@ export interface ImageGenerationOptions {
   signal?: AbortSignal;
   /** 用户 ID（用于计费追踪） */
   userId?: string;
+  /**
+   * 最大尝试次数，默认 1。生成请求会计费且不幂等：响应丢失时重试会再生成一次。
+   * 只有在 provider 保证幂等或能接受重复计费时才调大。
+   */
+  maxAttempts?: number;
 }
 
 /** 视频生成选项 */
@@ -67,7 +72,20 @@ export interface VideoGenerationOptions {
   signal?: AbortSignal;
   /** 用户 ID */
   userId?: string;
+  /** 最大尝试次数，默认 1（视频提交计费且不幂等）。 */
+  maxAttempts?: number;
 }
+
+/** getTaskStatus 的计费选项 */
+export interface MediaTaskStatusOptions {
+  /** 用户 ID（任务首次完成时记账） */
+  userId?: string;
+  /** 首次完成时是否记录费用，默认 true */
+  trackCost?: boolean;
+}
+
+/** 已记账任务 id 的保留数量（进程内去重；跨实例去重需由调用方持久化）。 */
+const COST_TRACKED_TASK_LIMIT = 10_000;
 
 /**
  * 媒体生成服务
@@ -76,6 +94,7 @@ export interface VideoGenerationOptions {
 @Injectable()
 export class MediaGenerationService {
   private readonly logger = new Logger(MediaGenerationService.name);
+  private readonly costTrackedTasks = new Set<string>();
 
   constructor(
     private readonly providerManager: MediaProviderManager,
@@ -99,7 +118,7 @@ export class MediaGenerationService {
       ({ signal }) => provider.generate(prompt, { ...config, signal }),
       {
         timeoutMs: options.timeoutMs,
-        maxAttempts: 2,
+        maxAttempts: attemptsOf(options.maxAttempts),
         context: `图片生成 [${provider.id}]`,
         signal: options.signal,
       },
@@ -121,7 +140,7 @@ export class MediaGenerationService {
 
     if (result.status === MediaTaskStatus.COMPLETED && result.result) {
       result.result.durationMs = durationMs;
-      this.trackCost(result.result, options.userId);
+      this.trackTaskCost(result, options.userId);
       return result.result;
     }
 
@@ -153,7 +172,7 @@ export class MediaGenerationService {
       ({ signal }) => provider.generate(prompt, { ...config, signal }),
       {
         timeoutMs: options.timeoutMs,
-        maxAttempts: 2,
+        maxAttempts: attemptsOf(options.maxAttempts),
         context: `视频生成 [${provider.id}]`,
         signal: options.signal,
       },
@@ -167,7 +186,10 @@ export class MediaGenerationService {
       return result;
     }
 
-    // 视频通常返回异步任务
+    // 视频通常返回异步任务；完成时的费用由 getTaskStatus 记账
+    if (result.status === MediaTaskStatus.COMPLETED && result.result) {
+      this.trackTaskCost(result, options.userId);
+    }
     return result;
   }
 
@@ -180,16 +202,38 @@ export class MediaGenerationService {
     taskId: string,
     apiKey: string,
     extra?: Partial<MediaGenerationConfig>,
+    options: MediaTaskStatusOptions = {},
   ): Promise<MediaTaskResult> {
     const provider = this.providerManager.get(providerId);
     if (!provider.getTaskStatus) {
       throw new Error(`Provider '${providerId}' 不支持异步任务查询`);
     }
-    return provider.getTaskStatus(taskId, {
+    const result = await provider.getTaskStatus(taskId, {
       apiKey,
       modelId: '',
       ...extra,
     } as MediaGenerationConfig);
+    if (
+      options.trackCost !== false &&
+      result.status === MediaTaskStatus.COMPLETED &&
+      result.result
+    ) {
+      this.trackTaskCost(result, options.userId);
+    }
+    return result;
+  }
+
+  /** 异步任务首次完成时记账一次（按 provider + taskId 去重）。 */
+  private trackTaskCost(task: MediaTaskResult, userId?: string): void {
+    if (!task.result) return;
+    const key = `${task.provider}:${task.taskId}`;
+    if (this.costTrackedTasks.has(key)) return;
+    this.costTrackedTasks.add(key);
+    if (this.costTrackedTasks.size > COST_TRACKED_TASK_LIMIT) {
+      const oldest = this.costTrackedTasks.values().next().value;
+      if (oldest !== undefined) this.costTrackedTasks.delete(oldest);
+    }
+    this.trackCost(task.result, userId);
   }
 
   /** 解析 provider：优先用户指定 → 按类型筛选首个 → 默认 */
@@ -254,4 +298,8 @@ export class MediaGenerationService {
   ): result is MediaGenerationResult {
     return 'mediaType' in result && !('taskId' in result);
   }
+}
+
+function attemptsOf(value: number | undefined): number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 ? value : 1;
 }

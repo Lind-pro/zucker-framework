@@ -6,6 +6,7 @@ import {
   type MediaModelInfo,
 } from '../media.interface';
 import { providerRequestSignal } from '../abort-signal';
+import { providerHttpError } from '../provider-http-error';
 
 const STABILITY_API_BASE = 'https://api.stability.ai';
 
@@ -39,8 +40,7 @@ export class StabilityProvider implements MediaProvider {
     });
 
     if (!response.ok) {
-      const error = await response.text().catch(() => response.statusText);
-      throw new Error(`Stability API ${response.status}: ${error}`);
+      throw await providerHttpError('Stability', response);
     }
 
     const data = (await response.json()) as any;

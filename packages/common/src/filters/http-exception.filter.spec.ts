@@ -264,15 +264,50 @@ describe('HttpExceptionFilter', () => {
     it('should handle business-like errors from different module instances', () => {
       // Simulate a cross-boundary error that is not instanceof BusinessException
       // but has the same shape
-      const fakeBizError = Object.assign(new Error('cross-boundary'), {
-        status: 409,
-        code: 'CONFLICT',
-      });
+      // A second module copy of the framework class keeps its class name.
+      class BusinessException extends Error {
+        constructor(message: string, readonly status: number, readonly code: string) {
+          super(message);
+        }
+      }
+      const fakeBizError = new BusinessException('cross-boundary', 409, 'CONFLICT');
 
       const { statusCode, body } = catchAndGetResponse(filter, fakeBizError);
 
       expect(statusCode).toBe(409);
       expect(body.code).toBe('CONFLICT');
+    });
+  });
+
+  describe('third-party and malformed errors', () => {
+    it('does not forward an unbranded error carrying status and code (e.g. Axios)', () => {
+      const upstream = Object.assign(new Error('Request failed: upstream secret detail'), {
+        status: 401,
+        code: 'ERR_BAD_REQUEST',
+        isAxiosError: true,
+      });
+      const { statusCode, body } = catchAndGetResponse(filter, upstream);
+      expect(statusCode).toBe(500);
+      expect(body.code).toBe('INTERNAL_ERROR');
+      expect(body.message).not.toContain('upstream');
+    });
+
+    it('clamps an out-of-range business status to 500', () => {
+      const { statusCode } = catchAndGetResponse(filter, new BusinessException('x', 'BAD', 1000 as never));
+      expect(statusCode).toBe(500);
+    });
+
+    it('does not write a JSON body once headers were sent', () => {
+      const json = vi.fn();
+      const status = vi.fn().mockReturnValue({ json });
+      const end = vi.fn();
+      const response = { status, setHeader: vi.fn(), headersSent: true, writableEnded: false, end };
+      const host = {
+        switchToHttp: () => ({ getResponse: () => response, getRequest: () => ({}) }),
+      } as unknown as ArgumentsHost;
+      filter.catch(new Error('mid-stream'), host);
+      expect(status).not.toHaveBeenCalled();
+      expect(end).toHaveBeenCalled();
     });
   });
 

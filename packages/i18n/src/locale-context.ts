@@ -40,9 +40,19 @@ export class LocaleContext {
 export class LocaleInterceptor implements NestInterceptor {
   private readonly supportedLocales: Set<string>;
   private readonly defaultLocale: string;
+  /** Normalized full tag (lower case, `-` separated) -> configured locale. */
+  private readonly byTag = new Map<string, string>();
+  /** Primary subtag -> first configured locale with that language. */
+  private readonly byPrimary = new Map<string, string>();
 
   constructor(options?: { supportedLocales?: string[]; defaultLocale?: string }) {
     this.supportedLocales = new Set(options?.supportedLocales ?? ['en', 'zh']);
+    for (const locale of this.supportedLocales) {
+      const key = normalizeTag(locale);
+      if (!this.byTag.has(key)) this.byTag.set(key, locale);
+      const primary = key.split('-')[0];
+      if (!this.byPrimary.has(primary)) this.byPrimary.set(primary, locale);
+    }
     this.defaultLocale = options?.defaultLocale ?? 'en';
   }
 
@@ -77,22 +87,26 @@ export class LocaleInterceptor implements NestInterceptor {
     if (!header) return this.defaultLocale;
 
     // Parse Accept-Language: en-US,en;q=0.9,zh-CN;q=0.8
-    const parts = header.split(',').map((part) => {
+    const parts = header.split(',').map((part, index) => {
       const [lang, q] = part.trim().split(';q=');
-      return {
-        lang: lang.trim().split('-')[0].toLowerCase(),
-        quality: q ? parseFloat(q) : 1,
-      };
+      const quality = q ? parseFloat(q) : 1;
+      return { tag: normalizeTag(lang ?? ''), quality: Number.isFinite(quality) ? quality : 0, index };
     });
 
-    parts.sort((a, b) => b.quality - a.quality);
+    parts.sort((a, b) => b.quality - a.quality || a.index - b.index);
 
-    for (const { lang } of parts) {
-      if (this.supportedLocales.has(lang)) {
-        return lang;
-      }
+    // Highest quality first; per range, an exact (region-qualified) match beats a language-only one.
+    for (const { tag, quality } of parts) {
+      if (quality <= 0 || !tag) continue;
+      const primary = tag.split('-')[0];
+      const match = this.byTag.get(tag) ?? this.byTag.get(primary) ?? this.byPrimary.get(primary);
+      if (match) return match;
     }
 
     return this.defaultLocale;
   }
+}
+
+function normalizeTag(tag: string): string {
+  return tag.trim().replace(/_/g, '-').toLowerCase();
 }

@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsNumber, Min, Max, IsArray } from 'class-validator';
+import { IsOptional, IsString, IsNumber, Min, Max, IsArray, IsObject, IsBoolean } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -64,4 +64,40 @@ export class QueryParamDto {
   })
   @IsArray()
   excludes?: string[];
+
+  @ApiProperty({ required: false, minimum: 0, description: '0 起始页码，优先于 page（POST _query 使用）' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  pageIndex?: number;
+
+  @ApiProperty({ required: false, description: '结构化过滤对象，例如 {"name$like":"example"}' })
+  @IsOptional()
+  @IsObject()
+  filter?: Record<string, unknown>;
+
+  @ApiProperty({ required: false, description: '条件表达式，例如 "status = 1 and name like \'a\'"' })
+  @IsOptional()
+  @IsString()
+  where?: string;
+
+  @ApiProperty({ required: false, minimum: 0, description: '前端已知总数（跳过 count 查询）' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  total?: number;
+
+  @ApiProperty({ required: false, description: '并行执行 count 与查询' })
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true' || value === '1')
+  @IsBoolean()
+  parallelPager?: boolean;
+
+  @ApiProperty({ required: false, description: '先查询再推断总数' })
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true' || value === '1')
+  @IsBoolean()
+  inferTotal?: boolean;
 }

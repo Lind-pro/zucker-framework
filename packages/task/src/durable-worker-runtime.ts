@@ -72,6 +72,18 @@ export interface DurableWorkerRuntimeOptions<TPayload = unknown, TResult = unkno
     task: TaskRecord<TPayload, TResult>,
     reason: DurableTaskLeaseLostError,
   ): Promise<void> | void;
+  /**
+   * Observes a delivery for a kind without a registered handler (for metrics/alerts).
+   * Errors thrown here are logged and ignored.
+   */
+  onUnsupportedKind?(task: TaskRecord<TPayload, TResult>): Promise<void> | void;
+  /**
+   * When set, a task whose kind has had no handler for at least this long after it became
+   * available is failed with `UNSUPPORTED_TASK_KIND` instead of being redelivered forever.
+   * Leave unset (default) to keep tasks QUEUED, which is what a rolling deploy needs while
+   * older workers that do not know a new kind still receive deliveries.
+   */
+  failUnsupportedKindAfterMs?: number;
 }
 
 export interface DurableWorkerRunResult {
@@ -190,6 +202,10 @@ export class DurableWorkerRuntime<TPayload = unknown, TResult = unknown> {
     if (this.maxConsecutiveHeartbeatFailures < 1) {
       throw new RangeError('maxConsecutiveHeartbeatFailures must be at least 1');
     }
+    const failAfter = options.failUnsupportedKindAfterMs;
+    if (failAfter !== undefined && !(Number.isFinite(failAfter) && failAfter >= 0)) {
+      throw new RangeError('failUnsupportedKindAfterMs must be a non-negative finite number');
+    }
   }
 
   async run(taskId: string, runOptions: DurableWorkerRunOptions = {}): Promise<DurableWorkerRunResult> {
@@ -203,6 +219,8 @@ export class DurableWorkerRuntime<TPayload = unknown, TResult = unknown> {
         id: task.id,
         from: 'RETRYING',
         to: 'QUEUED',
+        // Transitions overwrite the error columns; keep the last attempt's error visible.
+        error: task.error,
         now: this.now(),
       });
       if (!queued) {
@@ -217,7 +235,7 @@ export class DurableWorkerRuntime<TPayload = unknown, TResult = unknown> {
       throw new DurableTaskNotClaimableError(task.id, task.status);
     }
     const handler = this.options.resolveHandler(task);
-    if (!handler) throw new UnsupportedDurableTaskKindError(task.id, task.kind);
+    if (!handler) return this.handleUnsupportedKind(task);
 
     const leaseToken = this.createLeaseToken();
     const claimedAt = this.now();
@@ -424,6 +442,61 @@ export class DurableWorkerRuntime<TPayload = unknown, TResult = unknown> {
     }
   }
 
+  private async handleUnsupportedKind(
+    task: TaskRecord<TPayload, TResult>,
+  ): Promise<DurableWorkerRunResult> {
+    const now = this.now();
+    const unhandledForMs = now.getTime() - task.availableAt.getTime();
+    this.options.logger?.warn?.('durable_task_kind_unsupported', {
+      taskId: task.id,
+      kind: task.kind,
+      unhandledForMs,
+    });
+    try {
+      await this.options.onUnsupportedKind?.(task);
+    } catch {
+      this.options.logger?.warn?.('durable_task_unsupported_kind_callback_failed', {
+        taskId: task.id,
+        kind: task.kind,
+      });
+    }
+    const failAfter = this.options.failUnsupportedKindAfterMs;
+    if (failAfter === undefined || unhandledForMs < failAfter) {
+      throw new UnsupportedDurableTaskKindError(task.id, task.kind);
+    }
+
+    // QUEUED can only become FAILED through an owned PROCESSING attempt; claim it first so
+    // a concurrent worker that does know the kind cannot be overridden.
+    const leaseToken = this.createLeaseToken();
+    const claimed = await this.repository.claim({
+      id: task.id,
+      workerId: this.workerId,
+      leaseToken,
+      leaseExpiresAt: this.leaseExpiry(now),
+      now,
+    });
+    if (!claimed) throw new UnsupportedDurableTaskKindError(task.id, task.kind);
+    const failed = await this.repository.transition({
+      id: claimed.id,
+      from: 'PROCESSING',
+      to: 'FAILED',
+      leaseToken,
+      error: {
+        code: 'UNSUPPORTED_TASK_KIND',
+        category: 'INTERNAL',
+        summary: `No durable task handler is registered for kind: ${task.kind}`.slice(0, 280),
+        retryable: false,
+      },
+      now: this.now(),
+    });
+    if (!failed) return this.resolveRejectedCommit(claimed, 'failure');
+    this.options.logger?.error?.('durable_task_kind_unsupported_failed', {
+      taskId: task.id,
+      kind: task.kind,
+    });
+    return terminalResult(failed);
+  }
+
   private leaseExpiry(now: Date): Date {
     return new Date(now.getTime() + this.leaseDurationMs);
   }
@@ -443,16 +516,29 @@ export class DurableWorkerRuntime<TPayload = unknown, TResult = unknown> {
       now: this.now(),
     });
     if (!retrying) return false;
-    return Boolean(
-      await this.repository.transition({
+    // RETRYING has no lease. If this second step fails or the process stops here, the
+    // TaskQueueReconciler requeues RETRYING rows once availableAt passes (see findReadyQueued).
+    try {
+      const queued = await this.repository.transition({
         id: context.task.id,
         from: 'RETRYING',
         to: 'QUEUED',
         error,
         availableAt: retryAt,
         now: this.now(),
-      }),
-    );
+      });
+      if (queued) return true;
+    } catch {
+      this.options.logger?.warn?.('durable_task_requeue_failed', {
+        taskId: context.task.id,
+        kind: context.task.kind,
+      });
+      // The retry decision is already durable; the reconciler completes the requeue.
+      return true;
+    }
+    // Another actor (reconciler or redelivery) may already have requeued it.
+    const latest = await this.findLatestBestEffort(context.task);
+    return latest?.status === 'QUEUED' || latest?.status === 'RETRYING';
   }
 
   private async resolveRejectedCommit(

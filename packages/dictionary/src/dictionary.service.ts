@@ -274,7 +274,8 @@ export class DictionaryService {
       try {
         const dictId = entry.dictionary.id as string;
 
-        await this.db.$transaction(async (tx) => {
+        // Counted only after the transaction commits, so a failed entry is never also imported/updated.
+        const existed = await this.db.$transaction(async (tx) => {
           const existing = await tx.model('dictionary').findUnique({ where: { id: dictId } });
 
           if (existing) {
@@ -282,10 +283,8 @@ export class DictionaryService {
               where: { id: dictId },
               data: entry.dictionary,
             });
-            updated++;
           } else {
             await tx.model('dictionary').create({ data: entry.dictionary });
-            imported++;
           }
 
           // 同步字典项：先删除旧的，再批量创建
@@ -295,6 +294,13 @@ export class DictionaryService {
               data: { ...item, dictId },
             });
           }
+          return Boolean(existing);
+        });
+        if (existed) updated++;
+        else imported++;
+        this.clearCache(dictId);
+        await this.emitChange(existed ? 'updated' : 'created', dictId).catch((error: unknown) => {
+          this.logger.warn(`Dictionary change event failed after import: ${error instanceof Error ? error.message : String(error)}`);
         });
       } catch (error) {
         this.logger.error(`Dictionary import failed: ${error instanceof Error ? error.message : String(error)}`);

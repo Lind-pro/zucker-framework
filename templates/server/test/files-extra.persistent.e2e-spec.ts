@@ -92,7 +92,7 @@ run('private file listing, short downloads, constrained import and avatar protec
   beforeEach(() => { fetch.mockReset(); fetch.mockImplementation(async () => new Response(new Uint8Array(content), { status: 200, headers: { 'content-length': String(content.length) } })); logs.length = 0; });
   afterEach(() => { vi.restoreAllMocks(); });
   afterAll(async () => { for (const controller of [FilesController, FilesDownloadController]) Reflect.deleteMetadata(ACCESS_LOGGER_KEY, controller);
-    try { await app?.close(); await database?.onModuleDestroy(); } finally { try { if (pool) { try { await pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`); } finally { await pool.end(); } } } finally { if (directory) rmSync(directory, { recursive: true, force: true }); } } });
+    try { await app?.close(); await database?.disconnect(); } finally { try { if (pool) { try { await pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`); } finally { await pool.end(); } } } finally { if (directory) rmSync(directory, { recursive: true, force: true }); } } });
   it('lists only owned metadata with stable pagination, safe limits and no internal storage identifiers', async () => {
     const owner = await member(), other = await member(), first = await upload(owner).expect(200); await upload(other).expect(200);
     for (let index = 0; index < 20; index++) await pool.query(`INSERT INTO "${schema}".file_assets (id,"ownerId","idempotencyKey","objectKey","fileName",sha256,size,"mimeType")

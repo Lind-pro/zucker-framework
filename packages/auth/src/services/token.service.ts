@@ -19,13 +19,39 @@ export const TOKEN_CACHE = Symbol('TOKEN_CACHE');
 
 /** Token 黑名单缓存 key 前缀 */
 const BLACKLIST_PREFIX = 'token:blacklist:';
-/** 用户活跃会话缓存 key 前缀 */
-const USER_SESSIONS_PREFIX = 'token:sessions:';
+/**
+ * Per-user revocation watermark key prefix. Value: epoch milliseconds. Any access token for
+ * that user whose `iat` (seconds) falls in or before that second is rejected. Stored in the
+ * shared cache when one is configured, so revocation works across processes and restarts.
+ */
+const REVOKED_AFTER_PREFIX = 'token:revoked-after:';
+
+/** States after which a token must never authenticate again (also written to the blacklist). */
+const TERMINAL_STATES: ReadonlySet<TokenState> = new Set([
+  TokenState.EXPIRED,
+  TokenState.DENY,
+  TokenState.REVOKED,
+  TokenState.OFFLINE,
+]);
+
+/** Claims the guard extracts from an already signature-verified access token. */
+export interface AccessTokenClaims {
+  /** Subject / user id. */
+  sub?: string;
+  /** Issued-at, seconds since epoch. */
+  iat?: number;
+}
+
+/** Why an access token was rejected by {@link TokenService.checkAccessToken}. */
+export type AccessTokenRejection = 'revoked' | 'inactive' | 'user_revoked';
 
 export interface TokenServiceOptions {
   /** 最大并发会话数，0 表示不限制 */
   maxActiveSessions?: number;
-  /** Token 黑名单 TTL（毫秒），默认 7 天 */
+  /**
+   * Token 黑名单 / 用户撤销水位 TTL（毫秒），默认 7 天。
+   * Must be at least the access-token lifetime, otherwise a revoked token becomes valid again.
+   */
   blacklistTtlMs?: number;
   /** 异地登录模式  */
   allopatricLoginMode?: AllopatricLoginMode;
@@ -40,6 +66,9 @@ export class TokenService {
   private readonly userTokens = new Map<string, Set<string>>();
   // Independent from sessions: signOut removes sessions, not revocation evidence.
   private readonly revokedTokens = new Map<string, number>();
+  /** Process-local user revocation watermarks (used only when no shared cache is configured). */
+  private readonly revokedAfter = new Map<string, { at: number; expiresAt: number }>();
+  private lastSweep = Date.now();
 
   private maxActiveSessions = 0;
   private blacklistTtlMs = 7 * 24 * 60 * 60 * 1000; // 7 天
@@ -65,6 +94,7 @@ export class TokenService {
   }
 
   async signIn(userId: string, token: string, type = 'default', maxInactiveInterval?: number): Promise<TokenInfo> {
+    await this.sweepIfDue();
     // Allopatric login mode handling
     const existing = await this.getByUserId(userId);
     const activeSessions = existing.filter(
@@ -132,7 +162,12 @@ export class TokenService {
     return tokenInfo;
   }
 
+  /**
+   * Sign a token out. The token is also blacklisted so that a signed-out (or kicked) JWT
+   * cannot keep authenticating until its natural expiry.
+   */
   async signOut(token: string): Promise<void> {
+    await this.blacklist(token);
     const info = this.tokens.get(token);
     if (info) {
       const userSet = this.userTokens.get(info.userId);
@@ -155,29 +190,46 @@ export class TokenService {
     if (info) {
       info.state = TokenState.DENY;
     }
-
-    // 写入缓存黑名单
-    if (this.cache) {
-      await this.cache.set(
-        `${BLACKLIST_PREFIX}${token}`,
-        true,
-        this.blacklistTtlMs,
-      );
-    } else {
-      this.pruneRevocations();
-      this.revokedTokens.set(token, Date.now() + this.blacklistTtlMs);
-    }
-
     await this.signOut(token);
   }
 
-  /** 撤销用户所有 token（强制登出） */
+  /**
+   * 撤销用户所有 token（强制登出）.
+   *
+   * Besides blacklisting the sessions this process knows about, a per-user watermark is
+   * recorded so that tokens issued by other instances, or before a restart, are rejected by
+   * {@link checkAccessToken}. With a shared cache (`cacheProvider`) this is cross-process.
+   * Tokens whose `iat` falls in the same second as the revocation are also rejected.
+   */
   async revokeUserTokens(userId: string): Promise<void> {
+    await this.markUserRevoked(userId);
     const tokens = await this.getByUserId(userId);
     for (const tokenInfo of tokens) {
       await this.revokeToken(tokenInfo.token);
     }
     this.logger.log(`用户 ${userId} 的所有 token 已撤销`);
+  }
+
+  /**
+   * Request-time check used by JwtAuthGuard after the signature has been verified.
+   * Returns the rejection reason, or null when the token may be used.
+   */
+  async checkAccessToken(token: string, claims: AccessTokenClaims = {}): Promise<AccessTokenRejection | null> {
+    if (await this.isBlacklisted(token)) return 'revoked';
+    const info = await this.getByToken(token);
+    if (info && info.state !== TokenState.NORMAL) return 'inactive';
+    const userId = claims.sub ?? info?.userId;
+    if (userId) {
+      const revokedAt = await this.getUserRevokedAt(userId);
+      if (revokedAt !== undefined) {
+        // iat has second precision, so a token issued in the revocation second is rejected
+        // too. Tokens without iat cannot be ordered against the watermark; reject them.
+        if (typeof claims.iat !== 'number' || claims.iat <= Math.floor(revokedAt / 1000)) {
+          return 'user_revoked';
+        }
+      }
+    }
+    return null;
   }
 
   /** Token 轮换：旧 token 失效，签发新 token */
@@ -198,9 +250,9 @@ export class TokenService {
     // 撤销旧 token
     await this.revokeToken(oldToken);
 
-    // 签发新 token
+    // 签发新 token (keeping the session's type and inactivity policy)
     const newToken = this.jwtService.sign(payload);
-    const tokenInfo = await this.signIn(oldInfo.userId, newToken);
+    const tokenInfo = await this.signIn(oldInfo.userId, newToken, oldInfo.type, oldInfo.maxInactiveInterval);
 
     return { token: newToken, tokenInfo };
   }
@@ -244,7 +296,14 @@ export class TokenService {
       .filter((t): t is TokenInfo => t !== undefined);
   }
 
+  /**
+   * Change a session's state. Terminal states (expired/deny/revoked/offline) also blacklist
+   * the token so other processes reject it; LOCK is reversible and stays process-local.
+   */
   async changeState(token: string, state: TokenState): Promise<void> {
+    if (TERMINAL_STATES.has(state)) {
+      await this.blacklist(token);
+    }
     const info = this.tokens.get(token);
     if (info) {
       const oldState = info.state;
@@ -287,8 +346,11 @@ export class TokenService {
     return Array.from(this.tokens.values());
   }
 
-  /** Change state for all tokens of a user. */
+  /** Change state for all tokens of a user. Terminal states also revoke across processes. */
   async changeUserState(userId: string, state: TokenState): Promise<void> {
+    if (TERMINAL_STATES.has(state)) {
+      await this.markUserRevoked(userId);
+    }
     const tokens = await this.getByUserId(userId);
     for (const tokenInfo of tokens) {
       await this.changeState(tokenInfo.token, state);
@@ -327,10 +389,13 @@ export class TokenService {
     }
   }
 
+  /** Kick a user offline: every token of that user (on any instance sharing the cache) is revoked. */
   async signOutByUserId(userId: string): Promise<void> {
+    await this.markUserRevoked(userId);
     const tokenIds = this.userTokens.get(userId);
     if (!tokenIds) return;
     for (const token of Array.from(tokenIds)) {
+      await this.blacklist(token);
       // Publish token removed event for each token
       await this.publishEvent(
         AUTH_EVENT_TOPICS.TOKEN_REMOVED,
@@ -350,6 +415,69 @@ export class TokenService {
     for (const [token, expiresAt] of this.revokedTokens) {
       if (expiresAt <= now) this.revokedTokens.delete(token);
     }
+    for (const [userId, entry] of this.revokedAfter) {
+      if (entry.expiresAt <= now) this.revokedAfter.delete(userId);
+    }
+  }
+
+  private async blacklist(token: string): Promise<void> {
+    if (this.cache) {
+      await this.cache.set(`${BLACKLIST_PREFIX}${token}`, true, this.blacklistTtlMs);
+    } else {
+      this.pruneRevocations();
+      this.revokedTokens.set(token, Date.now() + this.blacklistTtlMs);
+    }
+  }
+
+  private removeSession(token: string): void {
+    const info = this.tokens.get(token);
+    if (!info) return;
+    const userSet = this.userTokens.get(info.userId);
+    userSet?.delete(token);
+    if (userSet?.size === 0) this.userTokens.delete(info.userId);
+  }
+
+  private async markUserRevoked(userId: string): Promise<void> {
+    const now = Date.now();
+    if (this.cache) {
+      await this.cache.set(`${REVOKED_AFTER_PREFIX}${userId}`, now, this.blacklistTtlMs);
+    } else {
+      this.pruneRevocations();
+      this.revokedAfter.set(userId, { at: now, expiresAt: now + this.blacklistTtlMs });
+    }
+  }
+
+  private async getUserRevokedAt(userId: string): Promise<number | undefined> {
+    if (this.cache) {
+      const value = await this.cache.get(`${REVOKED_AFTER_PREFIX}${userId}`);
+      return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+    }
+    const entry = this.revokedAfter.get(userId);
+    if (!entry) return undefined;
+    if (entry.expiresAt <= Date.now()) {
+      this.revokedAfter.delete(userId);
+      return undefined;
+    }
+    return entry.at;
+  }
+
+  /**
+   * Bound in-memory growth without requiring consumers to schedule checkExpired():
+   * at most once a minute, drop sessions older than the blacklist TTL (which must cover
+   * the JWT lifetime) and expired inactivity sessions.
+   */
+  private async sweepIfDue(): Promise<void> {
+    const now = Date.now();
+    if (now - this.lastSweep < 60_000) return;
+    this.lastSweep = now;
+    this.pruneRevocations();
+    for (const [token, info] of Array.from(this.tokens.entries())) {
+      if (now - info.signInTime.getTime() > this.blacklistTtlMs) {
+        this.removeSession(token);
+        this.tokens.delete(token);
+      }
+    }
+    await this.checkExpired();
   }
 
   private async publishEvent(topic: string, payload: unknown): Promise<void> {

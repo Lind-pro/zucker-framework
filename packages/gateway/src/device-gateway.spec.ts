@@ -159,6 +159,26 @@ describe('AbstractDeviceGateway', () => {
     });
   });
 
+  describe('stale sessions (M12)', () => {
+    it('a late close of a replaced session keeps the live session online', async () => {
+      const states = (thingManager as unknown as { _states: Map<string, ThingState> })._states;
+      const old = { ...makeSession('d1'), sessionId: 'old' };
+      const current = { ...makeSession('d1'), sessionId: 'new' };
+      await gateway.injectSession(old);
+      await gateway.injectSession(current);
+      await gateway.disconnectSession(old);
+      expect(gateway.getSession('d1')).toBe(current);
+      expect(states.get('d1')).toBe(ThingState.ONLINE);
+      expect(old.state).toBe(SessionState.CLOSED);
+    });
+
+    it('does not keep a session whose online update failed', async () => {
+      thingManager.updateState = vi.fn().mockRejectedValue(new Error('db down'));
+      await expect(gateway.injectSession(makeSession('d1'))).rejects.toThrow('db down');
+      expect(gateway.getSessionCount()).toBe(0);
+    });
+  });
+
   describe('sendDownstream', () => {
     it('sends payload to active session', async () => {
       const sent: unknown[] = [];
@@ -184,6 +204,25 @@ describe('AbstractDeviceGateway', () => {
       await gw.processIncoming({ payload: {}, session });
       const ds = dataService as unknown as { _saved: unknown[] };
       expect(ds._saved).toHaveLength(1);
+    });
+
+    it('drops messages a session reports for another thing (M12)', async () => {
+      const spoofed = createReportPropertyMessage('victim', 'sensor', { temperature: 99 });
+      const gw = new TestGateway(config, makeProtocol(makeCodec([spoofed])), thingManager as unknown as ThingManager, dataService as unknown as ThingsDataService);
+      await gw.processIncoming({ payload: {}, session: makeSession('attacker') });
+      expect((dataService as unknown as { _saved: unknown[] })._saved).toHaveLength(0);
+    });
+
+    it('allows child-device messages when isAuthorizedThing permits them', async () => {
+      class ParentGateway extends TestGateway {
+        protected isAuthorizedThing(session: DeviceSession, thingId: string) {
+          return session.thingId === 'parent' && thingId === 'child';
+        }
+      }
+      const child = createReportPropertyMessage('child', 'sensor', { temperature: 1 });
+      const gw = new ParentGateway(config, makeProtocol(makeCodec([child])), thingManager as unknown as ThingManager, dataService as unknown as ThingsDataService);
+      await gw.processIncoming({ payload: {}, session: makeSession('parent') });
+      expect((dataService as unknown as { _saved: unknown[] })._saved).toHaveLength(1);
     });
 
     it('silently handles missing codec for transport', async () => {

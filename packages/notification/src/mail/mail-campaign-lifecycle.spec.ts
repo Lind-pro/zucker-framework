@@ -18,6 +18,29 @@ const options: MailCampaignOptions = {
   loadBatch: async () => [],
 };
 describe('MailCampaignService queue lifecycle', () => {
+  it('reaps only running campaigns whose job is no longer queued or active', async () => {
+    vi.spyOn(BullMqWorkerHost.prototype, 'register').mockImplementation(() => undefined);
+    vi.spyOn(BullMqWorkerHost.prototype, 'close').mockResolvedValue(undefined);
+    vi.spyOn(BullMqQueueProvider.prototype, 'close').mockResolvedValue(undefined);
+    vi.spyOn(BullMqQueueProvider.prototype, 'getJob').mockImplementation(async (_queue, id) =>
+      id === 'busy' ? ({ id, status: 'active' } as never) : null,
+    );
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const findMany = vi.fn().mockResolvedValue([{ id: 'busy' }, { id: 'orphan' }]);
+    const service = new MailCampaignService(
+      { ...options, database: { model: () => ({ updateMany, findMany }) } as unknown as DatabaseAdapter },
+      {} as MailService,
+    );
+
+    await service.onModuleInit();
+
+    expect(updateMany).toHaveBeenCalledTimes(1);
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'orphan', status: 'running' } }),
+    );
+    await service.onModuleDestroy();
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -31,8 +54,9 @@ describe('MailCampaignService queue lifecycle', () => {
       .spyOn(BullMqQueueProvider.prototype, 'close')
       .mockResolvedValue(undefined);
     const updateMany = vi.fn().mockResolvedValue({ count: 0 });
+    const findMany = vi.fn().mockResolvedValue([]);
     const service = new MailCampaignService(
-      { ...options, database: { model: () => ({ updateMany }) } as unknown as DatabaseAdapter },
+      { ...options, database: { model: () => ({ updateMany, findMany }) } as unknown as DatabaseAdapter },
       {} as MailService,
     );
     const processCampaign = vi.spyOn(service, 'processCampaign').mockResolvedValue(undefined);

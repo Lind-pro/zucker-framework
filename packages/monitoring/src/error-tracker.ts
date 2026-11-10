@@ -15,6 +15,12 @@ export interface TrackedError {
 export interface ErrorTrackerOptions {
   /** Fixed aggregation window from the first occurrence; omitted retains existing unbounded history. */
   retentionMs?: number;
+  /**
+   * Maximum distinct aggregated errors kept in memory; the least recently seen entry is evicted.
+   * Default 1000. The default key includes the message, so ids or user input in messages would
+   * otherwise create a new entry (with stack) per occurrence.
+   */
+  maxEntries?: number;
   logEntries?: boolean;
   fingerprint?: (error: Error, category: string, metadata?: Record<string, unknown>) => string;
   sanitizeText?: (value: string) => string;
@@ -45,6 +51,15 @@ export class ErrorTracker {
       (!Number.isFinite(options.retentionMs) || options.retentionMs <= 0)
     )
       throw new Error('Invalid error retention window');
+    if (
+      options.maxEntries !== undefined &&
+      (!Number.isInteger(options.maxEntries) || options.maxEntries < 1)
+    )
+      throw new Error('Invalid error tracker maxEntries');
+  }
+
+  private get maxEntries(): number {
+    return this.options.maxEntries ?? 1000;
   }
   private prune(): void {
     if (this.options.retentionMs === undefined) return;
@@ -65,6 +80,9 @@ export class ErrorTracker {
     if (existing) {
       existing.count++;
       existing.lastOccurrence = new Date();
+      // Keep Map order as least-recently-seen first for eviction.
+      this.errors.delete(key);
+      this.errors.set(key, existing);
       if (safeMetadata) {
         existing.metadata = { ...existing.metadata, ...safeMetadata };
       }
@@ -79,6 +97,11 @@ export class ErrorTracker {
         lastOccurrence: new Date(),
         metadata: safeMetadata,
       };
+      while (this.errors.size >= this.maxEntries) {
+        const oldest = this.errors.keys().next().value as string | undefined;
+        if (oldest === undefined) break;
+        this.errors.delete(oldest);
+      }
       this.errors.set(key, record);
       this.options.onNewError?.(error, record);
     }

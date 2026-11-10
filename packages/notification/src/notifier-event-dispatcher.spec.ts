@@ -87,4 +87,29 @@ describe('NotifierEventDispatcher', () => {
       'recipient@example.com',
     );
   });
+
+  it('publishes the error topic when the notifier returns success: false', async () => {
+    const publish = vi.fn().mockResolvedValue(undefined);
+    const failed: NotifyResult = {
+      success: false,
+      error: 'smtp down for recipient@example.com',
+      channel: NotifyChannel.EMAIL,
+      to: 'recipient@example.com',
+      timestamp: new Date(),
+    };
+    const dispatcher = new NotifierEventDispatcher(
+      notifier(vi.fn().mockResolvedValue(failed)),
+      { publish } satisfies NotificationEventBus,
+    );
+
+    await expect(
+      dispatcher.send({ channel: NotifyChannel.EMAIL, to: 'recipient@example.com', variables: {} }),
+    ).resolves.toBe(failed);
+    expect(publish).toHaveBeenCalledTimes(1);
+    expect(publish).toHaveBeenCalledWith(
+      NotifierEventTopics.error('notifier-1'),
+      expect.objectContaining({ success: false, errorCode: 'NOTIFICATION_FAILED' }),
+    );
+    expect(JSON.stringify(publish.mock.calls)).not.toContain('recipient@example.com');
+  });
 });

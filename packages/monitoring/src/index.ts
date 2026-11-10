@@ -31,10 +31,21 @@ export {
   SystemMetricsCollector,
   type SystemMetricsOptions,
   PrometheusExporter,
+  TokenPrometheusExporter,
+  MAX_SERIES_PER_METRIC,
   renderPrometheusMetrics,
 } from './metrics/index';
 
 export { METRICS_COLLECTOR, ZuckerMonitoringModule } from './monitoring.module';
+export {
+  MONITORING_MODULE_OPTIONS,
+  MONITORING_QUERY_PERMISSION,
+  MONITORING_UPDATE_PERMISSION,
+  MonitoringAccessGuard,
+  MetricsTokenGuard,
+  type MonitoringAccess,
+  type MonitoringModuleOptions,
+} from './monitoring-access';
 
 export { HealthController, HEALTH_OPTIONS } from './health.controller';
 export type { HealthOptions } from './health.controller';
@@ -44,7 +55,7 @@ export type { ProcessUptimeSnapshot } from './process-uptime';
 
 export type { AlertSeverity, AlertStatus, AlertRule, AlertRecord } from './alert/alert.interfaces';
 export { AlertManagerService } from './alert/alert-manager.service';
-export { AlertController } from './alert/alert.controller';
+export { AlertController, MAX_ALERT_RULES, parseAlertRule } from './alert/alert.controller';
 
 export { UsageTracker } from './usage-tracker';
 export type { UsageMetrics, UsageSummary } from './usage-tracker';

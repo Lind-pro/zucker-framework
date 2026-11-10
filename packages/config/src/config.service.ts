@@ -1,8 +1,17 @@
-import { Injectable, Inject, Logger, Optional } from '@nestjs/common';
+import { Injectable, Inject, Logger, Optional, type OnModuleDestroy } from '@nestjs/common';
 import { type DatabaseAdapter, ValidationException } from '@zucker-framework/core';
 // The CommonJS default is the original EventEmitter2 constructor in both formats.
 import EventEmitter2Constructor, { type EventEmitter2 } from 'eventemitter2';
 import { ConfigScopeManager } from './config-scope-manager';
+import {
+  BoundedTtlCache,
+  CONFIG_CACHE_OPTIONS,
+  configCacheKey,
+  isRecordNotFound,
+  unsubscribeQuietly,
+  type ConfigCacheOptions,
+  type TopicEventBusLike,
+} from './config-cache';
 
 /** Internal model for a config record row */
 interface ConfigRecord {
@@ -47,16 +56,12 @@ export interface ConfigEncryptor {
   decrypt(value: string): string | Promise<string>;
 }
 
-/** Minimal TopicEventBus interface to avoid hard dependency on @zucker-framework/event */
-interface TopicEventBusLike {
-  publish(topic: string, payload: unknown): Promise<void>;
-}
-
 @Injectable()
-export class ConfigService {
+export class ConfigService implements OnModuleDestroy {
   private readonly logger = new Logger(ConfigService.name);
-  private readonly cache = new Map<string, unknown>();
-  private static readonly CACHE_MAX_SIZE = 1024;
+  /** Bounded, TTL-limited (default 60 s) so other replicas' writes become visible. */
+  private readonly cache: BoundedTtlCache;
+  private readonly busSubscription: unknown;
 
   constructor(
     @Inject(DATABASE_ADAPTER) private readonly db: DatabaseAdapter,
@@ -64,7 +69,23 @@ export class ConfigService {
     @Optional() private readonly scopeManager?: ConfigScopeManager,
     @Optional() @Inject(CONFIG_ENCRYPTOR) private readonly encryptor?: ConfigEncryptor,
     @Optional() @Inject('TOPIC_EVENT_BUS') private readonly topicEventBus?: TopicEventBusLike,
-  ) {}
+    @Optional() @Inject(CONFIG_CACHE_OPTIONS) cacheOptions?: ConfigCacheOptions,
+  ) {
+    this.cache = new BoundedTtlCache(cacheOptions ?? {});
+    // With a distributed bus, a change on any replica evicts the entry here as well.
+    this.busSubscription = typeof topicEventBus?.subscribe === 'function'
+      ? topicEventBus.subscribe(CONFIG_CHANGED_TOPIC, (message) => {
+          const change = message?.payload as Partial<ConfigChangePayload> | undefined;
+          if (typeof change?.scope === 'string' && typeof change.key === 'string') {
+            this.cache.delete(configCacheKey(change.scope, change.key));
+          }
+        })
+      : undefined;
+  }
+
+  onModuleDestroy(): void {
+    unsubscribeQuietly(this.busSubscription);
+  }
 
   /**
    * 获取指定 scope 和 key 的配置值
@@ -74,7 +95,7 @@ export class ConfigService {
    */
   async get<T = string>(scope: string, key: string): Promise<T | undefined> {
     this.requireEncryption(scope, key);
-    const cacheKey = `${scope}:${key}`;
+    const cacheKey = configCacheKey(scope, key);
     if (this.cache.has(cacheKey)) {
       return this.cache.get(cacheKey) as T;
     }
@@ -95,11 +116,6 @@ export class ConfigService {
         this.logger.error(`Failed to decrypt protected config ${scope}.${key}`);
         throw new Error('Protected configuration could not be decrypted');
       }
-    }
-
-    while (this.cache.size >= ConfigService.CACHE_MAX_SIZE) {
-      const firstKey = this.cache.keys().next().value!;
-      this.cache.delete(firstKey);
     }
     this.cache.set(cacheKey, value);
     return value;
@@ -145,7 +161,7 @@ export class ConfigService {
       }
     }
 
-    const cacheKey = `${scope}:${key}`;
+    const cacheKey = configCacheKey(scope, key);
 
     // Load oldValue from cache or DB (cold-cache safe)
     let oldValue = this.cache.get(cacheKey);
@@ -167,18 +183,14 @@ export class ConfigService {
     await this.db.model('config').update({
       where: { scope_key: { scope, key } },
       data: { value: storedValue },
-    }).catch(async () => {
-      // upsert: create if not exists
+    }).catch(async (error: unknown) => {
+      // upsert: create only when the row is missing; other failures must surface.
+      if (!isRecordNotFound(error)) throw error;
       this.logger.debug(`Config key ${scope}.${key} update did not succeed; attempting creation`);
       await this.db.model('config').create({
         data: { scope, key, value: storedValue },
       });
     });
-
-    while (this.cache.size >= ConfigService.CACHE_MAX_SIZE) {
-      const firstKey = this.cache.keys().next().value!;
-      this.cache.delete(firstKey);
-    }
     this.cache.set(cacheKey, value);
 
     // 记录配置变更历史（支持版本回溯）
@@ -226,7 +238,7 @@ export class ConfigService {
 
     await this.db.$transaction(async (tx: DatabaseAdapter) => {
       for (const [key, value] of entries) {
-        const cacheKey = `${scope}:${key}`;
+        const cacheKey = configCacheKey(scope, key);
         const oldValue = this.cache.get(cacheKey);
 
         // Encrypt if needed
@@ -238,7 +250,8 @@ export class ConfigService {
         await tx.model('config').update({
           where: { scope_key: { scope, key } },
           data: { value: storedValue },
-        }).catch(async () => {
+        }).catch(async (error: unknown) => {
+          if (!isRecordNotFound(error)) throw error;
           this.logger.debug(`Config key ${scope}.${key} update did not succeed; attempting creation`);
           await tx.model('config').create({
             data: { scope, key, value: storedValue },
@@ -251,12 +264,7 @@ export class ConfigService {
 
     // Failed transactions must not leave process-local secrets/configuration ahead of storage.
     for (const [key, value] of entries) {
-      while (this.cache.size >= ConfigService.CACHE_MAX_SIZE) {
-        const oldest = this.cache.keys().next().value;
-        if (oldest === undefined) break;
-        this.cache.delete(oldest);
-      }
-      this.cache.set(`${scope}:${key}`, value);
+      this.cache.set(configCacheKey(scope, key), value);
     }
     // Emit events after all writes succeed (single batch notification)
     for (const payload of changes) {
@@ -308,11 +316,7 @@ export class ConfigService {
       }
 
       result[record.key] = value;
-      if (this.cache.size >= ConfigService.CACHE_MAX_SIZE) {
-        const firstKey = this.cache.keys().next().value!;
-        this.cache.delete(firstKey);
-      }
-      this.cache.set(`${scope}:${record.key}`, value);
+      this.cache.set(configCacheKey(scope, record.key), value);
     }
 
     return result;
@@ -322,7 +326,7 @@ export class ConfigService {
    * Remove a specific config property.
    */
   async remove(scope: string, key: string): Promise<void> {
-    const cacheKey = `${scope}:${key}`;
+    const cacheKey = configCacheKey(scope, key);
 
     // Load oldValue from cache or DB (cold-cache safe)
     let oldValue = this.cache.get(cacheKey);
@@ -397,10 +401,8 @@ export class ConfigService {
    */
   clearCache(scope?: string): void {
     if (scope) {
-      const prefix = `${scope}:`;
-      for (const key of this.cache.keys()) {
-        if (key.startsWith(prefix)) this.cache.delete(key);
-      }
+      const prefix = configCacheKey(scope, '');
+      this.cache.deleteWhere((key) => key.startsWith(prefix));
     } else {
       this.cache.clear();
     }
@@ -473,13 +475,14 @@ export class ConfigService {
     if (record && this.isEncryptedProperty(record.scope, record.key)) {
       throw new Error('Protected configuration requires an explicit replacement; history cannot restore secrets');
     }
+    if (!record) throw new Error(`Config history record ${historyId} not found`);
     try {
-      if (!record || record.oldValue === null) return;
-
-      const value = JSON.parse(record.oldValue);
-      await this.set(record.scope, record.key, value);
+      // No previous value means the key did not exist before that change.
+      if (record.oldValue === null) await this.remove(record.scope, record.key);
+      else await this.set(record.scope, record.key, JSON.parse(record.oldValue));
     } catch (error) {
       this.logger.warn(`Config rollback failed: ${error instanceof Error ? error.message : String(error)}`);
+      throw error;
     }
   }
 

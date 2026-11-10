@@ -42,6 +42,9 @@ export interface FieldDefinition {
 export interface FormLayout {
   columns?: number;
   labelWidth?: number | string;
+  /** Server spelling (`@zucker-framework/form`). `top` renders a vertical form. */
+  labelPosition?: 'top' | 'left' | 'right';
+  /** Legacy client spelling; `labelPosition` is preferred. */
   labelAlign?: 'left' | 'right';
 }
 

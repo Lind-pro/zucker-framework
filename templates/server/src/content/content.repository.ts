@@ -54,13 +54,14 @@ export class ContentRepository {
     if (!found.rows[0]) throw new NotFoundException('Category was not found');
     return found.rows[0];
   }
-  async adminEntries(filter: { kind?: ContentKind; locale?: ContentLocale; status?: ContentStatus; page: number }) {
+  async adminEntries(filter: { kind?: ContentKind; locale?: ContentLocale; status?: ContentStatus; page: number; pageSize?: number }) {
+    const pageSize = filter.pageSize ?? 20;
     return this.database.transaction(async tx => {
       const values = [filter.kind ?? null, filter.locale ?? null, filter.status ?? null];
       const where = '($1::text IS NULL OR "kind"=$1) AND ($2::text IS NULL OR "locale"=$2) AND ($3::text IS NULL OR "status"=$3)';
       const count = await tx.query<{ total: number }>(`SELECT COUNT(*)::int AS total FROM site_content_entries WHERE ${where}`, values);
-      const data = await tx.query<EntryRow>(`SELECT * FROM site_content_entries WHERE ${where} ORDER BY "updatedAt" DESC,"id" LIMIT 20 OFFSET $4`, [...values, (filter.page - 1) * 20]);
-      return { data: data.rows, total: count.rows[0]?.total ?? 0, page: filter.page, pageSize: 20 };
+      const data = await tx.query<EntryRow>(`SELECT * FROM site_content_entries WHERE ${where} ORDER BY "updatedAt" DESC,"id" LIMIT $5 OFFSET $4`, [...values, (filter.page - 1) * pageSize, pageSize]);
+      return { data: data.rows, total: count.rows[0]?.total ?? 0, page: filter.page, pageSize };
     });
   }
   async adminCategories(language?: ContentLocale) {

@@ -41,6 +41,7 @@ export const enUS: AdminMessages = {
   'common.pageStatus': 'Page {page} of {pages}, {total} records',
   'common.pageSize': 'Rows per page',
   'common.selectPage': 'Select all on this page',
+  'common.openRow': 'Open record {id}',
   'common.selectRow': 'Select record {id}',
   'common.batchDelete': 'Delete selected',
   'common.batchDeleteConfirm': 'Delete the {count} selected records?',

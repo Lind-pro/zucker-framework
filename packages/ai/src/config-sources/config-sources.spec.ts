@@ -61,7 +61,8 @@ describe('AI configuration sources', () => {
       modelId: 'high-model',
     });
     await service.getScenarioConfig('source-plan');
-    expect(spy).toHaveBeenCalledTimes(1);
+    // Pass 1 (explicit mappings, none here) + pass 2 (defaults); the second lookup is cached.
+    expect(spy).toHaveBeenCalledTimes(2);
     expect(service.getSources().map((source) => source.id)).toEqual(['high', 'low']);
   });
 

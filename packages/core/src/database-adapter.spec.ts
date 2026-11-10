@@ -146,4 +146,21 @@ describe('TransactionAwareDatabaseAdapter', () => {
     const result = await adapter.$transaction(async () => undefined);
     expect(result).toBeUndefined();
   });
+
+  it('reports a committed transaction as successful when an afterCommit callback fails', async () => {
+    const adapter = new TestDatabaseAdapter();
+    const afterRollback = vi.fn();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const result = await adapter.$transaction(async () => {
+      TransactionHolder.get()?.afterCommit(() => {
+        throw new Error('notify failed');
+      });
+      TransactionHolder.get()?.afterRollback(afterRollback);
+      return 'committed';
+    });
+    expect(result).toBe('committed');
+    expect(afterRollback).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
 });
+

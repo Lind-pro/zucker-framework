@@ -239,7 +239,9 @@ export function createCookieSession<TUser extends { id: string }, TAccount exten
   const events = options.events === undefined ? (typeof window === 'undefined' ? null : window) : options.events;
   const onStorage = (event: Event) => {
     const { key, newValue } = event as StorageEvent;
-    if (!options.persistKey || key !== options.persistKey) return;
+    // key === null means another tab cleared the whole storage area (localStorage.clear()),
+    // which removes the summary as well: treat it as a sign-out.
+    if (!options.persistKey || (key !== null && key !== options.persistKey)) return;
     const state = store.getState();
     const current = state.isAuthenticated ? state.user?.id ?? null : null;
     if (current === null || summaryIdentity(newValue) === current) return;

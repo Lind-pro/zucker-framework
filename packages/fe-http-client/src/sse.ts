@@ -10,11 +10,19 @@ export type SseStreamOptions = {
   onEvent: (event: SseEvent) => void | boolean | Promise<void | boolean>;
   onChunk?: () => void;
   idleTimeoutMs?: number;
+  /**
+   * Maximum characters buffered for one not-yet-terminated event (default 16 MiB). A stream
+   * that exceeds it is cancelled with an error instead of growing memory without bound.
+   */
+  maxBufferLength?: number;
 };
+
+const DEFAULT_MAX_BUFFER_LENGTH = 16 * 1024 * 1024;
 
 export type SseConnectionOptions = {
   url: string;
-  headers?: Record<string, string>;
+  /** Static headers, or a function evaluated for every (re)connection so a rotated token is used. */
+  headers?: Record<string, string> | (() => Record<string, string> | undefined);
   onOpen?: (response: Response) => void | Promise<void>;
   onEvent?: (event: SseEvent) => void | boolean | Promise<void | boolean>;
   onError?: (error: Error) => void;
@@ -24,6 +32,12 @@ export type SseConnectionOptions = {
   maxRetryDelay?: number;
   fatalStatusCodes?: readonly number[];
   fetcher?: typeof fetch;
+  /**
+   * Reconnect after the server ends the stream cleanly (EventSource semantics, default true).
+   * Returning false from onEvent always stops the connection without reconnecting.
+   */
+  reconnectOnEnd?: boolean;
+  maxBufferLength?: number;
 };
 
 export function parseSseEventBlock(raw: string): SseEvent | null {
@@ -61,6 +75,7 @@ export async function readSseStream(response: Response, options: SseStreamOption
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  const maxBufferLength = options.maxBufferLength ?? DEFAULT_MAX_BUFFER_LENGTH;
   let lastChunkAt = Date.now();
   let idleError: Error | null = null;
   const idleTimeoutMs = options.idleTimeoutMs;
@@ -109,6 +124,9 @@ export async function readSseStream(response: Response, options: SseStreamOption
         await reader.cancel();
         return;
       }
+      if (buffer.length > maxBufferLength) {
+        throw new Error(`SSE event exceeds ${maxBufferLength} buffered characters`);
+      }
     }
   } catch (error) {
     // A parser/consumer failure must not leave the upstream connection running.
@@ -134,6 +152,8 @@ export function connectSse(options: SseConnectionOptions): { close: () => void }
     maxRetryDelay = 30_000,
     fatalStatusCodes = [401, 403, 404],
     fetcher = fetch,
+    reconnectOnEnd = true,
+    maxBufferLength,
   } = options;
   const fatalStatuses = new Set(fatalStatusCodes);
   const controller = new AbortController();
@@ -172,7 +192,7 @@ export function connectSse(options: SseConnectionOptions): { close: () => void }
 
     try {
       const response = await fetcher(url, {
-        headers,
+        headers: typeof headers === 'function' ? headers() : headers,
         signal: connectionController.signal,
       });
       if (!response.ok) {
@@ -185,10 +205,17 @@ export function connectSse(options: SseConnectionOptions): { close: () => void }
 
       await onOpen?.(response);
       retryCount = 0;
+      let stoppedByConsumer = false;
       await readSseStream(response, {
-        onEvent: async (event) => onEvent?.(event),
+        onEvent: async (event) => {
+          const result = await onEvent?.(event);
+          if (result === false) stoppedByConsumer = true;
+          return result;
+        },
+        maxBufferLength,
       });
-      if (!closed) scheduleRetry();
+      if (stoppedByConsumer || !reconnectOnEnd) cleanup();
+      else if (!closed) scheduleRetry();
     } catch (error) {
       if (closed || connectionController.signal.aborted) return;
       onError?.(error instanceof Error ? error : new Error(String(error)));

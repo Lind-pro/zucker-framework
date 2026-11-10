@@ -133,7 +133,7 @@ run('hosted checkout with actual PostgreSQL credit fulfillment', () => {
   });
 
   afterAll(async () => {
-    try { await Promise.all([first?.onModuleDestroy(), second?.onModuleDestroy()]); }
+    try { await Promise.all([first?.disconnect(), second?.disconnect()]); }
     finally {
       if (pool) {
         try { await pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`); }
@@ -189,7 +189,7 @@ run('hosted checkout with actual PostgreSQL credit fulfillment', () => {
       await restarted.confirm({ orderId: persisted.id, ownerId: f.ownerId });
       expect(f.fake.creations()).toBe(1);
       expect((await facts(f.ownerId, persisted.id)).lots).toHaveLength(1);
-    } finally { await replacement.onModuleDestroy(); }
+    } finally { await replacement.disconnect(); }
   });
 
   it('recovers durable checkout state in new Node processes after the creating process exits', async () => {
@@ -227,7 +227,7 @@ const { HostedCheckoutService } = load('@zucker-framework/payment');
       order = await service.get(selection.orderId, selection.ownerId);
     } else order = await service.confirm({ orderId:selection.orderId, ownerId:selection.ownerId, checkoutId:'checkout-' + selection.orderId });
     process.stdout.write(JSON.stringify({ pid:process.pid, state:order.state, creationState:order.creationState, fulfilled:!!order.fulfilledAt }));
-  } finally { await database.onModuleDestroy(); }
+  } finally { await database.disconnect(); }
 })().catch(() => { process.stderr.write('Synthetic billing worker failed'); process.exitCode=1; });
 `);
     async function worker(mode: 'create' | 'confirm'): Promise<{ pid: number; state: string; creationState: string; fulfilled: boolean }> {

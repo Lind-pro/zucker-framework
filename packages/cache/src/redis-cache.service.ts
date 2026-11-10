@@ -15,7 +15,26 @@ export interface RedisCacheServiceOptions {
   circuitBreakerMs?: number;
   /** Optional factory for a compatible client, including isolated adapter tests. */
   createClient?: (url: string, options: RedisOptions) => Redis | Promise<Redis>;
+  /**
+   * Prefix applied to every key, e.g. `"ccopyright:"`. Defaults to `""` (keys unchanged)
+   * so existing deployments keep reading their data; set it when products share a Redis DB.
+   */
+  keyPrefix?: string;
+  /**
+   * Maximum number of keys remembered for invalidation while Redis is degraded.
+   * They are deleted from Redis as soon as it is reachable again. Default 10_000.
+   */
+  maxPendingInvalidations?: number;
 }
+
+/** INCR and set the TTL atomically; also repairs a counter left without expiry. */
+const INCR_WITH_TTL_SCRIPT = `
+local v = redis.call('INCR', KEYS[1])
+local ttl = tonumber(ARGV[1])
+if ttl and ttl > 0 and redis.call('TTL', KEYS[1]) == -1 then
+  redis.call('EXPIRE', KEYS[1], ttl)
+end
+return v`;
 
 class RedisOperationTimeoutError extends Error {
   readonly code = "ETIMEDOUT";
@@ -38,6 +57,13 @@ export class RedisCacheService implements OnModuleInit, OnModuleDestroy {
   private shuttingDown = false;
 
   private initialization?: Promise<void>;
+  /**
+   * Keys whose Redis copy became stale while Redis was unreachable (delete/set fell back
+   * to memory). They are deleted before any other command once Redis is back, so an
+   * invalidation issued during an outage cannot be undone by the old Redis value.
+   */
+  private readonly pendingInvalidations = new Set<string>();
+  private pendingOverflowWarned = false;
 
   constructor(private readonly options: RedisCacheServiceOptions = {}) {}
 
@@ -133,7 +159,7 @@ export class RedisCacheService implements OnModuleInit, OnModuleDestroy {
     });
 
     try {
-      const result = await Promise.race([command(), deadline]);
+      const result = await Promise.race([this.replayInvalidations().then(command), deadline]);
       this.redisDegradedUntil = 0;
       return result;
     } catch (error) {
@@ -148,6 +174,46 @@ export class RedisCacheService implements OnModuleInit, OnModuleDestroy {
         clearTimeout(timeout);
       }
     }
+  }
+
+  /** Remember a key whose Redis value must not survive the current outage. */
+  markStale(key: string): void {
+    if (!this.options.url || this.shuttingDown) return;
+    const max = this.options.maxPendingInvalidations ?? 10_000;
+    if (this.pendingInvalidations.size >= max && !this.pendingInvalidations.has(key)) {
+      if (!this.pendingOverflowWarned) {
+        this.pendingOverflowWarned = true;
+        this.logger.warn(`Redis invalidation backlog full (${max}); later keys rely on TTL expiry`);
+      }
+      return;
+    }
+    this.pendingInvalidations.add(key);
+  }
+
+  /** Number of invalidations waiting for Redis to recover (diagnostics and tests). */
+  get pendingInvalidationCount(): number {
+    return this.pendingInvalidations.size;
+  }
+
+  private async replayInvalidations(): Promise<void> {
+    if (this.pendingInvalidations.size === 0 || !this.client) return;
+    const keys = [...this.pendingInvalidations];
+    for (let i = 0; i < keys.length; i += 500) {
+      const batch = keys.slice(i, i + 500);
+      await this.client.del(...batch.map((k) => this.prefixed(k)));
+      for (const k of batch) this.pendingInvalidations.delete(k);
+    }
+    this.pendingOverflowWarned = false;
+  }
+
+  private prefixed(key: string): string {
+    return `${this.options.keyPrefix ?? ''}${key}`;
+  }
+
+  private cache<T>(): RedisCache<T> {
+    return new RedisCache<T>(this.client as unknown as RedisClient, {
+      prefix: this.options.keyPrefix ?? '',
+    });
   }
 
   private errorCode(error: unknown): string {
@@ -170,19 +236,24 @@ export class RedisCacheService implements OnModuleInit, OnModuleDestroy {
    * 设置缓存（带 TTL）
    * @param key 缓存键
    * @param value 缓存值
-   * @param ttlSeconds 过期时间（秒）
+   * @param ttlSeconds 过期时间（秒）。非正数或非有限数表示"立即过期"：删除旧值而不是保留它。
    */
   async set<T>(key: string, value: T, ttlSeconds: number): Promise<void> {
-    // SETEX rejected non-positive/fractional TTLs; never translate them to immortal keys.
-    if (!this.isAvailable() || !Number.isInteger(ttlSeconds) || ttlSeconds <= 0)
+    if (!this.isAvailable()) {
+      this.markStale(key);
       return;
-    await this.runCommand(
-      () =>
-        new RedisCache(this.client as unknown as RedisClient, {
-          prefix: "",
-        }).set(key, value, ttlSeconds * 1000),
-      undefined,
-    );
+    }
+    if (!Number.isFinite(ttlSeconds) || ttlSeconds <= 0) {
+      // Never translate an invalid TTL to an immortal key, and never leave the old value.
+      await this.delete(key);
+      return;
+    }
+    const ttlMs = Math.max(1, Math.ceil(ttlSeconds * 1000));
+    const ok = await this.runCommand(async () => {
+      await this.cache().set(key, value, ttlMs);
+      return true;
+    }, false);
+    if (!ok) this.markStale(key);
   }
 
   /**
@@ -191,53 +262,57 @@ export class RedisCacheService implements OnModuleInit, OnModuleDestroy {
    */
   async get<T>(key: string): Promise<T | null> {
     if (!this.isAvailable()) return null;
-    return (
-      (await this.runCommand(
-        () =>
-          new RedisCache<T>(this.client as unknown as RedisClient, {
-            prefix: "",
-          }).get(key),
-        undefined,
-      )) ?? null
-    );
+    const raw = await this.runCommand(() => this.client!.get(this.prefixed(key)), null);
+    if (raw === null || raw === undefined) return null;
+    try {
+      return JSON.parse(raw) as T;
+    } catch {
+      // A corrupt value is a miss for this key, not a connection failure.
+      this.logger.warn('Redis cache value is not valid JSON; treating it as a miss');
+      return null;
+    }
   }
 
   /**
-   * 删除缓存
+   * 删除缓存。Redis 不可用时记录待删除键，恢复后先删除再执行其它命令。
    * @param key 缓存键
    */
   async delete(key: string): Promise<void> {
-    if (!this.isAvailable()) return;
-    await this.runCommand(
-      () =>
-        new RedisCache(this.client as unknown as RedisClient, {
-          prefix: "",
-        }).del(key),
-      undefined,
-    );
+    if (!this.isAvailable()) {
+      this.markStale(key);
+      return;
+    }
+    const ok = await this.runCommand(async () => {
+      await this.cache().del(key);
+      return true;
+    }, false);
+    if (!ok) this.markStale(key);
   }
 
   /**
-   * 递增计数器
+   * 递增计数器（INCR 与 EXPIRE 原子执行）
    * @param key 缓存键
-   * @param ttlSeconds 首次设置时的 TTL
-   * @returns 递增后的值
+   * @param ttlSeconds 首次设置时的 TTL（秒）
+   * @returns 递增后的值；Redis 不可用时返回 0
    */
   async incr(key: string, ttlSeconds?: number): Promise<number> {
     if (!this.isAvailable()) {
       return 0;
     }
-
-    const value = await this.runCommand(() => this.client!.incr(key), 0);
-
-    // 如果是新 key，设置 TTL
-    if (value === 1 && ttlSeconds) {
-      await this.runCommand(async () => {
-        await this.client!.expire(key, ttlSeconds);
-      }, undefined);
-    }
-
-    return value;
+    const ttl = ttlSeconds && Number.isFinite(ttlSeconds) && ttlSeconds > 0 ? Math.ceil(ttlSeconds) : 0;
+    const client = this.client!;
+    const fullKey = this.prefixed(key);
+    return this.runCommand(async () => {
+      if (typeof client.eval === 'function') {
+        return Number(await client.eval(INCR_WITH_TTL_SCRIPT, 1, fullKey, ttl));
+      }
+      // Compatible clients without EVAL: still never leave a counter without TTL.
+      const value = await client.incr(fullKey);
+      if (ttl > 0 && (value === 1 || (await client.ttl(fullKey)) === -1)) {
+        await client.expire(fullKey, ttl);
+      }
+      return value;
+    }, 0);
   }
 
   /**
@@ -250,7 +325,7 @@ export class RedisCacheService implements OnModuleInit, OnModuleDestroy {
       return -2;
     }
 
-    return this.runCommand(() => this.client!.ttl(key), -2);
+    return this.runCommand(() => this.client!.ttl(this.prefixed(key)), -2);
   }
 
   /**
@@ -258,12 +333,6 @@ export class RedisCacheService implements OnModuleInit, OnModuleDestroy {
    */
   async exists(key: string): Promise<boolean> {
     if (!this.isAvailable()) return false;
-    return this.runCommand(
-      () =>
-        new RedisCache(this.client as unknown as RedisClient, {
-          prefix: "",
-        }).has(key),
-      false,
-    );
+    return this.runCommand(() => this.cache().has(key), false);
   }
 }

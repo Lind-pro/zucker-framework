@@ -25,6 +25,10 @@ describe('bullMqConnectionFromUrl', () => {
     });
   });
 
+  it('strips brackets from IPv6 literal hosts', () => {
+    expect(bullMqConnectionFromUrl('redis://[::1]:6380')).toMatchObject({ host: '::1', port: 6380 });
+  });
+
   it('rejects unsupported protocols and invalid database numbers', () => {
     expect(() => bullMqConnectionFromUrl('http://localhost:6379')).toThrow('redis://');
     expect(() => bullMqConnectionFromUrl('redis://localhost/not-a-db')).toThrow('non-negative');

@@ -1,5 +1,5 @@
 import type Stripe from 'stripe';
-import { fromMinorUnits } from '../contract/money';
+import { fromStripeMinorUnits } from '../contract/money';
 import type { SubscriptionStatus } from '../contract/subscription-observation';
 import { stripeResourceId, verifyStripeWebhookEvent } from '../providers/stripe';
 import { checkoutUrl } from '../hosted-checkout/validation';
@@ -23,7 +23,7 @@ export function createStripeSubscriptionAdapter(options: StripeSubscriptionOptio
       throw new SubscriptionProtocolError('invalid_response', 'Stripe invoice has invalid paid money');
     }
     const currency = raw.currency.toUpperCase();
-    return { amount: fromMinorUnits(raw.amount_paid, currency === 'UGX' ? 'USD' : currency), currency };
+    return { amount: fromStripeMinorUnits(raw.amount_paid, currency), currency };
   };
   const retrieve = async (id: string): Promise<SubscriptionDetails> => {
     const raw = await options.client.subscriptions.retrieve(requiredId(id), { expand: ['latest_invoice'] });

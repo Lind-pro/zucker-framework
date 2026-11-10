@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { FormService } from './form.service';
 import type { FormDefinition } from './form-definition';
 
@@ -306,5 +306,42 @@ describe('FormService CRUD', () => {
     service.clearCache();
     const found = await service.findById('form-001');
     expect(found).not.toBeNull();
+  });
+});
+
+describe('FormService validator patterns', () => {
+  const formWith = (pattern: string): FormDefinition => ({
+    id: 'p', name: 'P',
+    fields: [{ key: 'code', name: 'Code', type: 'string', validators: [{ type: 'pattern', message: '', params: { pattern } }] }],
+  });
+
+  it('rejects invalid and catastrophic-backtracking patterns instead of throwing or hanging', () => {
+    const service = new (FormService as any)(createMockDb()) as FormService;
+    expect(service.validateData(formWith('(unclosed'), { code: 'x' }).valid).toBe(false);
+    const started = Date.now();
+    expect(service.validateData(formWith('^(a+)+$'), { code: `${'a'.repeat(40)}!` }).valid).toBe(false);
+    expect(Date.now() - started).toBeLessThan(500);
+    expect(service.validateData(formWith('^[A-Z]{2}\\d+$'), { code: 'AB12' }).valid).toBe(true);
+  });
+
+  it('refuses to store an unusable pattern', async () => {
+    const service = new (FormService as any)(createMockDb()) as FormService;
+    await expect(service.create(formWith('(a*)*'))).rejects.toThrow('Invalid form validator pattern');
+    await expect(service.create(formWith('^\\w+$'))).resolves.toBeTruthy();
+  });
+
+  it('expires cached definitions so other replicas pick up changes', async () => {
+    const db = createMockDb();
+    const service = new (FormService as any)(db) as FormService;
+    await service.create({ id: 'c', name: 'Old', fields: [] });
+    await service.findById('c');
+    await db.model().update({ where: { id: 'c' }, data: { name: 'New' } });
+    const now = Date.now();
+    const spy = vi.spyOn(Date, 'now').mockReturnValue(now + 31_000);
+    try {
+      expect((await service.findById('c'))!.name).toBe('New');
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

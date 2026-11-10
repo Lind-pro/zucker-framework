@@ -3,7 +3,7 @@ import * as path from 'path';
 import { Readable, Transform, addAbortSignal } from 'node:stream';
 import { pipeline, finished } from 'node:stream/promises';
 import type { WebDAVClient, FileStat } from 'webdav';
-import { FileManager, UploadOptions, UploadResult, FileInfo } from './storage.interface';
+import { FileManager, UploadOptions, UploadResult, FileInfo, encodeKeyPath } from './storage.interface';
 
 export interface WebDavEntry extends FileInfo {
   type: 'file' | 'directory';
@@ -300,6 +300,6 @@ export class WebDavStorage implements FileManager {
   }
 
   private buildUrl(key: string): string {
-    return this.publicUrl ? `${this.publicUrl}/${key}` : key;
+    return this.publicUrl ? `${this.publicUrl}/${encodeKeyPath(key)}` : key;
   }
 }

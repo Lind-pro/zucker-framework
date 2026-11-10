@@ -5,6 +5,7 @@ export type {
   FileInfo,
   StorageProviderType,
   FileUploadValidation,
+  FileDenyCheckOptions,
   ChunkUploadState,
   PosixFilePermissions,
 } from './storage.interface';

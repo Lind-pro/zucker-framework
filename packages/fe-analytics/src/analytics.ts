@@ -21,6 +21,36 @@ export interface AnalyticsConfig {
   getHeaders?: () => Record<string, string>;
   /** Adapt the wire payload without changing which fields the consumer collects. */
   serializeEvents?: (events: AnalyticsEvent[]) => string;
+  /**
+   * How much of `document.referrer` is recorded. Default `origin-path` drops the query string and
+   * fragment (OAuth `code`/`state`, payment session ids, tokens). `origin` keeps only the origin,
+   * `none` sends an empty referrer, `full` restores the pre-1.0.19 behaviour.
+   */
+  referrerPolicy?: AnalyticsReferrerPolicy;
+}
+
+export type AnalyticsReferrerPolicy = 'origin-path' | 'origin' | 'none' | 'full';
+
+/** Reduce a referrer URL according to the policy; anything unparsable or non-http(s) becomes ''. */
+export function sanitizeReferrer(referrer: string, policy: AnalyticsReferrerPolicy = 'origin-path'): string {
+  if (!referrer || policy === 'none') return '';
+  if (policy === 'full') return referrer;
+  try {
+    const url = new URL(referrer);
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return '';
+    return policy === 'origin' ? url.origin : `${url.origin}${url.pathname}`;
+  } catch {
+    return '';
+  }
+}
+
+function isSameOriginEndpoint(endpoint: string): boolean {
+  if (typeof window === 'undefined' || !window.location) return false;
+  try {
+    return new URL(endpoint, window.location.href).origin === window.location.origin;
+  } catch {
+    return false;
+  }
 }
 
 let cachedSessionId: string | null = null;
@@ -52,6 +82,7 @@ let config: Required<Omit<AnalyticsConfig, 'getHeaders'>> & Pick<AnalyticsConfig
   sessionStorageKey: 'analytics_session_id',
   createSessionId: () => `s_${Date.now()}_${Math.random().toString(36).slice(2)}`,
   serializeEvents: JSON.stringify,
+  referrerPolicy: 'origin-path',
 };
 
 let eventQueue: AnalyticsEvent[] = [];
@@ -84,7 +115,7 @@ export function trackEvent(eventName: string, eventData?: Record<string, unknown
     eventName,
     eventData,
     path: typeof window !== 'undefined' ? window.location.pathname : '',
-    referrer: typeof document !== 'undefined' ? document.referrer : '',
+    referrer: typeof document !== 'undefined' ? sanitizeReferrer(document.referrer, config.referrerPolicy) : '',
     sessionId: config.getSessionId(),
     timestamp: Date.now(),
   };
@@ -114,7 +145,13 @@ export function flushEvents(): void {
   try {
     const body = config.serializeEvents(events);
     if (!config.getHeaders && typeof navigator !== 'undefined' && navigator.sendBeacon) {
-      if (navigator.sendBeacon(config.endpoint, body)) return;
+      // Same-origin beacons are typed as JSON so a JSON-only body parser accepts them; a cross-origin
+      // beacon stays text/plain (CORS-safelisted) because a JSON beacon would need a preflight.
+      const payload =
+        typeof Blob !== 'undefined' && isSameOriginEndpoint(config.endpoint)
+          ? new Blob([body], { type: 'application/json' })
+          : body;
+      if (navigator.sendBeacon(config.endpoint, payload)) return;
     }
     if (typeof fetch === 'undefined') return;
     void fetch(config.endpoint, {

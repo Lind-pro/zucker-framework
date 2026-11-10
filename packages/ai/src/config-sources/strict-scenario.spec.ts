@@ -18,11 +18,12 @@ describe('strict scenario resolution', () => {
     await service.getScenarioConfig('chat');
     await service.getScenarioConfig('chat', strict);
     await service.getScenarioConfig('chat', strict);
-    expect(spy).toHaveBeenCalledTimes(4);
+    // 'embed' permissive needs both passes (no explicit mapping); the rest resolve in pass 1.
+    expect(spy).toHaveBeenCalledTimes(5);
     service.invalidateScenario('chat');
     await service.getScenarioConfig('chat');
     await service.getScenarioConfig('chat', strict);
-    expect(spy).toHaveBeenCalledTimes(6);
+    expect(spy).toHaveBeenCalledTimes(7);
     await expect(source.getScenarioConfig('toString', strict)).resolves.toBeNull();
   });
   it('requires an environment-scoped model but permits shared credentials', async () => {

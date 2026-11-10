@@ -125,18 +125,21 @@ describe('DataTable selection and rows', () => {
     await waitFor(() => expect(screen.getByLabelText('selected').textContent).toBe(''));
   });
 
-  it('activates clickable rows from the keyboard', async () => {
+  it('opens clickable rows through a named button and keeps the row click for pointers', async () => {
     const opened = vi.fn();
     render(<SelectableTable load={async () => ({ data: rows(1), total: 2 })} onRowClick={opened} />);
     const table = await screen.findByRole('table', { name: 'Records' });
     const row = within(table).getByText('row 1-0').closest('tr')!;
-    expect(row.tabIndex).toBe(0);
-    fireEvent.keyDown(row, { key: 'Enter' });
-    fireEvent.keyDown(row, { key: ' ' });
+    expect(row.hasAttribute('tabindex')).toBe(false);
+    fireEvent.click(within(row).getByRole('button', { name: '打开记录 1-0' }));
+    expect(opened).toHaveBeenCalledTimes(1);
+    fireEvent.click(within(row).getByText('row 1-0'));
     expect(opened).toHaveBeenCalledTimes(2);
-    // Keys inside a control in the row do not open it.
-    fireEvent.keyDown(within(row).getByRole('checkbox'), { key: 'Enter' });
+    // Controls inside the row do not open it.
+    fireEvent.click(within(row).getByRole('checkbox'));
     expect(opened).toHaveBeenCalledTimes(2);
+    // The mobile card no longer turns its label/value list into a button.
+    expect(document.querySelector('dl[role="button"]')).toBeNull();
   });
 
   it('keeps loaded rows visible when a reload fails', async () => {
@@ -172,6 +175,33 @@ describe('DataTable selection and rows', () => {
     fireEvent.click(screen.getByRole('button', { name: 'switch' }));
     await waitFor(() => expect(load.mock.calls.length).toBe(before + 1));
     expect(load).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1 }));
+  });
+
+  it('does not keep the previous parent rows when the load for new dependencies fails', async () => {
+    const load = vi.fn(async ({ page }: PageQuery) => {
+      if (load.mock.calls.length > 1) throw new Error('down');
+      return { data: rows(page), total: 2 };
+    });
+    function Parent() {
+      const [parent, setParent] = useState('a');
+      return (
+        <>
+          <button type="button" onClick={() => setParent('b')}>switch</button>
+          <ResourceTable<Row> label="Records" load={load} deps={[parent]} rowKey={(row) => row.id} columns={[{ key: 'name', title: 'Name', field: 'name' }]} />
+        </>
+      );
+    }
+    render(<Parent />);
+    await screen.findByRole('table', { name: 'Records' });
+    fireEvent.click(screen.getByRole('button', { name: 'switch' }));
+    expect(await screen.findByRole('alert')).toBeTruthy();
+    expect(screen.queryByText('row 1-0')).toBeNull();
+  });
+
+  it('offers no page-size selector when only one size is allowed', async () => {
+    render(<ResourceTable<Row> label="Records" load={async () => ({ data: rows(1), total: 2 })} pageSize={20} pageSizeOptions={[20]} rowKey={(row) => row.id} columns={[{ key: 'name', title: 'Name', field: 'name' }]} />);
+    await screen.findByRole('table', { name: 'Records' });
+    expect(screen.queryByRole('combobox')).toBeNull();
   });
 
   it('keeps a select filter value that is not among the options visible', async () => {

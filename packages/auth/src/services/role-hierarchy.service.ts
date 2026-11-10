@@ -12,8 +12,13 @@ export class RoleHierarchyService {
    * Avoids N+1 DB queries when walking the role tree.
    */
   private parentIdMap: Map<string, string | undefined> | null = null;
+  private parentIdMapLoadedAt = 0;
 
-  constructor(private readonly db: DatabaseAdapter) {}
+  /**
+   * @param cacheTtlMs Upper bound on how long a hierarchy change made elsewhere (another
+   *   instance, direct SQL) stays invisible. Local RoleService changes invalidate immediately.
+   */
+  constructor(private readonly db: DatabaseAdapter, private readonly cacheTtlMs = 60_000) {}
 
   /**
    * Invalidate the cached role hierarchy.
@@ -27,12 +32,14 @@ export class RoleHierarchyService {
    * Load all role parentId mappings in a single query (lazy, cached).
    */
   private async ensureParentIdMap(): Promise<Map<string, string | undefined>> {
-    if (this.parentIdMap) return this.parentIdMap;
+    if (this.parentIdMap && Date.now() - this.parentIdMapLoadedAt < this.cacheTtlMs) return this.parentIdMap;
     const allRoles = await this.db.model('roles').findMany({
       select: { id: true, parentId: true },
     }) as Array<{ id: string; parentId?: string }>;
-    this.parentIdMap = new Map(allRoles.map((r) => [r.id, r.parentId]));
-    return this.parentIdMap;
+    const map = new Map(allRoles.map((r) => [r.id, r.parentId]));
+    this.parentIdMap = map;
+    this.parentIdMapLoadedAt = Date.now();
+    return map;
   }
 
   /**

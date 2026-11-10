@@ -43,11 +43,21 @@ export function createAICommand(dependencies: AICommandDependencies = {}): Comma
   const env = dependencies.env ?? process.env;
   const write = dependencies.write ?? ((message: string) => process.stdout.write(`${message}\n`));
   const line = (message = '') => write(message);
-  const withStore = async <T>(operation: (store: CredentialProfileStore) => Promise<T>): Promise<T> => {
+  // DDL only runs for commands that create profiles (`store init`, `login`, `profile import`);
+  // read-only commands (`status`, `smoke`) never alter the target database.
+  const withStore = async <T>(
+    operation: (store: CredentialProfileStore) => Promise<T>,
+    options: { ensureSchema?: boolean } = {},
+  ): Promise<T> => {
     const resource = await createStore(requiredDatabaseUrl(env));
     try {
-      await resource.store.ensureSchema?.();
+      if (options.ensureSchema) await resource.store.ensureSchema?.();
       return await operation(resource.store);
+    } catch (error) {
+      if ((error as { code?: unknown } | null)?.code === '42P01') {
+        throw new Error('AI Profile 存储尚未初始化，请先运行 `zucker ai store init`。');
+      }
+      throw error;
     } finally {
       await resource.close();
     }
@@ -71,7 +81,7 @@ export function createAICommand(dependencies: AICommandDependencies = {}): Comma
       new Command('init')
         .description('初始化 PostgreSQL Profile 表')
         .action(async () => {
-          await withStore(async () => undefined);
+          await withStore(async () => undefined, { ensureSchema: true });
           line('AI Profile 存储已初始化。');
         }),
     );
@@ -96,7 +106,7 @@ export function createAICommand(dependencies: AICommandDependencies = {}): Comma
             line(`并输入设备码：${verification.userCode}`);
           },
         });
-      });
+      }, { ensureSchema: true });
       line(`Provider ${providerId} 的 Profile ${options.profile} 已登录。`);
     });
 
@@ -133,7 +143,7 @@ export function createAICommand(dependencies: AICommandDependencies = {}): Comma
           }
           await store.save(profile);
         }
-      });
+      }, { ensureSchema: true });
       line(`已导入 ${profiles.length} 个 ${providerId} Profile。`);
     });
 

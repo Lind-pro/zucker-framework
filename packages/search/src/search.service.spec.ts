@@ -219,7 +219,12 @@ describe('SearchService connection and alias lifecycle', () => {
     await Promise.all([service.onModuleInit(), service.onModuleInit()]);
     expect(client.ping).toHaveBeenCalledTimes(1);
     expect(definition).toHaveBeenCalledWith(['synthetic-analyzer']);
-    expect(client.indices.putAlias).toHaveBeenCalledWith({ index: expect.stringMatching(/^documents_\d+$/), name: 'documents' });
+    expect(client.indices.create).toHaveBeenCalledTimes(1);
+    expect(client.indices.create).toHaveBeenCalledWith({
+      index: expect.stringMatching(/^documents_\d+$/),
+      body: { mappings: { properties: { text: { type: 'text' } } }, aliases: { documents: { is_write_index: true } } },
+    });
+    expect(client.indices.putAlias).not.toHaveBeenCalled();
     expect(service.isHealthy()).toBe(true);
     await service.onModuleDestroy();
     await service.onModuleDestroy();
@@ -281,5 +286,43 @@ describe('SearchService connection and alias lifecycle', () => {
     const signal = new AbortController().signal;
     await expect(service.search({ index: 'documents' }, { signal })).resolves.toMatchObject({ total: 2 });
     expect(client.search).toHaveBeenCalledWith({ index: 'documents', body: {} }, { signal });
+  });
+
+  it('creates configured aliases once search recovers after a failed start (review M12)', async () => {
+    const client = createMockClient();
+    client.ping = vi.fn().mockRejectedValueOnce(new Error('down')).mockResolvedValue(true);
+    let aliasExists = false;
+    client.indices.existsAlias = vi.fn(async () => aliasExists);
+    (client.indices.create as ReturnType<typeof vi.fn>).mockImplementation(async () => { aliasExists = true; });
+    const service = new SearchService(client, { aliases: [{ alias: 'documents', definition: {} }] });
+    await service.onModuleInit();
+    expect(client.indices.create).not.toHaveBeenCalled();
+
+    await expect(service.refreshHealth()).resolves.toBe(true);
+    expect(client.indices.create).toHaveBeenCalledTimes(1);
+    await service.indexDocument('documents', '1', { a: 1 });
+    expect(client.index).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses writes to a configured alias that cannot be set up', async () => {
+    const client = createMockClient();
+    client.indices.existsAlias = vi.fn().mockRejectedValue(new Error('down'));
+    const service = new SearchService(client, { aliases: [{ alias: 'documents', definition: {} }] });
+    await expect(service.indexDocument('documents', '1', {})).rejects.toThrow('write refused');
+    await expect(service.bulkIndex('documents', [{ id: '1', data: {} }])).rejects.toThrow('write refused');
+    expect(client.index).not.toHaveBeenCalled();
+    expect(client.bulk).not.toHaveBeenCalled();
+    // unconfigured indices are unaffected
+    await service.indexDocument('other', '1', {});
+    expect(client.index).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats a concurrent replica winning alias creation as success', async () => {
+    const client = createMockClient();
+    client.indices.existsAlias = vi.fn().mockResolvedValueOnce(false).mockResolvedValue(true);
+    (client.indices.create as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('alias has more than one write index'));
+    const service = new SearchService(client, { aliases: [{ alias: 'documents', definition: {} }] });
+    await service.onModuleInit();
+    expect(service.isHealthy()).toBe(true);
   });
 });

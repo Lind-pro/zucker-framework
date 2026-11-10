@@ -103,9 +103,15 @@ export class UnifiedEventBus {
 
   /**
    * 发布并等待所有处理完成
-   * 用于需要确保所有 listener 执行完毕的场景（如事务内事件）
+   * 用于需要确保所有 listener 执行完毕的场景（如事务内事件）。
+   * Subscriber failures are re-thrown (after all subscribers ran) so the caller can abort / roll back.
    */
   async publishAndWait(topic: string, payload: unknown): Promise<void> {
+    const strict = (this.localBus as { publishStrict?: TopicEventBus['publish'] }).publishStrict;
+    if (typeof strict === 'function') {
+      await strict.call(this.localBus, topic, payload);
+      return;
+    }
     await this.localBus.publish(topic, payload);
   }
 }

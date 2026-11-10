@@ -2,16 +2,34 @@ import { BadRequestException, ConflictException, ServiceUnavailableException } f
 import { ConfigScopeManager, ConfigService } from '@zucker-framework/config';
 import { SecretCipher } from '@zucker-framework/core';
 import { ApplicationDatabase, type ApplicationTransaction } from '../database';
-import { CONNECTION_PROFILES, connectionLabelKeys, connectionProfile, validateConnection, validateField, type ConnectionProfile } from './connection-settings.descriptors';
+import { CONNECTION_PROFILES, connectionLabelKeys, connectionProfile, validateConnection, validateField, type ConnectionField, type ConnectionProfile } from './connection-settings.descriptors';
 
 import { appliedPublicSiteConfiguration } from './site-public.config';
 
 export const CONNECTION_SETTINGS_SCOPE = 'runtime.connections';
 interface StoredProfile { revision: number; values: Record<string, string | null> }
-type SecretAction = { action: 'keep' | 'clear' } | { action: 'replace'; value: string };
+export type SecretAction = { action: 'keep' | 'clear' } | { action: 'replace'; value: string };
 interface Update { expectedRevision: number; values: Record<string, string | null>; secrets: Record<string, SecretAction> }
 function record(value: unknown): value is Record<string, unknown> { return !!value && typeof value === 'object' && !Array.isArray(value); }
 function storageUnavailable(): ServiceUnavailableException { return new ServiceUnavailableException('Saved connection configuration cannot be read; check the dedicated encryption key and stored configuration'); }
+
+/** Fields that decide where a profile's credentials are sent (API base URL, SMTP host, S3 endpoint). */
+export function connectionEndpointField(field: ConnectionField): boolean {
+  return field.type === 'url' || /_(?:HOST|ENDPOINT|BASE_URL)$/.test(field.key);
+}
+/**
+ * A delegated `config:update` operator must not be able to point an existing credential at a host of
+ * their choosing: when an endpoint field of a profile changes, every credential that would still be
+ * sent there (saved or supplied by the process environment) has to be re-entered or cleared in the same save.
+ */
+export function assertSecretsFollowEndpoint(profile: ConnectionProfile, previous: NodeJS.ProcessEnv, candidate: NodeJS.ProcessEnv,
+  secrets: Readonly<Record<string, SecretAction>>): void {
+  const effective = (env: NodeJS.ProcessEnv, field: ConnectionField) => env[field.key] || field.defaultValue || '';
+  const moved = profile.fields.some(field => connectionEndpointField(field) && effective(previous, field) !== effective(candidate, field));
+  if (!moved) return;
+  const carried = profile.fields.filter(field => field.type === 'secret' && !!candidate[field.key] && secrets[field.key]?.action !== 'replace');
+  if (carried.length) throw new BadRequestException(`Changing the connection endpoint requires re-entering ${carried.map(field => field.key).join(', ')}`);
+}
 
 /** Application-owned durable configuration; the running provider environment never changes after initialization. */
 export class ConnectionSettingsService {
@@ -138,6 +156,8 @@ export class ConnectionSettingsService {
       if (!changedFields.length) return this.projection(profile, stored);
       if (stored.revision >= Number.MAX_SAFE_INTEGER) throw new ConflictException('Connection revision limit reached');
       const next = { revision: stored.revision + 1, values }, candidate = { ...this.base }; this.merge(candidate, next);
+      const previous = { ...this.base }; this.merge(previous, stored);
+      assertSecretsFollowEndpoint(profile, previous, candidate, update.secrets);
       await validateConnection(profile, candidate);
       await this.configuration(tx).setProperties(CONNECTION_SETTINGS_SCOPE, { [profile.id]: JSON.stringify(next) });
       await tx.model('operationLogs').create({ data: { module: 'runtime-settings', action: 'update', status: 'SUCCESS', userId: actorId,

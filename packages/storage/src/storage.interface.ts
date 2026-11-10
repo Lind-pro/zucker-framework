@@ -54,10 +54,16 @@ export interface FileUploadValidation {
   denyMimeTypes?: string[];
   /** 最大文件大小（字节），0 表示不限制 */
   maxFileSize?: number;
+  /**
+   * Extensions from `DANGEROUS_EXTENSIONS` that may be uploaded. Listing an
+   * extension in `allowExtensions` also allows it.
+   */
+  allowDangerousExtensions?: string[];
 }
 
 /**
- * Default dangerous file extensions that should be blocked unless explicitly allowed.
+ * Dangerous file extensions. `isFileDenied` blocks them unless they are listed in
+ * `allowExtensions` or `allowDangerousExtensions`.
  */
 export const DANGEROUS_EXTENSIONS: readonly string[] = [
   'exe', 'bat', 'cmd', 'com', 'msi', 'scr', 'pif',
@@ -113,23 +119,58 @@ export function isSafeOriginalFileName(name: string): boolean {
   return /^[a-zA-Z0-9._-]+$/.test(name);
 }
 
+export interface FileDenyCheckOptions {
+  /**
+   * MIME type detected from the file content (magic bytes). When given it is
+   * checked against the same deny/allow lists as the client-declared type, so a
+   * spoofed `Content-Type` cannot satisfy an allow-list on its own.
+   */
+  sniffedMimeType?: string;
+}
+
+function normalizeMime(value: string | undefined): string | undefined {
+  const mime = value?.split(';')[0]?.trim().toLowerCase();
+  return mime || undefined;
+}
+
+function normalizeList(values: readonly string[] | undefined): Set<string> {
+  return new Set((values ?? []).map((value) => value.trim().toLowerCase().replace(/^\./, '')));
+}
+
 /**
  * 判断文件是否被拒绝上传（基于后缀名与 MIME 类型校验）
- * 根据文件名、扩展名和大小检查上传限制。
+ *
+ * Evaluation order (any failing step denies):
+ * 1. file names ending in a dot or whitespace are denied (Windows strips them, so
+ *    `shell.php.` would be stored as `shell.php`);
+ * 2. `maxFileSize`;
+ * 3. `DANGEROUS_EXTENSIONS`, unless the extension is listed in `allowExtensions`
+ *    or `allowDangerousExtensions`;
+ * 4. every deny-list (`denyExtensions`, `denyMimeTypes` against the declared and
+ *    the sniffed MIME type);
+ * 5. every configured allow-list must pass: `allowExtensions`, and
+ *    `allowMimeTypes` for the declared and the sniffed MIME type (an unknown
+ *    MIME type does not satisfy a MIME allow-list).
+ *
+ * Extensions and MIME types are compared case-insensitively; MIME parameters
+ * (`; charset=...`) are ignored.
  *
  * @param fileName 文件名
- * @param mimeType MIME 类型（可选）
+ * @param mimeType 客户端声明的 MIME 类型（可选）
  * @param validation 校验配置
  * @param fileSize 文件大小（字节，可选），用于最大文件大小校验
+ * @param options `sniffedMimeType`: MIME type detected from the content
  */
 export function isFileDenied(
   fileName: string,
   mimeType: string | undefined,
   validation: FileUploadValidation,
   fileSize?: number,
+  options: FileDenyCheckOptions = {},
 ): boolean {
   // 先清洗文件名再校验
   const sanitized = sanitizeFileName(fileName);
+  if (/[.\s]$/u.test(sanitized)) return true;
   const dotIndex = sanitized.lastIndexOf('.');
   const ext = dotIndex >= 0 ? sanitized.substring(dotIndex + 1).toLowerCase() : '';
 
@@ -138,33 +179,34 @@ export function isFileDenied(
     if (fileSize > validation.maxFileSize) return true;
   }
 
-  let defaultDeny = false;
-
-  // 后缀黑名单
-  if (validation.denyExtensions?.length) {
-    if (validation.denyExtensions.includes(ext)) return true;
-    defaultDeny = false;
+  const allowExtensions = normalizeList(validation.allowExtensions);
+  const allowDangerous = normalizeList(validation.allowDangerousExtensions);
+  if (DANGEROUS_EXTENSIONS.includes(ext) && !allowExtensions.has(ext) && !allowDangerous.has(ext)) {
+    return true;
   }
 
-  // 后缀白名单
-  if (validation.allowExtensions?.length) {
-    if (validation.allowExtensions.includes(ext)) return false;
-    defaultDeny = true;
+  const mimeTypes = [normalizeMime(mimeType), normalizeMime(options.sniffedMimeType)]
+    .filter((value): value is string => Boolean(value));
+
+  // Deny-lists first: a deny match always wins.
+  if (normalizeList(validation.denyExtensions).has(ext)) return true;
+  const denyMimeTypes = normalizeList(validation.denyMimeTypes);
+  if (mimeTypes.some((value) => denyMimeTypes.has(value))) return true;
+
+  // Then every configured allow-list must pass.
+  if (allowExtensions.size && !allowExtensions.has(ext)) return true;
+  const allowMimeTypes = normalizeList(validation.allowMimeTypes);
+  if (allowMimeTypes.size) {
+    if (!mimeTypes.length) return true;
+    if (!mimeTypes.every((value) => allowMimeTypes.has(value))) return true;
   }
 
-  // MIME 黑名单
-  if (mimeType && validation.denyMimeTypes?.length) {
-    if (validation.denyMimeTypes.includes(mimeType)) return true;
-    defaultDeny = false;
-  }
+  return false;
+}
 
-  // MIME 白名单
-  if (mimeType && validation.allowMimeTypes?.length) {
-    if (validation.allowMimeTypes.includes(mimeType)) return false;
-    defaultDeny = true;
-  }
-
-  return defaultDeny;
+/** Percent-encode each `/`-separated segment of a storage key for use in a URL path. */
+export function encodeKeyPath(key: string): string {
+  return key.split('/').map((segment) => encodeURIComponent(segment)).join('/');
 }
 
 /**

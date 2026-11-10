@@ -140,4 +140,48 @@ describe('RateLimiterService Redis insurance', () => {
     expect(service.isDistributed()).toBe(false);
     service.onModuleDestroy();
   });
+
+  it('retries a failed start-up connection in the background and switches to Redis', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const first = new RedisDouble();
+    first.connect.mockRejectedValue(new Error('connect failed'));
+    const second = new RedisDouble();
+    const createClient = vi.fn()
+      .mockReturnValueOnce(first as unknown as Redis)
+      .mockReturnValueOnce(second as unknown as Redis);
+    const primary = vi.spyOn(RateLimiterRedis.prototype, 'consume')
+      .mockResolvedValue({ remainingPoints: 4, msBeforeNext: 1000, consumedPoints: 1 } as never);
+    const service = new RateLimiterService({
+      redis: { url: 'redis://synthetic.invalid', createClient, reconnectIntervalMs: 1000 },
+      limiters,
+    });
+    await service.onModuleInit();
+    expect(service.isDistributed()).toBe(false);
+    expect(first.disconnect).toHaveBeenCalledWith(false);
+    expect(first.listenerCount('error')).toBe(0);
+    await vi.advanceTimersByTimeAsync(1001);
+    expect(createClient).toHaveBeenCalledTimes(2);
+    expect(service.isDistributed()).toBe(true);
+    await service.consume('login', 'subject');
+    expect(primary).toHaveBeenCalledTimes(1);
+    service.onModuleDestroy();
+    expect(second.disconnect).toHaveBeenCalledExactlyOnceWith(false);
+  });
+
+  it('stops start-up reconnect attempts on shutdown', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const client = new RedisDouble();
+    client.connect.mockRejectedValue(new Error('connect failed'));
+    const createClient = vi.fn(() => client as unknown as Redis);
+    const service = new RateLimiterService({
+      redis: { url: 'redis://synthetic.invalid', createClient, reconnectIntervalMs: 1000 },
+      limiters,
+    });
+    await service.onModuleInit();
+    service.onModuleDestroy();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(createClient).toHaveBeenCalledTimes(1);
+  });
 });

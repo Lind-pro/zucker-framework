@@ -186,6 +186,7 @@ describe('DefaultTopicEventBus', () => {
     await expect(bus.publish('/test', null)).resolves.toBeUndefined();
     expect(loggerSpy).toHaveBeenCalledWith(
       expect.stringContaining('Subscriber error on topic "/test": boom'),
+      expect.any(String),
     );
   });
 

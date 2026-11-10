@@ -98,6 +98,9 @@ export function assignmentPayload(values: AssignmentFormValues, initial: Assignm
   if (values.billingCycle !== 'LIFETIME' && values.endDate !== initial.endDate) {
     const end = localDateTimeToIso(values.endDate);
     if (end) body.endDate = end;
+    // A cleared end date is sent explicitly so the server rejects it (a finite term needs an end)
+    // instead of silently keeping the stored date while the dialog reports success.
+    else if (!String(values.endDate ?? '').trim() && initial.endDate) body.endDate = null;
   }
   return body;
 }

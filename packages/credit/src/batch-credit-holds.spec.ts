@@ -42,6 +42,14 @@ function fixture() {
 }
 
 describe('transaction-bound credit lot holds', () => {
+  it('replays a hold without resourceId when the store maps the absent id to null (L13)', async () => {
+    const f = fixture();
+    const input = { id: 'hold', accountId: 'a', amount: 6, lotIds: ['lot'], resourceType: 'refund-request', operationKey: 'reserve', transactionData: { type: 'FREEZE' } };
+    await f.ledger.hold(f.tx, input, new Date('2026-01-01'));
+    const stored = await f.store.find(f.tx, 'hold');
+    Object.assign(stored!, { resourceId: null });
+    await expect(f.ledger.hold(f.tx, input, new Date('2026-01-01'))).resolves.toMatchObject({ changed: false });
+  });
   it('excludes exact held allocations from consumption and only revokes the held remainder', async () => {
     const f = fixture(); expect((await f.reserve()).hold).toMatchObject({ amount: 6, activeAmount: 6 }); expect(f.wallet).toEqual({ balance: 4, frozenBalance: 6 });
     await f.ledger.consume(f.tx, { accountId: 'a', amount: 4, transactionData: { type: 'CONSUME' }, consumptionData: { resourceType: 'operation' } });

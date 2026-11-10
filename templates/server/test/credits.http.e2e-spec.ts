@@ -58,8 +58,8 @@ run('owned credit and quota HTTP contracts', () => {
       await client.query('COMMIT');
     } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
     url.searchParams.set('schema', schema); database = new ApplicationDatabase(url.href);
-    const disconnect = database.onModuleDestroy.bind(database);
-    vi.spyOn(database, 'onModuleDestroy').mockImplementation(async () => { shutdownEvents.push('database-close-start'); await disconnect(); });
+    const disconnect = database.disconnect.bind(database);
+    vi.spyOn(database, 'disconnect').mockImplementation(async () => { shutdownEvents.push('database-close-start'); await disconnect(); });
     const module = await Test.createTestingModule({ imports: [
       ZuckerCrudModule.forRootAsync({ useFactory: () => database }),
       ZuckerAuthModule.forRoot({ jwtSecret: 'synthetic-runtime-http-secret-only', registerControllers: false }),

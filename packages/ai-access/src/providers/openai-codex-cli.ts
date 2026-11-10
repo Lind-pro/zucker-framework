@@ -12,6 +12,8 @@ import { runCodexAppServer } from './openai-codex-app-server';
 
 const DEFAULT_TIMEOUT_MS = 15 * 60_000;
 const STDERR_LIMIT = 8_192;
+/** One JSONL line larger than this is treated as invalid output (matches the app-server path). */
+const STDOUT_LINE_LIMIT = 16 * 1024 * 1024;
 const SAFE_ENVIRONMENT_KEYS = new Set([
   'ALL_PROXY',
   'CODEX_CA_CERTIFICATE',
@@ -427,12 +429,18 @@ async function runCodexCliCommand(command: CodexCliCommand): Promise<AIAccessRes
 
     child.stdout.setEncoding('utf8');
     child.stdout.on('data', (chunk: string) => {
+      if (streamError) return;
       stdoutBuffer += chunk;
       for (;;) {
         const newline = stdoutBuffer.indexOf('\n');
         if (newline < 0) break;
         parseLine(stdoutBuffer.slice(0, newline));
         stdoutBuffer = stdoutBuffer.slice(newline + 1);
+      }
+      if (stdoutBuffer.length > STDOUT_LINE_LIMIT) {
+        stdoutBuffer = '';
+        streamError ??= new CodexCliSubscriptionError('INVALID_OUTPUT', 'Codex CLI 输出行超过大小限制。');
+        terminate();
       }
     });
     child.stderr.setEncoding('utf8');

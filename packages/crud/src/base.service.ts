@@ -18,9 +18,11 @@ import {
 } from '@zucker-framework/event';
 import {
   DynamicQueryService,
-  DynamicQueryParamService,
   type DynamicQueryParam,
+  normalizeDynamicQueryParam,
 } from './dynamic-query.service';
+import { type CrudQueryPolicy } from './query/query-policy';
+import { runInServiceTransaction, transactionScoped } from './transaction-scope';
 import { type PaginatedResult } from './pagination';
 import { DATABASE_ADAPTER } from './crud.module';
 import { QueryBuilder, type IQueryBuilder } from './query/query-builder';
@@ -34,6 +36,14 @@ function hasErrorCode(error: unknown, code: string): boolean {
   );
 }
 
+/** Trusted, server-side options for the dynamic list/count/exists reads. */
+export interface CrudQueryOptions {
+  /** Row-level data-access terms (e.g. from DataPermissionGuard); ANDed with caller filters. */
+  dataAccessTerms?: Term[];
+  /** Fields the current principal may not read; removed from the projection. */
+  denyFields?: string[];
+}
+
 /**
  * Abstract base service providing standard CRUD operations with entity event support.
  *
@@ -44,24 +54,57 @@ function hasErrorCode(error: unknown, code: string): boolean {
 export abstract class CrudService<T extends CrudEntity> {
   protected readonly logger = new Logger(this.constructor.name);
   protected readonly modelName: string;
-  /** Trusted constraints for dynamic queries, independent of user filter syntax. */
+  /**
+   * Database adapter. Model access follows an enclosing {@link transaction} call, so CRUD methods
+   * of services sharing the same adapter join that transaction.
+   */
+  protected readonly db: DatabaseAdapter;
+  /**
+   * Trusted constraints (tenant / owner / active-record fence) independent of user filter syntax.
+   * Applied to dynamic list/count/exists reads AND to by-ID reads, updates, deletes and batch writes.
+   */
   protected get requiredQueryWhere(): Record<string, unknown> | undefined { return undefined; }
 
-  private findManyScoped<R = unknown>(model: string, query: DynamicQueryParam, order?: string): Promise<PaginatedResult<R>> {
-    return this.requiredQueryWhere
-      ? this.dynamicQuery.findMany<R>(model, query, order, undefined, undefined, this.requiredQueryWhere)
-      : this.dynamicQuery.findMany<R>(model, query, order);
+  /**
+   * Field/operator/paging policy for caller-supplied dynamic queries; merged over the module
+   * default (`ZuckerCrudModule.forRoot({ queryPolicy })`). See {@link CrudQueryPolicy}.
+   */
+  protected get queryPolicy(): CrudQueryPolicy | undefined { return undefined; }
+
+  private findManyScoped<R = unknown>(
+    model: string,
+    query: DynamicQueryParam,
+    order?: string,
+    access?: CrudQueryOptions,
+  ): Promise<PaginatedResult<R>> {
+    const policy = this.queryPolicy;
+    const required = this.requiredQueryWhere;
+    if (!required && !policy && !access?.dataAccessTerms && !access?.denyFields) {
+      return this.dynamicQuery.findMany<R>(model, query, order);
+    }
+    return this.dynamicQuery.findMany<R>(
+      model, query, order, access?.dataAccessTerms, access?.denyFields, required,
+      ...(policy ? [{ policy }] : []),
+    );
+  }
+
+  /** AND the trusted constraint into a where (unique keys stay top-level for Prisma WhereUniqueInput). */
+  protected scopeWhere(where: Record<string, unknown>): Record<string, unknown> {
+    const required = this.requiredQueryWhere;
+    if (!required || Object.keys(required).length === 0) return where;
+    return { ...where, AND: [...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []), required] };
   }
 
   protected readonly defaultOrderField: string = 'createdAt';
 
   constructor(
-    protected readonly db: DatabaseAdapter,
+    db: DatabaseAdapter,
     protected readonly dynamicQuery: DynamicQueryService,
     modelName: string,
     protected readonly eventBus?: TopicEventBus,
     options?: { defaultOrderField?: string },
   ) {
+    this.db = transactionScoped(db);
     this.modelName = modelName;
     if (options?.defaultOrderField) {
       this.defaultOrderField = options.defaultOrderField;
@@ -74,10 +117,8 @@ export abstract class CrudService<T extends CrudEntity> {
    * @returns 创建后的完整实体
    */
   async create(data: Partial<T>): Promise<T> {
-    // PREPARE 阶段：监听器可修改 data 字段（如自动填充 creatorId）
-    await this.emitEvent(EntityEventType.CREATE, EntityEventPhase.PREPARE, data);
-    // BEFORE 阶段：监听器可 cancel() 取消操作
-    await this.emitEventWithCancelCheck(EntityEventType.CREATE, data);
+    // PREPARE 阶段：监听器可修改 data 字段（如自动填充 creatorId）；BEFORE 阶段：监听器可 cancel()
+    await this.emitPrepareAndBefore(EntityEventType.CREATE, data);
 
     const result = (await this.db.model(this.modelName).create({ data })) as T;
 
@@ -93,14 +134,12 @@ export abstract class CrudService<T extends CrudEntity> {
    * @throws NotFoundException 记录不存在时
    */
   async update(id: string, data: Partial<T>): Promise<T> {
-    // PREPARE 阶段：监听器可修改 data 字段
-    await this.emitEvent(EntityEventType.MODIFY, EntityEventPhase.PREPARE, data);
-    // BEFORE 阶段：监听器可 cancel() 取消操作
-    await this.emitEventWithCancelCheck(EntityEventType.MODIFY, data);
+    // PREPARE 阶段：监听器可修改 data 字段；BEFORE 阶段：监听器可 cancel() 取消操作
+    await this.emitPrepareAndBefore(EntityEventType.MODIFY, data);
 
     try {
       const result = (await this.db.model(this.modelName).update({
-        where: { id },
+        where: this.scopeWhere({ id }),
         data,
       })) as T;
 
@@ -121,10 +160,8 @@ export abstract class CrudService<T extends CrudEntity> {
    * @returns 保存后的完整实体
    */
   async saveOrUpdate(data: Partial<T>): Promise<T> {
-    // PREPARE 阶段（save 语义）
-    await this.emitEvent(EntityEventType.SAVE, EntityEventPhase.PREPARE, data);
-    // BEFORE 阶段
-    await this.emitEventWithCancelCheck(EntityEventType.SAVE, data);
+    // PREPARE / BEFORE 阶段（save 语义）
+    await this.emitPrepareAndBefore(EntityEventType.SAVE, data);
 
     const id = data.id;
     let result: T;
@@ -132,7 +169,7 @@ export abstract class CrudService<T extends CrudEntity> {
       // update 路径 — 跳过 update 自身的事件（已在 save 层级发出）
       try {
         result = (await this.db.model(this.modelName).update({
-          where: { id },
+          where: this.scopeWhere({ id }),
           data,
         })) as T;
       } catch (error) {
@@ -158,14 +195,12 @@ export abstract class CrudService<T extends CrudEntity> {
    */
   async delete(id: string): Promise<T> {
     const entity = await this.findOne(id);
-    // PREPARE 阶段：监听器可修改实体数据（如审计记录）
-    await this.emitEvent(EntityEventType.DELETE, EntityEventPhase.PREPARE, entity);
-    // BEFORE 阶段：监听器可 cancel() 取消删除操作
-    await this.emitEventWithCancelCheck(EntityEventType.DELETE, entity);
+    // PREPARE 阶段：监听器可修改实体数据（如审计记录）；BEFORE 阶段：监听器可 cancel() 取消删除操作
+    await this.emitPrepareAndBefore(EntityEventType.DELETE, entity);
 
     try {
       const result = (await this.db.model(this.modelName).delete({
-        where: { id },
+        where: this.scopeWhere({ id }),
       })) as T;
 
       await this.emitEvent(EntityEventType.DELETE, EntityEventPhase.AFTER, result);
@@ -189,7 +224,7 @@ export abstract class CrudService<T extends CrudEntity> {
       throw new NotFoundException(`${this.modelName}: ID must not be empty`);
     }
     const entity = await this.db.model(this.modelName).findUnique({
-      where: { id },
+      where: this.scopeWhere({ id }),
     });
 
     if (!entity) {
@@ -204,8 +239,8 @@ export abstract class CrudService<T extends CrudEntity> {
    * @param query 动态查询参数
    * @returns 分页查询结果
    */
-  async findAll(query: DynamicQueryParam): Promise<PaginatedResult<T>> {
-    return this.findManyScoped<T>(this.modelName, query, this.defaultOrderField);
+  async findAll(query: DynamicQueryParam, options?: CrudQueryOptions): Promise<PaginatedResult<T>> {
+    return this.findManyScoped<T>(this.modelName, query, this.defaultOrderField, options);
   }
 
   /**
@@ -219,7 +254,7 @@ export abstract class CrudService<T extends CrudEntity> {
       return null;
     }
     const entity = await this.db.model(this.modelName).findUnique({
-      where: { id },
+      where: this.scopeWhere({ id }),
     });
     return (entity as T) ?? null;
   }
@@ -230,7 +265,7 @@ export abstract class CrudService<T extends CrudEntity> {
   async findByIds(ids: string[]): Promise<T[]> {
     if (ids.length === 0) return [];
     return this.db.model(this.modelName).findMany({
-      where: { id: { in: ids } },
+      where: this.scopeWhere({ id: { in: ids } }),
     }) as Promise<T[]>;
   }
 
@@ -238,13 +273,13 @@ export abstract class CrudService<T extends CrudEntity> {
    * 查询总数
    */
   async count(where?: Record<string, unknown>): Promise<number> {
-    return this.db.model(this.modelName).count({ where: where ?? {} });
+    return this.db.model(this.modelName).count({ where: this.scopeWhere(where ?? {}) });
   }
 
   /**
    * 根据动态查询参数查询总数
    */
-  async countByQuery(query: DynamicQueryParam): Promise<number> {
+  async countByQuery(query: DynamicQueryParam, options?: CrudQueryOptions): Promise<number> {
     // 使用 DynamicQueryParamService.parseFilters 解析，确保与 findMany 的过滤逻辑一致
     const result = await this.findManyScoped(
       this.modelName,
@@ -255,6 +290,7 @@ export abstract class CrudService<T extends CrudEntity> {
         total: undefined,
       },
       this.defaultOrderField,
+      options,
     );
     return result.total;
   }
@@ -262,15 +298,18 @@ export abstract class CrudService<T extends CrudEntity> {
   /**
    * 判断数据是否存在
    */
-  async exists(query: DynamicQueryParam): Promise<boolean> {
+  async exists(query: DynamicQueryParam, options?: CrudQueryOptions): Promise<boolean> {
     const result = await this.findManyScoped(
       this.modelName,
       {
         ...query,
         page: 1,
         pageSize: 1,
+        // A caller-supplied total would skip nothing here but must not shape the probe.
+        total: undefined,
       },
       this.defaultOrderField,
+      options,
     );
     return result.data.length > 0;
   }
@@ -281,11 +320,13 @@ export abstract class CrudService<T extends CrudEntity> {
    * - count 为 0 时直接返回空结果
    * - 自动调用 rePaging 修正越界页码
    */
-  async queryPager(param: DynamicQueryParam): Promise<PaginatedResult<T>> {
+  async queryPager(rawParam: DynamicQueryParam, options?: CrudQueryOptions): Promise<PaginatedResult<T>> {
+    // GET query strings arrive as strings: coerce before arithmetic ("1" + 1 must not become "11").
+    const param = normalizeDynamicQueryParam(rawParam);
     // 支持 pageIndex (0-based) 和 page (1-based)
     const resolvedPage = param.pageIndex !== undefined ? param.pageIndex + 1 : (param.page ?? 1);
-    const page = Math.max(1, resolvedPage);
-    const pageSize = Math.max(1, param.pageSize ?? 10);
+    const page = Math.max(1, Math.floor(resolvedPage));
+    const pageSize = Math.max(1, Math.floor(param.pageSize ?? 10));
 
     // total 复用：前端传了 total 就跳过 count 查询
     let total: number;
@@ -302,6 +343,7 @@ export abstract class CrudService<T extends CrudEntity> {
           total: undefined,
         },
         this.defaultOrderField,
+        options,
       );
       total = countResult.total;
     }
@@ -318,6 +360,7 @@ export abstract class CrudService<T extends CrudEntity> {
       this.modelName,
       { ...param, page: adjustedPage, pageSize, total },
       this.defaultOrderField,
+      options,
     );
   }
 
@@ -330,10 +373,8 @@ export abstract class CrudService<T extends CrudEntity> {
   async save(entities: Partial<T>[]): Promise<{ created: number; updated: number; total: number }> {
     if (!entities || entities.length === 0) return { created: 0, updated: 0, total: 0 };
 
-    // PREPARE 阶段（save 语义）
-    await this.emitEvent(EntityEventType.SAVE, EntityEventPhase.PREPARE, entities);
-    // BEFORE 阶段
-    await this.emitEventWithCancelCheck(EntityEventType.SAVE, entities);
+    // PREPARE / BEFORE 阶段（save 语义）
+    await this.emitPrepareAndBefore(EntityEventType.SAVE, entities);
 
     let created = 0;
     let updated = 0;
@@ -343,7 +384,7 @@ export abstract class CrudService<T extends CrudEntity> {
     const existingIds = new Set<string>();
     if (idsToCheck.length > 0) {
       const existingRecords = (await this.db.model(this.modelName).findMany({
-        where: { id: { in: idsToCheck } },
+        where: this.scopeWhere({ id: { in: idsToCheck } }),
         select: { id: true },
       })) as Array<{ id: string }>;
       for (const record of existingRecords) {
@@ -356,7 +397,7 @@ export abstract class CrudService<T extends CrudEntity> {
       const id = entity.id;
       if (id && existingIds.has(id)) {
         const result = (await this.db.model(this.modelName).update({
-          where: { id },
+          where: this.scopeWhere({ id }),
           data: entity,
         })) as T;
         results.push(result);
@@ -391,7 +432,7 @@ export abstract class CrudService<T extends CrudEntity> {
    * @returns 更新数量
    */
   async updateMany(where: Record<string, unknown>, data: Partial<T>): Promise<{ count: number }> {
-    return this.db.model(this.modelName).updateMany({ where, data });
+    return this.db.model(this.modelName).updateMany({ where: this.scopeBatchWhere(where), data });
   }
 
   /**
@@ -400,7 +441,13 @@ export abstract class CrudService<T extends CrudEntity> {
    * @returns 删除数量
    */
   async deleteMany(where: Record<string, unknown>): Promise<{ count: number }> {
-    return this.db.model(this.modelName).deleteMany({ where });
+    return this.db.model(this.modelName).deleteMany({ where: this.scopeBatchWhere(where) });
+  }
+
+  /** AND the trusted constraint into a batch where without disturbing caller keys. */
+  private scopeBatchWhere(where: Record<string, unknown>): Record<string, unknown> {
+    const required = this.requiredQueryWhere;
+    return required && Object.keys(required).length ? { AND: [where, required] } : where;
   }
 
   /**
@@ -445,7 +492,7 @@ export abstract class CrudService<T extends CrudEntity> {
       const { id, updatedAt, ...data } = item;
       try {
         const result = await this.db.model(this.modelName).updateMany({
-          where: { id, updatedAt },
+          where: this.scopeBatchWhere({ id, updatedAt }),
           data,
         });
 
@@ -463,7 +510,8 @@ export abstract class CrudService<T extends CrudEntity> {
           count += result.count;
         }
       } catch (error) {
-        // 记录不存在或其他错误
+        // Only a missing record is a conflict; validation / connection errors must surface.
+        if (!hasErrorCode(error, 'P2025')) throw error;
         this.logger.warn(`乐观锁更新失败 id=${id}: ${(error as Error).message}`);
         try {
           const current = await this.db.model(this.modelName).findUnique({ where: { id } });
@@ -487,8 +535,7 @@ export abstract class CrudService<T extends CrudEntity> {
     const results: T[] = [];
     for (const item of items) {
       if (!options?.skipEvents) {
-        await this.emitEvent(EntityEventType.CREATE, EntityEventPhase.PREPARE, item);
-        await this.emitEventWithCancelCheck(EntityEventType.CREATE, item);
+        await this.emitPrepareAndBefore(EntityEventType.CREATE, item);
       }
 
       const result = (await this.db.model(this.modelName).create({ data: item })) as T;
@@ -514,13 +561,12 @@ export abstract class CrudService<T extends CrudEntity> {
       const { id, ...data } = item;
 
       if (!options?.skipEvents) {
-        await this.emitEvent(EntityEventType.MODIFY, EntityEventPhase.PREPARE, data);
-        await this.emitEventWithCancelCheck(EntityEventType.MODIFY, data);
+        await this.emitPrepareAndBefore(EntityEventType.MODIFY, data);
       }
 
       try {
         const result = (await this.db.model(this.modelName).update({
-          where: { id },
+          where: this.scopeWhere({ id }),
           data,
         })) as T;
         results.push(result);
@@ -546,7 +592,7 @@ export abstract class CrudService<T extends CrudEntity> {
 
     // Batch-fetch all entities upfront to avoid N+1 findUnique calls
     const entities = (await this.db.model(this.modelName).findMany({
-      where: { id: { in: ids } },
+      where: this.scopeWhere({ id: { in: ids } }),
     })) as T[];
     const entityMap = new Map<string, T>();
     for (const entity of entities) {
@@ -560,11 +606,10 @@ export abstract class CrudService<T extends CrudEntity> {
         if (!entity) continue;
 
         if (!options?.skipEvents) {
-          await this.emitEvent(EntityEventType.DELETE, EntityEventPhase.PREPARE, entity);
-          await this.emitEventWithCancelCheck(EntityEventType.DELETE, entity);
+          await this.emitPrepareAndBefore(EntityEventType.DELETE, entity);
         }
 
-        await this.db.model(this.modelName).delete({ where: { id } });
+        await this.db.model(this.modelName).delete({ where: this.scopeWhere({ id }) });
         count++;
 
         if (!options?.skipEvents) {
@@ -580,11 +625,20 @@ export abstract class CrudService<T extends CrudEntity> {
 
   /**
    * 执行事务
-   * @param fn 事务回调函数
+   *
+   * While `fn` runs, CRUD methods of this service and of every other CrudService built on the same
+   * DatabaseAdapter use the transaction client, so they commit or roll back together. Nested calls
+   * join the outer transaction.
+   * @param fn 事务回调函数（参数为本服务视角的事务 adapter）
    * @returns 事务执行结果
    */
   async transaction<R>(fn: (db: DatabaseAdapter) => Promise<R>): Promise<R> {
-    return this.db.$transaction(fn);
+    return runInServiceTransaction(this.db, (tx) => fn(this.transactionView(tx)));
+  }
+
+  /** The adapter handed to {@link transaction} callbacks (subclasses may add scoping). */
+  protected transactionView(tx: DatabaseAdapter): DatabaseAdapter {
+    return tx;
   }
 
   protected async emitEvent(
@@ -604,16 +658,31 @@ export abstract class CrudService<T extends CrudEntity> {
   }
 
   /**
-   * 发出 BEFORE 阶段事件并检查是否被取消
-   * 如果事件被取消，抛出 OperationCancelledException
+   * Emit PREPARE then BEFORE and stop the operation if either phase was cancelled
+   * (e.g. by a validation listener). Subscriber errors marked with `vetoEvent()` propagate from
+   * `publish()` and also abort the operation.
    */
-  protected async emitEventWithCancelCheck(type: EntityEventType, entity: unknown): Promise<void> {
-    const event = await this.emitEvent(type, EntityEventPhase.BEFORE, entity);
+  protected async emitPrepareAndBefore(type: EntityEventType, entity: unknown): Promise<void> {
+    const prepared = await this.emitEvent(type, EntityEventPhase.PREPARE, entity);
+    this.throwIfCancelled(prepared, type);
+    await this.emitEventWithCancelCheck(type, entity);
+  }
+
+  private throwIfCancelled(event: EntityEvent | undefined, type: EntityEventType): void {
     if (event?.cancelled) {
       throw new OperationCancelledException(
         event.cancelReason ?? `${this.modelName} ${type} operation cancelled`,
       );
     }
+  }
+
+  /**
+   * 发出 BEFORE 阶段事件并检查是否被取消
+   * 如果事件被取消，抛出 OperationCancelledException
+   */
+  protected async emitEventWithCancelCheck(type: EntityEventType, entity: unknown): Promise<void> {
+    const event = await this.emitEvent(type, EntityEventPhase.BEFORE, entity);
+    this.throwIfCancelled(event, type);
   }
 }
 

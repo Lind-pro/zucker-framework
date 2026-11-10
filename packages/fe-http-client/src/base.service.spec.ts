@@ -38,4 +38,10 @@ describe('client CRUD contracts', () => {
     expect(patch).toHaveBeenCalledWith('/records/item', { id: 'item', name: 'new' });
     expect(input.createdAt).toBe('2026-01-01');
   });
+  it('encodes record ids so they cannot change the request path', async () => {
+    const del = vi.fn(async () => undefined);
+    const service = new BaseService({ httpClient: { delete: del } as unknown as HttpClient, apiPath: '/records' });
+    await service.delete('../admin?x=1');
+    expect(del).toHaveBeenCalledWith('/records/..%2Fadmin%3Fx%3D1');
+  });
 });

@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, unlink, writeFile } from 'node:fs/promises';
+import net from 'node:net';
 import http from 'node:http';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -34,6 +35,8 @@ export interface CodexCliHostOptions {
   codexHome: string;
   workRoot: string;
   timeoutMs?: number;
+  /** Maximum concurrent Codex child processes; extra requests get 503. Defaults to 4. */
+  maxConcurrent?: number;
   /** Only the documented environment allowlist and HOME reach the child. */
   environment?: NodeJS.ProcessEnv;
 }
@@ -119,11 +122,18 @@ export async function startCodexCliHost(options: CodexCliHostOptions): Promise<h
     codexHome,
     workRoot,
     timeoutMs = 900_000,
+    maxConcurrent = 4,
     environment: sourceEnvironment = {},
   } = options;
   await mkdir(workRoot, { recursive: true, mode: 0o700 });
+  let active = 0;
   const server = http.createServer(async (request, response) => {
     let workdir: string | undefined;
+    if (active >= maxConcurrent) {
+      response.writeHead(503).end();
+      return;
+    }
+    active += 1;
     try {
       if (request.method !== 'POST' || request.url !== '/exec') {
         response.writeHead(404).end();
@@ -207,14 +217,22 @@ export async function startCodexCliHost(options: CodexCliHostOptions): Promise<h
       if (!response.headersSent) response.writeHead(400);
       response.end();
     } finally {
+      active -= 1;
       if (workdir) await rm(workdir, { recursive: true, force: true });
     }
   });
   server.requestTimeout = 30_000;
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(socketPath, resolve);
-  });
+  await removeStaleSocket(socketPath);
+  // Create the socket owner-only from the start instead of tightening it after bind.
+  const previousUmask = trySetUmask(0o177);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(socketPath, resolve);
+    });
+  } finally {
+    if (previousUmask !== undefined) trySetUmask(previousUmask);
+  }
   await chmod(socketPath, 0o600);
   return server;
 }
@@ -283,4 +301,27 @@ export async function runCodexCliHostClient(options: CodexCliHostClientOptions):
     signal?.removeEventListener('abort', cancel);
     request.destroy();
   }
+}
+
+function trySetUmask(mask: number): number | undefined {
+  try {
+    return process.umask(mask);
+  } catch {
+    return undefined; // Worker threads cannot change the umask; chmod below still applies.
+  }
+}
+
+/** A socket file left by a crashed host makes listen fail with EADDRINUSE; remove it only when nothing answers. */
+async function removeStaleSocket(socketPath: string): Promise<void> {
+  const live = await new Promise<boolean | null>((resolve) => {
+    const socket = net.connect(socketPath);
+    socket.once('connect', () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.once('error', (error: NodeJS.ErrnoException) => {
+      resolve(error.code === 'ECONNREFUSED' ? false : null);
+    });
+  });
+  if (live === false) await unlink(socketPath).catch(() => undefined);
 }

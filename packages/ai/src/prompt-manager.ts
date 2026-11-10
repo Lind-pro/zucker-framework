@@ -67,65 +67,90 @@ export interface PromptVariable {
 @Injectable()
 export class PromptManager {
   private readonly logger = new Logger(PromptManager.name);
+  /**
+   * With a database the cache is a bounded read-through cache with a TTL so edits made on
+   * another instance become visible. Without a database it is the only store and is not evicted.
+   */
   private readonly cache = new Map<string, PromptTemplate>();
+  private readonly cachedAt = new Map<string, number>();
+  private static readonly CACHE_TTL_MS = 60_000;
+  private static readonly CACHE_MAX_ENTRIES = 500;
 
   constructor(@Inject(DATABASE_ADAPTER) @Optional() private readonly db?: DatabaseAdapter) {}
 
   /** 获取提示词模板 */
   async getTemplate(id: string): Promise<PromptTemplate | null> {
-    if (this.cache.has(id)) return this.cache.get(id)!;
-    if (!this.db) return null;
+    if (!this.db) return this.cache.get(id) ?? null;
+    const cached = this.cache.get(id);
+    if (cached && Date.now() - (this.cachedAt.get(id) ?? 0) < PromptManager.CACHE_TTL_MS)
+      return cached;
 
     try {
       const record = await this.db.model('promptTemplate').findUnique({ where: { id } });
-      if (!record) return null;
+      if (!record) {
+        this.forget(id);
+        return null;
+      }
       const template = record as unknown as PromptTemplate;
-      this.cache.set(id, template);
+      this.remember(template);
       return template;
-    } catch {
+    } catch (err) {
+      this.logger.warn(
+        `Prompt template load failed (id=${id}): ${err instanceof Error ? err.message : String(err)}`,
+      );
       return null;
     }
+  }
+
+  private remember(template: PromptTemplate): void {
+    this.cache.delete(template.id);
+    this.cache.set(template.id, template);
+    this.cachedAt.set(template.id, Date.now());
+    if (this.db && this.cache.size > PromptManager.CACHE_MAX_ENTRIES) {
+      const oldest = this.cache.keys().next().value;
+      if (oldest !== undefined) this.forget(oldest);
+    }
+  }
+
+  private forget(id: string): void {
+    this.cache.delete(id);
+    this.cachedAt.delete(id);
   }
 
   /** 保存提示词模板（upsert） */
   async saveTemplate(template: PromptTemplate): Promise<PromptTemplate> {
     if (!this.db) {
-      this.cache.set(template.id, template);
+      this.remember(template);
       return template;
     }
 
-    try {
-      const existing = await this.db
-        .model('promptTemplate')
-        .findUnique({ where: { id: template.id } });
-      const data = { ...template, updatedAt: new Date() } as unknown as Record<string, unknown>;
+    // Database failures propagate: reporting success from the cache would lose the edit on restart.
+    const existing = await this.db
+      .model('promptTemplate')
+      .findUnique({ where: { id: template.id } });
+    const data = { ...template, updatedAt: new Date() } as unknown as Record<string, unknown>;
 
-      if (existing) {
-        const version = ((existing as unknown as PromptTemplate).version ?? 0) + 1;
-        await this.db.model('promptTemplate').update({
-          where: { id: template.id },
-          data: { ...data, version },
-        });
-        template.version = version;
-      } else {
-        await this.db.model('promptTemplate').create({
-          data: { ...data, version: 1, createdAt: new Date() },
-        });
-        template.version = 1;
-      }
-    } catch (err) {
-      this.logger.warn(
-        `Prompt template save to DB failed, using cache: ${err instanceof Error ? err.message : String(err)}`,
-      );
+    if (existing) {
+      const version = ((existing as unknown as PromptTemplate).version ?? 0) + 1;
+      await this.db.model('promptTemplate').update({
+        where: { id: template.id },
+        data: { ...data, version },
+      });
+      template.version = version;
+    } else {
+      await this.db.model('promptTemplate').create({
+        data: { ...data, version: 1, createdAt: new Date() },
+      });
+      template.version = 1;
     }
 
-    this.cache.set(template.id, template);
+    this.remember(template);
     return template;
   }
 
   /** 删除提示词模板 */
   async deleteTemplate(id: string): Promise<boolean> {
-    this.cache.delete(id);
+    this.forget(id);
     if (!this.db) return true;
     try {
       await this.db.model('promptTemplate').delete({ where: { id } });

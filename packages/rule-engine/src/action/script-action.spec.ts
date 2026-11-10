@@ -144,4 +144,25 @@ describe('ScriptAction', () => {
       }
     });
   });
+
+  describe('sandbox hardening (C1 / M11)', () => {
+    it('handler and data objects do not expose the host Function constructor', async () => {
+      for (const script of [
+        'return handler.onMessage.constructor("return process")()',
+        'return data.constructor.constructor("return process")()',
+        'return console.log.constructor("return process.pid")()',
+      ]) {
+        await expect(action.execute({ script }, { a: 1 })).rejects.toThrow();
+      }
+    });
+
+    it('onMessage handlers run under the script timeout', async () => {
+      await expect(
+        action.execute(
+          { script: 'handler.onMessage(function () { for (;;) {} });', timeout: 100 },
+          {},
+        ),
+      ).rejects.toThrow(/timed out/);
+    });
+  });
 });

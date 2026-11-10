@@ -439,4 +439,103 @@ describe('DurableWorkerRuntime', () => {
       availableAt: at(10),
     });
   });
+
+  it('keeps the last error when a RETRYING task is normalized to QUEUED', async () => {
+    const repository = new InMemoryTaskRepository<Payload, Result>();
+    await repository.create(input());
+    await repository.claim({
+      id: 'task-1',
+      workerId: 'old-worker',
+      leaseToken: 'old-lease',
+      leaseExpiresAt: at(20),
+      now: at(1),
+    });
+    await repository.transition({
+      id: 'task-1',
+      from: 'PROCESSING',
+      to: 'RETRYING',
+      leaseToken: 'old-lease',
+      error: classifiedError,
+      availableAt: at(10),
+      now: at(2),
+    });
+    await createRuntime({
+      repository,
+      now: () => at(5),
+      handler: { execute: async () => ({ artifactId: 'never' }) },
+    })
+      .run('task-1')
+      .catch(() => undefined);
+    await expect(repository.findById('task-1')).resolves.toMatchObject({
+      status: 'QUEUED',
+      error: classifiedError,
+    });
+  });
+
+  it('treats a requeue that lost the race to the reconciler as a scheduled retry', async () => {
+    const repository = new InMemoryTaskRepository<Payload, Result>();
+    await repository.create(input());
+    const transition = repository.transition.bind(repository);
+    vi.spyOn(repository, 'transition').mockImplementation(async (request) => {
+      if (request.from === 'RETRYING') {
+        // Simulate the reconciler requeuing first.
+        await transition({ ...request });
+        return null;
+      }
+      return transition(request);
+    });
+    const run = createRuntime({
+      repository,
+      handler: {
+        execute: async () => {
+          throw new Error('provider timeout');
+        },
+      },
+    }).run('task-1');
+    await expect(run).rejects.toBeInstanceOf(DurableTaskRetryScheduledError);
+    await expect(repository.findById('task-1')).resolves.toMatchObject({ status: 'QUEUED' });
+  });
+
+  it('keeps unsupported kinds queued by default and reports them', async () => {
+    const repository = new InMemoryTaskRepository<Payload, Result>();
+    await repository.create(input());
+    const onUnsupportedKind = vi.fn();
+    const runtime = new DurableWorkerRuntime<Payload, Result>({
+      repository,
+      resolveHandler: () => null,
+      retryPolicy: new ExponentialTaskRetryPolicy({ baseDelayMs: 1, maxDelayMs: 1, jitterRatio: 0 }),
+      classifyError: () => classifiedError,
+      workerId: 'worker-1',
+      now: () => at(59),
+      onUnsupportedKind,
+    });
+    await expect(runtime.run('task-1')).rejects.toBeInstanceOf(UnsupportedDurableTaskKindError);
+    expect(onUnsupportedKind).toHaveBeenCalledWith(expect.objectContaining({ id: 'task-1' }));
+    await expect(repository.findById('task-1')).resolves.toMatchObject({
+      status: 'QUEUED',
+      attempt: 0,
+    });
+  });
+
+  it('fails an unsupported kind once failUnsupportedKindAfterMs has elapsed', async () => {
+    const repository = new InMemoryTaskRepository<Payload, Result>();
+    await repository.create(input());
+    let now = at(10);
+    const runtime = new DurableWorkerRuntime<Payload, Result>({
+      repository,
+      resolveHandler: () => null,
+      retryPolicy: new ExponentialTaskRetryPolicy({ baseDelayMs: 1, maxDelayMs: 1, jitterRatio: 0 }),
+      classifyError: () => classifiedError,
+      workerId: 'worker-1',
+      now: () => now,
+      failUnsupportedKindAfterMs: 30_000,
+    });
+    await expect(runtime.run('task-1')).rejects.toBeInstanceOf(UnsupportedDurableTaskKindError);
+    now = at(31);
+    await expect(runtime.run('task-1')).resolves.toMatchObject({ status: 'FAILED' });
+    await expect(repository.findById('task-1')).resolves.toMatchObject({
+      status: 'FAILED',
+      error: expect.objectContaining({ code: 'UNSUPPORTED_TASK_KIND', retryable: false }),
+    });
+  });
 });

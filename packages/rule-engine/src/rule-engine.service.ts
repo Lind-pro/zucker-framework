@@ -5,7 +5,7 @@ import { TermsEvaluator, type TermCondition } from './condition/terms-evaluator'
 import { ExpressionEvaluator, type ExpressionCondition } from './condition/expression-evaluator';
 import { BranchEvaluator, type Branch, type BranchActionGroup } from './condition/branch-evaluator';
 import { NotifyAction, type NotifyActionConfig } from './action/notify-action';
-import { HttpAction, type HttpActionConfig } from './action/http-action';
+import { HttpAction, type HttpActionConfig, type HttpActionOptions } from './action/http-action';
 import { ScriptAction, type ScriptActionConfig } from './action/script-action';
 import { DelayAction, type DelayActionConfig } from './action/delay-action';
 import { DataMappingAction, type DataMappingActionConfig } from './action/data-mapping-action';
@@ -93,6 +93,14 @@ export class RuleEngineService implements OnModuleDestroy {
   private scriptAction = new ScriptAction();
   private delayAction = new DelayAction();
   private dataMappingAction = new DataMappingAction();
+
+  /**
+   * Configures HTTP actions (destination policy, private-network access, response size cap).
+   * By default HTTP actions may only call public http/https destinations.
+   */
+  configureHttpAction(options: HttpActionOptions): void {
+    this.httpAction = new HttpAction(options);
+  }
 
   /** Strategy map for action execution — replaces switch/case in executeAction. */
   private readonly actionHandlers: Record<string, ActionHandler> = {

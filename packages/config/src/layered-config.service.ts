@@ -1,8 +1,18 @@
-import { Injectable, Inject, Logger, Optional } from '@nestjs/common';
+import { Injectable, Inject, Logger, Optional, type OnModuleDestroy } from '@nestjs/common';
 import { type DatabaseAdapter, ValidationException } from '@zucker-framework/core';
 // The CommonJS default is the original EventEmitter2 constructor in both formats.
 import EventEmitter2Constructor, { type EventEmitter2 } from 'eventemitter2';
 import { ConfigScopeManager } from './config-scope-manager';
+import { CONFIG_ENCRYPTOR, type ConfigEncryptor } from './config.service';
+import {
+  BoundedTtlCache,
+  CONFIG_CACHE_OPTIONS,
+  configCacheKey,
+  isRecordNotFound,
+  unsubscribeQuietly,
+  type ConfigCacheOptions,
+  type TopicEventBusLike,
+} from './config-cache';
 
 export type ConfigLayer = 'system' | 'tenant' | 'user';
 
@@ -20,18 +30,19 @@ export const LAYERED_CONFIG_CHANGED_EVENT = 'zucker.layered-config-changed';
  */
 export const LAYERED_CONFIG_CHANGED_TOPIC = 'system/config/layered-changed';
 
-/** Minimal TopicEventBus interface to avoid hard dependency on @zucker-framework/event */
-interface TopicEventBusLike {
-  publish(topic: string, payload: unknown): Promise<void>;
-}
-
 export interface LayeredConfigChangePayload {
   scope: string;
   key: string;
   layer: ConfigLayer;
   oldValue: unknown;
   newValue: unknown;
+  /** Tenant or user id for tenant/user layers. */
+  ownerId?: string;
+  /** Protected (encrypted) values are redacted in events. */
+  sensitive?: true;
 }
+
+const PROTECTED_CONFIG_VALUE = '[REDACTED]';
 
 export interface LayeredConfigContext {
   tenantId?: string;
@@ -47,16 +58,39 @@ import { DATABASE_ADAPTER } from '@zucker-framework/crud';
  * layer with a value wins.
  */
 @Injectable()
-export class LayeredConfigService {
+export class LayeredConfigService implements OnModuleDestroy {
   private readonly logger = new Logger(LayeredConfigService.name);
-  private readonly cache = new Map<string, unknown>();
+  /** Bounded (default 1024 entries) and TTL-limited (default 60 s); holds decrypted values. */
+  private readonly cache: BoundedTtlCache;
+  private readonly busSubscription: unknown;
 
   constructor(
     @Inject(DATABASE_ADAPTER) private readonly db: DatabaseAdapter,
     private readonly scopeManager: ConfigScopeManager,
     @Optional() @Inject(EventEmitter2Constructor) private readonly eventEmitter?: EventEmitter2,
     @Optional() @Inject('TOPIC_EVENT_BUS') private readonly topicEventBus?: TopicEventBusLike,
-  ) {}
+    @Optional() @Inject(CONFIG_ENCRYPTOR) private readonly encryptor?: ConfigEncryptor | null,
+    @Optional() @Inject(CONFIG_CACHE_OPTIONS) cacheOptions?: ConfigCacheOptions,
+  ) {
+    this.cache = new BoundedTtlCache(cacheOptions ?? {});
+    this.busSubscription = typeof topicEventBus?.subscribe === 'function'
+      ? topicEventBus.subscribe(LAYERED_CONFIG_CHANGED_TOPIC, (message) => {
+          const change = message?.payload as Partial<LayeredConfigChangePayload> | undefined;
+          if (typeof change?.scope !== 'string' || typeof change.key !== 'string') return;
+          const { scope, key } = change;
+          if (change.layer && (change.layer === 'system' || typeof change.ownerId === 'string')) {
+            this.cache.delete(this.cacheKey(scope, key, change.layer, change.ownerId));
+          } else {
+            // Older publishers omit ownerId: drop every layer of this scope/key.
+            this.cache.deleteWhere((k) => k.startsWith(configCacheKey(scope, '')) && k.endsWith(configCacheKey('', key)));
+          }
+        })
+      : undefined;
+  }
+
+  onModuleDestroy(): void {
+    unsubscribeQuietly(this.busSubscription);
+  }
 
   /**
    * Get a config value, resolving through layers (user > tenant > system > default).
@@ -111,32 +145,27 @@ export class LayeredConfigService {
       );
     }
 
+    this.requireEncryption(scope, key, value);
     const compositeKey = this.buildLayerKey(scope, key, layer, ownerId);
     const oldValue = await this.getLayerValue(scope, key, layer, ownerId);
+    const storedValue = await this.encryptIfNeeded(scope, key, value);
 
     await this.db
       .model('config')
       .update({
         where: { scope_key: { scope: compositeKey, key } },
-        data: { value, updatedAt: new Date() },
+        data: { value: storedValue, updatedAt: new Date() },
       })
-      .catch(async () => {
+      .catch(async (error: unknown) => {
+        if (!isRecordNotFound(error)) throw error;
         await this.db.model('config').create({
-          data: { scope: compositeKey, key, value },
+          data: { scope: compositeKey, key, value: storedValue },
         });
       });
+    // Serve the new value immediately (previously the stale pre-write value stayed cached).
+    this.cache.set(this.cacheKey(scope, key, layer, ownerId), value);
 
-    const payload: LayeredConfigChangePayload = {
-      scope,
-      key,
-      layer,
-      oldValue,
-      newValue: value,
-    };
-    this.eventEmitter?.emit(LAYERED_CONFIG_CHANGED_EVENT, payload);
-    if (this.topicEventBus) {
-      await this.topicEventBus.publish(LAYERED_CONFIG_CHANGED_TOPIC, payload);
-    }
+    await this.publishChange(this.changePayload(scope, key, layer, ownerId, oldValue, value));
   }
 
   /**
@@ -209,40 +238,38 @@ export class LayeredConfigService {
     if (Object.keys(allErrors).length > 0) {
       throw new ValidationException(allErrors, `Layered config batch validation failed`);
     }
+    for (const [key, value] of entries) this.requireEncryption(scope, key, value);
 
     const changes: LayeredConfigChangePayload[] = [];
 
     await this.db.$transaction(async (txDb) => {
       for (const [key, value] of entries) {
         const compositeKey = this.buildLayerKey(scope, key, layer, ownerId);
-        const cacheKey = `${compositeKey}:${key}`;
-        const oldValue = this.cache.get(cacheKey);
+        const oldValue = this.cache.get(this.cacheKey(scope, key, layer, ownerId));
+        const storedValue = await this.encryptIfNeeded(scope, key, value);
 
         await txDb
           .model('config')
           .update({
             where: { scope_key: { scope: compositeKey, key } },
-            data: { value, updatedAt: new Date() },
+            data: { value: storedValue, updatedAt: new Date() },
           })
-          .catch(async () => {
+          .catch(async (error: unknown) => {
+            if (!isRecordNotFound(error)) throw error;
             await txDb.model('config').create({
-              data: { scope: compositeKey, key, value },
+              data: { scope: compositeKey, key, value: storedValue },
             });
           });
 
-        this.cache.set(cacheKey, value);
-        changes.push({ scope, key, layer, oldValue, newValue: value });
+        changes.push(this.changePayload(scope, key, layer, ownerId, oldValue, value));
       }
     });
 
-    for (const payload of changes) {
-      this.eventEmitter?.emit(LAYERED_CONFIG_CHANGED_EVENT, payload);
+    // Only after commit: a rolled-back transaction must not leave memory ahead of storage.
+    for (const [key, value] of entries) {
+      this.cache.set(this.cacheKey(scope, key, layer, ownerId), value);
     }
-    if (this.topicEventBus) {
-      for (const payload of changes) {
-        await this.topicEventBus.publish(LAYERED_CONFIG_CHANGED_TOPIC, payload);
-      }
-    }
+    for (const payload of changes) await this.publishChange(payload);
   }
 
   /**
@@ -255,7 +282,7 @@ export class LayeredConfigService {
     ownerId?: string,
   ): Promise<void> {
     const compositeKey = this.buildLayerKey(scope, key, layer, ownerId);
-    const cacheKey = `${compositeKey}:${key}`;
+    const cacheKey = this.cacheKey(scope, key, layer, ownerId);
     const oldValue = this.cache.get(cacheKey);
 
     await this.db.model('config').delete({
@@ -266,13 +293,7 @@ export class LayeredConfigService {
 
     this.cache.delete(cacheKey);
 
-    const payload: LayeredConfigChangePayload = {
-      scope, key, layer, oldValue, newValue: undefined,
-    };
-    this.eventEmitter?.emit(LAYERED_CONFIG_CHANGED_EVENT, payload);
-    if (this.topicEventBus) {
-      await this.topicEventBus.publish(LAYERED_CONFIG_CHANGED_TOPIC, payload);
-    }
+    await this.publishChange(this.changePayload(scope, key, layer, ownerId, oldValue, undefined));
   }
 
   /**
@@ -281,9 +302,8 @@ export class LayeredConfigService {
    */
   clearCache(scope?: string): void {
     if (scope) {
-      for (const key of this.cache.keys()) {
-        if (key.startsWith(scope)) this.cache.delete(key);
-      }
+      const prefix = configCacheKey(scope, '');
+      this.cache.deleteWhere((key) => key.startsWith(prefix));
     } else {
       this.cache.clear();
     }
@@ -296,7 +316,7 @@ export class LayeredConfigService {
     ownerId?: string,
   ): Promise<unknown | undefined> {
     const compositeKey = this.buildLayerKey(scope, key, layer, ownerId);
-    const cacheKey = `${compositeKey}:${key}`;
+    const cacheKey = this.cacheKey(scope, key, layer, ownerId);
 
     if (this.cache.has(cacheKey)) {
       return this.cache.get(cacheKey);
@@ -306,11 +326,10 @@ export class LayeredConfigService {
       where: { scope_key: { scope: compositeKey, key } },
     }) as { key: string; value: unknown } | null;
 
-    if (record) {
-      this.cache.set(cacheKey, record.value);
-    }
-
-    return record?.value;
+    if (!record) return undefined;
+    const value = await this.decryptIfNeeded(scope, key, record.value);
+    this.cache.set(cacheKey, value);
+    return value;
   }
 
   private async getLayerRecords(
@@ -324,9 +343,60 @@ export class LayeredConfigService {
     }) as Array<{ key: string; value: unknown }>;
     const result: Record<string, unknown> = {};
     for (const record of records) {
-      result[record.key] = record.value;
+      result[record.key] = await this.decryptIfNeeded(scope, record.key, record.value);
     }
     return result;
+  }
+
+  private cacheKey(scope: string, key: string, layer: ConfigLayer, ownerId?: string): string {
+    return configCacheKey(scope, layer, ownerId ?? '', key);
+  }
+
+  private async publishChange(payload: LayeredConfigChangePayload): Promise<void> {
+    this.eventEmitter?.emit(LAYERED_CONFIG_CHANGED_EVENT, payload);
+    if (this.topicEventBus) {
+      await this.topicEventBus.publish(LAYERED_CONFIG_CHANGED_TOPIC, payload);
+    }
+  }
+
+  private isEncryptedProperty(scope: string, key: string): boolean {
+    return this.scopeManager.getProperties(scope).find((p) => p.key === key)?.encrypted === true;
+  }
+
+  private requireEncryption(scope: string, key: string, value: unknown): void {
+    if (!this.isEncryptedProperty(scope, key)) return;
+    if (!this.encryptor) throw new Error('Protected configuration requires an encryption adapter');
+    if (typeof value !== 'string') throw new Error('Protected configuration must be a string');
+  }
+
+  private async encryptIfNeeded(scope: string, key: string, value: unknown): Promise<unknown> {
+    if (!this.isEncryptedProperty(scope, key)) return value;
+    return this.encryptor!.encrypt(value as string);
+  }
+
+  private async decryptIfNeeded(scope: string, key: string, value: unknown): Promise<unknown> {
+    if (!this.isEncryptedProperty(scope, key)) return value;
+    if (!this.encryptor) throw new Error('Protected configuration requires an encryption adapter');
+    try {
+      return await this.encryptor.decrypt(value as string);
+    } catch {
+      this.logger.error(`Failed to decrypt protected layered config ${scope}.${key}`);
+      throw new Error('Protected configuration could not be decrypted');
+    }
+  }
+
+  private changePayload(
+    scope: string, key: string, layer: ConfigLayer, ownerId: string | undefined,
+    oldValue: unknown, newValue: unknown,
+  ): LayeredConfigChangePayload {
+    const base = { scope, key, layer, ...(ownerId !== undefined ? { ownerId } : {}) };
+    if (!this.isEncryptedProperty(scope, key)) return { ...base, oldValue, newValue };
+    return {
+      ...base,
+      oldValue: oldValue === undefined ? undefined : PROTECTED_CONFIG_VALUE,
+      newValue: newValue === undefined ? undefined : PROTECTED_CONFIG_VALUE,
+      sensitive: true,
+    };
   }
 
   private buildLayerKey(

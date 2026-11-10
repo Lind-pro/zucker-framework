@@ -43,6 +43,7 @@ export const zhCN = {
   'common.pageStatus': '第 {page} / {pages} 页，共 {total} 条',
   'common.pageSize': '每页条数',
   'common.selectPage': '选择本页全部',
+  'common.openRow': '打开记录 {id}',
   'common.selectRow': '选择记录 {id}',
   'common.batchDelete': '批量删除',
   'common.batchDeleteConfirm': '确定删除选中的 {count} 条记录？',

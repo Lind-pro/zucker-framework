@@ -18,15 +18,22 @@ export interface CurrentUser {
   name?: string;
 }
 
+/** Options for {@link CreatorEventListener}. */
+export interface CreatorEventListenerOptions {
+  /**
+   * Keep caller-supplied creator fields (legacy `??=` behaviour). Default false: the current user
+   * is always written as creator on create, and creator fields are stripped from updates.
+   */
+  trustClientAuditFields?: boolean;
+}
+
 /**
  * 创建者监听器 - Prepare 阶段自动填充创建人/修改人信息
  *
- * - CREATE/SAVE: 填充 creatorId, creatorName, createdAt, modifierId, modifierName, updatedAt
- * - MODIFY/UPDATE: 仅填充 modifierId, modifierName, updatedAt
- *
- * 填充规则：
- * - 使用 ??= 确保不覆盖已有的 creatorId（用户可提前设置）
- * - modifierId/modifierName 始终覆盖
+ * - CREATE: 以当前用户覆盖 creatorId / creatorName（不信任调用方传入值），createdAt 未设置时填充
+ * - SAVE: 无 id 的实体按创建处理；有 id 的实体（可能是已有记录）只填充修改人
+ * - MODIFY/UPDATE: 填充 modifierId, modifierName, updatedAt，并移除 creatorId/creatorName/createdAt
+ * - 无当前用户（系统任务）时不修改实体
  * - order 为最高优先级（HIGHEST_PRECEDENCE）
  */
 export class CreatorEventListener implements EntityEventListener {
@@ -34,6 +41,7 @@ export class CreatorEventListener implements EntityEventListener {
 
   constructor(
     private readonly getCurrentUser: () => CurrentUser | undefined,
+    private readonly options: CreatorEventListenerOptions = {},
   ) {}
 
   async onEvent(event: EntityEvent): Promise<void> {
@@ -44,26 +52,39 @@ export class CreatorEventListener implements EntityEventListener {
 
     const entities = Array.isArray(event.entity) ? event.entity : [event.entity];
     const now = new Date();
-
-    const isCreate = event.type === EntityEventType.CREATE || event.type === EntityEventType.SAVE;
-    const isModify = (event.type as string) === EntityEventType.MODIFY
-      || event.type === EntityEventType.SAVE;
+    const trust = this.options.trustClientAuditFields === true;
 
     for (const entity of entities) {
       if (typeof entity !== 'object' || entity === null) continue;
       const rec = entity as Record<string, unknown>;
 
+      const isCreate = event.type === EntityEventType.CREATE
+        || (event.type === EntityEventType.SAVE && !rec.id);
+      const isModify = (event.type as string) === EntityEventType.MODIFY
+        || (event.type === EntityEventType.SAVE && !!rec.id);
+
       if (isCreate) {
-        // 创建人信息 — 仅在未设置时填充
-        rec.creatorId ??= user.id;
-        if (user.name !== undefined) {
-          rec.creatorName ??= user.name;
+        if (trust) {
+          rec.creatorId ??= user.id;
+          if (user.name !== undefined) rec.creatorName ??= user.name;
+        } else {
+          rec.creatorId = user.id;
+          if (user.name !== undefined) rec.creatorName = user.name;
+          else delete rec.creatorName;
         }
         rec.createdAt ??= now;
+      } else if (isModify && !trust) {
+        delete rec.creatorId;
+        delete rec.creatorName;
+        delete rec.createdAt;
       }
 
-      if (isModify || isCreate) {
-        // 修改人信息 — 仅在未设置时填充
+      if ((isModify || isCreate) && !trust) {
+        rec.modifierId = user.id;
+        if (user.name !== undefined) rec.modifierName = user.name;
+        rec.updatedAt = now;
+      } else if (isModify || isCreate) {
+        // 修改人信息 — 仅在未设置时填充（trustClientAuditFields）
         if (rec.modifierId == null || rec.modifierId === '' || rec.modifierId === undefined) {
           rec.modifierId = user.id;
         }

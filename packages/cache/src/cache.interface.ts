@@ -33,6 +33,12 @@ export interface ICache<T = unknown> {
    * 批量删除多个键
    */
   evictAll?(keys: Iterable<string>): Promise<void>;
+
+  /**
+   * Remaining lifetime of an entry in milliseconds: `undefined` when the key is absent,
+   * `null` when it never expires. Used by HybridCache so L1 never outlives L2.
+   */
+  remainingTtlMs?(key: string): Promise<number | null | undefined>;
 }
 
 /**

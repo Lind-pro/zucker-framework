@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { existsSync, mkdirSync, writeFileSync, readFileSync, lstatSync } from 'fs';
 import { resolve, join } from 'path';
 import { randomBytes } from 'node:crypto';
+import { frameworkCheckoutRoot } from './checkout';
 import { installConsumerAgentInstructions } from '../../tooling/agent-instructions.mjs';
 import { collectTemplateAssets, validateProjectBundle, validateTemplateAssets, writeTemplateAssets, type ProjectBundle } from '../../tooling/project-templates.mjs';
 
@@ -68,10 +69,13 @@ export function createInitCommand(runtimeDirectory?: string, workingDirectory?: 
 
     // Explicit bundled templates always use the CLI payload; nearby checkouts cannot change them.
     // Preserve the existing Server skeleton/full-checkout behavior for compatibility.
-    const monorepoTemplate = resolve(runtime, '..', '..', '..', 'templates', options.template);
+    // Only a real framework checkout (<root>/packages/cli/dist) may supply the full Server template;
+    // an installed CLI never reads `node_modules/templates/...`.
+    const checkoutRoot = frameworkCheckoutRoot(runtime);
+    const monorepoTemplate = checkoutRoot ? resolve(checkoutRoot, 'templates', options.template) : null;
     const packaged = options.template === 'admin' || options.template === 'web' || options.template === 'server-full'
       ? bundle.templates[options.template] : undefined;
-    const templateDir = options.template === 'server' && existsSync(monorepoTemplate) ? monorepoTemplate : null;
+    const templateDir = options.template === 'server' && monorepoTemplate && existsSync(monorepoTemplate) ? monorepoTemplate : null;
     const assets = packaged ?? (templateDir ? collectTemplateAssets(templateDir) : null);
 
     if (!assets) {

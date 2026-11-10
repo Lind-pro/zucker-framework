@@ -35,6 +35,8 @@ export interface TaskContext {
   updateProgress(progress: number, message?: string): void;
   /** 检查任务是否被取消 */
   isCancelled(): boolean;
+  /** 任务被取消（kill）或本次尝试超时时触发 abort；长任务应监听并尽快停止 */
+  readonly signal: AbortSignal;
   /** 任务 ID */
   readonly taskId: string;
 }
@@ -71,6 +73,7 @@ export class TaskLifecycleManager {
   private readonly logger = new Logger(TaskLifecycleManager.name);
   private readonly tasks = new Map<string, TaskInfo>();
   private readonly cancelledTasks = new Set<string>();
+  private readonly controllers = new Map<string, AbortController>();
   private readonly deadLetterQueue: TaskInfo[] = [];
   private readonly maxDlqSize: number;
 
@@ -125,6 +128,7 @@ export class TaskLifecycleManager {
       return false;
     }
     this.cancelledTasks.add(id);
+    this.controllers.get(id)?.abort(new Error('Task killed'));
     task.status = 'killed';
     task.completedAt = Date.now();
     return true;
@@ -149,6 +153,7 @@ export class TaskLifecycleManager {
         (task.completedAt ?? task.createdAt) < cutoff
       ) {
         this.tasks.delete(id);
+        this.cancelledTasks.delete(id);
         cleaned++;
       }
     }
@@ -159,69 +164,113 @@ export class TaskLifecycleManager {
     const info = this.tasks.get(id) as TaskInfo<T>;
     const maxRetries = definition.maxRetries ?? 0;
 
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      if (this.cancelledTasks.has(id)) return;
-
-      info.status = 'running';
-      info.startedAt = Date.now();
-      info.attempts = attempt + 1;
-
-      const ctx: TaskContext = {
-        taskId: id,
-        updateProgress: (progress, message) => {
-          info.progress = Math.max(0, Math.min(1, progress));
-          info.progressMessage = message;
-        },
-        isCancelled: () => this.cancelledTasks.has(id),
-      };
-
-      try {
-        const resultPromise = definition.handler(ctx);
-
-        // 超时控制
-        let result: T;
-        if (definition.timeoutMs) {
-          result = await Promise.race([
-            resultPromise,
-            new Promise<never>((_, reject) =>
-              setTimeout(() => reject(new Error(`Task timeout after ${definition.timeoutMs}ms`)), definition.timeoutMs),
-            ),
-          ]);
-        } else {
-          result = await resultPromise;
-        }
-
+    try {
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
         if (this.cancelledTasks.has(id)) return;
 
-        info.status = 'completed';
-        info.progress = 1;
-        info.result = result;
-        info.completedAt = Date.now();
-        return;
-      } catch (error) {
-        if (this.cancelledTasks.has(id)) return;
+        const controller = new AbortController();
+        this.controllers.set(id, controller);
 
-        const errorMsg = error instanceof Error ? error.message : String(error);
+        info.status = 'running';
+        info.startedAt = Date.now();
+        info.attempts = attempt + 1;
 
-        if (attempt < maxRetries) {
-          this.logger.warn(`Task "${info.name}" attempt ${attempt + 1} failed: ${errorMsg}. Retrying...`);
-          // 指数退避
-          await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, attempt)));
-          continue;
+        const ctx: TaskContext = {
+          taskId: id,
+          signal: controller.signal,
+          updateProgress: (progress, message) => {
+            info.progress = Math.max(0, Math.min(1, progress));
+            info.progressMessage = message;
+          },
+          isCancelled: () => this.cancelledTasks.has(id) || controller.signal.aborted,
+        };
+
+        let settled = false;
+        let resultPromise: Promise<T> | undefined;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        let timedOut = false;
+        try {
+          resultPromise = Promise.resolve().then(() => definition.handler(ctx));
+          resultPromise.then(
+            () => { settled = true; },
+            () => { settled = true; },
+          );
+
+          // 超时控制：超时后中止本次尝试并清理计时器
+          let result: T;
+          if (definition.timeoutMs) {
+            result = await Promise.race([
+              resultPromise,
+              new Promise<never>((_, reject) => {
+                timer = setTimeout(() => {
+                  timedOut = true;
+                  reject(new Error(`Task timeout after ${definition.timeoutMs}ms`));
+                }, definition.timeoutMs);
+                timer.unref?.();
+              }),
+            ]);
+          } else {
+            result = await resultPromise;
+          }
+
+          if (this.cancelledTasks.has(id)) return;
+
+          info.status = 'completed';
+          info.progress = 1;
+          info.result = result;
+          info.completedAt = Date.now();
+          return;
+        } catch (error) {
+          if (this.cancelledTasks.has(id)) return;
+
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          let abandoned = false;
+
+          if (timedOut) {
+            controller.abort(error);
+            // 不让重试与仍在运行的上一次尝试重叠：等待其在宽限期内结束，否则视为放弃且不再重试
+            if (!settled && resultPromise) {
+              const graceMs = Math.min(definition.timeoutMs ?? 0, 5_000);
+              let graceTimer: ReturnType<typeof setTimeout> | undefined;
+              await Promise.race([
+                resultPromise.then(() => undefined, () => undefined),
+                new Promise<void>((r) => {
+                  graceTimer = setTimeout(r, graceMs);
+                  graceTimer.unref?.();
+                }),
+              ]);
+              if (graceTimer) clearTimeout(graceTimer);
+              abandoned = !settled;
+            }
+          }
+
+          if (attempt < maxRetries && !abandoned) {
+            this.logger.warn(`Task "${info.name}" attempt ${attempt + 1} failed: ${errorMsg}. Retrying...`);
+            // 指数退避
+            await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, attempt)));
+            continue;
+          }
+
+          info.status = 'failed';
+          info.error = abandoned
+            ? `${errorMsg} (handler did not stop after abort; not retried to avoid overlapping attempts)`
+            : errorMsg;
+          info.completedAt = Date.now();
+
+          // 放入死信队列
+          if (this.deadLetterQueue.length >= this.maxDlqSize) {
+            this.deadLetterQueue.shift();
+          }
+          this.deadLetterQueue.push({ ...info });
+
+          this.logger.error(`Task "${info.name}" failed after ${info.attempts} attempts: ${info.error}`);
+          return;
+        } finally {
+          if (timer) clearTimeout(timer);
         }
-
-        info.status = 'failed';
-        info.error = errorMsg;
-        info.completedAt = Date.now();
-
-        // 放入死信队列
-        if (this.deadLetterQueue.length >= this.maxDlqSize) {
-          this.deadLetterQueue.shift();
-        }
-        this.deadLetterQueue.push({ ...info });
-
-        this.logger.error(`Task "${info.name}" failed after ${info.attempts} attempts: ${errorMsg}`);
       }
+    } finally {
+      this.controllers.delete(id);
     }
   }
 }

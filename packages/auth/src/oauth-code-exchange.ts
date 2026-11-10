@@ -21,6 +21,8 @@ export interface OAuthCodeExchangeOptions {
   /** Fetch authoritative GitHub email evidence even when public email is present. */
   includeEmailVerification?: boolean;
   signal?: AbortSignal;
+  /** Per-request timeout in ms (applied in addition to `signal`). Default 10 000; 0 disables. */
+  timeoutMs?: number;
   fetcher?: typeof fetch;
   /** Localized presentation belongs to the consumer; failures contain no tokens/body. */
   errorFactory?: (failure: OAuthCodeExchangeError) => Error;
@@ -76,7 +78,11 @@ async function requestJson(
 ): Promise<unknown> {
   let response: Response;
   try {
-    response = await (options.fetcher ?? fetch)(url, { ...init, signal: options.signal });
+    const timeoutMs = options.timeoutMs ?? 10_000;
+    const signals = [options.signal, timeoutMs > 0 ? AbortSignal.timeout(timeoutMs) : undefined]
+      .filter((signal): signal is AbortSignal => signal !== undefined);
+    const signal = signals.length > 1 ? AbortSignal.any(signals) : signals[0];
+    response = await (options.fetcher ?? fetch)(url, { ...init, signal });
   } catch (error) {
     if (options.signal?.aborted) throw error;
     throw failure(options, provider, stage);
@@ -212,7 +218,12 @@ export async function exchangeGitHubOAuthCode(
       const verified = entries.find(entry => entry?.primary === true && entry.verified === true) ?? entries.find(entry => entry?.verified === true);
       email = text(verified?.email) || text(primary?.email) || email;
       emailVerified = Boolean(email && entries.some(entry => entry?.email === email && entry.verified === true));
-    } else email = text(primary?.email) || null;
+    } else {
+      email = text(primary?.email) || null;
+      // The list was fetched anyway: report whether the chosen address is verified so
+      // callers never treat an unverified GitHub address as proof of ownership.
+      emailVerified = Boolean(email && entries.some(entry => entry?.email === email && entry.verified === true));
+    }
   }
   return {
     provider: 'github',

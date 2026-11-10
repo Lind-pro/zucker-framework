@@ -55,6 +55,6 @@ export async function formEngineFixture(databaseUrl: string, origin = 'http://lo
       } finally { await pool.query(`DROP FUNCTION "${schema}".reject_form_update()`); }
     }
     return { app, database, pool, schema, origin, password, admin, member, withFailedUpdate,
-      async close() { try { await app.close(); await database.onModuleDestroy(); } finally { try { await pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`); } finally { await pool.end(); if (priorOrigin === undefined) delete process.env.ACCOUNT_ORIGINS; else process.env.ACCOUNT_ORIGINS = priorOrigin; } } } };
-  } catch (error) { await closeApp?.(); await database.onModuleDestroy(); try { await pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`); } finally { await pool.end(); if (priorOrigin === undefined) delete process.env.ACCOUNT_ORIGINS; else process.env.ACCOUNT_ORIGINS = priorOrigin; } throw error; }
+      async close() { try { await app.close(); await database.disconnect(); } finally { try { await pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`); } finally { await pool.end(); if (priorOrigin === undefined) delete process.env.ACCOUNT_ORIGINS; else process.env.ACCOUNT_ORIGINS = priorOrigin; } } } };
+  } catch (error) { await closeApp?.(); await database.disconnect(); try { await pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`); } finally { await pool.end(); if (priorOrigin === undefined) delete process.env.ACCOUNT_ORIGINS; else process.env.ACCOUNT_ORIGINS = priorOrigin; } throw error; }
 }

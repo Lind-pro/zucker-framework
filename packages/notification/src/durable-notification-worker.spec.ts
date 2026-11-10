@@ -141,6 +141,37 @@ describe('DurableNotificationWorker', () => {
     });
   });
 
+  it('does not reschedule an accepted message when the DELIVERED commit fails transiently', async () => {
+    const context = await setup();
+    const original = context.repository.markDelivered.bind(context.repository);
+    const markDelivered = vi
+      .spyOn(context.repository, 'markDelivered')
+      .mockRejectedValueOnce(new Error('connection reset'))
+      .mockImplementation(original);
+    const scheduleRetry = vi.spyOn(context.repository, 'scheduleRetry');
+
+    await expect(
+      context.worker.runOnce({ workerId: 'worker-1', now: T0 }),
+    ).resolves.toEqual({ kind: 'delivered', deliveryId: 'delivery-1' });
+    expect(markDelivered).toHaveBeenCalledTimes(2);
+    expect(scheduleRetry).not.toHaveBeenCalled();
+    expect(context.handler.deliver).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the lease to expire instead of re-queueing when the DELIVERED commit keeps failing', async () => {
+    const context = await setup();
+    vi.spyOn(context.repository, 'markDelivered').mockRejectedValue(new Error('database down'));
+    const scheduleRetry = vi.spyOn(context.repository, 'scheduleRetry');
+    const markDead = vi.spyOn(context.repository, 'markDead');
+
+    await expect(
+      context.worker.runOnce({ workerId: 'worker-1', now: T0 }),
+    ).rejects.toThrow('database down');
+    expect(scheduleRetry).not.toHaveBeenCalled();
+    expect(markDead).not.toHaveBeenCalled();
+    expect(await context.repository.getById('delivery-1')).toMatchObject({ status: 'PROCESSING' });
+  });
+
   it('可重试错误按退避时间重新排队并复用幂等键', async () => {
     const deliver = vi
       .fn()

@@ -14,6 +14,7 @@ import { ZuckerHealthModule } from './health/health.module';
 import { ZuckerDashboardAdminModule } from './dashboard/dashboard.module';
 import type { I18nStoreInterface } from './i18n/i18n.store';
 import type { TenantStoreInterface } from './tenant/tenant.store';
+import type { UsersAdminModuleOptions } from './users/users.module';
 
 /** All available feature names for ZuckerAdminModule.forRoot(). */
 export type AdminFeature =
@@ -59,6 +60,12 @@ export interface ZuckerAdminModuleOptions {
    * ```
    */
   tenantStore?: Type<TenantStoreInterface>;
+
+  /**
+   * Options for the `users` feature: extra writable/readable consumer columns and hooks that apply
+   * the application's session policy after administrator password/status/e-mail changes.
+   */
+  users?: UsersAdminModuleOptions;
 }
 
 const ALL_FEATURES: AdminFeature[] = [
@@ -134,6 +141,9 @@ export class ZuckerAdminModule {
         // Features with configurable stores use their own forRoot()
         if (feature === 'i18n') {
           return ZuckerI18nAdminModule.forRoot({ store: options.i18nStore });
+        }
+        if (feature === 'users' && options.users) {
+          return ZuckerUsersAdminModule.forRoot(options.users);
         }
         if (feature === 'tenant') {
           return ZuckerTenantAdminModule.forRoot({ store: options.tenantStore });

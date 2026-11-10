@@ -287,6 +287,17 @@ export interface ZuckerAuthModuleOptions {
   cacheProvider?: string | symbol;
   /** 最大并发会话数，0 表示不限制 */
   maxActiveSessions?: number;
+  /** Access-token lifetime passed to JwtModule (`expiresIn`). Default `'7d'`. */
+  accessTokenTtl?: string | number;
+  /** How a new login treats the user's existing sessions. Default ALLOW. */
+  allopatricLoginMode?: AllopatricLoginMode;
+  /**
+   * TTL of token blacklist entries and per-user revocation watermarks (ms). Must be at least
+   * the access-token lifetime. Default 7 days.
+   */
+  tokenBlacklistTtlMs?: number;
+  /** Max staleness of the cached role hierarchy (ms). Default 60 000. */
+  roleHierarchyCacheTtlMs?: number;
 }
 
 // ============================================================

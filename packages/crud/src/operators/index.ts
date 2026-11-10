@@ -1,4 +1,4 @@
-import { Injectable, Inject, Logger } from '@nestjs/common';
+import { Injectable, Inject, Logger, BadRequestException } from '@nestjs/common';
 import { coerceComparable } from '../query/coerce-comparable';
 
 export type FilterOperatorType =
@@ -222,6 +222,29 @@ export const ALL_OPERATORS = [
   NotEmptyOperator,
 ];
 
+const BUILT_IN_OPERATORS: ReadonlyMap<string, IFilterOperator> = new Map(
+  ALL_OPERATORS.map((Operator) => {
+    const operator = new Operator();
+    return [operator.operatorType, operator] as const;
+  }),
+);
+
+const OPERATOR_ALIASES: Record<string, string> = {
+  'is-null': 'isNull',
+  'is-not-null': 'isNotNull',
+  'not-like': 'notLike',
+  'not-in': 'notIn',
+  'starts-with': 'startsWith',
+  'ends-with': 'endsWith',
+  'has-some': 'hasSome',
+  'not-empty': 'notEmpty',
+};
+
+/** Canonical operator name for an alias such as `is-null` (unknown names are returned unchanged). */
+export function normalizeOperatorType(operatorType: string): string {
+  return OPERATOR_ALIASES[operatorType] ?? operatorType;
+}
+
 @Injectable()
 export class FilterOperatorFactory {
   private readonly logger = new Logger(FilterOperatorFactory.name);
@@ -238,27 +261,27 @@ export class FilterOperatorFactory {
 
   /** Normalize hyphen-style aliases (e.g. 'is-null' → 'isNull') to camelCase keys */
   private normalizeType(operatorType: string): string {
-    const aliases: Record<string, string> = {
-      'is-null': 'isNull',
-      'is-not-null': 'isNotNull',
-      'not-like': 'notLike',
-      'not-in': 'notIn',
-      'starts-with': 'startsWith',
-      'ends-with': 'endsWith',
-      'has-some': 'hasSome',
-      'not-empty': 'notEmpty',
-    };
-    return aliases[operatorType] ?? operatorType;
+    return normalizeOperatorType(operatorType);
   }
 
+  /**
+   * Resolve an operator. Registered operators win; built-in operators are used as a fallback so a
+   * factory created with a partial (or empty) list still produces well-formed scalar filters.
+   */
   getOperator(operatorType: string): IFilterOperator | null {
-    return this.operatorMap.get(this.normalizeType(operatorType) as FilterOperatorType) || null;
+    const type = this.normalizeType(operatorType);
+    return this.operatorMap.get(type as FilterOperatorType) ?? BUILT_IN_OPERATORS.get(type) ?? null;
   }
 
+  /**
+   * Build a Prisma condition for `field <op> value`.
+   * Unknown operators are rejected with 400: they used to be forwarded as a raw `{ [field]: value }`
+   * fragment, which let callers inject relation filters or AND/OR trees.
+   */
   applyFilter(field: string, operatorType: string, value: unknown): Record<string, unknown> | null {
     const operator = this.getOperator(operatorType);
     if (!operator) {
-      return { [field]: value };
+      throw new BadRequestException(`Unsupported filter operator: ${String(operatorType).slice(0, 32)}`);
     }
     return operator.apply(field, value);
   }
@@ -268,6 +291,6 @@ export class FilterOperatorFactory {
   }
 
   isOperatorSupported(operatorType: string): boolean {
-    return this.operatorMap.has(operatorType as FilterOperatorType);
+    return this.getOperator(operatorType) !== null;
   }
 }

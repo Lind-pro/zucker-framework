@@ -1,6 +1,8 @@
 export {
   type AnalyticsEvent,
   type AnalyticsConfig,
+  type AnalyticsReferrerPolicy,
+  sanitizeReferrer,
   configureAnalytics,
   trackEvent,
   trackPageView,

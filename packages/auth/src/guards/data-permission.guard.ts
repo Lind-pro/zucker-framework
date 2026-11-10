@@ -21,7 +21,7 @@ import type {
 import type { Authentication } from '../interfaces';
 import type { DataAccessHandler, AuthorizingContext } from '../data-access/data-access-handler';
 import { DATA_ACCESS_HANDLERS } from '../data-access/data-access-handler';
-import { mergeResults, allowResult } from '../data-access/data-access-result';
+import { mergeResults, denyResult } from '../data-access/data-access-result';
 import type { DataAccessResult } from '../data-access/data-access-result';
 import { DATABASE_ADAPTER } from '@zucker-framework/crud';
 export { DATABASE_ADAPTER };
@@ -50,9 +50,10 @@ export class DataPermissionGuard implements CanActivate {
       return true;
     }
 
-    const metadata = this.reflector.get<DataPermissionOptions>(
+    // Class-level @DataPermission applies to every handler unless a handler overrides it.
+    const metadata = this.reflector.getAllAndOverride<DataPermissionOptions | undefined>(
       DATA_PERMISSION_KEY,
-      context.getHandler(),
+      [context.getHandler(), context.getClass()],
     );
 
     if (!metadata || metadata.skipDataPermission) {
@@ -69,11 +70,10 @@ export class DataPermissionGuard implements CanActivate {
         this.logger.warn('数据权限检查失败: 用户未登录');
         return false;
       }
-      // No handlers or no authentication object — allow (legacy behavior)
-      return true;
-    }
-
-    if (!this.handlers || this.handlers.length === 0) {
+      // Without an Authentication object there are no permission data-access configs to
+      // evaluate (legacy behaviour). JwtAuthGuard always attaches one, so this path is only
+      // reached when the guard runs without it.
+      this.logger.warn('DataPermissionGuard: request has no Authentication; data scope not evaluated');
       return true;
     }
 
@@ -122,19 +122,23 @@ export class DataPermissionGuard implements CanActivate {
       request,
     };
 
-    // Execute all matching handlers and merge results
+    // Execute all matching handlers and merge results. A configured restriction that no
+    // handler can evaluate fails closed instead of silently granting unrestricted access.
+    const handlers = this.handlers ?? [];
     const results: DataAccessResult[] = [];
     for (const config of matchingConfigs) {
-      for (const handler of this.handlers) {
-        if (handler.isSupport(config)) {
-          const result = await handler.handle(config, authContext);
-          results.push(result);
-          break;
-        }
+      const handler = handlers.find((candidate) => candidate.isSupport(config));
+      if (!handler) {
+        this.logger.warn(
+          `数据权限检查失败: 没有处理器支持数据权限类型 ${config.type?.id ?? 'unknown'} (${dataType}:${action})`,
+        );
+        results.push(denyResult());
+        continue;
       }
+      results.push(await handler.handle(config, authContext));
     }
 
-    const merged = results.length > 0 ? mergeResults(results) : allowResult();
+    const merged = mergeResults(results);
 
     // Store the merged result on the request for downstream services
     request[DATA_ACCESS_RESULT_KEY] = merged;

@@ -1,10 +1,10 @@
 import type Stripe from 'stripe';
-import { fromMinorUnits, toMinorUnits } from '../contract/money';
+import { fromStripeMinorUnits, toStripeMinorUnits } from '../contract/money';
 import type { Money } from '../contract/payment-contract';
 import { stripeResourceId, verifyStripeWebhookEvent } from '../providers/stripe';
 import { text } from '../hosted-checkout/validation';
 import { decodeCursor, encodeCursor } from '../subscriptions/validation';
-import { RefundProtocolError, type RefundAdapter, type RefundPaymentReference, type RefundState } from './types';
+import { RefundProtocolError, type RefundAdapter, type RefundPaymentObservation, type RefundPaymentReference, type RefundState } from './types';
 import { compareMoney, identity, protocolCall, sameIdentity, sameMoney, subtractMoney, validateCommand, validatePayment } from './validation';
 
 export interface StripeRefundOptions {
@@ -19,7 +19,7 @@ function state(value: string | null): RefundState {
 }
 function money(amount: number, currency: string): Money {
   if (!Number.isSafeInteger(amount) || amount < 0 || !/^[a-z]{3}$/.test(currency)) throw new RefundProtocolError('invalid_response', 'Invalid Stripe refund money');
-  const code = currency.toUpperCase(); return { amount: fromMinorUnits(amount, code === 'UGX' ? 'USD' : code), currency: code };
+  const code = currency.toUpperCase(); return { amount: fromStripeMinorUnits(amount, code), currency: code };
 }
 export function createStripeRefundAdapter(options: StripeRefundOptions): RefundAdapter {
   identity(options.accountScope);
@@ -75,10 +75,9 @@ export function createStripeRefundAdapter(options: StripeRefundOptions): RefundA
       occurredAt: Number.isSafeInteger(raw.created) ? new Date(raw.created * 1000).toISOString() : undefined,
       commandKey: text(raw.metadata?.zucker_refund_command) };
   };
-  const adapter: RefundAdapter = { id: 'stripe', accountScope: options.accountScope,
-    capabilities: { paymentKinds: kinds, partial: true, requestIdempotency: 'provider', retrieveRefund: true, listRefunds: true },
-    async retrievePayment(payment) {
+  const scan = async (payment: RefundPaymentReference, commandKey?: string) => {
       payment = structuredClone(payment);
+      let previous: Stripe.Refund | undefined;
       const charge = await resolve(payment); let after: string | undefined, pending = 0n, successful = 0n;
       const seen = new Set<string>();
       for (let pageIndex = 0; ; pageIndex++) {
@@ -87,6 +86,11 @@ export function createStripeRefundAdapter(options: StripeRefundOptions): RefundA
         for (const refund of page.data) {
           const observed = observe(refund, payment, charge.id);
           if (seen.has(refund.id)) throw new RefundProtocolError('invalid_response', 'Stripe refund history repeated a receipt'); seen.add(refund.id);
+          // An earlier attempt of the same durable command (e.g. response lost) is replayed, not re-checked.
+          if (commandKey !== undefined && observed.commandKey === commandKey) {
+            if (previous) throw new RefundProtocolError('invalid_response', 'Stripe refund history has two receipts for one command');
+            previous = refund;
+          }
           if (observed.state === 'unknown') throw new RefundProtocolError('invalid_response', 'Stripe refund aggregate has unknown evidence');
           if (observed.state === 'succeeded') successful += BigInt(refund.amount);
           if (observed.state === 'pending' || observed.state === 'requires_action') pending += BigInt(refund.amount);
@@ -96,18 +100,31 @@ export function createStripeRefundAdapter(options: StripeRefundOptions): RefundA
       }
       if (successful + pending > BigInt(charge.amount_captured) || successful > BigInt(Number.MAX_SAFE_INTEGER) || pending > BigInt(Number.MAX_SAFE_INTEGER)) throw new RefundProtocolError('invalid_response', 'Stripe refund aggregate exceeds captured money');
       // Individual refund statuses distinguish pending from settled money; the charge counter does not.
-      return { ...structuredClone(payment), source: { kind: 'charge', id: charge.id }, settlement: successful === BigInt(charge.amount_captured) ? 'refunded' : successful > 0n ? 'partially_refunded' : 'paid',
+      const observation: RefundPaymentObservation = { ...structuredClone(payment), source: { kind: 'charge', id: charge.id }, settlement: successful === BigInt(charge.amount_captured) ? 'refunded' : successful > 0n ? 'partially_refunded' : 'paid',
         refundedMoney: money(Number(successful), charge.currency), pendingRefundMoney: money(Number(pending), charge.currency) };
+      return { observation, previous };
+  };
+  const adapter: RefundAdapter = { id: 'stripe', accountScope: options.accountScope,
+    capabilities: { paymentKinds: kinds, partial: true, requestIdempotency: 'provider', retrieveRefund: true, listRefunds: true },
+    async retrievePayment(payment) {
+      return (await scan(payment)).observation;
     },
     async create(command) {
       command = structuredClone(command);
       validateCommand(command, kinds);
       let amount: number;
       try {
-        amount = toMinorUnits(command.money.amount, command.money.currency === 'UGX' ? 'USD' : command.money.currency);
-        if (['UGX', 'ISK'].includes(command.money.currency)) toMinorUnits(command.money.amount, 'JPY');
+        amount = toStripeMinorUnits(command.money.amount, command.money.currency);
       } catch { throw new RefundProtocolError('invalid_input', 'Stripe refund amount has unsupported decimals or range', 'rejected'); }
-      const payment = await adapter.retrievePayment(command.payment);
+      const { observation: payment, previous } = await scan(command.payment, command.commandKey);
+      if (previous) {
+        // Idempotent retry: Stripe already holds this command's refund. Return it instead of
+        // rejecting on the remaining amount, which already includes this very refund.
+        const replayed = observe(previous, command.payment, payment.source.id);
+        if (!replayed.money || compareMoney(replayed.money, command.money) !== 0)
+          throw new RefundProtocolError('invalid_response', 'Stripe refund for this command has a different amount');
+        return replayed;
+      }
       if (!payment.refundedMoney || !payment.pendingRefundMoney) throw new RefundProtocolError('invalid_response', 'Stripe refund aggregates are unavailable');
       if (compareMoney(command.money, subtractMoney(subtractMoney(command.payment.paidMoney, payment.refundedMoney), payment.pendingRefundMoney)) > 0) throw new RefundProtocolError('invalid_input', 'Refund exceeds the remaining captured amount', 'rejected');
       const allowedReason = ['duplicate', 'fraudulent', 'requested_by_customer'].includes(command.reason ?? '') ? command.reason as Stripe.RefundCreateParams.Reason : undefined;

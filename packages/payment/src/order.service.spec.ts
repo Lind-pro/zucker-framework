@@ -9,6 +9,7 @@ import { createFakeAdapter } from './contract/fake-adapter';
 import type { OrderPersistence } from './order-persistence';
 import type { PaymentSession } from './contract/payment-contract';
 import type { SettlementState } from './contract/settlement';
+import { PaymentRejectedError } from './contract/rejection';
 
 /** A port-level fake, not evidence of database isolation or restart durability. */
 function persistence(rows: Map<string, Order>): OrderPersistence<Order> {
@@ -122,21 +123,87 @@ describe('persistent order workflow', () => {
     expect(payment.adapter.createPayment).toHaveBeenCalledOnce();
   });
 
-  it.each(['created', 'authorized', 'unknown'] as const)(
-    'does not reopen confirmation after a %s response',
+  it('does not reopen confirmation after an unknown response', async () => {
+    const payment = payments();
+    payment.adapter.capture.mockResolvedValue(capturedAs('unknown'));
+    const service = new OrderService(payment.registry, persistence(new Map()));
+    await service.createOrder(params);
+    await expect(service.confirmOrder(params.orderId, 'k-capture')).resolves.toMatchObject({ state: 'unknown' });
+    expect((await service.getOrder(params.orderId)).status).toBe('confirming');
+    await expect(service.confirmOrder(params.orderId, 'k-capture')).rejects.toThrow('状态已变化');
+    expect(payment.adapter.capture).toHaveBeenCalledOnce();
+  });
+
+  it.each(['created', 'authorized'] as const)(
+    'reopens confirmation after a known %s (not yet paid) response (M2)',
     async (state) => {
       const payment = payments();
       payment.adapter.capture.mockResolvedValue(capturedAs(state));
       const service = new OrderService(payment.registry, persistence(new Map()));
       await service.createOrder(params);
-      await expect(service.confirmOrder(params.orderId, 'k-capture')).resolves.toMatchObject({
-        state,
-      });
-      expect((await service.getOrder(params.orderId)).status).toBe('confirming');
-      await expect(service.confirmOrder(params.orderId, 'k-capture')).rejects.toThrow('状态已变化');
-      expect(payment.adapter.capture).toHaveBeenCalledOnce();
+      await service.confirmOrder(params.orderId, 'k-capture');
+      expect((await service.getOrder(params.orderId)).status).toBe('paying');
+      payment.adapter.capture.mockResolvedValue(capturedAs('captured'));
+      await service.confirmOrder(params.orderId, 'k-capture-2');
+      expect((await service.getOrder(params.orderId)).status).toBe('paid');
     },
   );
+
+  it('returns a definitely rejected capture to paying and keeps unknown failures confirming (M2)', async () => {
+    const payment = payments();
+    const service = new OrderService(payment.registry, persistence(new Map()));
+    await service.createOrder(params);
+    payment.adapter.capture.mockRejectedValueOnce(Object.assign(new Error('ORDER_NOT_APPROVED'), { statusCode: 422 }));
+    await expect(service.confirmOrder(params.orderId, 'k1')).rejects.toThrow('ORDER_NOT_APPROVED');
+    expect((await service.getOrder(params.orderId)).status).toBe('paying');
+    payment.adapter.capture.mockRejectedValueOnce(new Error('socket hang up'));
+    await expect(service.confirmOrder(params.orderId, 'k2')).rejects.toThrow('socket hang up');
+    expect((await service.getOrder(params.orderId)).status).toBe('confirming');
+  });
+
+  it('reconciles a parked confirmation read-only through retrieve (M2)', async () => {
+    const payment = payments();
+    const service = new OrderService(payment.registry, persistence(new Map()));
+    await service.createOrder(params);
+    payment.adapter.capture.mockRejectedValueOnce(new Error('timeout'));
+    await expect(service.confirmOrder(params.orderId, 'k1')).rejects.toThrow('timeout');
+    payment.adapter.retrieve.mockResolvedValueOnce(capturedAs('created'));
+    expect((await service.reconcileOrder(params.orderId)).status).toBe('paying');
+    payment.adapter.capture.mockRejectedValueOnce(new Error('timeout'));
+    await expect(service.confirmOrder(params.orderId, 'k2')).rejects.toThrow('timeout');
+    payment.adapter.retrieve.mockResolvedValueOnce(capturedAs('captured'));
+    expect(await service.reconcileOrder(params.orderId)).toMatchObject({ status: 'paid', paymentId: 'payment-1' });
+    expect(payment.adapter.capture).toHaveBeenCalledTimes(2);
+  });
+
+  it('resolves a parked refund only from refund evidence or an explicit operator decision (M2)', async () => {
+    const payment = payments();
+    const service = new OrderService(payment.registry, persistence(new Map()));
+    await service.createOrder(params);
+    payment.adapter.capture.mockResolvedValueOnce(capturedAs('captured'));
+    await service.confirmOrder(params.orderId, 'k-capture');
+    payment.adapter.refund.mockRejectedValueOnce(new Error('timeout'));
+    await expect(service.refundOrder(params.orderId, 'r1')).rejects.toThrow('timeout');
+    payment.adapter.retrieve.mockResolvedValueOnce(capturedAs('captured'));
+    expect((await service.reconcileOrder(params.orderId)).status).toBe('refunding');
+    payment.adapter.retrieve.mockResolvedValueOnce(capturedAs('refunded'));
+    expect((await service.reconcileOrder(params.orderId)).status).toBe('refunded');
+    expect(payment.adapter.refund).toHaveBeenCalledOnce();
+  });
+
+  it('returns a definitely rejected refund to paid (M2)', async () => {
+    const payment = payments();
+    const service = new OrderService(payment.registry, persistence(new Map()));
+    await service.createOrder(params);
+    payment.adapter.capture.mockResolvedValueOnce(capturedAs('captured'));
+    await service.confirmOrder(params.orderId, 'k-capture');
+    payment.adapter.refund.mockRejectedValueOnce(new PaymentRejectedError('charge already refunded', 400));
+    await expect(service.refundOrder(params.orderId, 'r1')).rejects.toThrow('already refunded');
+    expect((await service.getOrder(params.orderId)).status).toBe('paid');
+    payment.adapter.refund.mockRejectedValueOnce(new Error('timeout'));
+    await expect(service.refundOrder(params.orderId, 'r2')).rejects.toThrow('timeout');
+    expect((await service.resolveRefund(params.orderId, 'not_refunded')).status).toBe('paid');
+  });
 
   it('retains a refunded confirmation result as a terminal order', async () => {
     const payment = payments();

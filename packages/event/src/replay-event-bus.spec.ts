@@ -29,7 +29,7 @@ describe('ReplayEventBus', () => {
     await bus.onModuleDestroy();
   });
 
-  it('delivers a terminal event before completing and allows a fresh stream', async () => {
+  it('delivers a terminal event before completing, replays it to late subscribers and allows a fresh run', async () => {
     const bus = new ReplayEventBus(options);
     const seen: string[] = [];
     bus
@@ -40,9 +40,18 @@ describe('ReplayEventBus', () => {
       });
     bus.publish('a', { value: 3, done: true });
     expect(seen).toEqual(['3', 'complete']);
+    // A subscriber arriving just after the terminal event still receives it and completes.
+    const late: string[] = [];
+    bus.stream('a').subscribe({
+      next: (event) => late.push(String(event.value)),
+      complete: () => late.push('complete'),
+    });
+    expect(late).toEqual(['3', 'complete']);
+    // A later non-terminal event starts a fresh run on the same channel.
+    bus.publish('a', { value: 4 });
     const fresh: number[] = [];
     bus.stream('a').subscribe((event) => fresh.push(event.value));
-    expect(fresh).toEqual([]);
+    expect(fresh).toEqual([4]);
     await bus.onModuleDestroy();
   });
 

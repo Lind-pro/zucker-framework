@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { CompositeNotifierService, type FallbackStrategy } from './composite-notifier.service';
 import { NotifyHistoryService } from './notify-history.service';
-import type { SimpleNotifierProvider, NotifyMessage, NotifyChannel } from './notifier.interface';
+import { PartialNotificationDeliveryError, type SimpleNotifierProvider, type NotifyMessage, type NotifyChannel } from './notifier.interface';
 
 function createProvider(channel: NotifyChannel, sendFn?: () => Promise<void>): SimpleNotifierProvider {
   return {
@@ -106,9 +106,46 @@ describe('CompositeNotifierService', () => {
         retryDelayMs: 0,
       };
       const service = new CompositeNotifierService([emailFail, smsOk], historyService, strategy);
-      const result = await service.send(makeMessage({ channel: 'EMAIL' as NotifyChannel }));
+      const result = await service.send(makeMessage({
+        channel: 'EMAIL' as NotifyChannel,
+        fallbackRecipients: { SMS: '+8613800000000' } as NotifyMessage['fallbackRecipients'],
+      }));
       expect(result.success).toBe(true);
       expect(result.channel).toBe('SMS');
+      expect(smsOk.send).toHaveBeenCalledWith(expect.objectContaining({ to: '+8613800000000' }));
+    });
+
+    it('does not hand one channel\'s address to another channel', async () => {
+      const emailFail = createProvider('EMAIL' as NotifyChannel, vi.fn().mockRejectedValue(new Error('email down')));
+      const smsOk = createProvider('SMS' as NotifyChannel);
+      const strategy: FallbackStrategy = {
+        maxAttempts: 2,
+        channelPriority: ['EMAIL' as NotifyChannel, 'SMS' as NotifyChannel],
+        retryDelayMs: 0,
+      };
+      const service = new CompositeNotifierService([emailFail, smsOk], historyService, strategy);
+      await expect(service.send(makeMessage())).rejects.toThrow('email down');
+      expect(smsOk.send).not.toHaveBeenCalled();
+    });
+
+    it('retries only the failed recipients of a partial batch, on the same channel only', async () => {
+      const first = createProvider(
+        'SMS' as NotifyChannel,
+        vi.fn().mockRejectedValue(new PartialNotificationDeliveryError('1/2 failed', ['2'], 1)),
+      );
+      const second = createProvider('SMS' as NotifyChannel);
+      const email = createProvider('EMAIL' as NotifyChannel);
+      const strategy: FallbackStrategy = {
+        maxAttempts: 3,
+        channelPriority: ['SMS' as NotifyChannel, 'EMAIL' as NotifyChannel],
+        retryDelayMs: 0,
+      };
+      const service = new CompositeNotifierService([first, second, email], historyService, strategy);
+      const result = await service.send(makeMessage({ channel: 'SMS' as NotifyChannel, to: ['1', '2'] }));
+      expect(result.success).toBe(true);
+      expect(first.send).toHaveBeenCalledWith(expect.objectContaining({ to: ['1', '2'] }));
+      expect(second.send).toHaveBeenCalledWith(expect.objectContaining({ to: ['2'] }));
+      expect(email.send).not.toHaveBeenCalled();
     });
 
     it('should respect maxAttempts limit', async () => {
@@ -134,7 +171,10 @@ describe('CompositeNotifierService', () => {
         retryDelayMs: 0,
       };
       const service = new CompositeNotifierService([emailFail, smsFail, webhookOk], historyService, strategy);
-      const result = await service.send(makeMessage({ channel: 'EMAIL' as NotifyChannel }));
+      const result = await service.send(makeMessage({
+        channel: 'EMAIL' as NotifyChannel,
+        fallbackRecipients: { SMS: '13800000000', WEBHOOK: 'https://hook.example.test' } as NotifyMessage['fallbackRecipients'],
+      }));
       expect(result.success).toBe(true);
       expect(result.channel).toBe('WEBHOOK');
     });
@@ -149,7 +189,10 @@ describe('CompositeNotifierService', () => {
         retryDelayMs: 0,
       };
       const service = new CompositeNotifierService([emailFail, smsOk], historyService, strategy);
-      await service.send(makeMessage({ channel: 'EMAIL' as NotifyChannel }));
+      await service.send(makeMessage({
+        channel: 'EMAIL' as NotifyChannel,
+        fallbackRecipients: { SMS: '13800000000' } as NotifyMessage['fallbackRecipients'],
+      }));
       // Should record: 1 failed EMAIL attempt + 1 successful SMS attempt
       expect(recordSpy).toHaveBeenCalledTimes(2);
       expect(recordSpy.mock.calls[0][1].success).toBe(false);

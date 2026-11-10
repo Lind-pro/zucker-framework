@@ -6,9 +6,12 @@ export type {
   FormLayout,
 } from './types';
 export { FieldType } from './types';
-export { toAntdRules } from './validators';
+export { toAntdRules, compilePattern } from './validators';
 export { DynamicFormField } from './DynamicFormField';
 export { DynamicForm } from './DynamicForm';
 export type { DynamicFormProps } from './DynamicForm';
 export type { DynamicFormMessages } from './messages';
-export { useFormDefinition } from './useFormDefinition';
+export { useFormDefinition, unwrapFormDefinition } from './useFormDefinition';
+export type { FormDefinitionFetcher, UseFormDefinitionOptions } from './useFormDefinition';
+export { normalizeFormValues, definitionInitialValues } from './values';
+export type { FormFileUploader, UploadedFileValue } from './values';

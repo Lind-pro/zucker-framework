@@ -21,7 +21,8 @@ export function bullMqConnectionFromUrl(
   }
 
   return {
-    host: parsed.hostname,
+    // WHATWG URL keeps IPv6 literals bracketed ("[::1]"); ioredis expects the bare address.
+    host: parsed.hostname.replace(/^\[(.*)\]$/, '$1'),
     port: parsed.port ? Number(parsed.port) : 6379,
     username: parsed.username ? decodeURIComponent(parsed.username) : undefined,
     password: parsed.password ? decodeURIComponent(parsed.password) : undefined,

@@ -126,7 +126,12 @@ export type {
 export { MediaType, MediaTaskStatus } from './media.interface';
 export { MediaProviderManager } from './media-provider-manager';
 export { MediaGenerationService } from './media-generation.service';
-export type { ImageGenerationOptions, VideoGenerationOptions } from './media-generation.service';
+export type {
+  ImageGenerationOptions,
+  MediaTaskStatusOptions,
+  VideoGenerationOptions,
+} from './media-generation.service';
+export { ProviderHttpError } from './provider-http-error';
 
 // Media providers
 export { DalleProvider } from './providers/dalle.provider';

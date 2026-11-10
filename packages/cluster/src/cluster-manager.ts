@@ -1,4 +1,5 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { randomBytes } from 'node:crypto';
 
 export interface ClusterNode {
   id: string;
@@ -14,7 +15,16 @@ export interface ClusterManagerOptions {
   host: string;
   port: number;
   heartbeatInterval?: number;
+  /**
+   * A node whose last heartbeat is older than this is reported `offline`.
+   * Also the leader lease duration (default: 30000).
+   */
   heartbeatTimeout?: number;
+  /**
+   * Membership entries whose last heartbeat is older than this are removed
+   * from the shared node hash by any member (default: 10 × heartbeatTimeout).
+   */
+  staleNodeTimeout?: number;
   redisPrefix?: string;
 }
 
@@ -31,41 +41,77 @@ export interface ClusterManager {
   getCurrentNode(): ClusterNode;
 }
 
+/** Compare-and-pexpire used to renew the leader lease. */
+export const RENEW_LEADER_SCRIPT =
+  "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('pexpire', KEYS[1], ARGV[2]) else return 0 end";
+/** Compare-and-delete used to give up the leader lease. */
+export const RELEASE_LEADER_SCRIPT =
+  "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end";
+
+function defaultNodeId(): string {
+  return `node_${Date.now()}_${randomBytes(4).toString('hex')}`;
+}
+
 /**
- * Redis-based cluster manager
- * 使用 Redis Hash 存储节点信息，通过心跳机制检测节点存活
+ * Redis-based cluster manager.
+ *
+ * Membership: one Redis hash (`<prefix>nodes`) updated by a heartbeat. Entries
+ * older than `staleNodeTimeout` are pruned by whichever member reads the list;
+ * unparsable entries are skipped.
+ *
+ * Leadership: a Redis lease (`<prefix>leader`, `SET NX PX heartbeatTimeout`)
+ * renewed on each heartbeat with a compare-and-pexpire. At most one node holds
+ * the lease at a time; a paused or crashed leader loses it after
+ * `heartbeatTimeout`. Leadership is still advisory (there is no fencing
+ * token), so work that must never overlap should also take a
+ * {@link RedisDistributedLock}.
+ *
+ * Configuration may happen after module init: `configure()` joins
+ * automatically once the module has started.
  */
 @Injectable()
 export class RedisClusterManager implements ClusterManager, OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(RedisClusterManager.name);
   private heartbeatTimer?: ReturnType<typeof setInterval>;
   private joined = false;
+  private initialized = false;
+  private heartbeatRunning = false;
 
   private options: Required<ClusterManagerOptions>;
   private redis: RedisLike | null = null;
 
   constructor() {
     this.options = {
-      nodeId: `node_${Date.now()}`,
+      nodeId: defaultNodeId(),
       host: 'localhost',
       port: 3000,
       heartbeatInterval: 10000,
       heartbeatTimeout: 30000,
+      staleNodeTimeout: 300000,
       redisPrefix: 'zucker:cluster:',
     };
   }
 
   configure(options: ClusterManagerOptions, redis: RedisLike): void {
+    const heartbeatTimeout = options.heartbeatTimeout ?? 30000;
     this.options = {
-      heartbeatInterval: 10000,
-      heartbeatTimeout: 30000,
-      redisPrefix: 'zucker:cluster:',
       ...options,
+      heartbeatInterval: options.heartbeatInterval ?? 10000,
+      redisPrefix: options.redisPrefix ?? 'zucker:cluster:',
+      nodeId: options.nodeId || defaultNodeId(),
+      heartbeatTimeout,
+      staleNodeTimeout: options.staleNodeTimeout ?? heartbeatTimeout * 10,
     };
     this.redis = redis;
+    if (this.initialized && !this.joined) {
+      this.join().catch((err: unknown) => {
+        this.logger.error(`Failed to join cluster: ${errorMessage(err)}`);
+      });
+    }
   }
 
   async onModuleInit(): Promise<void> {
+    this.initialized = true;
     if (this.redis) {
       await this.join();
     }
@@ -75,24 +121,22 @@ export class RedisClusterManager implements ClusterManager, OnModuleInit, OnModu
     await this.leave();
   }
 
+  private get nodesKey(): string {
+    return `${this.options.redisPrefix}nodes`;
+  }
+
+  private get leaderKey(): string {
+    return `${this.options.redisPrefix}leader`;
+  }
+
   async join(): Promise<void> {
     if (!this.redis || this.joined) return;
 
-    const node: ClusterNode = {
-      id: this.options.nodeId,
-      host: this.options.host,
-      port: this.options.port,
-      status: 'online',
-      lastHeartbeat: new Date(),
-    };
-
-    await this.redis.hset(
-      `${this.options.redisPrefix}nodes`,
-      this.options.nodeId,
-      JSON.stringify(node),
-    );
-
+    await this.writeHeartbeat();
     this.joined = true;
+    await this.refreshLeadership().catch((err: unknown) => {
+      this.logger.warn(`Leader election failed: ${errorMessage(err)}`);
+    });
     this.startHeartbeat();
     this.logger.log(`Node joined cluster: ${this.options.nodeId}`);
   }
@@ -101,46 +145,78 @@ export class RedisClusterManager implements ClusterManager, OnModuleInit, OnModu
     if (!this.redis || !this.joined) return;
 
     this.stopHeartbeat();
-    await this.redis.hdel(
-      `${this.options.redisPrefix}nodes`,
-      this.options.nodeId,
-    );
     this.joined = false;
+    try {
+      await this.compareAndRun(this.leaderKey, RELEASE_LEADER_SCRIPT, []);
+    } catch (err) {
+      this.logger.warn(`Failed to release leader lease: ${errorMessage(err)}`);
+    }
+    await this.redis.hdel(this.nodesKey, this.options.nodeId);
     this.logger.log(`Node left cluster: ${this.options.nodeId}`);
   }
 
   async getNodes(): Promise<ClusterNode[]> {
     if (!this.redis) return [];
 
-    const nodesMap = await this.redis.hgetall(`${this.options.redisPrefix}nodes`);
+    const nodesMap = await this.redis.hgetall(this.nodesKey);
     const nodes: ClusterNode[] = [];
+    const stale: string[] = [];
     const now = Date.now();
 
-    for (const [, value] of Object.entries(nodesMap)) {
-      const node = JSON.parse(value) as ClusterNode;
-      node.lastHeartbeat = new Date(node.lastHeartbeat);
+    for (const [field, value] of Object.entries(nodesMap ?? {})) {
+      let node: ClusterNode;
+      try {
+        node = JSON.parse(value) as ClusterNode;
+        node.lastHeartbeat = new Date(node.lastHeartbeat);
+        if (!node || typeof node.id !== 'string' || Number.isNaN(node.lastHeartbeat.getTime())) {
+          throw new Error('invalid node entry');
+        }
+      } catch {
+        this.logger.warn(`Ignoring corrupt cluster node entry: ${field}`);
+        continue;
+      }
 
+      const age = now - node.lastHeartbeat.getTime();
+      if (age > this.options.staleNodeTimeout && node.id !== this.options.nodeId) {
+        stale.push(field);
+        continue;
+      }
       // 检查心跳超时
-      if (now - node.lastHeartbeat.getTime() > this.options.heartbeatTimeout) {
+      if (age > this.options.heartbeatTimeout) {
         node.status = 'offline';
       }
 
       nodes.push(node);
     }
 
+    if (stale.length > 0) {
+      this.redis.hdel(this.nodesKey, ...stale).catch((err: unknown) => {
+        this.logger.warn(`Failed to prune stale cluster nodes: ${errorMessage(err)}`);
+      });
+    }
+
     return nodes.sort((a, b) => a.id.localeCompare(b.id));
   }
 
+  /** The node currently holding the leader lease, if it is a known member. */
   async getLeader(): Promise<ClusterNode | undefined> {
+    if (!this.redis) return undefined;
+    let leaderId = await this.redis.get(this.leaderKey);
+    if (!leaderId && this.joined) {
+      await this.refreshLeadership();
+      leaderId = await this.redis.get(this.leaderKey);
+    }
+    if (!leaderId) return undefined;
     const nodes = await this.getNodes();
-    const onlineNodes = nodes.filter((n) => n.status === 'online');
-    // 简单选主：ID 最小的在线节点为 leader
-    return onlineNodes[0];
+    return nodes.find((n) => n.id === leaderId);
   }
 
   async isLeader(): Promise<boolean> {
-    const leader = await this.getLeader();
-    return leader?.id === this.options.nodeId;
+    if (!this.redis || !this.joined) return false;
+    const leaderId = await this.redis.get(this.leaderKey);
+    if (leaderId === this.options.nodeId) return true;
+    if (leaderId) return false;
+    return this.refreshLeadership();
   }
 
   getCurrentNode(): ClusterNode {
@@ -153,26 +229,52 @@ export class RedisClusterManager implements ClusterManager, OnModuleInit, OnModu
     };
   }
 
+  /** Acquire the leader lease if free, or renew it if held. Returns whether this node leads. */
+  private async refreshLeadership(): Promise<boolean> {
+    if (!this.redis || !this.joined) return false;
+    const lease = this.options.heartbeatTimeout;
+    const renewed = await this.compareAndRun(this.leaderKey, RENEW_LEADER_SCRIPT, [lease]);
+    if (renewed) return true;
+    const acquired = await this.redis.set(this.leaderKey, this.options.nodeId, 'PX', lease, 'NX');
+    if (acquired) {
+      this.logger.log(`Node became cluster leader: ${this.options.nodeId}`);
+      return true;
+    }
+    return false;
+  }
+
+  private async writeHeartbeat(): Promise<void> {
+    const node: ClusterNode = {
+      id: this.options.nodeId,
+      host: this.options.host,
+      port: this.options.port,
+      status: 'online',
+      lastHeartbeat: new Date(),
+    };
+    await this.redis!.hset(this.nodesKey, this.options.nodeId, JSON.stringify(node));
+  }
+
+  /** One heartbeat tick. Never throws: a Redis outage must not crash the process. */
+  async heartbeat(): Promise<void> {
+    if (!this.redis || !this.joined || this.heartbeatRunning) return;
+    this.heartbeatRunning = true;
+    try {
+      await this.writeHeartbeat();
+      await this.refreshLeadership();
+    } catch (err) {
+      this.logger.warn(`Cluster heartbeat failed: ${errorMessage(err)}`);
+    } finally {
+      this.heartbeatRunning = false;
+    }
+  }
+
   private startHeartbeat(): void {
     // 防止重复创建定时器
     if (this.heartbeatTimer) this.stopHeartbeat();
-    this.heartbeatTimer = setInterval(async () => {
-      if (!this.redis || !this.joined) return;
-
-      const node: ClusterNode = {
-        id: this.options.nodeId,
-        host: this.options.host,
-        port: this.options.port,
-        status: 'online',
-        lastHeartbeat: new Date(),
-      };
-
-      await this.redis.hset(
-        `${this.options.redisPrefix}nodes`,
-        this.options.nodeId,
-        JSON.stringify(node),
-      );
+    this.heartbeatTimer = setInterval(() => {
+      void this.heartbeat();
     }, this.options.heartbeatInterval);
+    this.heartbeatTimer.unref?.();
   }
 
   private stopHeartbeat(): void {
@@ -181,6 +283,26 @@ export class RedisClusterManager implements ClusterManager, OnModuleInit, OnModu
       this.heartbeatTimer = undefined;
     }
   }
+
+  private async compareAndRun(key: string, script: string, extraArgs: number[]): Promise<boolean> {
+    const redis = this.redis!;
+    const me = this.options.nodeId;
+    if (typeof redis.eval === 'function') {
+      return Number(await redis.eval(script, 1, key, me, ...extraArgs)) === 1;
+    }
+    // Non-atomic fallback for clients without EVAL.
+    if ((await redis.get(key)) !== me) return false;
+    if (script === RELEASE_LEADER_SCRIPT) {
+      await redis.del(key);
+    } else {
+      await redis.set(key, me, 'PX', extraArgs[0], 'XX');
+    }
+    return true;
+  }
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 /** 最小 Redis 接口（兼容 ioredis） */
@@ -199,4 +321,11 @@ export interface RedisLike {
   duplicate(): RedisLike;
   /** Gracefully close the connection (optional — present on ioredis) */
   quit?(): Promise<unknown>;
+  /** Lua scripting (ioredis signature). Required for atomic lock release/renew and leader leases. */
+  eval?(script: string, numKeys: number, ...args: Array<string | number>): Promise<unknown>;
+  /** Pattern subscription (ioredis emits `pmessage`). Enables wildcard topics in DistributedEventBus. */
+  psubscribe?(...patterns: string[]): Promise<unknown>;
+  punsubscribe?(...patterns: string[]): Promise<unknown>;
+  /** Cursor-based key iteration (ioredis signature: scan(cursor, 'MATCH', pattern, 'COUNT', n)). */
+  scan?(cursor: string | number, ...args: Array<string | number>): Promise<[string, string[]]>;
 }

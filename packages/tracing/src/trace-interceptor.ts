@@ -20,17 +20,21 @@ export class TraceInterceptor implements NestInterceptor {
     const request = context.switchToHttp().getRequest();
     const traceCtx = getTraceContext();
 
-    const routePath = request.route?.path ?? request.url;
+    // Spans live in memory and may be exported: keep the path only (no query string).
+    const path = String(request.url ?? '').split(/[?#]/, 1)[0];
+    const routePath = request.route?.path ?? path;
     const spanName = `${request.method} ${routePath}`;
     const span = this.tracer.startSpan(spanName, {
       traceId: traceCtx?.traceId,
       parentSpanId: traceCtx?.parentSpanId,
+      spanId: traceCtx?.spanId,
       attributes: {
         'http.method': request.method,
-        'http.url': request.url,
+        'http.url': path,
         'http.route': routePath,
         'http.user_agent': request.headers?.['user-agent'],
-        'http.client_ip': request.ip || request.headers?.['x-forwarded-for'] || '',
+        // request.ip honours the app's trust-proxy setting; raw X-Forwarded-For is client-controlled.
+        'http.client_ip': request.ip || '',
       },
     });
 
@@ -51,7 +55,8 @@ export class TraceInterceptor implements NestInterceptor {
         span.addEvent('exception', {
           'exception.type': error?.constructor?.name ?? 'Error',
           'exception.message': error instanceof Error ? error.message : String(error),
-          'exception.stacktrace': error instanceof Error ? error.stack : undefined,
+          'exception.stacktrace':
+            error instanceof Error && error.stack ? error.stack.slice(0, 4096) : undefined,
         });
         span.end();
         return throwError(() => error);

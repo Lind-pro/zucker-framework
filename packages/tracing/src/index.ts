@@ -15,6 +15,7 @@ export {
   TraceMiddleware,
   getTraceId,
   getSpanId,
+  getCurrentSpanId,
   getTraceContext,
   runWithTraceContext,
   generateTraceparent,

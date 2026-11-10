@@ -82,7 +82,7 @@ export class ReplicateProvider implements MediaProvider {
       width: config.width,
       height: config.height,
       format: config.format ?? 'webp',
-      cost: this.estimateCost(modelId),
+      cost: this.estimateCost(modelId) * Math.max(1, Array.isArray(output) ? output.length : 1),
       provider: this.id,
       model: modelId,
       durationMs,
@@ -115,7 +115,9 @@ export class ReplicateProvider implements MediaProvider {
       result.result = {
         url,
         mediaType: MediaType.IMAGE,
-        cost: this.estimateCost(prediction.model ?? ''),
+        cost:
+          this.estimateCost(prediction.model ?? '') *
+          Math.max(1, Array.isArray(prediction.output) ? prediction.output.length : 1),
         provider: this.id,
         model: prediction.model ?? '',
         durationMs: prediction.metrics?.predict_time ? prediction.metrics.predict_time * 1000 : 0,

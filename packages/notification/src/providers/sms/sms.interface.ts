@@ -7,6 +7,11 @@ export interface SmsMessage {
   templateParams?: Record<string, string>;
   /** 签名（部分服务商必填） */
   signName?: string;
+  /**
+   * Positional order of `templateParams` for providers with positional templates (Tencent).
+   * Without it, object key insertion order is used.
+   */
+  templateParamOrder?: string[];
 }
 
 export interface SmsResult {

@@ -76,12 +76,14 @@ export class GracefulShutdownManager implements OnModuleDestroy {
       const results = await Promise.allSettled(
         callbacks.map(async (cb) => {
           const start = Date.now();
+          let timer: ReturnType<typeof setTimeout> | undefined;
           try {
             await Promise.race([
               Promise.resolve(cb.fn()),
-              new Promise<never>((_, reject) =>
-                setTimeout(() => reject(new Error(`Timeout after ${cb.timeoutMs}ms`)), cb.timeoutMs),
-              ),
+              new Promise<never>((_, reject) => {
+                timer = setTimeout(() => reject(new Error(`Timeout after ${cb.timeoutMs}ms`)), cb.timeoutMs);
+                timer.unref?.();
+              }),
             ]);
             this.logger.log(`  [OK] ${cb.name} (${Date.now() - start}ms)`);
           } catch (error) {
@@ -89,6 +91,8 @@ export class GracefulShutdownManager implements OnModuleDestroy {
               `  [FAIL] ${cb.name} (${Date.now() - start}ms): ${error instanceof Error ? error.message : error}`,
             );
             throw error;
+          } finally {
+            if (timer) clearTimeout(timer);
           }
         }),
       );

@@ -64,6 +64,11 @@ export class CodexSubscriptionAuthError extends Error {
   }
 }
 
+const inFlightRefreshesByStore = new WeakMap<
+  CredentialProfileStore,
+  Map<string, Promise<CodexSubscriptionCredentials>>
+>();
+
 export class CodexCredentialProfileAdapter {
   readonly providerId = 'openai-codex';
 
@@ -116,8 +121,21 @@ export class CodexCredentialProfileAdapter {
     });
   }
 
+  get id(): string {
+    return credentialProfileId(this.providerId, this.profileName);
+  }
+
   runExclusive<T>(operation: () => Promise<T>): Promise<T> {
-    return this.store.runExclusive(credentialProfileId(this.providerId, this.profileName), operation);
+    return this.store.runExclusive(this.id, operation);
+  }
+
+  inFlightRefreshes(): Map<string, Promise<CodexSubscriptionCredentials>> {
+    let pending = inFlightRefreshesByStore.get(this.store);
+    if (!pending) {
+      pending = new Map();
+      inFlightRefreshesByStore.set(this.store, pending);
+    }
+    return pending;
   }
 }
 
@@ -136,7 +154,6 @@ export class CodexSubscriptionCredentialManager {
   private readonly now: () => number;
   private readonly refreshSkewMs: number;
   private readonly requestTimeoutMs: number;
-  private refreshPromise: Promise<CodexSubscriptionCredentials> | null = null;
 
   constructor(options: CodexSubscriptionCredentialManagerOptions) {
     this.profile = new CodexCredentialProfileAdapter(options.store, options.profileName);
@@ -169,32 +186,40 @@ export class CodexSubscriptionCredentialManager {
     forceRefresh: boolean,
     signal?: AbortSignal,
   ): Promise<CodexSubscriptionCredentials> {
-    if (this.refreshPromise) return this.refreshPromise;
-    this.refreshPromise = this.profile
-      .runExclusive(async () => {
-        const stored = await this.profile.read();
-        if (!stored) {
-          throw new CodexSubscriptionAuthError(
-            'NOT_AUTHENTICATED',
-            'Codex 订阅凭据不存在。',
-            { reloginRequired: true },
-          );
-        }
-        const current = normalizeCredentials(stored, this.now());
-        if (!forceRefresh && current.expiresAt > this.now() + this.refreshSkewMs) return current;
-        const refreshed = await this.requestRefresh(current, signal);
-        await this.profile.write(refreshed);
-        return refreshed;
-      })
-      .finally(() => {
-        this.refreshPromise = null;
-      });
-    return this.refreshPromise;
+    signal?.throwIfAborted();
+    // Shared per (store, profile) so managers created per request still coalesce, and not
+    // bound to any single caller's abort signal: one caller cancelling must not fail the
+    // other waiters. Each caller still stops waiting when its own signal aborts.
+    const pending = this.profile.inFlightRefreshes();
+    const key = this.profile.id;
+    let shared = pending.get(key);
+    if (!shared) {
+      shared = this.profile
+        .runExclusive(async () => {
+          const stored = await this.profile.read();
+          if (!stored) {
+            throw new CodexSubscriptionAuthError(
+              'NOT_AUTHENTICATED',
+              'Codex 订阅凭据不存在。',
+              { reloginRequired: true },
+            );
+          }
+          const current = normalizeCredentials(stored, this.now());
+          if (!forceRefresh && current.expiresAt > this.now() + this.refreshSkewMs) return current;
+          const refreshed = await this.requestRefresh(current);
+          await this.profile.write(refreshed);
+          return refreshed;
+        })
+        .finally(() => {
+          if (pending.get(key) === shared) pending.delete(key);
+        });
+      pending.set(key, shared);
+    }
+    return abortable(shared, signal);
   }
 
   private async requestRefresh(
     credentials: CodexSubscriptionCredentials,
-    signal?: AbortSignal,
   ): Promise<CodexSubscriptionCredentials> {
     let response: Response;
     try {
@@ -211,7 +236,7 @@ export class CodexSubscriptionCredentialManager {
           refresh_token: credentials.refreshToken,
           client_id: CODEX_CLIENT_ID,
         }),
-        signal: requestSignal(signal, this.requestTimeoutMs),
+        signal: AbortSignal.timeout(this.requestTimeoutMs),
       });
     } catch (error) {
       throw new CodexSubscriptionAuthError('REFRESH_FAILED', 'Codex 订阅凭据刷新请求失败。', {
@@ -750,11 +775,34 @@ function delay(ms: number, signal?: AbortSignal): Promise<void> {
   if (!signal) return new Promise((resolve) => setTimeout(resolve, ms));
   if (signal.aborted) return Promise.reject(signal.reason);
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(resolve, ms);
-    signal.addEventListener('abort', () => {
+    const onAbort = () => {
       clearTimeout(timer);
       reject(signal.reason);
-    }, { once: true });
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+function abortable<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return promise;
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason);
+    signal.addEventListener('abort', onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(error);
+      },
+    );
   });
 }
 

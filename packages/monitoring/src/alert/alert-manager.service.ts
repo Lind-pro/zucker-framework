@@ -17,6 +17,9 @@ interface ViolationState {
   lastValue: number;
 }
 
+/** Resolved alerts kept in memory for history; the oldest resolved ones are evicted first. */
+const MAX_RESOLVED_ALERTS = 1000;
+
 function nextAlertId(): string {
   return `alert-${Date.now()}-${randomUUID().slice(0, 8)}`;
 }
@@ -79,6 +82,16 @@ export class AlertManagerService implements OnModuleInit {
     const deleted = this.rules.delete(ruleId);
     if (deleted) {
       this.violations.delete(ruleId);
+      // Without this the rule is reloaded from the database on the next start.
+      if (this.db) {
+        Promise.resolve()
+          .then(() => this.db.model('alertRules').delete({ where: { id: ruleId } }))
+          .catch((dbErr: unknown) => {
+            this.logger.warn(
+              `Failed to delete alert rule ${ruleId} from database: ${dbErr instanceof Error ? dbErr.message : String(dbErr)}`,
+            );
+          });
+      }
       this.logger.log(`Alert rule removed: ${ruleId}`);
     }
     return deleted;
@@ -187,6 +200,7 @@ export class AlertManagerService implements OnModuleInit {
     }
     this.eventEmitter?.emit('alert.resolved', { ...alert });
     this.logger.log(`Alert resolved: ${alertId} by ${userId}`);
+    this.evictResolved();
     return { ...alert };
   }
 
@@ -243,6 +257,8 @@ export class AlertManagerService implements OnModuleInit {
   }
 
   private autoResolveForRule(ruleId: string): void {
+    // Healthy rules without an open alert are the common case: skip the scan.
+    if (!this.activeRuleIds.has(ruleId)) return;
     for (const alert of this.alerts.values()) {
       if (alert.ruleId === ruleId && alert.status !== 'RESOLVED') {
         alert.status = 'RESOLVED';
@@ -255,6 +271,22 @@ export class AlertManagerService implements OnModuleInit {
     // 如果没有剩余的非RESOLVED告警，移除索引
     if (!Array.from(this.alerts.values()).some(a => a.ruleId === ruleId && a.status !== 'RESOLVED')) {
       this.activeRuleIds.delete(ruleId);
+    }
+    this.evictResolved();
+  }
+
+  /** Bounds alert history: drops the oldest RESOLVED records beyond MAX_RESOLVED_ALERTS. */
+  private evictResolved(): void {
+    let resolved = 0;
+    for (const alert of this.alerts.values()) if (alert.status === 'RESOLVED') resolved += 1;
+    let excess = resolved - MAX_RESOLVED_ALERTS;
+    if (excess <= 0) return;
+    for (const [id, alert] of this.alerts) {
+      if (excess <= 0) break;
+      if (alert.status === 'RESOLVED') {
+        this.alerts.delete(id);
+        excess -= 1;
+      }
     }
   }
 }

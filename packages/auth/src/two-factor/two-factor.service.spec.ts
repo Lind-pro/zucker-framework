@@ -24,7 +24,7 @@ describe('TwoFactorService', () => {
     await service.validate('u1', 'totp', '123456', 'transfer', 30000);
 
     expect(validator).toBeDefined();
-    expect(createTwoFactorValidator).toHaveBeenCalledWith('u1', 'transfer');
+    expect(createTwoFactorValidator).toHaveBeenCalledWith('u1', 'transfer', undefined);
     expect(verify).toHaveBeenCalledWith('123456', 30000);
   });
 });

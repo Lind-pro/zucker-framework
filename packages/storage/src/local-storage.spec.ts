@@ -297,4 +297,58 @@ describe('LocalFileStorage', () => {
     expect(result.size).toBe(14);
     expect(await storage.exists('from-stream.txt')).toBe(true);
   });
+  it('ignores abort requests for unknown or crafted upload ids (no traversal)', async () => {
+    const victim = path.join(path.dirname(tmpDir), `${path.basename(tmpDir)}-victim`);
+    fs.mkdirSync(victim);
+    fs.writeFileSync(path.join(victim, 'keep.txt'), 'x');
+    try {
+      await storage.abortChunkedUpload(`../../${path.basename(victim)}`);
+      await storage.abortChunkedUpload('..');
+      await storage.abortChunkedUpload('../..');
+      expect(fs.existsSync(path.join(victim, 'keep.txt'))).toBe(true);
+      expect(fs.existsSync(tmpDir)).toBe(true);
+    } finally {
+      fs.rmSync(victim, { recursive: true, force: true });
+    }
+  });
+
+  it('validates chunk counts and indices as bounded integers', async () => {
+    await expect(storage.initChunkedUpload('a.bin', Number.NaN)).rejects.toThrow('totalChunks');
+    await expect(storage.initChunkedUpload('a.bin', 1.5)).rejects.toThrow('totalChunks');
+    await expect(storage.initChunkedUpload('a.bin', 0)).rejects.toThrow('totalChunks');
+    await expect(storage.initChunkedUpload('../a.bin', 1)).rejects.toThrow('Path traversal');
+    const id = await storage.initChunkedUpload('a.bin', 2);
+    await expect(storage.uploadChunk(id, Number.NaN, Buffer.from('x'))).rejects.toThrow('Invalid chunk index');
+    await expect(storage.uploadChunk(id, 0.5, Buffer.from('x'))).rejects.toThrow('Invalid chunk index');
+  });
+
+  it('expires abandoned chunked uploads', async () => {
+    const short = new LocalFileStorage({ basePath: tmpDir, chunkSessionTtlMs: -1 });
+    const id = await short.initChunkedUpload('a.bin', 1);
+    expect(fs.existsSync(path.join(tmpDir, '.chunks', id))).toBe(true);
+    await expect(short.uploadChunk(id, 0, Buffer.from('x'))).rejects.toThrow('Unknown upload session');
+    expect(fs.existsSync(path.join(tmpDir, '.chunks', id))).toBe(false);
+  });
+
+  it('rejects ranges that start outside the file and encodes public URLs', async () => {
+    await storage.upload(Buffer.from('hello'), 'dir/a b#?.txt');
+    await expect(storage.downloadRange('dir/a b#?.txt', 5)).rejects.toThrow(RangeError);
+    await expect(storage.downloadRange('dir/a b#?.txt', -1)).rejects.toThrow(RangeError);
+    expect(await storage.getPublicUrl('dir/a b#?.txt')).toBe('http://localhost:4200/files/dir/a%20b%23%3F.txt');
+  });
+
+  it('streams uploads through a temporary file and leaves no partial object on failure', async () => {
+    const { Readable } = await import('node:stream');
+    const ok = await storage.uploadStream(Readable.from([Buffer.from('ab'), Buffer.from('c')]), 's/ok.txt');
+    expect(ok.size).toBe(3);
+    expect(fs.readFileSync(path.join(tmpDir, 's/ok.txt'), 'utf8')).toBe('abc');
+    const failing = new Readable({
+      read() {
+        this.push(Buffer.from('partial'));
+        this.destroy(new Error('source failed'));
+      },
+    });
+    await expect(storage.uploadStream(failing, 's/bad.txt')).rejects.toThrow('source failed');
+    expect(fs.readdirSync(path.join(tmpDir, 's'))).toEqual(['ok.txt']);
+  });
 });

@@ -24,7 +24,13 @@ export {
 
 // Action executors
 export { type NotifyActionConfig, type NotifyEvent, type NotifySender, NotifyAction } from './action/notify-action';
-export { type HttpActionConfig, HttpAction } from './action/http-action';
+export {
+  type HttpActionConfig,
+  type HttpActionOptions,
+  type HttpDestinationPolicy,
+  HttpAction,
+  defaultHttpDestinationPolicy,
+} from './action/http-action';
 export { type ScriptActionConfig, ScriptAction } from './action/script-action';
 export {
   type DelayActionConfig,
@@ -41,6 +47,7 @@ export {
 // Triggers
 export { type EventTriggerConfig, EventTrigger } from './trigger/event-trigger';
 export { type TimerTriggerConfig, TimerTrigger } from './trigger/timer-trigger';
+export { type CronSchedule, parseCron } from './trigger/cron';
 
 // Core types
 export { RuleData, type RuleDataHeaders } from './core/rule-data';

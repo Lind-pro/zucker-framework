@@ -38,8 +38,24 @@ export class DefaultSwitcher implements Switcher {
     this.type = type;
   }
 
+  private warnedOutsideRun = false;
+
+  /**
+   * 当前上下文的切换栈。
+   *
+   * 注意：栈属于最近一次 `run()`/`runAsync()` 创建的上下文，在其内部被所有异步分支共享。
+   * 需要并行切换时（`Promise.all` 等），每个分支应各自包一层 `run()`。
+   */
   private getStack(): string[] {
-    return this.storage.getStore() ?? [];
+    const store = this.storage.getStore();
+    if (store) return store;
+    if (!this.warnedOutsideRun) {
+      this.warnedOutsideRun = true;
+      this.logger.warn(
+        `${this.type} switcher used outside run()/runAsync(); the switch has no effect and the default ${this.type} is used`,
+      );
+    }
+    return [];
   }
 
   useLast(): void {

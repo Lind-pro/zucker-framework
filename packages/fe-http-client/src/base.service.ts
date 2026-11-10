@@ -159,7 +159,7 @@ export class BaseService<T extends { id: string }, Q extends BaseQueryParams = B
 
       // 如果查询参数方式没有找到，尝试直接路径获取
       if (!result.data.length) {
-        return await this.http.get<T>(`${this.apiPath}/${id}`);
+        return await this.http.get<T>(`${this.apiPath}/${encodeURIComponent(String(id))}`);
       }
 
       return result.data[0] || null;
@@ -192,7 +192,7 @@ export class BaseService<T extends { id: string }, Q extends BaseQueryParams = B
       }
 
       const cleanData = this.filterReadOnlyFields(data);
-      return await this.http.patch<T>(`${this.apiPath}/${data.id}`, cleanData);
+      return await this.http.patch<T>(`${this.apiPath}/${encodeURIComponent(String(data.id))}`, cleanData);
     } catch (error) {
       console.error(`更新${this.apiPath}记录失败:`, error);
       return null;
@@ -204,7 +204,7 @@ export class BaseService<T extends { id: string }, Q extends BaseQueryParams = B
    */
   async delete(id: string): Promise<boolean> {
     try {
-      await this.http.delete(`${this.apiPath}/${id}`);
+      await this.http.delete(`${this.apiPath}/${encodeURIComponent(String(id))}`);
       return true;
     } catch (error) {
       console.error(`删除${this.apiPath}记录失败 (ID: ${id}):`, error);

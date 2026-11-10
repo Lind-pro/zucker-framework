@@ -9,6 +9,7 @@ export interface RedisClient {
   keys(pattern: string): Promise<string[]>;
   scan(cursor: string, ...args: Array<string | number>): Promise<[string, string[]]>;
   getdel?(key: string): Promise<string | null>;
+  pttl?(key: string): Promise<number>;
 }
 
 export class RedisCache<T = unknown> implements ICache<T> {
@@ -32,12 +33,24 @@ export class RedisCache<T = unknown> implements ICache<T> {
   }
 
   async set(key: string, value: T, ttlMs?: number): Promise<void> {
+    if (ttlMs !== undefined && ttlMs !== null && !(ttlMs > 0)) {
+      // A non-positive TTL expires the entry immediately; it must not create an immortal key.
+      await this.redis.del(this.key(key));
+      return;
+    }
     const serialized = JSON.stringify(value);
     if (ttlMs) {
-      await this.redis.set(this.key(key), serialized, 'PX', ttlMs);
+      await this.redis.set(this.key(key), serialized, 'PX', Math.ceil(ttlMs));
     } else {
       await this.redis.set(this.key(key), serialized);
     }
+  }
+
+  async remainingTtlMs(key: string): Promise<number | null | undefined> {
+    if (!this.redis.pttl) return null;
+    const ttl = await this.redis.pttl(this.key(key));
+    if (ttl === -2) return undefined;
+    return ttl < 0 ? null : ttl;
   }
 
   async del(key: string): Promise<void> {

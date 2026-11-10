@@ -53,6 +53,14 @@ export const HTTP_EXCEPTION_FILTER_OPTIONS = Symbol('HTTP_EXCEPTION_FILTER_OPTIO
  * - HttpException (NestJS) -> 对应 HTTP status
  * - 未知异常 -> 500 + INTERNAL_ERROR
  */
+/** True when `e` is an instance of a class named BusinessException (possibly another module copy). */
+function hasBusinessExceptionBrand(e: object): boolean {
+  for (let proto = Object.getPrototypeOf(e); proto && proto !== Error.prototype; proto = Object.getPrototypeOf(proto)) {
+    if ((proto as { constructor?: { name?: unknown } }).constructor?.name === 'BusinessException') return true;
+  }
+  return false;
+}
+
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(HttpExceptionFilter.name);
@@ -160,6 +168,20 @@ export class HttpExceptionFilter implements ExceptionFilter {
       this.logger.error('Unhandled non-Error exception');
     }
 
+    // A thrown status outside the error range would make `response.status()` throw here.
+    if (!Number.isInteger(status) || status < 400 || status > 599) {
+      status = HttpStatus.INTERNAL_SERVER_ERROR;
+    }
+
+    if (response.headersSent) {
+      // A streamed response has already started; writing JSON now would throw.
+      this.logger.error(`Exception after response headers were sent (status ${status})`);
+      if (typeof (response as { end?: () => void }).end === 'function' && !response.writableEnded) {
+        response.end();
+      }
+      return;
+    }
+
     if (retryAfterSeconds !== undefined) {
       response.setHeader('Retry-After', String(retryAfterSeconds));
     }
@@ -185,12 +207,17 @@ export class HttpExceptionFilter implements ExceptionFilter {
    * (e.g. ESM/CJS dual loading in test environments).
    */
   private isBusinessLike(e: unknown): e is BusinessException {
-    const cast = e as { status?: unknown; code?: unknown };
+    const cast = e as { status?: unknown; code?: unknown; isAxiosError?: unknown };
     return (
       e instanceof Error &&
+      !(e instanceof HttpException) &&
+      // Only a second copy of the framework's BusinessException class qualifies. Third-party
+      // client errors (Axios, provider SDKs) also carry numeric `status` + string `code`, and
+      // forwarding them would leak upstream messages and turn an upstream 401 into a session expiry.
+      hasBusinessExceptionBrand(e) &&
+      cast.isAxiosError !== true &&
       typeof cast['status'] === 'number' &&
-      typeof cast['code'] === 'string' &&
-      !(e instanceof HttpException)
+      typeof cast['code'] === 'string'
     );
   }
 

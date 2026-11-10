@@ -223,4 +223,35 @@ describe('BullMqWorkerHost', () => {
 
     await expect(host.probeHealth(0)).rejects.toThrow('timeoutMs must be at least 1');
   });
+
+  it('force-closes workers when active jobs exceed the shutdown deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      const worker = createWorker();
+      worker.pause.mockReturnValue(new Promise<void>(() => {})); // active job never finishes
+      const host = new BullMqWorkerHost({
+        connection: { host: 'redis', port: 6379 },
+        shutdownTimeoutMs: 1_000,
+        workerFactory: vi.fn().mockReturnValue(worker as unknown as Worker),
+      });
+      host.register({ queueName: 'ai-text', handler: async () => undefined });
+      const destroying = host.onModuleDestroy();
+      await vi.advanceTimersByTimeAsync(1_000);
+      await destroying;
+      expect(worker.close).toHaveBeenCalledWith(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('closes gracefully when workers drain before the deadline', async () => {
+    const worker = createWorker();
+    const host = new BullMqWorkerHost({
+      connection: { host: 'redis', port: 6379 },
+      workerFactory: vi.fn().mockReturnValue(worker as unknown as Worker),
+    });
+    host.register({ queueName: 'ai-text', handler: async () => undefined });
+    await host.onModuleDestroy();
+    expect(worker.close).toHaveBeenCalledWith(false);
+  });
 });

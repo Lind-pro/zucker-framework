@@ -7,6 +7,7 @@ import {
   type MediaTaskResult,
 } from '../media.interface';
 import { providerRequestSignal } from '../abort-signal';
+import { providerHttpError } from '../provider-http-error';
 
 const RUNWAY_API_BASE = 'https://api.dev.runwayml.com/v1';
 
@@ -51,8 +52,7 @@ export class RunwayProvider implements MediaProvider {
     });
 
     if (!response.ok) {
-      const error = await response.text().catch(() => response.statusText);
-      throw new Error(`Runway API ${response.status}: ${error}`);
+      throw await providerHttpError('Runway', response);
     }
 
     const data = (await response.json()) as any;
@@ -67,7 +67,7 @@ export class RunwayProvider implements MediaProvider {
   async getTaskStatus(taskId: string, config: MediaGenerationConfig): Promise<MediaTaskResult> {
     const baseURL = config.baseURL || RUNWAY_API_BASE;
 
-    const response = await fetch(`${baseURL}/tasks/${taskId}`, {
+    const response = await fetch(`${baseURL}/tasks/${encodeURIComponent(taskId)}`, {
       headers: {
         Authorization: `Bearer ${config.apiKey}`,
         'X-Runway-Version': '2024-11-06',
@@ -76,7 +76,7 @@ export class RunwayProvider implements MediaProvider {
     });
 
     if (!response.ok) {
-      throw new Error(`Runway API ${response.status}: ${response.statusText}`);
+      throw await providerHttpError('Runway', response);
     }
 
     const data = (await response.json()) as any;
@@ -90,7 +90,8 @@ export class RunwayProvider implements MediaProvider {
       CANCELLED: MediaTaskStatus.FAILED,
     };
 
-    const status = statusMap[data.status] ?? MediaTaskStatus.PROCESSING;
+    const known = Object.hasOwn(statusMap, data?.status);
+    const status = known ? statusMap[data.status] : MediaTaskStatus.FAILED;
     const result: MediaTaskResult = {
       taskId,
       status,
@@ -112,7 +113,9 @@ export class RunwayProvider implements MediaProvider {
       };
     }
 
-    if (status === MediaTaskStatus.FAILED) {
+    if (!known) {
+      result.error = `Runway 返回未知任务状态: ${String(data?.status)}`;
+    } else if (status === MediaTaskStatus.FAILED) {
       result.error = data.failure ?? data.failureCode ?? '视频生成失败';
     }
 

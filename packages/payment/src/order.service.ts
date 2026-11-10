@@ -2,6 +2,7 @@ import { Injectable, Inject } from '@nestjs/common';
 import { PaymentProviderRegistry } from './contract/registry';
 import type { CreatePaymentInput, PaymentSession } from './contract/payment-contract';
 import { reconcile, type SettlementState } from './contract/settlement';
+import { isDefinitePaymentRejection } from './contract/rejection';
 import { ORDER_PERSISTENCE, type OrderPersistence } from './order-persistence';
 
 export type OrderStatus =
@@ -71,7 +72,14 @@ export class OrderService {
 
   private async initiatePayment(order: Order, payment: CreatePaymentInput): Promise<Order> {
     // Unknown provider outcomes remain created for reconciliation; never automatically re-charge.
-    const session = await this.providers.get(order.providerId).createPayment(payment);
+    let session: PaymentSession;
+    try {
+      session = await this.providers.get(order.providerId).createPayment(payment);
+    } catch (error) {
+      // A definite rejection created nothing at the provider: mark failed so retryOrder/cancelOrder apply.
+      if (isDefinitePaymentRejection(error)) await this.transition(order.id, ['created'], 'failed').catch(() => undefined);
+      throw error;
+    }
     await this.transition(order.id, ['created'], 'paying', {
       paymentIntentId: session.providerRef,
     });
@@ -86,11 +94,65 @@ export class OrderService {
     const order = await this.getOrder(orderId);
     if (!order.paymentIntentId) throw new Error(`订单 "${orderId}" 缺少 paymentIntentId`);
     await this.transition(orderId, ['paying'], 'confirming');
-    const session = await this.providers
-      .get(order.providerId)
-      .capture(order.paymentIntentId, idempotencyKey);
+    let session: PaymentSession;
+    try {
+      session = await this.providers
+        .get(order.providerId)
+        .capture(order.paymentIntentId, idempotencyKey);
+    } catch (error) {
+      // e.g. PayPal 422 ORDER_NOT_APPROVED: nothing was captured, the buyer can still pay.
+      if (isDefinitePaymentRejection(error)) await this.transition(orderId, ['confirming'], 'paying');
+      throw error;
+    }
     await this.applySettlement(orderId, 'confirming', session.state, session.providerRef);
+    if (session.state === 'created' || session.state === 'authorized') {
+      // A known "not paid yet" answer is not an unknown outcome: reopen confirmation.
+      await this.transition(orderId, ['confirming'], 'paying');
+    }
     return session;
+  }
+
+  /**
+   * Read-only reconciliation for orders parked in `paying`, `confirming` or `refunding`.
+   * Calls `adapter.retrieve` only (never capture/refund) and applies the observation with the
+   * same `reconcile()` rules. Use it from a return page, a webhook handler or a periodic job.
+   *
+   * A `refunding` order only leaves that state on refund evidence (`refunded` /
+   * `partially_refunded`). Adapters whose `retrieve` cannot observe refunds (the legacy Stripe
+   * Checkout adapter) keep it `refunding`; resolve those with `resolveRefund` after checking the
+   * provider.
+   */
+  async reconcileOrder(orderId: string): Promise<Order> {
+    const order = await this.getOrder(orderId);
+    const refunding = order.status === 'refunding';
+    const ref = refunding ? order.paymentId : order.paymentIntentId;
+    if (!ref || !['paying', 'confirming', 'refunding'].includes(order.status)) return order;
+    const session = await this.providers.get(order.providerId).retrieve(ref);
+    if (refunding) {
+      if (session.state === 'refunded') {
+        await this.transition(orderId, ['refunding'], 'refunded', { refundedAt: new Date() });
+      } else if (session.state === 'partially_refunded') {
+        await this.transition(orderId, ['refunding'], 'paid');
+      }
+      return this.getOrder(orderId);
+    }
+    await this.applySettlement(orderId, order.status, session.state, session.providerRef);
+    if (order.status === 'confirming' && (session.state === 'created' || session.state === 'authorized')) {
+      await this.transition(orderId, ['confirming'], 'paying');
+    }
+    return this.getOrder(orderId);
+  }
+
+  /**
+   * Operator escape hatch for a `refunding` order whose outcome was verified out of band
+   * (provider dashboard / refund API). `not_refunded` returns it to `paid`; `refunded` and
+   * `partially_refunded` record the verified result. Never call this on a guess: returning a
+   * refunded order to `paid` lets it be refunded again.
+   */
+  async resolveRefund(orderId: string, outcome: 'refunded' | 'partially_refunded' | 'not_refunded'): Promise<Order> {
+    if (outcome === 'refunded') await this.transition(orderId, ['refunding'], 'refunded', { refundedAt: new Date() });
+    else await this.transition(orderId, ['refunding'], 'paid');
+    return this.getOrder(orderId);
   }
 
   /**
@@ -125,6 +187,12 @@ export class OrderService {
     // created / authorized / unknown：仍在途，保持当前状态等待对账
   }
 
+  /**
+   * Legacy refund flow. Note: the legacy order model has no cumulative refunded amount, so
+   * several partial refunds that add up to the total leave the order `paid`, and partial
+   * detection compares each request with the original amount only. Use the RefundAdapter
+   * protocol (`refunds/*`) when cumulative refund tracking matters.
+   */
   async refundOrder(
     orderId: string,
     idempotencyKey: string,
@@ -134,12 +202,19 @@ export class OrderService {
     if (!order.paymentId) throw new Error(`订单 "${orderId}" 缺少 paymentId`);
     const partial = options.money === undefined ? false : isPartialRefund(options.money, order);
     await this.transition(orderId, ['paid'], 'refunding');
-    const result = await this.providers.get(order.providerId).refund({
-      providerRef: order.paymentId,
-      money: options.money,
-      reason: options.reason,
-      idempotencyKey,
-    });
+    let result: { refundRef: string; state: SettlementState };
+    try {
+      result = await this.providers.get(order.providerId).refund({
+        providerRef: order.paymentId,
+        money: options.money,
+        reason: options.reason,
+        idempotencyKey,
+      });
+    } catch (error) {
+      // A definite provider rejection moved no money; unknown failures stay refunding.
+      if (isDefinitePaymentRejection(error)) await this.transition(orderId, ['refunding'], 'paid');
+      throw error;
+    }
     if (result.state === 'partially_refunded' || (result.state === 'refunded' && partial)) {
       await this.transition(orderId, ['refunding'], 'paid');
       // A completed individual refund is not aggregate proof that the original payment is fully refunded.
@@ -158,13 +233,20 @@ export class OrderService {
    * idempotencyKey 必须与上一次不同：沿用旧键会让渠道原样返回那笔已失败的支付，
    * 看起来"重试了"其实什么都没发生。
    */
-  async retryOrder(orderId: string, idempotencyKey: string): Promise<Order> {
+  async retryOrder(
+    orderId: string,
+    idempotencyKey: string,
+    payment: Pick<CreatePaymentInput, 'description' | 'returnUrl' | 'cancelUrl'> = {},
+  ): Promise<Order> {
     const order = await this.getOrder(orderId);
     await this.transition(orderId, ['failed'], 'created');
     return this.initiatePayment(order, {
       reference: order.id,
       money: { amount: order.amount, currency: order.currency },
       metadata: order.metadata as Record<string, string> | undefined,
+      description: payment.description,
+      returnUrl: payment.returnUrl,
+      cancelUrl: payment.cancelUrl,
       idempotencyKey,
     });
   }

@@ -1,3 +1,8 @@
+import * as os from 'node:os';
+
+/** 超出 maxPending 时的策略：spill 写入文件队列；reject 抛出 BUFFER_FULL */
+export type BufferOverflowPolicy = 'spill' | 'reject';
+
 /**
  * Buffer 配置
  *
@@ -19,8 +24,20 @@ export interface BufferSettings {
   fileQueueDir?: string;
   /** 错误重试判断谓词，返回 true 表示应重试 */
   retryWhenError?: (error: unknown) => boolean;
-  /** Buffer 名称，用于日志和指标 */
+  /**
+   * Buffer 名称，用于日志和指标；同时作为默认文件队列子目录名，
+   * 使不同 buffer 的溢出文件互不混用。
+   */
   name?: string;
+  /**
+   * 内存中允许挂起的最大条目数（含正在刷新期间新写入的条目）。
+   * 达到上限时按 overflowPolicy 处理。默认 max(bufferSize * 10, 10000)。
+   */
+  maxPending?: number;
+  /** 超出 maxPending 时的策略，默认 'spill' */
+  overflowPolicy?: BufferOverflowPolicy;
+  /** 死信队列最大条目数，超出后丢弃最旧条目并计数，默认 10000 */
+  maxDeadLetterSize?: number;
 }
 
 /** 默认重试判断：网络/IO 相关错误可重试 */
@@ -43,7 +60,6 @@ export const defaultRetryWhenError = (error: unknown): boolean => {
 /** 获取默认 parallelism（CPU 核数的一半，最少 1） */
 function getDefaultParallelism(): number {
   try {
-    const os = require('node:os');
     return Math.max(1, Math.floor(os.cpus().length / 2));
   } catch {
     return 1;

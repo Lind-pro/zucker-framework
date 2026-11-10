@@ -202,8 +202,10 @@ export function AIModelsPage() {
             autoComplete: 'new-password',
           },
           { name: 'baseUrl', label: t('ai.baseUrl'), maxLength: 500 },
-          { name: 'temperature', label: t('ai.temperature'), type: 'number', min: 0, max: 2 },
-          { name: 'maxTokens', label: t('ai.maxTokens'), type: 'integer', min: 1 },
+          // The catalog cannot clear a stored number (it rejects null), so once set the field stays
+          // required on edit instead of being dropped from the PUT while the dialog says "saved".
+          { name: 'temperature', label: t('ai.temperature'), type: 'number', min: 0, max: 2, required: record?.temperature != null },
+          { name: 'maxTokens', label: t('ai.maxTokens'), type: 'integer', min: 1, required: record?.maxTokens != null },
           { name: 'isEnabled', label: t('ai.enabled'), type: 'switch' },
           { name: 'description', label: t('common.description'), type: 'textarea', wide: true },
         ]}

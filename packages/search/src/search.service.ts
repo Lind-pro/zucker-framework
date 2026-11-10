@@ -86,6 +86,9 @@ export class SearchService implements OnModuleInit, OnModuleDestroy {
   private stopped = false;
   private initialization?: Promise<void>;
   private shutdown?: Promise<void>;
+  /** 已确认存在的配置别名；在全部建立之前拒绝向这些别名写入 */
+  private readonly readyAliases = new Set<string>();
+  private aliasSetup?: Promise<void>;
 
   constructor(
     @Optional() @Inject(SEARCH_CLIENT) private readonly client?: SearchClient,
@@ -101,7 +104,7 @@ export class SearchService implements OnModuleInit, OnModuleDestroy {
     if (!this.isAvailable()) return;
     try {
       await this.client?.ping?.();
-      for (const alias of this.options.aliases ?? []) await this.ensureAlias(alias);
+      await this.ensureConfiguredAliases();
       if (!this.stopped) this.healthy = true;
     } catch {
       this.healthy = false;
@@ -121,9 +124,39 @@ export class SearchService implements OnModuleInit, OnModuleDestroy {
     if (!this.isAvailable()) return false;
     try {
       await this.client?.ping?.();
+      // 启动时 ES 不可用的情况下，恢复后补建配置的别名，再报告健康
+      await this.ensureConfiguredAliases();
       this.healthy = !this.stopped;
     } catch { this.healthy = false; }
     return this.healthy;
+  }
+
+  /** 确保所有配置的别名存在；并发调用共享同一次执行，失败后可重试 */
+  private ensureConfiguredAliases(): Promise<void> {
+    const pending = (this.options.aliases ?? []).filter(item => !this.readyAliases.has(item.alias));
+    if (pending.length === 0) return Promise.resolve();
+    return (this.aliasSetup ??= (async () => {
+      try {
+        for (const alias of pending) await this.ensureAlias(alias);
+      } finally {
+        this.aliasSetup = undefined;
+      }
+    })());
+  }
+
+  /**
+   * 写入配置别名前确保别名已经建立。否则 ES 会以别名为名自动创建一个动态映射的具体索引，
+   * 之后配置的映射/分词器永远不会生效，别名也无法再创建。
+   */
+  private async assertWritable(index: string): Promise<void> {
+    const configured = this.options.aliases?.some(item => item.alias === index);
+    if (!configured || this.readyAliases.has(index)) return;
+    try {
+      await this.ensureConfiguredAliases();
+    } catch {
+      throw new Error('Search alias is not initialized; write refused');
+    }
+    if (!this.readyAliases.has(index)) throw new Error('Search alias is not initialized; write refused');
   }
 
   async getPlugins(): Promise<string[]> {
@@ -137,22 +170,36 @@ export class SearchService implements OnModuleInit, OnModuleDestroy {
 
   async ensureAlias(definition: SearchAliasDefinition): Promise<void> {
     const indices = this.client?.indices;
-    if (!this.isAvailable() || !indices?.existsAlias || !indices.putAlias) {
+    if (!this.isAvailable() || !indices?.existsAlias) {
       throw new Error('Search alias management is not configured');
     }
-    if (await indices.existsAlias({ name: definition.alias })) return;
-    const index = await this.createIndexWithTimestamp(definition.alias, definition);
-    await indices.putAlias({ index, name: definition.alias });
+    if (await indices.existsAlias({ name: definition.alias })) {
+      this.readyAliases.add(definition.alias);
+      return;
+    }
+    try {
+      // 别名在建索引的同一请求中声明为写索引：原子完成，且并发启动的另一副本会因
+      // “别名已有写索引”而失败，不会出现一个别名挂两个索引且没有写索引的状态。
+      await this.createIndexWithTimestamp(definition.alias, definition, true);
+    } catch (error) {
+      if (await indices.existsAlias({ name: definition.alias }).catch(() => false)) {
+        this.readyAliases.add(definition.alias);
+        return;
+      }
+      throw error;
+    }
+    this.readyAliases.add(definition.alias);
   }
 
-  async createIndexWithTimestamp(alias: string, definition?: SearchAliasDefinition): Promise<string> {
+  async createIndexWithTimestamp(alias: string, definition?: SearchAliasDefinition, asWriteAlias = false): Promise<string> {
     if (!this.isAvailable()) throw new Error('Search client not configured');
     const configured = definition ?? this.options.aliases?.find(item => item.alias === alias);
     if (!configured) throw new Error('Search index definition is not configured');
     const index = `${configured.indexPrefix ?? alias}_${Date.now()}`;
     const schema = typeof configured.definition === 'function'
       ? await configured.definition(await this.getPlugins()) : configured.definition;
-    await this.ensureIndex(index, schema.mappings, schema.settings);
+    const aliases = asWriteAlias ? { [alias]: { is_write_index: true } } : undefined;
+    await this.ensureIndex(index, schema.mappings, schema.settings, aliases);
     return index;
   }
 
@@ -198,12 +245,14 @@ export class SearchService implements OnModuleInit, OnModuleDestroy {
   /** 索引文档 */
   async indexDocument(index: string, id: string, document: Record<string, unknown>): Promise<void> {
     if (!this.client || !this.isAvailable()) throw new Error('Search client not configured');
+    await this.assertWritable(index);
     await this.client.index({ index, id, body: document });
   }
 
   /** 批量索引 */
   async bulkIndex(index: string, documents: Array<{ id: string; data: Record<string, unknown> }>): Promise<{ indexed: number; errors: number }> {
     if (!this.client || !this.isAvailable()) throw new Error('Search client not configured');
+    await this.assertWritable(index);
     const body: Array<Record<string, unknown>> = [];
     for (const doc of documents) {
       body.push({ index: { _index: index, _id: doc.id } });
@@ -276,13 +325,19 @@ export class SearchService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** 确保索引存在 */
-  async ensureIndex(index: string, mappings?: Record<string, unknown>, settings?: Record<string, unknown>): Promise<void> {
+  async ensureIndex(
+    index: string,
+    mappings?: Record<string, unknown>,
+    settings?: Record<string, unknown>,
+    aliases?: Record<string, Record<string, unknown>>,
+  ): Promise<void> {
     if (!this.client || !this.isAvailable()) throw new Error('Search client not configured');
     const exists = await this.client.indices.exists({ index });
     if (!exists) {
       const body: Record<string, unknown> = {};
       if (mappings) body.mappings = mappings;
       if (settings) body.settings = settings;
+      if (aliases) body.aliases = aliases;
       await this.client.indices.create({ index, body });
       this.logger.log(`Index created: ${index}`);
     }

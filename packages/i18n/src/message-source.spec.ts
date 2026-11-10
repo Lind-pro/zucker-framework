@@ -116,3 +116,22 @@ describe('CompositeMessageSource', () => {
     });
   });
 });
+
+describe('FileMessageSource locale validation', () => {
+  it('reads valid locales and refuses path traversal without caching misses', async () => {
+    const { mkdtempSync, mkdirSync, writeFileSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { FileMessageSource } = await import('./message-source');
+    const root = mkdtempSync(join(tmpdir(), 'i18n-'));
+    mkdirSync(join(root, 'messages'));
+    writeFileSync(join(root, 'messages', 'zh-CN.json'), JSON.stringify({ hello: '你好' }));
+    writeFileSync(join(root, 'secret.json'), JSON.stringify({ hello: 'leaked' }));
+    const source = new FileMessageSource(join(root, 'messages'));
+
+    expect(source.getMessage('hello', [], 'fallback', 'zh-CN')).toBe('你好');
+    expect(source.getMessage('hello', [], 'fallback', '../secret')).toBe('fallback');
+    for (let i = 0; i < 50; i += 1) source.getMessage('hello', [], 'x', `xx-${i}`);
+    expect((source as unknown as { messages: Map<string, unknown> }).messages.size).toBe(1);
+  });
+});

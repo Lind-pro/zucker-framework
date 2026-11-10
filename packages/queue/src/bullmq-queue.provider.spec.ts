@@ -181,6 +181,26 @@ describe('BullMqQueueProvider', () => {
     expect(queue.add).toHaveBeenCalledTimes(1);
   });
 
+  it('accepts a concurrent replacement when removing a terminal job fails', async () => {
+    const completed = createBullJob({
+      id: 'stable',
+      getState: vi.fn().mockResolvedValue('completed'),
+      remove: vi.fn().mockRejectedValue(new Error('Missing key for job stable')),
+    });
+    const replacement = createBullJob({ id: 'stable', getState: vi.fn().mockResolvedValue('waiting') });
+    const queue = createQueue();
+    queue.getJob.mockResolvedValueOnce(completed).mockResolvedValueOnce(replacement);
+    const provider = new BullMqQueueProvider({
+      connection: { host: 'redis', port: 6379 },
+      queueFactory: () => queue as unknown as Queue,
+    });
+    await expect(provider.ensure('ai-text', {}, { jobId: 'stable' })).resolves.toMatchObject({
+      id: 'stable',
+      status: 'waiting',
+    });
+    expect(queue.add).not.toHaveBeenCalled();
+  });
+
   it('rejects invalid BullMQ job ids before creating a queue connection', async () => {
     const queueFactory = vi.fn(() => createQueue() as unknown as Queue);
     const provider = new BullMqQueueProvider({

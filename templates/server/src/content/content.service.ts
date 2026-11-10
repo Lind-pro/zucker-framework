@@ -23,8 +23,8 @@ export class ContentService {
       draft: input.categoryDraft(value.title, value.description) }, actor);
   }
   adminEntries(query: Record<string, unknown>) {
-    input.record(query, ['kind', 'locale', 'status', 'page']);
-    return this.repository.adminEntries({ page: input.page(query.page),
+    input.record(query, ['kind', 'locale', 'status', 'page', 'pageSize']);
+    return this.repository.adminEntries({ page: input.page(query.page), pageSize: input.pageSize(query.pageSize),
       ...(query.kind === undefined ? {} : { kind: input.kind(query.kind) }),
       ...(query.locale === undefined ? {} : { locale: input.locale(query.locale) }),
       ...(query.status === undefined ? {} : { status: input.status(query.status) }) });

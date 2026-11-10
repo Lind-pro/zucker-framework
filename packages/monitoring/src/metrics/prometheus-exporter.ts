@@ -1,5 +1,13 @@
-import { Controller, Get, Header, Inject } from '@nestjs/common';
+import { Controller, Get, Header, Inject, SetMetadata, UseGuards } from '@nestjs/common';
 import { MetricsRegistry } from './metrics-registry';
+import {
+  MONITORING_ACCESS_KIND,
+  MONITORING_PUBLIC_METADATA,
+  MONITORING_QUERY_PERMISSION,
+  MetricsTokenGuard,
+  MonitoringAccessGuard,
+  MonitoringPermissions,
+} from '../monitoring-access';
 
 function formatLabels(labels: Record<string, string>): string {
   const entries = Object.entries(labels);
@@ -80,10 +88,36 @@ export function renderPrometheusMetrics(registry: MetricsRegistry): string {
 }
 
 /**
- * Prometheus 格式指标导出端点
+ * Prometheus 格式指标导出端点（会话认证）。
+ *
+ * Mounted by `ZuckerMonitoringModule.forRoot({ metrics: true })`. Requires an authenticated
+ * `request.user` (fails closed without a host auth guard) and carries `monitoring:query`
+ * permission metadata for the host's PermissionsGuard.
  */
 @Controller('metrics')
+@UseGuards(MonitoringAccessGuard)
+@MonitoringPermissions(MONITORING_QUERY_PERMISSION)
+@SetMetadata(MONITORING_ACCESS_KIND, 'metrics')
 export class PrometheusExporter {
+  constructor(@Inject(MetricsRegistry) private readonly registry: MetricsRegistry) {}
+
+  @Get()
+  @Header('Content-Type', 'text/plain; version=0.0.4; charset=utf-8')
+  getMetrics(): string {
+    return renderPrometheusMetrics(this.registry);
+  }
+}
+
+/**
+ * Prometheus 导出端点（scrape token）。
+ *
+ * Mounted by `ZuckerMonitoringModule.forRoot({ metrics: { token } })`. Marked public for the
+ * host's session guards and protected by `Authorization: Bearer <token>` instead.
+ */
+@Controller('metrics')
+@SetMetadata(MONITORING_PUBLIC_METADATA, true)
+@UseGuards(MetricsTokenGuard)
+export class TokenPrometheusExporter {
   constructor(@Inject(MetricsRegistry) private readonly registry: MetricsRegistry) {}
 
   @Get()

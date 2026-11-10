@@ -65,7 +65,15 @@ describe('LangChain model construction', () => {
     expect(getLangChainProviderDefaults('private-gateway')).toEqual({
       protocol: 'openai-compatible',
       structuredOutputMethod: 'jsonMode',
+      requiresBaseURL: true,
     });
+  });
+  it('refuses to send a non-OpenAI provider key to the default OpenAI endpoint', async () => {
+    const base = { protocol: 'openai-compatible' as const, apiKey: 'synthetic', model: 'configured', maxTokens: 10, maxRetries: 0 };
+    await expect(createLangChainChatModel({ ...base, provider: 'private-gateway' })).rejects.toThrow('explicit baseURL');
+    await expect(createLangChainEmbeddingModel({ apiKey: 'synthetic', model: 'e', provider: 'private-gateway' })).rejects.toThrow('explicit baseURL');
+    await expect(createLangChainChatModel({ ...base, provider: 'OpenAI' })).resolves.toBeDefined();
+    await expect(createLangChainChatModel({ ...base, provider: 'private-gateway', baseURL: 'https://gw.test/v1' })).resolves.toBeDefined();
   });
   it('preserves explicit retries, compatible endpoint/timeout and thinking transport', async () => {
     await createLangChainChatModel({

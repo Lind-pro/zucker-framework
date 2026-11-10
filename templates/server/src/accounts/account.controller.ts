@@ -3,9 +3,10 @@ import { PermissionService, Permissions, Public, RefreshTokenCookie } from '@zuc
 import type { RefreshCookieResponse } from '@zucker-framework/auth';
 import { RateLimit, RateLimitGuard, RateLimiterService, TooManyRequestsException } from '@zucker-framework/rate-limiter';
 import { AccountService, ACCESS_TTL_SECONDS, SESSION_TTL_SECONDS } from './account.service';
-import { ACCOUNTS_LIMITER, SESSION_READ_LIMITER, SESSION_REFRESH_LIMITER, SESSION_REFRESH_NETWORK_LIMITER } from '../rate-limits';
+import { ACCOUNTS_LIMITER, LOGIN_ACCOUNT_LIMITER, LOGIN_LIMITER, loginAccountKey, SESSION_READ_LIMITER, SESSION_REFRESH_LIMITER, SESSION_REFRESH_NETWORK_LIMITER } from '../rate-limits';
 
 interface AccountRequest {
+  ip?: string;
   headers: { cookie?: string; origin?: string; 'sec-fetch-site'?: string };
   user: { id: string; sid: string };
 }
@@ -50,7 +51,22 @@ export class AccountController {
   @Post('login') @Public() @HttpCode(200)
   async login(@Body() body: unknown, @Req() req: AccountRequest, @Res({ passthrough: true }) res: RefreshCookieResponse) {
     this.sameOrigin(req);
+    // Per-target budgets on top of the per-IP guard: one for this account from this client, and a
+    // looser one for the account across all clients (distributed guessing). Successful logins are refunded.
+    // Compositions that do not configure these limiters (e.g. narrow test modules) keep only the per-IP guard.
+    const account = loginAccountKey(body), keys = account
+      ? ([[LOGIN_LIMITER, `login:${account}:${req.ip ?? 'unknown-client'}`], [LOGIN_ACCOUNT_LIMITER, `login-account:${account}`]] as const)
+        .filter(([limiter]) => this.limiter.has(limiter))
+      : [];
+    for (const [limiter, key] of keys) {
+      try { await this.limiter.consume(limiter, key); }
+      catch (error) {
+        if (error instanceof TooManyRequestsException) throw new TooManyRequestsException('Too many requests', error.retryAfter);
+        throw error;
+      }
+    }
     const pair = await this.accounts.login(body);
+    await Promise.all(keys.map(([limiter, key]) => this.limiter.reward(limiter, key).catch(() => undefined)));
     this.cookie.issue(res, pair.refreshToken);
     return { userId: pair.userId, token: pair.accessToken, expires: ACCESS_TTL_SECONDS * 1000 };
   }

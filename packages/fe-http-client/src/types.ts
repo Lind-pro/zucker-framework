@@ -57,6 +57,20 @@ export interface HttpClientConfig {
   ) => Promise<{ access_token: string; refresh_token: string }>;
   /** Refresh using a browser-managed HttpOnly cookie, without exposing a refresh token to JavaScript. */
   refreshWithCookie?: () => Promise<{ access_token: string }>;
+  /**
+   * Extra origins (e.g. `https://files.example.com`) that may receive the `Authorization`
+   * bearer and whose response-header tokens may be adopted. Requests relative to `baseURL`,
+   * requests to the `baseURL`/`streamBaseURL` origin and same-origin requests are always trusted;
+   * any other absolute URL is sent without the bearer.
+   */
+  trustedOrigins?: readonly string[];
+  /**
+   * Adoption of tokens returned in `x-auth-token` / `authorization` / `x-token` response headers.
+   * Default true: adopted only from trusted origins, when the request is not aborted and was sent
+   * with the access token that is still current (so a late response never restores a session
+   * that signed out or switched). false disables adoption; a function adds a consumer check.
+   */
+  acceptResponseToken?: boolean | ((token: string, context: { url: string }) => boolean);
   /** Optional browser lock name shared by applications using the same refresh session. */
   refreshLockName?: string;
   /** Handle non-authentication response errors; return true to suppress the general error handler. */

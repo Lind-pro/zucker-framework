@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { parseSseEventBlock, readSseStream } from './sse';
+import { connectSse, parseSseEventBlock, readSseStream } from './sse';
 
 function createResponse(chunks: string[]): Response {
   const encoder = new TextEncoder();
@@ -62,5 +62,54 @@ describe('readSseStream', () => {
       },
     });
     expect(events).toEqual(['one']);
+  });
+});
+
+describe('readSseStream limits (L12)', () => {
+  it('rejects an unterminated event larger than maxBufferLength', async () => {
+    await expect(
+      readSseStream(createResponse(['data: ' + 'x'.repeat(100)]), { onEvent: () => {}, maxBufferLength: 50 }),
+    ).rejects.toThrow('buffered characters');
+  });
+});
+
+describe('connectSse lifecycle (L12)', () => {
+  it('does not reconnect after onEvent returns false and re-evaluates headers per connection', async () => {
+    vi.useFakeTimers();
+    try {
+      let token = 't1';
+      const fetcher = vi.fn(async () => createResponse(['data: one\n\n']));
+      const stop = connectSse({
+        url: '/events',
+        headers: () => ({ Authorization: `Bearer ${token}` }),
+        onEvent: () => false,
+        fetcher: fetcher as unknown as typeof fetch,
+        openWhenHidden: true,
+      });
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(fetcher).toHaveBeenCalledOnce();
+      stop.close();
+
+      const reconnecting = vi.fn(async () => createResponse(['data: one\n\n']));
+      const live = connectSse({
+        url: '/events',
+        headers: () => ({ Authorization: `Bearer ${token}` }),
+        onEvent: () => {},
+        fetcher: reconnecting as unknown as typeof fetch,
+        openWhenHidden: true,
+        initialRetryDelay: 10,
+      });
+      await vi.advanceTimersByTimeAsync(1);
+      token = 't2';
+      await vi.advanceTimersByTimeAsync(20);
+      live.close();
+      const auth = (reconnecting.mock.calls as unknown as Array<[string, RequestInit]>).map(
+        ([, init]) => (init.headers as Record<string, string>).Authorization,
+      );
+      expect(auth[0]).toBe('Bearer t1');
+      expect(auth[1]).toBe('Bearer t2');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

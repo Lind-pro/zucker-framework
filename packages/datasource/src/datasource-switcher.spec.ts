@@ -1,4 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import { Logger } from '@nestjs/common';
+import { Observable } from 'rxjs';
+import { DataSourceInterceptor } from './datasource.decorator';
 import { DefaultSwitcher, DataSourceSwitcher } from './datasource-switcher';
 
 describe('DefaultSwitcher', () => {
@@ -175,5 +178,44 @@ describe('DataSourceSwitcher', () => {
       expect(switcher.schema.current()).toBeUndefined();
       expect(switcher.table.current()).toBeUndefined();
     });
+  });
+});
+
+describe('switcher misuse / interceptor teardown (review M11, L12)', () => {
+  it('use() outside run() warns once and has no effect', () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const sw = new DefaultSwitcher('datasource');
+    sw.use('ds1');
+    sw.use('ds2');
+    expect(sw.current()).toBeUndefined();
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+  });
+
+  it('DataSourceInterceptor unsubscribes the inner stream and ends the scope on teardown', async () => {
+    let innerUnsubscribed = false;
+    const inner = new Observable<number>(() => () => {
+      innerUnsubscribed = true;
+    });
+    let scopeDone = false;
+    const holder = {
+      existing: () => true,
+      useDataSource: async (_id: string, fn: () => Promise<void>) => {
+        await fn();
+        scopeDone = true;
+      },
+    };
+    const reflector = {
+      get: (key: unknown) => (String(key).includes('useDefault') ? undefined : { id: 'ds1' }),
+    };
+    const interceptor = new DataSourceInterceptor(reflector as never, holder as never);
+    const ctx = { getHandler: () => () => undefined } as never;
+    const sub = interceptor.intercept(ctx, { handle: () => inner }).subscribe();
+    await Promise.resolve();
+    sub.unsubscribe();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(innerUnsubscribed).toBe(true);
+    expect(scopeDone).toBe(true);
   });
 });

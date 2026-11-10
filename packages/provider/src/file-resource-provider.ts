@@ -17,11 +17,13 @@ export class FileResourceProvider implements ResourceProvider {
   }
 
   async getResource(id: string): Promise<Buffer | undefined> {
-    const filePath = path.join(this.basePath, this.extension ? `${id}.${this.extension}` : id);
+    const base = path.resolve(this.basePath);
+    const resolved = path.resolve(base, this.extension ? `${id}.${this.extension}` : id);
 
-    // 防止路径遍历
-    const resolved = path.resolve(filePath);
-    if (!resolved.startsWith(path.resolve(this.basePath))) {
+    // 防止路径遍历：结果必须严格位于 basePath 之内。仅做 startsWith 前缀比较会放过
+    // 同级目录（/data/res 与 /data/res-secret），因此用 path.relative 判断。
+    const relative = path.relative(base, resolved);
+    if (!relative || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
       throw new Error('Path traversal detected');
     }
 

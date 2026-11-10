@@ -53,4 +53,11 @@ describe('requestKrokiSvg', () => {
     expect(fetcher).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ body: source }));
     expect((await requestKrokiSvg({ url: 'http://render.test/graphviz/svg', source, fetcher })).svg).toBe(svg);
   });
+
+  it('refuses oversized responses', async () => {
+    await expect(requestKrokiSvg({
+      url: 'http://render.test/graphviz/svg', source: 'x', maxResponseBytes: 8,
+      fetcher: async () => new Response('<svg>' + 'x'.repeat(50) + '</svg>'),
+    })).rejects.toMatchObject({ stage: 'invalid_response' });
+  });
 });

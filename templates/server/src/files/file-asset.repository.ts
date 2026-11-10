@@ -1,6 +1,6 @@
 import { ConflictException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import type { FileAsset, FileAssetMutation, FileAssetRepository, FileAssetReservation } from '@zucker-framework/storage';
-import { ApplicationDatabase } from '../database';
+import { ApplicationDatabase, type ApplicationTransaction } from '../database';
 
 interface FileAssetRow extends Omit<FileAsset, 'scope' | 'createdAt' | 'updatedAt' | 'deletedAt' | 'cleanupConfirmedAt'> {
   ownerId: string;
@@ -16,11 +16,39 @@ function fromRow(row: FileAssetRow): FileAsset {
 }
 
 /** Real PostgreSQL uniqueness/CAS; all object bytes remain outside this metadata table. */
+/** Raised inside `reserve`; the storage service reports it generically, so FilesService re-checks usage. */
+export class FileQuotaExceededError extends Error {
+  constructor() { super('Private file storage quota exceeded'); this.name = 'FileQuotaExceededError'; }
+}
+export interface FileOwnerQuota { maxBytes: number; maxFiles: number }
+export interface FileOwnerUsage { bytes: number; files: number }
+
 export class PostgresFileAssetRepository implements FileAssetRepository {
-  constructor(private readonly database: ApplicationDatabase) {}
+  constructor(private readonly database: ApplicationDatabase, private readonly quota?: FileOwnerQuota) {}
+
+  /** Live (non-deleted) bytes and file count of one owner. */
+  async usage(ownerId: string, tx?: ApplicationTransaction): Promise<FileOwnerUsage> {
+    if (!tx) return this.database.transaction(inner => this.usage(ownerId, inner));
+    const result = await tx.query<{ bytes: string | null; files: string }>(
+      `SELECT COALESCE(SUM(size),0)::text AS bytes, COUNT(*)::text AS files FROM file_assets WHERE "ownerId"=$1 AND state<>'deleted'`, [ownerId]);
+    return { bytes: Number(result.rows[0]?.bytes ?? 0), files: Number(result.rows[0]?.files ?? 0) };
+  }
+
+  static exceeds(quota: FileOwnerQuota, usage: FileOwnerUsage, size: number): boolean {
+    return usage.files + 1 > quota.maxFiles || usage.bytes + size > quota.maxBytes;
+  }
 
   reserve(input: FileAssetReservation): Promise<FileAsset> {
     return this.database.transaction(async tx => {
+      if (this.quota) {
+        // Replays of an existing request key are never refused. New reservations of one owner are serialized
+        // by a dedicated advisory lock (not the users row, which avatar binding and deletion lock) so
+        // concurrent uploads cannot overshoot; deletions only lower usage and need no coordination.
+        await tx.query("SELECT pg_advisory_xact_lock(hashtextextended(current_schema() || ':file-quota:' || $1, 0))::text AS locked", [input.scope]);
+        const replay = await tx.query<FileAssetRow>('SELECT * FROM file_assets WHERE "ownerId"=$1 AND "idempotencyKey"=$2', [input.scope, input.idempotencyKey]);
+        if (replay.rows[0]) return fromRow(replay.rows[0]);
+        if (PostgresFileAssetRepository.exceeds(this.quota, await this.usage(input.scope, tx), input.size)) throw new FileQuotaExceededError();
+      }
       const inserted = await tx.query<FileAssetRow>(`
         INSERT INTO file_assets ("id", "ownerId", "idempotencyKey", "objectKey", "fileName", "sha256", "size", "mimeType", "createdAt", "updatedAt")
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9)

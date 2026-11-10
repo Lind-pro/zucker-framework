@@ -5,7 +5,9 @@
  *   - allowedOrigins / allowedMethods / allowedHeaders / exposedHeaders
  *   - allowCredentials / maxAge
  *   - 支持多路径规则 (configs 数组)
- *   - 未配置时使用默认值 (origins=*, methods=[GET,HEAD,POST], credentials=true, maxAge=1800)
+ *   - 未配置时使用默认值 (origins=*, REST methods, explicit headers, credentials=true, maxAge=1800)
+ *   - 通配来源 (`*`) 时不允许携带凭证：除非显式设置 allowAnyOriginWithCredentials，
+ *     否则 credentials 强制为 false（避免任意站点以用户 cookie 发起跨域读取）
  *
  * 提供配置接口和 NestJS 适配的 buildCorsOptions() 工厂方法。
  */
@@ -25,6 +27,12 @@ export interface CorsPathConfig {
   allowCredentials?: boolean;
   /** 预检请求缓存时间（秒） */
   maxAge?: number;
+  /**
+   * Explicit, dangerous opt-in: reflect any request Origin together with
+   * `Access-Control-Allow-Credentials: true` when allowedOrigins is `['*']`.
+   * Any website can then make credentialed reads. Default false.
+   */
+  allowAnyOriginWithCredentials?: boolean;
 }
 
 export interface CorsProperties {
@@ -40,11 +48,21 @@ export interface CorsProperties {
 export const DEFAULT_CORS_CONFIG: Required<CorsPathConfig> = {
   path: '/**',
   allowedOrigins: ['*'],
-  allowedMethods: ['GET', 'HEAD', 'POST'],
-  allowedHeaders: ['*'],
+  allowedMethods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  // Browsers do not honour `*` for credentialed requests; list the headers the framework uses.
+  allowedHeaders: [
+    'Accept',
+    'Accept-Language',
+    'Authorization',
+    'Content-Type',
+    'X-Requested-With',
+    'X-Correlation-Id',
+    'X-Request-Id',
+  ],
   exposedHeaders: [],
   allowCredentials: true,
   maxAge: 1800,
+  allowAnyOriginWithCredentials: false,
 };
 
 /**
@@ -59,6 +77,8 @@ export function mergeCorsConfig(config: CorsPathConfig): Required<CorsPathConfig
     exposedHeaders: config.exposedHeaders ?? DEFAULT_CORS_CONFIG.exposedHeaders,
     allowCredentials: config.allowCredentials ?? DEFAULT_CORS_CONFIG.allowCredentials,
     maxAge: config.maxAge ?? DEFAULT_CORS_CONFIG.maxAge,
+    allowAnyOriginWithCredentials:
+      config.allowAnyOriginWithCredentials ?? DEFAULT_CORS_CONFIG.allowAnyOriginWithCredentials,
   };
 }
 
@@ -96,12 +116,17 @@ export function buildCorsOptions(properties: CorsProperties): {
   const originIsWildcard =
     merged.allowedOrigins.length === 1 && merged.allowedOrigins[0] === '*';
 
+  // A wildcard origin with credentials lets every site make authenticated reads.
+  // Without the explicit opt-in, a wildcard never allows credentials.
+  const credentials =
+    originIsWildcard && !merged.allowAnyOriginWithCredentials ? false : merged.allowCredentials;
+
   return {
     origin: originIsWildcard ? true : merged.allowedOrigins,
     methods: merged.allowedMethods,
     allowedHeaders: merged.allowedHeaders,
     exposedHeaders: merged.exposedHeaders,
-    credentials: merged.allowCredentials,
+    credentials,
     maxAge: merged.maxAge,
   };
 }

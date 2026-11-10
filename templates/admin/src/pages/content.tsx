@@ -194,6 +194,9 @@ function EntryEditor({ entry, categories, onClose, onSaved }: { entry: Entry | n
 }
 
 /** Content drafts and publishing over the server template's `/content/manage` API. */
+/** Fixed page size of `GET /content/manage/entries` (ContentRepository.adminEntries). */
+const CONTENT_PAGE_SIZE = 20;
+
 export function ContentPage() {
   const api = useAdminApi();
   const { locale } = useAdminI18n();
@@ -232,7 +235,10 @@ export function ContentPage() {
       <ResourceTable<Entry>
         ref={table}
         label={tx('内容', 'Content')}
+        // The content API pages by a fixed 20 rows and rejects a pageSize parameter; keep the table in step.
         load={async ({ page, filters, signal }) => assertPage<Entry>(await api.get('/content/manage/entries', { page, ...filters }, { signal }))}
+        pageSize={CONTENT_PAGE_SIZE}
+        pageSizeOptions={[CONTENT_PAGE_SIZE]}
         rowKey={(row) => row.id}
         filters={[
           { name: 'kind', label: tx('类型', 'Type'), type: 'select', options: [{ value: 'page', label: tx('页面', 'Page') }, { value: 'post', label: tx('博客', 'Post') }, { value: 'doc', label: tx('文档', 'Doc') }] },

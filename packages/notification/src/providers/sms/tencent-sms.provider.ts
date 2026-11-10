@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as crypto from 'crypto';
 import type { SmsProvider, SmsMessage, SmsResult } from './sms.interface';
+import { maskPhoneNumber } from '../../delivery-log';
 
 export interface TencentSmsOptions {
   secretId: string;
@@ -11,6 +12,10 @@ export interface TencentSmsOptions {
   signName: string;
   /** API 地域，默认 ap-guangzhou */
   region?: string;
+  /** Country code prepended to numbers that are not already in E.164 (`+...`) form. Default `+86`. */
+  defaultCountryCode?: string;
+  /** Request timeout in milliseconds. Default 10000. */
+  timeoutMs?: number;
 }
 
 /**
@@ -39,10 +44,8 @@ export class TencentSmsProvider implements SmsProvider {
         SmsSdkAppId: this.options.sdkAppId,
         SignName: message.signName ?? this.options.signName,
         TemplateId: message.templateId,
-        TemplateParamSet: message.templateParams
-          ? Object.values(message.templateParams)
-          : [],
-        PhoneNumberSet: [`+86${message.phone}`],
+        TemplateParamSet: tencentTemplateParams(message),
+        PhoneNumberSet: [this.toE164(message.phone)],
       };
 
       const body = JSON.stringify(payload);
@@ -52,6 +55,7 @@ export class TencentSmsProvider implements SmsProvider {
         method: 'POST',
         headers,
         body,
+        signal: AbortSignal.timeout(this.options.timeoutMs ?? 10_000),
       });
 
       const result = await response.json() as {
@@ -73,13 +77,21 @@ export class TencentSmsProvider implements SmsProvider {
         return { success: false, error: `${sendResult?.Code}: ${sendResult?.Message}` };
       }
 
-      this.logger.log(`短信已发送: phone=${message.phone}, templateId=${message.templateId}`);
+      this.logger.log(`短信已发送: phone=${maskPhoneNumber(message.phone)}, templateId=${message.templateId}`);
       return { success: true, messageId: sendResult.SerialNo };
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
       this.logger.error(`腾讯云短信发送异常: ${err.message}`);
       return { success: false, error: err.message };
     }
+  }
+
+  private toE164(phone: string): string {
+    const trimmed = phone.trim().replace(/[\s-]/g, '');
+    if (trimmed.startsWith('+')) return trimmed;
+    if (trimmed.startsWith('00')) return `+${trimmed.slice(2)}`;
+    const countryCode = this.options.defaultCountryCode ?? '+86';
+    return `${countryCode.startsWith('+') ? countryCode : `+${countryCode}`}${trimmed}`;
   }
 
   async sendBatch(messages: SmsMessage[]): Promise<SmsResult[]> {
@@ -129,4 +141,10 @@ export class TencentSmsProvider implements SmsProvider {
       Authorization: authorization,
     };
   }
+}
+
+function tencentTemplateParams(message: SmsMessage): string[] {
+  const params = message.templateParams ?? {};
+  if (message.templateParamOrder) return message.templateParamOrder.map((key) => String(params[key] ?? ''));
+  return Object.values(params);
 }

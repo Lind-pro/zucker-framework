@@ -1,6 +1,16 @@
 
 # Credit and quota mechanisms
 
+## Generic wallet (`CreditService`)
+
+`CreditService` keeps a balance in `creditAccount` and an append-only ledger in `creditTransaction`.
+
+- Every balance change locks the account row first (a same-value update held until commit) and reads the balance after the lock, so concurrent `consume`/`grant`/`transfer`/`freeze` calls on one account are serialized under READ COMMITTED. Transfers lock both accounts in user-id order.
+- `grant`, `consume`, `refund` and `exchange` accept `{ idempotencyKey }` as the last argument. A retry with the same key and parameters is a no-op; reuse with different parameters fails with 409 `CREDIT_IDEMPOTENCY_CONFLICT`. Keys are stored in the `creditOperationReceipts` model (`credit_operation_receipts`, same table as `PostgresCreditOperationCoordinator`), which must exist when keys are used.
+- Events are published after commit; a failing event bus is logged and never changes the result.
+- `checkExpired()` removes only the unspent remainder of each due grant. The account ledger is replayed with the earliest-expiring credits spent first, so non-expiring credits (paid top-ups, refunds, transfers) are never taken by an expiry. Each grant is claimed once (`expired: false -> true` inside the lock) and the EXPIRE row references it in `orderId`. A failing grant does not block later ones.
+- For per-lot holds, revocation and fenced expiry use `BatchCreditLedger` instead.
+
 ## Durable quota reservations
 
 `QuotaReservationService<Tx, Record, Input>` provides reserve, confirm, release and

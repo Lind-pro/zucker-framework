@@ -10,6 +10,15 @@ import { useAdmin } from './context';
 import { LanguageSwitcher } from './layout';
 
 /** Sign in through the account module (`POST /authorize/login`, then `GET /authorize/me`). */
+/**
+ * Post-login target: a same-app path only. On top of the shared fe-auth check, any control
+ * character is rejected because URL parsers strip tabs/newlines (`/\t/evil.com` → `//evil.com`).
+ */
+export function isAdminRedirect(requested: string): boolean {
+  if (!requested || /[\u0000-\u001f\u007f]/.test(requested)) return false;
+  return isSafeRelativeRedirect(requested) && !requested.startsWith('/login');
+}
+
 export function LoginPage() {
   const { session, config } = useAdmin();
   const { t } = useAdminI18n();
@@ -23,7 +32,7 @@ export function LoginPage() {
   const [failed, setFailed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const requested = params.get('redirect') ?? '';
-  const destination = requested && isSafeRelativeRedirect(requested) && !requested.startsWith('/login') ? requested : config.homePath;
+  const destination = isAdminRedirect(requested) ? requested : config.homePath;
   if (isAuthenticated && token && !submitting) return <Navigate to={destination} replace />;
   async function submit(event: FormEvent) {
     event.preventDefault();

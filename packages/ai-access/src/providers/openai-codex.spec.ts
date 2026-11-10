@@ -241,3 +241,49 @@ describe('OpenAI Codex access provider', () => {
     },
   );
 });
+
+describe('Codex refresh coalescing', () => {
+  const refreshResponse = () =>
+    new Response(
+      JSON.stringify({
+        access_token: jwt(now + 60 * 60_000),
+        refresh_token: 'refresh-2',
+        expires_in: 3600,
+      }),
+      { status: 200 },
+    );
+
+  it('coalesces refreshes across managers that share a store', async () => {
+    const store = new InMemoryCredentialProfileStore();
+    await store.save(profile(now - 1));
+    const fetcher = vi.fn().mockImplementation(async () => refreshResponse());
+    const managers = Array.from(
+      { length: 3 },
+      () => new CodexSubscriptionCredentialManager({ store, fetcher, now: () => now }),
+    );
+    await Promise.all(managers.map((manager) => manager.getCredentials()));
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it('one caller cancelling does not fail the other waiters', async () => {
+    const store = new InMemoryCredentialProfileStore();
+    await store.save(profile(now - 1));
+    let respond = () => {};
+    const fetcher = vi.fn(
+      (_input: Parameters<typeof fetch>[0], init?: RequestInit) =>
+        new Promise<Response>((resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(init.signal?.reason));
+          respond = () => resolve(refreshResponse());
+        }),
+    );
+    const manager = new CodexSubscriptionCredentialManager({ store, fetcher, now: () => now });
+    const controller = new AbortController();
+    const cancelled = manager.getCredentials({ signal: controller.signal });
+    const other = manager.getCredentials();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    controller.abort(new Error('caller gave up'));
+    await expect(cancelled).rejects.toThrow('caller gave up');
+    respond();
+    await expect(other).resolves.toMatchObject({ refreshToken: 'refresh-2' });
+  });
+});

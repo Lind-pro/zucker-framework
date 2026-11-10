@@ -136,11 +136,9 @@ export class PersistedCostTracker extends CostTracker {
         outputTokens: agg.outputTokens,
         totalTokens: agg.totalTokens,
         totalCost: agg.totalCost,
-        avgResponseTime: agg.responseTimes.length
-          ? agg.responseTimes.reduce((a, b) => a + b, 0) / agg.responseTimes.length
-          : null,
-        minResponseTime: agg.responseTimes.length ? Math.min(...agg.responseTimes) : null,
-        maxResponseTime: agg.responseTimes.length ? Math.max(...agg.responseTimes) : null,
+        avgResponseTime: agg.responseTimeCount ? agg.responseTimeSum / agg.responseTimeCount : null,
+        minResponseTime: agg.responseTimeCount ? agg.minResponseTime : null,
+        maxResponseTime: agg.responseTimeCount ? agg.maxResponseTime : null,
       });
     }
 
@@ -165,7 +163,10 @@ export class PersistedCostTracker extends CostTracker {
           previous.outputTokens += current.outputTokens;
           previous.totalTokens += current.totalTokens;
           previous.totalCost += current.totalCost;
-          previous.responseTimes.push(...current.responseTimes);
+          previous.responseTimeSum += current.responseTimeSum;
+          previous.responseTimeCount += current.responseTimeCount;
+          previous.minResponseTime = Math.min(previous.minResponseTime, current.minResponseTime);
+          previous.maxResponseTime = Math.max(previous.maxResponseTime, current.maxResponseTime);
         }
         this.aggregated.set(key, previous);
       }
@@ -196,7 +197,10 @@ export class PersistedCostTracker extends CostTracker {
         outputTokens: 0,
         totalTokens: 0,
         totalCost: 0,
-        responseTimes: [],
+        responseTimeSum: 0,
+        responseTimeCount: 0,
+        minResponseTime: Number.POSITIVE_INFINITY,
+        maxResponseTime: Number.NEGATIVE_INFINITY,
       };
       this.aggregated.set(key, agg);
     }
@@ -207,7 +211,14 @@ export class PersistedCostTracker extends CostTracker {
     agg.outputTokens += entry.outputTokens;
     agg.totalTokens += entry.totalTokens;
     agg.totalCost += entry.cost;
-    if (entry.duration !== undefined) agg.responseTimes.push(entry.duration);
+    // Running statistics: sample arrays grew without bound across failed flushes and
+    // Math.min(...samples) throws RangeError once they are large.
+    if (entry.duration !== undefined && Number.isFinite(entry.duration)) {
+      agg.responseTimeSum += entry.duration;
+      agg.responseTimeCount += 1;
+      agg.minResponseTime = Math.min(agg.minResponseTime, entry.duration);
+      agg.maxResponseTime = Math.max(agg.maxResponseTime, entry.duration);
+    }
   }
 
   private checkWarnings(entry: CostRecord): void {
@@ -238,5 +249,8 @@ interface MutableAggregate {
   outputTokens: number;
   totalTokens: number;
   totalCost: number;
-  responseTimes: number[];
+  responseTimeSum: number;
+  responseTimeCount: number;
+  minResponseTime: number;
+  maxResponseTime: number;
 }

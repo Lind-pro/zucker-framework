@@ -5,6 +5,7 @@ import type { Money, SubscriptionAdapter, SubscriptionCancelMode, SubscriptionCy
 import { ApplicationDatabase } from '../database';
 import type { BillingRefundsService } from './refunds/refunds.service';
 import type { BillingExtensions } from './billing-extensions';
+import { nextSubscriptionReconcileAt } from './subscription-schedule';
 import { createSubscriptionCyclePersistence, SUBSCRIPTION_RECONCILE_EVENT, type BillingSubscription, type SubscriptionExecutionFence } from './subscription-persistence';
 
 const PAGE_SIZE = 20, MAX_PROVIDER_PAGES = 100, MAX_PROVIDER_RECEIPTS = 10000;
@@ -173,8 +174,11 @@ export class BillingSubscriptionsService {
     }
     await this.database.transaction(async tx => {
       await fence?.(tx);
+      const current = await tx.model('billingSubscriptions').findUnique({ where: { id } }) as BillingSubscription | null;
+      if (!current || current.ownerId !== ownerId || current.revision !== expectedRevision)
+        throw new HostedCheckoutError('conflict', 'Subscription changed while applying receipts; refresh again');
       const changed = await tx.model('billingSubscriptions').updateMany({ where: { id, ownerId, revision: expectedRevision },
-        data: { nextReconcileAt: new Date(Date.now() + 15 * 60_000), reconcileStatus: 'idle', reconcileErrorCode: null,
+        data: { nextReconcileAt: nextSubscriptionReconcileAt(current), reconcileStatus: 'idle', reconcileErrorCode: null,
           lastReconcileTaskId: null, updatedAt: new Date(), revision: { increment: 1 } } });
       if (changed.count !== 1) throw new HostedCheckoutError('conflict', 'Subscription changed while applying receipts; refresh again');
       await tx.model('billingOutbox').updateMany({ where: { kind: SUBSCRIPTION_RECONCILE_EVENT, aggregateId: id,

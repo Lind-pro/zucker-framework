@@ -1,4 +1,8 @@
-import { SvgRenderRequestError } from './svg-render-client';
+import {
+  SVG_RENDER_DEFAULT_MAX_RESPONSE_BYTES,
+  SvgRenderRequestError,
+  readBoundedResponseText,
+} from './svg-render-client';
 import { normalizeMermaidSvgText } from './mermaid/svg-text';
 
 export interface KrokiSvgRequest {
@@ -6,6 +10,8 @@ export interface KrokiSvgRequest {
   source: string;
   signal?: AbortSignal;
   fetcher?: typeof fetch;
+  /** Response bodies larger than this are refused. Default 20 MiB. */
+  maxResponseBytes?: number;
 }
 
 /** Transport for an explicitly selected Kroki SVG endpoint. */
@@ -14,6 +20,7 @@ export async function requestKrokiSvg({
   source,
   signal,
   fetcher = fetch,
+  maxResponseBytes = SVG_RENDER_DEFAULT_MAX_RESPONSE_BYTES,
 }: KrokiSvgRequest): Promise<{ svg: string; durationMs: number }> {
   const startedAt = Date.now();
   let response: Response;
@@ -29,7 +36,7 @@ export async function requestKrokiSvg({
     throw new SvgRenderRequestError('transport', undefined, undefined, { cause: error });
   }
   const durationMs = Date.now() - startedAt;
-  const svg = await response.text();
+  const svg = await readBoundedResponseText(response, maxResponseBytes);
   if (!response.ok) throw new SvgRenderRequestError('http', svg.substring(0, 300), response.status);
   return {
     svg: /(?:^|\/)mermaid\/svg(?:[?#]|$)/i.test(url) ? normalizeMermaidSvgText(svg) : svg,

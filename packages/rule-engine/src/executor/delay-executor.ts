@@ -62,6 +62,8 @@ export interface DelayExecutorConfig {
   errorOnDrop?: boolean;
 }
 
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
+
 function toMs(value: number, unit: TimeUnit): number {
   switch (unit) {
     case TimeUnit.MILLIS:
@@ -183,6 +185,14 @@ class DelayTaskExecutor extends AbstractTaskExecutor {
   }
 
   private delayAndForward(data: RuleData, ms: number): Promise<void> {
+    // setTimeout fires immediately for delays above 2^31-1 ms (~24.8 days); refuse them
+    // instead of forwarding instantly (delays can come from upstream data via `delayv`).
+    if (!Number.isFinite(ms) || ms > MAX_TIMER_DELAY_MS) {
+      return this.context.onError(
+        new Error(`Delay of ${ms}ms exceeds the maximum of ${MAX_TIMER_DELAY_MS}ms`),
+        data,
+      );
+    }
     return new Promise<void>((resolve) => {
       const timer = setTimeout(async () => {
         const idx = this.pendingTimers.indexOf(timer);

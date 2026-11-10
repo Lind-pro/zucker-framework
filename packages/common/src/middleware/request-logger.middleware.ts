@@ -10,7 +10,11 @@ export class RequestLoggerMiddleware implements NestMiddleware {
     const start = Date.now();
     res.on('finish', () => {
       const duration = Date.now() - start;
-      this.logger.log(`${req.method} ${req.url} ${res.statusCode} ${duration}ms`);
+      // Log the path only: query strings can carry tokens, signed URLs or personal data.
+      const url = req.originalUrl ?? req.url ?? '';
+      const queryIndex = url.indexOf('?');
+      const path = queryIndex >= 0 ? url.slice(0, queryIndex) : url;
+      this.logger.log(`${req.method} ${path} ${res.statusCode} ${duration}ms`);
     });
     next();
   }

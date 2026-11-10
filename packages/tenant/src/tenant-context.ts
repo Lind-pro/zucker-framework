@@ -2,6 +2,8 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 
 interface TenantStore {
   tenantId: string;
+  /** Explicit system access across tenants (see runWithoutTenantIsolation). */
+  bypassIsolation?: boolean;
   /** 附加属性，如租户名称、配置等 */
   attributes?: Record<string, unknown>;
 }
@@ -19,7 +21,7 @@ export class TenantContext {
    * 获取当前租户 ID
    */
   static getCurrentTenantId(): string | undefined {
-    return tenantStorage.getStore()?.tenantId;
+    return tenantStorage.getStore()?.tenantId || undefined;
   }
 
   /**
@@ -43,7 +45,7 @@ export class TenantContext {
    * 判断当前是否在租户上下文中
    */
   static isInTenantContext(): boolean {
-    return tenantStorage.getStore() !== undefined;
+    return !!tenantStorage.getStore()?.tenantId;
   }
 
   /**
@@ -58,6 +60,19 @@ export class TenantContext {
    */
   static async runWithTenantAsync<T>(tenantId: string, fn: () => Promise<T>): Promise<T> {
     return tenantStorage.run({ tenantId }, fn);
+  }
+
+  /**
+   * Run `fn` as explicit cross-tenant system access (jobs, migrations, admin tooling).
+   * `RowLevelIsolation` does not filter inside this scope instead of throwing.
+   */
+  static runWithoutTenantIsolation<T>(fn: () => T): T {
+    return tenantStorage.run({ tenantId: '', bypassIsolation: true }, fn);
+  }
+
+  /** True inside `runWithoutTenantIsolation` (and not inside a nested tenant scope). */
+  static isTenantIsolationBypassed(): boolean {
+    return tenantStorage.getStore()?.bypassIsolation === true;
   }
 
   /**

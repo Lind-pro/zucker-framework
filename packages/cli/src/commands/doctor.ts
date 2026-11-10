@@ -8,7 +8,22 @@ interface CheckResult {
   message: string;
 }
 
-async function runDiagnostics(): Promise<CheckResult[]> {
+/** Matches the CLI's `engines.node` (>=22.12.0). */
+const MIN_NODE = [22, 12, 0] as const;
+
+export function meetsNodeRequirement(version: string): boolean {
+  const parts = version.split('.').map((part) => parseInt(part, 10) || 0);
+  for (let index = 0; index < MIN_NODE.length; index++) {
+    if ((parts[index] ?? 0) !== MIN_NODE[index]) return (parts[index] ?? 0) > MIN_NODE[index];
+  }
+  return true;
+}
+
+export function describeSecret(value: string): string {
+  return `Set (${value.length} characters)`;
+}
+
+export async function runDiagnostics(): Promise<CheckResult[]> {
   const results: CheckResult[] = [];
   const cwd = process.cwd();
 
@@ -26,12 +41,11 @@ async function runDiagnostics(): Promise<CheckResult[]> {
 
   // 2. Check Node.js version
   const nodeVersion = process.versions.node;
-  const major = parseInt(nodeVersion.split('.')[0], 10);
-  if (major < 20) {
+  if (!meetsNodeRequirement(nodeVersion)) {
     results.push({
       name: 'Node.js',
       status: 'error',
-      message: `v${nodeVersion} detected. Zucker requires Node.js >= 20.`,
+      message: `v${nodeVersion} detected. Zucker requires Node.js >= ${MIN_NODE.join('.')}.`,
     });
   } else {
     results.push({ name: 'Node.js', status: 'ok', message: `v${nodeVersion}` });
@@ -72,7 +86,8 @@ async function runDiagnostics(): Promise<CheckResult[]> {
       results.push({
         name: check.name,
         status: 'ok',
-        message: `Set (${value.substring(0, 8)}...)`,
+        // Never echo any part of a secret: doctor output ends up in CI logs.
+        message: describeSecret(value),
       });
     } else if (check.required) {
       results.push({
@@ -89,13 +104,13 @@ async function runDiagnostics(): Promise<CheckResult[]> {
     }
   }
 
-  // 5. Check .env.local file
-  const envLocalPath = resolve(cwd, '.env.local');
-  if (existsSync(envLocalPath)) {
-    results.push({ name: '.env.local', status: 'ok', message: 'Found' });
+  // 5. Check for a local environment file (`zucker init` writes `.env`)
+  const envFile = ['.env', '.env.local'].find((file) => existsSync(resolve(cwd, file)));
+  if (envFile) {
+    results.push({ name: '.env', status: 'ok', message: `Found ${envFile}` });
   } else {
     results.push({
-      name: '.env.local',
+      name: '.env',
       status: 'warn',
       message: 'Not found. Consider creating one for local development.',
     });

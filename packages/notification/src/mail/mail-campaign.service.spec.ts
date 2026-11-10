@@ -109,10 +109,25 @@ describe('MailCampaignService.processCampaign', () => {
 
   it('认领失败（count=0，已被其他 worker 抢或非 pending）→ 跳过', async () => {
     campaignUpdateMany.mockResolvedValue({ count: 0 });
+    campaignFindUnique.mockResolvedValue({ ...baseCampaign, status: 'completed' });
     await service.processCampaign('c1');
-    expect(campaignFindUnique).not.toHaveBeenCalled();
     expect(loadBatch).not.toHaveBeenCalled();
     expect(campaignUpdate).not.toHaveBeenCalled();
+    expect(campaignUpdateMany).toHaveBeenCalledTimes(1);
+  });
+
+  it('a re-delivered job for a campaign still running marks it interrupted instead of sending', async () => {
+    campaignUpdateMany
+      .mockResolvedValueOnce({ count: 0 })
+      .mockResolvedValueOnce({ count: 1 });
+    await service.processCampaign('c1');
+    expect(loadBatch).not.toHaveBeenCalled();
+    expect(campaignUpdateMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: { id: 'c1', status: 'running' },
+        data: expect.objectContaining({ status: 'failed' }),
+      }),
+    );
   });
 
   it('邮件服务未配置 → 提前标 failed，不进入发送', async () => {

@@ -66,6 +66,19 @@ describe('transaction-bound credit lots', () => {
     expect(f.models.lots.update).not.toHaveBeenCalled();
     expect(f.models.balances.update).not.toHaveBeenCalled();
   });
+  it('pages the expiry scan and keeps sweeping after one account fails (L12)', async () => {
+    const f = fixture();
+    const page = Array.from({ length: 500 }, (_, i) => ({ id: `lot-${String(i).padStart(4, '0')}`, owner: i === 0 ? 'broken' : 'a', remainingAmount: 1 }));
+    f.scan.findMany.mockResolvedValueOnce(page).mockResolvedValueOnce([{ id: 'lot-9999', owner: 'a', remainingAmount: 1 }]);
+    f.models.lots.findFirst.mockImplementation(async (args: { where: { id: string } }) => ({ id: args.where.id, owner: 'a', remainingAmount: 1 }));
+    f.lockAccount.mockImplementation(async (_tx: unknown, accountId: string) => { if (accountId === 'broken') throw new Error('needs migration'); });
+    const error = await f.ledger.expire({ type: 'expire' }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AggregateError);
+    expect((error as AggregateError).errors).toHaveLength(1);
+    expect(f.scan.findMany).toHaveBeenCalledTimes(2);
+    expect(f.scan.findMany.mock.calls[1][0]).toMatchObject({ where: { id: { gt: 'lot-0499' } }, take: 500 });
+    expect(f.models.lots.update).toHaveBeenCalledTimes(500);
+  });
   it('expires only the remainder re-read after acquiring the account lock', async () => {
     const f = fixture();
     f.scan.findMany.mockResolvedValue([{ id: 'lot', owner: 'a', remainingAmount: 100 }]);

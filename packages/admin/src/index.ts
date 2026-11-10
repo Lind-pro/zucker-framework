@@ -4,6 +4,11 @@ export type { ZuckerAdminModuleOptions, AdminFeature } from './admin.module';
 
 // ─── Individual sub-modules (for cherry-pick usage) ─────────────────────────
 export { ZuckerUsersAdminModule } from './users/users.module';
+export type { UsersAdminModuleOptions } from './users/users.module';
+export {
+  ADMIN_USERS_OPTIONS, ADMIN_USER_HOOKS, USER_PROFILE_FIELDS, USER_SENSITIVE_FIELDS, USER_CREATE_FIELDS, USER_READABLE_FIELDS,
+} from './users/users.options';
+export type { AdminUserHooks, AdminUserSensitiveChange, UsersAdminOptions } from './users/users.options';
 export { ZuckerRolesAdminModule } from './roles/roles.module';
 export { ZuckerPermissionsAdminModule } from './permissions/permissions.module';
 export { ZuckerDictionaryAdminModule } from './dictionary/dictionary.module';

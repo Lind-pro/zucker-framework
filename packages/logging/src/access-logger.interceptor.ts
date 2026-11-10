@@ -58,12 +58,17 @@ interface HttpRequest extends ObservedHttpRequest {
   socket?: { remoteAddress?: string };
 }
 
-/** 默认排除的敏感字段 */
-const DEFAULT_SENSITIVE_FIELDS = ['password', 'secret', 'token', 'authorization', 'creditCard'];
+/**
+ * Request-parameter fields that are always redacted, in addition to `excludeFields` and the
+ * PiiFilter built-ins. `code` is only treated as a credential here (OAuth callback / one-time
+ * codes in request parameters); in general logs it usually is an error code.
+ */
+const DEFAULT_SENSITIVE_FIELDS = ['password', 'secret', 'token', 'authorization', 'creditCard', 'code', 'otp', 'captcha'];
 
 @Injectable()
 export class AccessLoggerInterceptor implements NestInterceptor {
   private readonly piiFilter: PiiFilter;
+  private readonly parameterFilters = new Map<string, PiiFilter>();
 
   constructor(
     private readonly reflector: Reflector,
@@ -119,11 +124,7 @@ export class AccessLoggerInterceptor implements NestInterceptor {
     const userAgent = this.sanitizeOptional(request.headers?.['user-agent']);
 
     // 完整请求头
-    const httpHeaders = request.headers
-      ? (this.piiFilter.sanitizeObject({
-          ...request.headers,
-        }) as Record<string, string | undefined>)
-      : {};
+    const httpHeaders = this.piiFilter.sanitizeHeaders(request.headers);
 
     // 类+方法 action 用 "-" 拼接
     const classAction = classOptions?.action;
@@ -148,7 +149,7 @@ export class AccessLoggerInterceptor implements NestInterceptor {
     const target = context.getClass().name;
 
     const correlationId = getCorrelationId();
-    const sensitiveFields = loggerOptions.excludeFields ?? DEFAULT_SENSITIVE_FIELDS;
+    const sensitiveFields = [...DEFAULT_SENSITIVE_FIELDS, ...(loggerOptions.excludeFields ?? [])];
 
     // 忽略指定参数
     const ignoreParams = loggerOptions.ignoreParameter ?? [];
@@ -188,7 +189,7 @@ export class AccessLoggerInterceptor implements NestInterceptor {
       parameters,
       correlationId,
     };
-    this.eventEmitter?.emit(ACCESS_LOG_BEFORE_EVENT, beforePayload);
+    this.emitSafely(ACCESS_LOG_BEFORE_EVENT, beforePayload);
 
     let lastResult: unknown;
     return next.handle().pipe(
@@ -248,9 +249,9 @@ export class AccessLoggerInterceptor implements NestInterceptor {
 
           const accessLogs = request[HTTP_ACCESS_CAPTURED] ? undefined : this.accessLogs;
           if (accessLogs) request[HTTP_ACCESS_CAPTURED] = true;
-          this.eventEmitter?.emit(ACCESS_LOG_EVENT, accessPayload);
-          this.eventEmitter?.emit(OPERATION_LOG_EVENT, operationPayload);
-          this.bus?.publish('system/access-log', accessPayload);
+          this.emitSafely(ACCESS_LOG_EVENT, accessPayload);
+          this.emitSafely(OPERATION_LOG_EVENT, operationPayload);
+          this.publishSafely(accessPayload);
           void Promise.allSettled([
             accessLogs?.log({ ...accessPayload, requestId: correlationId }, {
               completionObservation: request[HTTP_COMPLETION_OBSERVATION],
@@ -313,9 +314,9 @@ export class AccessLoggerInterceptor implements NestInterceptor {
 
         const accessLogs = request[HTTP_ACCESS_CAPTURED] ? undefined : this.accessLogs;
         if (accessLogs) request[HTTP_ACCESS_CAPTURED] = true;
-        this.eventEmitter?.emit(ACCESS_LOG_EVENT, accessPayload);
-        this.eventEmitter?.emit(OPERATION_LOG_EVENT, operationPayload);
-        this.bus?.publish('system/access-log', accessPayload);
+        this.emitSafely(ACCESS_LOG_EVENT, accessPayload);
+        this.emitSafely(OPERATION_LOG_EVENT, operationPayload);
+        this.publishSafely(accessPayload);
         void Promise.allSettled([
           accessLogs?.log({ ...accessPayload, requestId: correlationId }, {
             completionObservation: request[HTTP_COMPLETION_OBSERVATION],
@@ -399,11 +400,34 @@ export class AccessLoggerInterceptor implements NestInterceptor {
     sensitiveFields: string[],
   ): Record<string, unknown> | undefined {
     if (!params) return undefined;
-    return this.piiFilter.sanitizeObject(
-      new PiiFilter({
-        sensitiveFields,
-      }).sanitizeObject(params),
-    );
+    // One pass with the injected filter's configuration plus the route's fields.
+    const key = sensitiveFields.join('\u0000');
+    let filter = this.parameterFilters.get(key);
+    if (!filter) {
+      filter = this.piiFilter.extend({ sensitiveFields });
+      // Route metadata is a closed set; the bound only protects against misuse.
+      if (this.parameterFilters.size < 256) this.parameterFilters.set(key, filter);
+    }
+    return filter.sanitizeObject(params);
+  }
+
+  /** Log listeners must never turn a handled request into a failure. */
+  private emitSafely(event: string, payload: unknown): void {
+    try {
+      this.eventEmitter?.emit(event, payload);
+    } catch {
+      // A failing listener is the listener's defect; the request outcome is unchanged.
+    }
+  }
+
+  /** The bus is best effort; a rejected publish must not become an unhandled rejection. */
+  private publishSafely(payload: AccessLogPayload): void {
+    if (!this.bus) return;
+    try {
+      void Promise.resolve(this.bus.publish('system/access-log', payload)).catch(() => undefined);
+    } catch {
+      // Synchronous publish failure: same best-effort contract.
+    }
   }
 
   private extractErrorMessage(error: unknown): string {

@@ -14,7 +14,9 @@ export { adapterSupportsCurrency } from './contract/payment-contract';
 export type { SettlementState, SettlementDecision } from './contract/settlement';
 export { SETTLEMENT_STATES, reconcile, isMoneyMoved, isTerminal } from './contract/settlement';
 
-export { toMinorUnits, fromMinorUnits, currencyExponent } from './contract/money';
+export { toMinorUnits, fromMinorUnits, currencyExponent, toStripeMinorUnits, fromStripeMinorUnits } from './contract/money';
+
+export { PaymentRejectedError, isDefinitePaymentRejection } from './contract/rejection';
 
 export { PaymentProviderRegistry } from './contract/registry';
 

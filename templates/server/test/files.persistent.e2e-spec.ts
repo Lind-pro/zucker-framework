@@ -215,7 +215,7 @@ const {LocalFileStorage}=load('@zucker-framework/storage');
 const db=new ApplicationDatabase(process.env.TEST_DATABASE_URL);
 try{const files=new FilesService(db,new LocalFileStorage({basePath:input.directory}),{maxObjectBytes:2048});
 const asset=await files.recover(input.ownerId,input.id);process.stdout.write('EVIDENCE:'+JSON.stringify({state:asset.state,pid:process.pid}));}
-finally{await db.onModuleDestroy();}})().catch(()=>{process.stderr.write('Synthetic file recovery worker failed');process.exitCode=1;});
+finally{await db.disconnect();}})().catch(()=>{process.stderr.write('Synthetic file recovery worker failed');process.exitCode=1;});
 `);
       try {
         const result = await new Promise<{ state: string; pid: number }>((done, reject) => {

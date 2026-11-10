@@ -217,6 +217,7 @@ describe('DynamicQueryService', () => {
     expect(modelOps.findMany).toHaveBeenCalledWith({
       where: { status: { equals: 'active' } },
       orderBy: [{ createdAt: 'desc' }],
+      take: 10000,
     });
     expect(result).toEqual({
       data: [{ id: '1' }, { id: '2' }],

@@ -4,6 +4,7 @@ import * as path from 'path';
 import { randomUUID } from 'node:crypto';
 import { ReadStream, createReadStream } from 'fs';
 import type { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import {
   FileManager,
   UploadOptions,
@@ -12,6 +13,7 @@ import {
   type ChunkUploadState,
   type PosixFilePermissions,
   generateDateBasedKey,
+  encodeKeyPath,
 } from './storage.interface';
 
 @Injectable()
@@ -22,10 +24,23 @@ export class LocalFileStorage implements FileManager {
   private readonly baseUrl: string;
   /** Active chunked upload sessions */
   private readonly chunkedUploads = new Map<string, ChunkUploadState>();
+  /** Last activity per upload session, used to expire abandoned sessions. */
+  private readonly chunkedUploadTouchedAt = new Map<string, number>();
+  private readonly chunkSessionTtlMs: number;
+  private readonly maxChunks: number;
 
-  constructor(options: { basePath: string; baseUrl?: string }) {
+  constructor(options: {
+    basePath: string;
+    baseUrl?: string;
+    /** Abandoned chunked uploads are removed after this idle time. Default 24 h. */
+    chunkSessionTtlMs?: number;
+    /** Upper bound for `totalChunks`. Default 10 000. */
+    maxChunks?: number;
+  }) {
     this.basePath = options.basePath;
-    this.baseUrl = options.baseUrl ?? '';
+    this.baseUrl = (options.baseUrl ?? '').replace(/\/$/, '');
+    this.chunkSessionTtlMs = options.chunkSessionTtlMs ?? 24 * 60 * 60 * 1000;
+    this.maxChunks = options.maxChunks ?? 10_000;
     fs.mkdirSync(this.basePath, { recursive: true });
     this.logger.log(`本地存储已初始化: ${this.basePath}`);
   }
@@ -36,8 +51,16 @@ export class LocalFileStorage implements FileManager {
 
   async upload(buffer: Buffer, key: string, _options?: UploadOptions): Promise<UploadResult> {
     const filePath = this.resolvePath(key);
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.writeFileSync(filePath, buffer);
+    await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+    // Write next to the target and rename, so a crash never leaves a truncated object.
+    const tempPath = this.tempPathFor(filePath);
+    try {
+      await fs.promises.writeFile(tempPath, buffer);
+      await fs.promises.rename(tempPath, filePath);
+    } catch (error) {
+      await fs.promises.rm(tempPath, { force: true });
+      throw error;
+    }
 
     return {
       key,
@@ -46,12 +69,20 @@ export class LocalFileStorage implements FileManager {
     };
   }
 
-  async uploadStream(stream: Readable, key: string, options?: UploadOptions): Promise<UploadResult> {
-    const chunks: Buffer[] = [];
-    for await (const chunk of stream) {
-      chunks.push(Buffer.from(chunk));
+  /** Streams to a temporary file (no full in-memory buffer) and renames it into place. */
+  async uploadStream(stream: Readable, key: string, _options?: UploadOptions): Promise<UploadResult> {
+    const filePath = this.resolvePath(key);
+    await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+    const tempPath = this.tempPathFor(filePath);
+    try {
+      await pipeline(stream, fs.createWriteStream(tempPath, { flags: 'wx' }));
+      const { size } = await fs.promises.stat(tempPath);
+      await fs.promises.rename(tempPath, filePath);
+      return { key, url: this.buildUrl(key), size };
+    } catch (error) {
+      await fs.promises.rm(tempPath, { force: true });
+      throw error;
     }
-    return this.upload(Buffer.concat(chunks), key, options);
   }
 
   async download(key: string): Promise<{ stream: ReadStream; size: number }> {
@@ -117,6 +148,12 @@ export class LocalFileStorage implements FileManager {
   ): Promise<{ stream: ReadStream; size: number }> {
     const filePath = this.resolvePath(key);
     const stat = fs.statSync(filePath);
+    if (!Number.isSafeInteger(position) || position < 0 || position >= stat.size) {
+      throw new RangeError(`Range start ${position} is outside the file (size ${stat.size})`);
+    }
+    if (length !== undefined && (!Number.isSafeInteger(length) || length <= 0)) {
+      throw new RangeError(`Range length ${length} must be a positive integer`);
+    }
     const end = length !== undefined
       ? Math.min(position + length - 1, stat.size - 1)
       : stat.size - 1;
@@ -154,9 +191,16 @@ export class LocalFileStorage implements FileManager {
   }
 
   async initChunkedUpload(key: string, totalChunks: number, totalSize?: number): Promise<string> {
+    if (!Number.isSafeInteger(totalChunks) || totalChunks < 1 || totalChunks > this.maxChunks) {
+      throw new Error(`totalChunks must be an integer between 1 and ${this.maxChunks}`);
+    }
+    if (totalSize !== undefined && (!Number.isSafeInteger(totalSize) || totalSize < 0)) {
+      throw new Error('totalSize must be a non-negative integer');
+    }
+    this.resolvePath(key); // reject traversal before any chunk is accepted
+    this.expireChunkedUploads();
     const uploadId = randomUUID();
-    const chunksDir = path.join(this.basePath, '.chunks', uploadId);
-    fs.mkdirSync(chunksDir, { recursive: true });
+    fs.mkdirSync(this.chunksDir(uploadId), { recursive: true });
 
     this.chunkedUploads.set(uploadId, {
       uploadId,
@@ -166,36 +210,41 @@ export class LocalFileStorage implements FileManager {
       totalSize,
       complete: false,
     });
+    this.chunkedUploadTouchedAt.set(uploadId, Date.now());
 
     this.logger.log(`Chunked upload initialized: ${uploadId} for key=${key}, totalChunks=${totalChunks}`);
     return uploadId;
   }
 
   async uploadChunk(uploadId: string, chunkIndex: number, buffer: Buffer): Promise<void> {
+    this.expireChunkedUploads();
     const state = this.chunkedUploads.get(uploadId);
     if (!state) {
       throw new Error(`Unknown upload session: ${uploadId}`);
     }
 
-    if (chunkIndex < 0 || chunkIndex >= state.totalChunks) {
+    if (!Number.isSafeInteger(chunkIndex) || chunkIndex < 0 || chunkIndex >= state.totalChunks) {
       throw new Error(`Invalid chunk index ${chunkIndex} (expected 0-${state.totalChunks - 1})`);
     }
 
-    const chunkPath = path.join(this.basePath, '.chunks', uploadId, `chunk-${chunkIndex}`);
+    const chunkPath = path.join(this.chunksDir(uploadId), `chunk-${chunkIndex}`);
     fs.writeFileSync(chunkPath, buffer);
-    state.receivedChunks.push(chunkIndex);
+    if (!state.receivedChunks.includes(chunkIndex)) state.receivedChunks.push(chunkIndex);
+    this.chunkedUploadTouchedAt.set(uploadId, Date.now());
   }
 
   async completeChunkedUpload(uploadId: string, _options?: UploadOptions): Promise<UploadResult> {
+    this.expireChunkedUploads();
     const state = this.chunkedUploads.get(uploadId);
     if (!state) {
       throw new Error(`Unknown upload session: ${uploadId}`);
     }
 
     // Verify all chunks received
+    const received = new Set(state.receivedChunks);
     const missing: number[] = [];
     for (let i = 0; i < state.totalChunks; i++) {
-      if (!state.receivedChunks.includes(i)) {
+      if (!received.has(i)) {
         missing.push(i);
       }
     }
@@ -209,7 +258,7 @@ export class LocalFileStorage implements FileManager {
 
     const writeStream = fs.createWriteStream(filePath);
     for (let i = 0; i < state.totalChunks; i++) {
-      const chunkPath = path.join(this.basePath, '.chunks', uploadId, `chunk-${i}`);
+      const chunkPath = path.join(this.chunksDir(uploadId), `chunk-${i}`);
       const chunkData = fs.readFileSync(chunkPath);
       writeStream.write(chunkData);
     }
@@ -222,11 +271,11 @@ export class LocalFileStorage implements FileManager {
     });
 
     // Cleanup chunks
-    const chunksDir = path.join(this.basePath, '.chunks', uploadId);
-    fs.rmSync(chunksDir, { recursive: true, force: true });
+    fs.rmSync(this.chunksDir(uploadId), { recursive: true, force: true });
 
     state.complete = true;
     this.chunkedUploads.delete(uploadId);
+    this.chunkedUploadTouchedAt.delete(uploadId);
 
     const stat = fs.statSync(filePath);
     return {
@@ -237,12 +286,43 @@ export class LocalFileStorage implements FileManager {
   }
 
   async abortChunkedUpload(uploadId: string): Promise<void> {
-    const chunksDir = path.join(this.basePath, '.chunks', uploadId);
-    if (fs.existsSync(chunksDir)) {
-      fs.rmSync(chunksDir, { recursive: true, force: true });
-    }
-    this.chunkedUploads.delete(uploadId);
+    // Upload ids come back from clients: only ids of sessions this instance created
+    // are honoured, so a crafted id can never select another directory.
+    if (!this.chunkedUploads.has(uploadId)) return;
+    this.removeChunkedUpload(uploadId);
     this.logger.log(`Chunked upload aborted: ${uploadId}`);
+  }
+
+  private removeChunkedUpload(uploadId: string): void {
+    fs.rmSync(this.chunksDir(uploadId), { recursive: true, force: true });
+    this.chunkedUploads.delete(uploadId);
+    this.chunkedUploadTouchedAt.delete(uploadId);
+  }
+
+  private expireChunkedUploads(now = Date.now()): void {
+    for (const [uploadId, touchedAt] of this.chunkedUploadTouchedAt) {
+      if (now - touchedAt <= this.chunkSessionTtlMs) continue;
+      try {
+        this.removeChunkedUpload(uploadId);
+        this.logger.warn(`Expired abandoned chunked upload: ${uploadId}`);
+      } catch (error) {
+        this.logger.warn(`Failed to remove expired chunked upload ${uploadId}: ${String(error)}`);
+      }
+    }
+  }
+
+  /** Chunk directory of a known session, contained in `<basePath>/.chunks`. */
+  private chunksDir(uploadId: string): string {
+    const root = path.resolve(this.basePath, '.chunks');
+    const dir = path.resolve(root, uploadId);
+    if (path.dirname(dir) !== root) {
+      throw new Error(`Invalid upload id: ${uploadId}`);
+    }
+    return dir;
+  }
+
+  private tempPathFor(filePath: string): string {
+    return path.join(path.dirname(filePath), `.${path.basename(filePath)}.${randomUUID()}.tmp`);
   }
 
   /**
@@ -282,6 +362,6 @@ export class LocalFileStorage implements FileManager {
   }
 
   private buildUrl(key: string): string {
-    return this.baseUrl ? `${this.baseUrl}/${key}` : key;
+    return this.baseUrl ? `${this.baseUrl}/${encodeKeyPath(key)}` : key;
   }
 }

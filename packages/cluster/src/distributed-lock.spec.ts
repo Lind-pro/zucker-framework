@@ -176,4 +176,74 @@ describe('RedisDistributedLock', () => {
     expect(lock.isHeldByMe('r1')).toBe(false);
     expect(lock.isHeldByMe('r2')).toBe(false);
   });
+
+  describe('ownership (regression: H1)', () => {
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+    it('a stale withLock finally does not delete a lock taken over by another caller in the same process', async () => {
+      const slow = lock.withLock('shared', 20, async () => {
+        await sleep(50);
+        return 'slow';
+      }, { watchdog: false });
+      await sleep(30); // first lock has expired
+      const tokenB = await lock.acquireToken('shared', 5000);
+      expect(tokenB).not.toBeNull();
+      await expect(slow).resolves.toBe('slow');
+      expect(redis.store.get('zucker:lock:shared')?.value).toBe(tokenB);
+      expect(lock.isHeldByMe('shared')).toBe(true);
+    });
+
+    it('renew does not overwrite a lock now held by another node', async () => {
+      await lock.acquire('r', 10);
+      await sleep(20);
+      const lock2 = new RedisDistributedLock();
+      lock2.configure(redis);
+      expect(await lock2.acquire('r', 5000)).toBe(true);
+      const otherValue = redis.store.get('zucker:lock:r')?.value;
+
+      expect(await lock.renew('r', 5000)).toBe(false);
+      expect(redis.store.get('zucker:lock:r')?.value).toBe(otherValue);
+      expect(lock.isHeldByMe('r')).toBe(false);
+    });
+
+    it('release clears local state even when the lock already expired', async () => {
+      await lock.acquire('r', 10);
+      await sleep(20);
+      await lock.release('r');
+      expect(lock.isHeldByMe('r')).toBe(false);
+    });
+
+    it('release of an expired lock does not delete the new holder', async () => {
+      await lock.acquire('r', 10);
+      await sleep(20);
+      const lock2 = new RedisDistributedLock();
+      lock2.configure(redis);
+      await lock2.acquire('r', 5000);
+      await lock.release('r');
+      expect(await lock2.isLocked('r')).toBe(true);
+      expect(lock2.isHeldByMe('r')).toBe(true);
+    });
+
+    it('withLock watchdog keeps the lock while fn outlives ttl', async () => {
+      const lock2 = new RedisDistributedLock();
+      lock2.configure(redis);
+      let competitor: boolean | undefined;
+      await lock.withLock('r', 40, async () => {
+        await sleep(100);
+        competitor = await lock2.acquire('r', 1000);
+      });
+      expect(competitor).toBe(false);
+      expect(await lock.isLocked('r')).toBe(false);
+    });
+
+    it('withLock aborts the signal when the lock is lost', async () => {
+      let aborted = false;
+      await lock.withLock('r', 60, async (signal) => {
+        redis.store.delete('zucker:lock:r');
+        await sleep(60);
+        aborted = signal.aborted;
+      }, { renewIntervalMs: 10 });
+      expect(aborted).toBe(true);
+    });
+  });
 });

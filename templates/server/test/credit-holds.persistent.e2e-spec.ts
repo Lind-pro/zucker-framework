@@ -63,7 +63,7 @@ run('credit lot wallet holds on actual PostgreSQL', () => {
   });
   beforeEach(async () => { await pool.query(`TRUNCATE "${schema}".credit_holds,"${schema}".credit_account,"${schema}".credit_transaction,"${schema}".credit_lots,"${schema}".credit_operation_receipts,"${schema}".async_jobs CASCADE`); });
   afterEach(async () => { await Promise.all(hosts.splice(0).map(host => host.stop())); });
-  afterAll(async () => { try { await Promise.all([first?.onModuleDestroy(), second?.onModuleDestroy()]); }
+  afterAll(async () => { try { await Promise.all([first?.disconnect(), second?.disconnect()]); }
     finally { if (pool) { try { await pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`); } finally { await pool.end(); } } } });
 
   it('holds an exact partial amount, excludes it from all consumption and confirms only that allocation', async () => {
@@ -226,7 +226,7 @@ const {createRequire}=require('node:module');const {resolve}=require('node:path'
 const {ApplicationDatabase}=load('./src/database.ts');const {createCreditLedger}=load('./src/billing/ledger.ts');
 (async()=>{let text='';for await(const chunk of process.stdin)text+=chunk;const input=JSON.parse(text);const db=new ApplicationDatabase(process.env.TEST_DATABASE_URL);
 try{const result=await db.transaction(tx=>createCreditLedger(db).hold(tx,input));process.stdout.write('EVIDENCE:'+JSON.stringify({pid:process.pid,changed:result.changed,status:result.hold.status,amount:result.hold.amount,activeAmount:result.hold.activeAmount}));}
-finally{await db.onModuleDestroy();}})().catch(()=>{process.stderr.write('Synthetic hold restart failed');process.exitCode=1;});
+finally{await db.disconnect();}})().catch(()=>{process.stderr.write('Synthetic hold restart failed');process.exitCode=1;});
 `);
     try { const child = spawn(process.execPath, [path], { cwd: resolve('.'), env: { ...process.env, TEST_DATABASE_URL: scopedUrl }, stdio: ['pipe', 'pipe', 'pipe'] });
       const output = await new Promise<string>((done, reject) => { let value = ''; const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('Synthetic hold restart timed out')); }, 10000);

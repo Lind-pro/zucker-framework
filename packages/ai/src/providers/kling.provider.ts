@@ -8,6 +8,7 @@ import {
   type MediaTaskResult,
 } from '../media.interface';
 import { providerRequestSignal } from '../abort-signal';
+import { providerHttpError } from '../provider-http-error';
 
 const KLING_API_BASE = 'https://api.klingai.com/v1';
 
@@ -41,9 +42,10 @@ export class KlingProvider implements MediaProvider {
     const baseURL = config.baseURL || KLING_API_BASE;
 
     // 根据 firstFrameUrl 判断是图生视频还是文生视频
+    const encodedTaskId = encodeURIComponent(taskId);
     const endpoint = config.firstFrameUrl
-      ? `${baseURL}/videos/image2video/${taskId}`
-      : `${baseURL}/videos/text2video/${taskId}`;
+      ? `${baseURL}/videos/image2video/${encodedTaskId}`
+      : `${baseURL}/videos/text2video/${encodedTaskId}`;
 
     const response = await fetch(endpoint, {
       headers: {
@@ -54,11 +56,22 @@ export class KlingProvider implements MediaProvider {
     });
 
     if (!response.ok) {
-      throw new Error(`Kling API ${response.status}: ${response.statusText}`);
+      throw await providerHttpError('Kling', response);
     }
 
     const data = (await response.json()) as any;
-    const taskData = data.data;
+    const taskData = data?.data;
+
+    // Kling reports API-level errors (expired/unknown task, auth) as HTTP 200 with a
+    // non-zero `code` and no `data`; treat them as terminal so pollers stop.
+    if ((data?.code !== undefined && data.code !== 0) || !taskData) {
+      return {
+        taskId,
+        status: MediaTaskStatus.FAILED,
+        provider: this.id,
+        error: String(data?.message ?? '可灵任务查询失败'),
+      };
+    }
 
     const statusMap: Record<string, MediaTaskStatus> = {
       submitted: MediaTaskStatus.PENDING,
@@ -67,12 +80,18 @@ export class KlingProvider implements MediaProvider {
       failed: MediaTaskStatus.FAILED,
     };
 
-    const status = statusMap[taskData?.task_status] ?? MediaTaskStatus.PROCESSING;
+    const status = Object.hasOwn(statusMap, taskData.task_status)
+      ? statusMap[taskData.task_status]
+      : MediaTaskStatus.FAILED;
     const result: MediaTaskResult = {
       taskId,
       status,
       provider: this.id,
     };
+    if (!Object.hasOwn(statusMap, taskData.task_status)) {
+      result.error = `可灵返回未知任务状态: ${String(taskData.task_status)}`;
+      return result;
+    }
 
     if (status === MediaTaskStatus.COMPLETED && taskData?.task_result?.videos?.length) {
       const video = taskData.task_result.videos[0];
@@ -167,12 +186,16 @@ export class KlingProvider implements MediaProvider {
     });
 
     if (!response.ok) {
-      const error = await response.text().catch(() => response.statusText);
-      throw new Error(`Kling API ${response.status}: ${error}`);
+      throw await providerHttpError('Kling', response);
     }
 
     const data = (await response.json()) as any;
-    const image = data.data?.images?.[0] ?? data.data?.[0];
+    const images: unknown[] = Array.isArray(data.data?.images)
+      ? data.data.images
+      : Array.isArray(data.data)
+        ? data.data
+        : [];
+    const image = images[0] as any;
 
     return {
       url: image?.url,
@@ -181,7 +204,7 @@ export class KlingProvider implements MediaProvider {
       width: config.width,
       height: config.height,
       format: 'png',
-      cost: 0.02,
+      cost: 0.02 * Math.max(1, images.length || (config.count ?? 1)),
       provider: this.id,
       model: config.modelId || 'kolors',
       durationMs: Date.now() - startTime,
@@ -230,8 +253,7 @@ export class KlingProvider implements MediaProvider {
     });
 
     if (!response.ok) {
-      const error = await response.text().catch(() => response.statusText);
-      throw new Error(`Kling API ${response.status}: ${error}`);
+      throw await providerHttpError('Kling', response);
     }
 
     const data = (await response.json()) as any;

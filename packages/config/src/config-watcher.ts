@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { watch, type FSWatcher, existsSync, statSync } from 'fs';
+import { basename, dirname } from 'path';
 
 /**
  * 配置文件热重载监听器 — 对标 Claude Code changeDetector.ts
@@ -64,20 +65,8 @@ export class ConfigFileWatcher {
       lastModified: this.getModifiedTime(filePath),
     };
 
-    try {
-      entry.watcher = watch(filePath, (eventType) => {
-        this.handleEvent(entry, eventType);
-      });
-
-      entry.watcher.on('error', (err) => {
-        this.logger.warn(`Watch error on ${filePath}: ${err.message}`);
-      });
-    } catch {
-      // 文件不存在时 watch 会抛出，改用目录监听或轮询
-      this.logger.warn(`Cannot watch ${filePath} — file may not exist yet`);
-    }
-
     this.watched.set(filePath, entry);
+    this.attach(entry);
 
     return () => this.unwatch(filePath);
   }
@@ -111,6 +100,31 @@ export class ConfigFileWatcher {
     return [...this.watched.keys()];
   }
 
+  /**
+   * Watch the file itself when it exists, otherwise its directory (filtered to the file
+   * name) until it is created. Re-attached after every rename so an atomic replace
+   * (write temp + rename, Kubernetes ConfigMap swap) keeps being observed.
+   */
+  private attach(entry: WatchedFile): void {
+    if (this.watched.get(entry.path) !== entry) return;
+    entry.watcher?.close();
+    entry.watcher = null;
+    const fileExists = existsSync(entry.path);
+    const target = fileExists ? entry.path : dirname(entry.path);
+    const name = basename(entry.path);
+    try {
+      entry.watcher = watch(target, (eventType, filename) => {
+        if (!fileExists && filename && filename.toString() !== name) return;
+        this.handleEvent(entry, fileExists ? eventType : 'rename');
+      });
+      entry.watcher.on('error', (err) => {
+        this.logger.warn(`Watch error on ${entry.path}: ${err.message}`);
+      });
+    } catch {
+      this.logger.warn(`Cannot watch ${entry.path} — neither the file nor its directory is accessible`);
+    }
+  }
+
   private handleEvent(entry: WatchedFile, eventType: string): void {
     if (eventType === 'rename') {
       // 文件可能被删除或原子替换（delete + create）
@@ -120,9 +134,10 @@ export class ConfigFileWatcher {
         entry.deleteGraceTimer = setTimeout(() => {
           entry.deleteGraceTimer = null;
           if (!existsSync(entry.path)) {
-            // 文件确实被删除了
+            // 文件确实被删除了；改为监听目录，等待重建
             this.logger.warn(`Config file deleted: ${entry.path}`);
           }
+          this.attach(entry);
         }, this.deleteGraceMs);
         return;
       }
@@ -132,6 +147,8 @@ export class ConfigFileWatcher {
         clearTimeout(entry.deleteGraceTimer);
         entry.deleteGraceTimer = null;
       }
+      // The old handle is bound to the replaced inode; watch the new file.
+      this.attach(entry);
     }
 
     // 写入稳定性：debounce，等文件写完

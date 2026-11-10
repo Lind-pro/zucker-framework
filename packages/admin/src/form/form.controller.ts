@@ -28,6 +28,22 @@ import { NotFoundException, classifyError } from '@zucker-framework/core';
 import { JwtAuthGuard, PermissionsGuard, Permissions } from '@zucker-framework/auth';
 import { FormService } from '@zucker-framework/form';
 import type { FormDefinition, FieldDefinition } from '@zucker-framework/form';
+import { adminPage, toAdminWhere, type AdminQueryFilterOptions } from '../query-filter';
+
+/** Filterable form-definition fields (allow-list). */
+export const FORM_FILTER: AdminQueryFilterOptions = { eq: ['id', 'name', 'version'], like: ['id', 'name', 'description'] };
+
+/** Evaluates a `toAdminWhere` result (`field: scalar` or `{ contains, mode: 'insensitive' }`) in memory. */
+function matchesWhere(row: Record<string, unknown>, where: Record<string, unknown>): boolean {
+  return Object.entries(where).every(([field, condition]) => {
+    const value = row[field];
+    if (condition && typeof condition === 'object' && 'contains' in condition) {
+      return typeof value === 'string'
+        && value.toLowerCase().includes(String((condition as { contains: unknown }).contains).toLowerCase());
+    }
+    return value === condition;
+  });
+}
 
 interface QueryRequest {
   pageIndex?: number;
@@ -91,16 +107,12 @@ export class FormController {
   @Post('definition/_query')
   @HttpCode(HttpStatus.OK)
   async queryDefinitions(@Body() body: QueryRequest): Promise<PageResult<FormDefinition>> {
-    const pageIndex = body.pageIndex ?? 0;
-    const pageSize = body.pageSize ?? 10;
+    const { pageIndex, pageSize } = adminPage(body);
+    // Same allow-listed filter semantics as the database-backed admin lists, applied in memory.
+    const where = toAdminWhere(body.filter, FORM_FILTER);
 
     const all = await this.formService.findAll();
-
-    // Client-side filter: apply simple key=value matching from body.filter
-    const filter = body.filter ?? {};
-    const filtered = all.filter((form) =>
-      Object.entries(filter).every(([key, value]) => (form as unknown as Record<string, unknown>)[key] === value),
-    );
+    const filtered = all.filter((form) => matchesWhere(form as unknown as Record<string, unknown>, where));
 
     const total = filtered.length;
     const start = pageIndex * pageSize;

@@ -68,26 +68,40 @@ export class AIConfigService {
     }
     const cacheKey = JSON.stringify([scenario, options.allowDefault !== false]);
     const cached = this.cache.get(cacheKey);
-    if (cached && Date.now() - cached.cachedAt < this.cacheTtl) return cached.config;
+    // Return a copy: callers must not be able to mutate the cached (decrypted) config.
+    if (cached && Date.now() - cached.cachedAt < this.cacheTtl) return { ...cached.config };
 
-    for (const source of this.sources) {
-      let config: AIModelConfig | null;
-      try {
-        config = await source.getScenarioConfig(scenario, options);
-      } catch (error) {
-        if (source.failureMode === 'throw') throw error;
-        this.logger.warn(
-          `AI 配置源 '${source.id}' 读取失败，继续尝试下一个来源: ${error instanceof Error ? error.message : String(error)}`,
+    // Pass 1 asks every source for an explicit scenario mapping; pass 2 (only when defaults
+    // are allowed) asks for defaults. A higher-priority source's default model must not hide
+    // a lower-priority source's explicit mapping for this scenario.
+    const passes: ScenarioConfigOptions[] =
+      options.allowDefault === false
+        ? [{ ...options, allowDefault: false }]
+        : [{ ...options, allowDefault: false }, { ...options, allowDefault: true }];
+    const failedSources = new Set<string>();
+    for (const passOptions of passes) {
+      for (const source of this.sources) {
+        if (failedSources.has(source.id)) continue;
+        let config: AIModelConfig | null;
+        try {
+          config = await source.getScenarioConfig(scenario, passOptions);
+        } catch (error) {
+          if (source.failureMode === 'throw') throw error;
+          failedSources.add(source.id);
+          this.logger.warn(
+            `AI 配置源 '${source.id}' 读取失败，继续尝试下一个来源: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          continue;
+        }
+        if (!config) continue;
+        const resolved = await this.decryptConfig(config);
+        // A fallback chosen because a source failed is not cached, so the next call retries it.
+        if (failedSources.size === 0) this.setCache(cacheKey, resolved);
+        this.logger.log(
+          `AI 配置已加载 [${scenario}] source=${source.id}: ${resolved.providerId ?? 'unknown'} - ${resolved.modelId}`,
         );
-        continue;
+        return { ...resolved };
       }
-      if (!config) continue;
-      const resolved = await this.decryptConfig(config);
-      this.setCache(cacheKey, resolved);
-      this.logger.log(
-        `AI 配置已加载 [${scenario}] source=${source.id}: ${resolved.providerId ?? 'unknown'} - ${resolved.modelId}`,
-      );
-      return resolved;
     }
 
     const sourceIds = this.sources.map((source) => source.id).join(', ') || '(无)';

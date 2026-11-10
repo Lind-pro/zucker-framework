@@ -23,6 +23,17 @@ test('web proxy uses the server API base and accepts a configured base with trai
   }
 });
 
+test('every route gets baseline security headers that forbid framing and sniffing', async () => {
+  const [rule] = await nextConfig.headers();
+  assert.equal(rule.source, '/:path*');
+  const byKey = Object.fromEntries(rule.headers.map(({ key, value }) => [key, value]));
+  assert.match(byKey['Content-Security-Policy'], /frame-ancestors 'none'/);
+  assert.match(byKey['Content-Security-Policy'], /object-src 'none'/);
+  assert.equal(byKey['X-Frame-Options'], 'DENY');
+  assert.equal(byKey['X-Content-Type-Options'], 'nosniff');
+  assert.equal(byKey['Referrer-Policy'], 'strict-origin-when-cross-origin');
+});
+
 test('the shipped PostCSS setup applies the existing local Tailwind theme', async () => {
   assert.deepEqual(postcssConfig, { plugins: { '@tailwindcss/postcss': {} } });
   const from = resolve(import.meta.dirname, 'src/app/globals.css');

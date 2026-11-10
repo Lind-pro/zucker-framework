@@ -122,22 +122,38 @@ export class MailCampaignService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * 回收中断的 campaign：worker 启动时把残留 running 标 failed。
-   * 单 worker 部署模型下，worker 刚启动时没有任何任务在跑，所以 running 必为
-   * 上次进程被 kill（部署/崩溃）遗留的孤儿，标 failed 让前端进度条停转。
+   * 回收中断的 campaign。
+   * A `running` campaign is only an orphan when its BullMQ job is no longer queued or active: with
+   * several worker replicas (or during a rolling deploy) another instance may be sending it right
+   * now. Jobs that BullMQ re-queues after a lost lock are failed by `processCampaign` itself.
    */
   private async reapOrphanedCampaigns(): Promise<void> {
-    const r = await this.campaigns.updateMany({
+    const running = (await this.campaigns.findMany({
       where: { status: 'running' },
+      select: { id: true },
+    })) as Array<{ id: string }>;
+    let reaped = 0;
+    for (const { id } of running) {
+      const job = await this.queue?.getJob(this.options.queueName, id);
+      if (job && (job.status === 'active' || job.status === 'waiting' || job.status === 'delayed')) continue;
+      reaped += await this.markInterrupted(id);
+    }
+    if (reaped > 0) {
+      this.logger.warn(`reaper: ${reaped} 个中断的 running campaign 已标记 failed`);
+    }
+  }
+
+  /** Marks a still-running campaign failed; conditional so a finished campaign is never overwritten. */
+  private async markInterrupted(id: string): Promise<number> {
+    const r = await this.campaigns.updateMany({
+      where: { id, status: 'running' },
       data: {
         status: 'failed',
         error: '进程重启导致任务中断',
         finishedAt: new Date(),
       },
     });
-    if (r.count > 0) {
-      this.logger.warn(`reaper: ${r.count} 个中断的 running campaign 已标记 failed`);
-    }
+    return r.count;
   }
 
   /**
@@ -216,6 +232,13 @@ export class MailCampaignService implements OnModuleInit, OnModuleDestroy {
       data: { status: 'running', startedAt: new Date() },
     });
     if (claim.count === 0) {
+      // The campaign job has a fixed id, so BullMQ only hands it out again after the worker that
+      // ran it lost its lock (crash/kill): a campaign still `running` here was interrupted.
+      const current = await this.campaigns.findUnique({ where: { id: campaignId } });
+      if (current?.status === 'running' && (await this.markInterrupted(campaignId)) > 0) {
+        this.logger.warn(`群发任务在上次执行中断，已标记 failed: ${campaignId}`);
+        return;
+      }
       this.logger.warn(`群发任务无法认领（不存在或非 pending），跳过: ${campaignId}`);
       return;
     }

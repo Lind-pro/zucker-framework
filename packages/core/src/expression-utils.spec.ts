@@ -53,6 +53,39 @@ describe('evaluate', () => {
   });
 });
 
+describe('evaluate isolation', () => {
+  const probes = [
+    'Math["const"+"ructor"]["const"+"ructor"]("return pro"+"cess")()',
+    'Date["const"+"ructor"]("return pro"+"cess")()',
+    'obj["const"+"ructor"]["const"+"ructor"]("return pro"+"cess")()',
+    'fn["const"+"ructor"]("return pro"+"cess")()',
+    'name["const"+"ructor"]["const"+"ructor"]("return pro"+"cess")()',
+  ];
+  it.each(probes)('cannot reach the host process: %s', (expr) => {
+    let result: unknown;
+    try {
+      result = evaluate(expr, { obj: { a: 1 }, fn: () => 1, name: 'x' });
+    } catch {
+      result = undefined;
+    }
+    expect(result).not.toBe(process);
+    expect(typeof (result as { pid?: unknown } | undefined)?.pid).not.toBe('number');
+  });
+
+  it('copies context data (including dates and nested objects) into the sandbox', () => {
+    const when = new Date('2026-01-02T03:04:05Z');
+    expect(evaluate('when.getTime()', { when })).toBe(when.getTime());
+    expect(evaluate('user.roles.length', { user: { roles: ['a', 'b'] } })).toBe(2);
+    expect(evaluate('Math.max(a, b)', { a: 1, b: 3 })).toBe(3);
+  });
+
+  it('bounds runaway microtasks', () => {
+    expect(() =>
+      evaluate('(function f() { return Promise.resolve().then(f); })() && (function () { for (;;) {} })()'),
+    ).toThrow('Failed to evaluate');
+  });
+});
+
 describe('evaluateTemplate', () => {
   it('should replace simple variables', () => {
     const result = evaluateTemplate('Hello, ${name}!', { name: 'World' });

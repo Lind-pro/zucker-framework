@@ -63,8 +63,18 @@ export function mergeConfigs<T extends Record<string, unknown>>(
   return result as T;
 }
 
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== 'object') return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+const UNSAFE_MERGE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
 function deepMerge(target: Record<string, unknown>, source: Record<string, unknown>): void {
   for (const key of Object.keys(source)) {
+    // A JSON layer may carry "__proto__"; merging it would pollute Object.prototype.
+    if (UNSAFE_MERGE_KEYS.has(key)) continue;
     const sourceVal = source[key];
     const targetVal = target[key];
 
@@ -82,6 +92,11 @@ function deepMerge(target: Record<string, unknown>, source: Record<string, unkno
         targetVal as Record<string, unknown>,
         sourceVal as Record<string, unknown>,
       );
+    } else if (isPlainRecord(sourceVal)) {
+      // Copy instead of aliasing so later layers never mutate a caller's object.
+      const copy: Record<string, unknown> = {};
+      deepMerge(copy, sourceVal as Record<string, unknown>);
+      target[key] = copy;
     } else {
       target[key] = sourceVal;
     }

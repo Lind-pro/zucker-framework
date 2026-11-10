@@ -105,7 +105,12 @@ export abstract class AbstractDeviceGateway implements DeviceGateway {
    */
   protected async onSessionConnected(session: DeviceSession): Promise<void> {
     this.sessions.set(session.thingId, session);
-    await this.thingManager.updateState(session.thingId, ThingState.ONLINE);
+    try {
+      await this.thingManager.updateState(session.thingId, ThingState.ONLINE);
+    } catch (err) {
+      if (this.sessions.get(session.thingId) === session) this.sessions.delete(session.thingId);
+      throw err;
+    }
     this.logger.log(`Device connected: ${session.thingId} (session: ${session.sessionId})`);
   }
 
@@ -113,8 +118,14 @@ export abstract class AbstractDeviceGateway implements DeviceGateway {
    * 处理设备断开 — 移除会话并触发离线
    */
   protected async onSessionClosed(session: DeviceSession): Promise<void> {
-    this.sessions.delete(session.thingId);
     session.state = SessionState.CLOSED;
+    // A late close from a replaced (stale) session must not drop the live session
+    // or mark a connected device OFFLINE.
+    if (this.sessions.get(session.thingId) !== session) {
+      this.logger.debug(`Stale session closed: ${session.thingId} (session: ${session.sessionId})`);
+      return;
+    }
+    this.sessions.delete(session.thingId);
     await this.thingManager.updateState(session.thingId, ThingState.OFFLINE);
     this.logger.log(`Device disconnected: ${session.thingId}`);
   }
@@ -139,8 +150,24 @@ export abstract class AbstractDeviceGateway implements DeviceGateway {
     }
 
     for (const msg of messages) {
+      if (msg.thingId !== context.session.thingId &&
+        !(await this.isAuthorizedThing(context.session, msg.thingId))) {
+        this.logger.warn(
+          `Dropped ${msg.messageType} for ${msg.thingId}: not authorized for session ${context.session.thingId}`,
+        );
+        continue;
+      }
       await this.routeMessage(msg);
     }
+  }
+
+  /**
+   * Whether `session` may report for another thing (e.g. a child device behind a gateway
+   * device). Messages are bound to the authenticated session's thing by default; override
+   * to allow verified parent/child relationships.
+   */
+  protected isAuthorizedThing(_session: DeviceSession, _thingId: string): boolean | Promise<boolean> {
+    return false;
   }
 
   /**

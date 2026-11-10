@@ -13,7 +13,11 @@ export { RequestLoggerMiddleware } from './middleware/request-logger.middleware'
 export { TrimStringPipe } from './pipes/trim-string.pipe';
 export { ZuckerCommonModule } from './common.module';
 export { RequestContext, type ContextUser } from './context/request-context';
-export { RequestContextMiddleware } from './context/request-context.middleware';
+export {
+  RequestContextMiddleware,
+  REQUEST_CONTEXT_MIDDLEWARE_OPTIONS,
+  type RequestContextMiddlewareOptions,
+} from './context/request-context.middleware';
 export { buildCorsOptions, mergeCorsConfig, DEFAULT_CORS_CONFIG } from './cors-config';
 export type { CorsPathConfig, CorsProperties } from './cors-config';
 export { SystemVersion, Version, FrameworkVersion } from './system-version';

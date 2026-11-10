@@ -23,3 +23,9 @@ export function notificationFailureCode(error: unknown): string {
     ? error.name
     : 'NOTIFICATION_FAILED';
 }
+
+/** Masks a phone number for logs, keeping only the last four digits. */
+export function maskPhoneNumber(phone: string): string {
+  const digits = phone.replace(/\D/g, '');
+  return digits.length <= 4 ? '****' : `****${digits.slice(-4)}`;
+}

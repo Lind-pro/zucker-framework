@@ -87,7 +87,7 @@ export class BatchCreditLedger<Tx, Source extends string = string> {
     const at = requestedAt ?? new Date();
     const existing = await store.find(tx, command.id);
     if (existing && (existing.accountId !== command.accountId || existing.amount !== command.amount
-      || existing.resourceType !== command.resourceType || existing.resourceId !== command.resourceId
+      || existing.resourceType !== command.resourceType || (existing.resourceId ?? undefined) !== command.resourceId
       || JSON.stringify([...existing.selectedLotIds].sort()) !== JSON.stringify(command.lotIds)))
       throw new CreditLotHoldError('conflict');
     const prepared = await this.holdReceipt(tx, command, 'CREATE', command.amount);
@@ -373,17 +373,40 @@ export class BatchCreditLedger<Tx, Source extends string = string> {
     return total;
   }
 
+  /**
+   * Expire every due lot. The scan is paged by lot id, and each lot runs in its own transaction:
+   * a lot whose account fails (for example a hold that needs migration) does not stop the sweep
+   * for later accounts. Failures are collected and thrown together as an `AggregateError` after
+   * every other lot was processed.
+   */
   async expire(transactionData: Record<string, unknown>, now = new Date()): Promise<number> {
     if (!Number.isFinite(now.getTime())) throw new RangeError('Invalid credit expiry time');
     const expired = { isExpired: false, remainingAmount: { gt: 0 }, expiresAt: { lte: now } };
-    const candidates = await this.options.scanLots().findMany({ where: expired });
+    const pageSize = 500;
+    const errors: unknown[] = [];
     let total = 0;
-    for (const candidate of candidates) {
-      const accountId = candidate[this.options.accountField];
-      if (typeof accountId !== 'string' || !accountId) throw new Error('Credit lot has no account identity');
-      total += await this.options.transaction(tx => this.expireInTransaction(tx,
-        { accountId, lotIds: [candidate.id], transactionData }, now));
+    let after: string | undefined;
+    for (;;) {
+      const candidates = await this.options.scanLots().findMany({
+        where: after === undefined ? expired : { ...expired, id: { gt: after } },
+        orderBy: [{ id: 'asc' }],
+        take: pageSize,
+      });
+      for (const candidate of candidates) {
+        try {
+          const accountId = candidate[this.options.accountField];
+          if (typeof accountId !== 'string' || !accountId) throw new Error(`Credit lot ${candidate.id} has no account identity`);
+          total += await this.options.transaction(tx => this.expireInTransaction(tx,
+            { accountId, lotIds: [candidate.id], transactionData }, now));
+        } catch (error) {
+          errors.push(error);
+        }
+      }
+      if (candidates.length < pageSize) break;
+      after = candidates[candidates.length - 1].id;
     }
+    if (errors.length) throw new AggregateError(errors, `${errors.length} credit lot(s) failed to expire; ${total} credits expired`);
     return total;
   }
+
 }

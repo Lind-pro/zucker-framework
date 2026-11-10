@@ -37,6 +37,17 @@ function cloneTask<TPayload, TResult>(
   };
 }
 
+type ReadyOrderKey = Pick<TaskRecord<unknown, unknown>, 'availableAt' | 'createdAt' | 'id'>;
+
+/** Same ordering as the PostgreSQL repository: availableAt, createdAt, id. */
+function compareReadyOrder(a: ReadyOrderKey, b: ReadyOrderKey): number {
+  return (
+    a.availableAt.getTime() - b.availableAt.getTime() ||
+    a.createdAt.getTime() - b.createdAt.getTime() ||
+    (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+  );
+}
+
 function clampProgress(progress: number): number {
   return Math.max(0, Math.min(100, progress));
 }
@@ -225,12 +236,16 @@ export class InMemoryTaskRepository<
     return [...this.tasks.values()]
       .filter(
         (task) =>
-          task.status === 'QUEUED' &&
+          (task.status === 'QUEUED' || (input.includeRetrying && task.status === 'RETRYING')) &&
           task.availableAt.getTime() <= input.now.getTime() &&
           task.attempt < task.maxAttempts,
       )
-      .sort((a, b) => a.availableAt.getTime() - b.availableAt.getTime())
-      .slice(input.offset ?? 0, (input.offset ?? 0) + input.limit)
+      .sort(compareReadyOrder)
+      .filter((task) => !input.after || compareReadyOrder(task, input.after) > 0)
+      .slice(
+        input.after ? 0 : (input.offset ?? 0),
+        (input.after ? 0 : (input.offset ?? 0)) + input.limit,
+      )
       .map(cloneTask);
   }
 

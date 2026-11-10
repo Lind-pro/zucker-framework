@@ -8,6 +8,8 @@ export {
 export {
   type SandboxOptions,
   type Sandbox,
+  type AsyncSandbox,
+  type SandboxLogLevel,
   createSandbox,
 } from './sandbox';
 

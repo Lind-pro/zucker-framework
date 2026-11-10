@@ -1,11 +1,11 @@
-import { BadRequestException, ConflictException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { randomUUID } from 'node:crypto';
 import { DATABASE_ADAPTER, type DatabaseAdapter, type ModelOperations } from '@zucker-framework/core';
 import {
   DatabaseOneTimeTicketStore, OneTimeTicketService, OneTimeTicketError,
   PersistentSessionService, PersistentSessionRefreshTokenStore, RefreshTokenService, RefreshTokenError,
-  UserService, type UserEntity, type OneTimeTicketRecord, type RefreshTokenPair, type PersistentSession,
+  BcryptEncoder, UserService, type UserEntity, type OneTimeTicketRecord, type RefreshTokenPair, type PersistentSession,
 } from '@zucker-framework/auth';
 
 export const ACCOUNT_MAILER = Symbol('ACCOUNT_MAILER');
@@ -42,6 +42,11 @@ function emailAddress(value: string | undefined): string {
 export class AccountService {
   readonly sessions: PersistentSessionService<AccountSession>;
   private readonly tokens: RefreshTokenService<UserEntity>;
+  private readonly logger = new Logger(AccountService.name);
+  /** Account mail for verification/reset requests runs after the response, so timing does not reveal accounts. */
+  private readonly backgroundMail = new Set<Promise<void>>();
+  /** A hash in the default encoder's format, compared for unknown usernames so both paths cost one hash. */
+  private dummyHash?: Promise<string>;
 
   constructor(
     @Inject(DATABASE_ADAPTER) private readonly db: DatabaseAdapter,
@@ -117,9 +122,19 @@ export class AccountService {
     this.mailer.assertConfigured();
     const rows = await this.db.model('users').findMany({ where: { email }, take: 1 }) as UserEntity[];
     const user = rows[0];
-    if (user?.status && (purpose === 'reset-password' || !user.emailVerified)) await this.deliverTicket(user, purpose);
+    if (user?.status && (purpose === 'reset-password' || !user.emailVerified)) {
+      const delivery = this.deliverTicket(user, purpose)
+        .catch(error => { this.logger.warn(`Account ${purpose} mail failed: ${error instanceof Error ? error.name : 'Error'}`); })
+        .finally(() => { this.backgroundMail.delete(delivery); });
+      this.backgroundMail.add(delivery);
+    }
     return { accepted: true };
   }
+  /** Waits for verification/reset mail started by earlier requests (tests and graceful shutdown). */
+  async settled(): Promise<void> {
+    while (this.backgroundMail.size) await Promise.all([...this.backgroundMail]);
+  }
+  async onApplicationShutdown(): Promise<void> { await this.settled(); }
 
   async consumeEmail(body: unknown, purpose: AccountTicket['purpose']): Promise<{ success: true }> {
     const input = fields(body, purpose === 'reset-password' ? ['ticket', 'password'] : ['ticket']);
@@ -179,6 +194,13 @@ export class AccountService {
   async login(body: unknown): Promise<RefreshTokenPair & { userId: string }> {
     const input = fields(body, ['username', 'password']);
     if (!input.username || !input.password) throw new BadRequestException('Username and password are required');
+    const known = await this.users.findByUsername(input.username);
+    if (!known?.password) {
+      // Same hashing cost as a wrong password for an existing account.
+      this.dummyHash ??= new BcryptEncoder().encode(randomUUID());
+      await new BcryptEncoder().matches(input.password, await this.dummyHash);
+      throw new UnauthorizedException('Invalid credentials or email not verified');
+    }
     const user = await this.users.findByUsernameAndPassword(input.username, input.password);
     if (!user?.status || !user.emailVerified) throw new UnauthorizedException('Invalid credentials or email not verified');
     return this.openSession(user, 'password');

@@ -61,6 +61,10 @@ export function classifyAIError(error: Error): ClassifiedAIError {
   ) {
     return { type: AIErrorType.AUTH, retryable: false };
   }
+  // Exhausted quota/billing is reported as 429 by several providers but will not recover by retrying.
+  if (/insufficient_quota|quota.?exceeded|exceeded your current quota/.test(message)) {
+    return { type: AIErrorType.INVALID_REQUEST, retryable: false };
+  }
   if (status === 429 || /rate.?limit|too many requests/.test(message)) {
     return { type: AIErrorType.RATE_LIMIT, retryable: true };
   }

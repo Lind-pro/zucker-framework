@@ -107,7 +107,7 @@ run('account rate-limit policy', () => {
   });
   afterAll(async () => {
     try {
-      await db?.onModuleDestroy();
+      await db?.disconnect();
     } finally {
       if (pool) {
         try {
@@ -129,8 +129,9 @@ run('account rate-limit policy', () => {
 
   it('keeps login, registration, verification and password reset on the strict per-client budget', async () => {
     const cookie = await signIn('limitsone');
+    // Distinct targets so only the per-client budget is exercised here (per-account budgets are tested below).
     for (let index = 1; index < budget('accounts'); index++)
-      await post('login', { username: 'limitsone', password: 'wrong-password' }).expect(401);
+      await post('login', { username: `limitsmiss${index}`, password: 'wrong-password' }).expect(401);
     const throttled = await post('login', { username: 'limitsone', password });
     expect(throttled.status).toBe(429);
     await post('register', { username: 'limitsnew', email: 'limitsnew@example.invalid', password }).expect(429);
@@ -140,6 +141,15 @@ run('account rate-limit policy', () => {
     await post('reset-password', { ticket: 'synthetic-ticket', password }).expect(429);
     // An existing session keeps browsing while credential endpoints are blocked.
     await pageLoad(cookie);
+  });
+
+  it('throttles repeated failed logins per account, refunds successful ones and leaves other accounts usable', async () => {
+    for (let index = 0; index < budget('login') * 2; index++) await signIn('limitsone');
+    for (let index = 0; index < budget('login'); index++)
+      await post('login', { username: 'limitstwo', password: 'wrong-password' }).expect(401);
+    // Even the correct password is refused until the window passes; the username is normalized.
+    expect((await post('login', { username: ' LimitsTwo ', password })).status).toBe(429);
+    await signIn('limitsone');
   });
 
   it('bounds refresh per session without affecting other sessions', async () => {

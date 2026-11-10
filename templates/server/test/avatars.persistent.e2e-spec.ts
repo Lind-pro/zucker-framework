@@ -121,6 +121,8 @@ run('private account avatars with real PostgreSQL, local objects and image decod
     expect(replay.body).toEqual({ assetId: newer.body.assetId, revision: 2, appliedRevision: 1 });
     expect(replay.body.assetId).not.toBe(first.body.assetId); await content(owner, 1).expect(409);
     expect((await metadata(owner).expect(200)).body).toMatchObject({ assetId: newer.body.assetId, revision: 2 });
+    // The replaced avatar image does not linger in private storage.
+    expect((await assets(owner)).find(row => row.id === first.body.assetId)).toMatchObject({ state: 'deleted' });
   });
 
   it('rejects an older slow upload when a newer concurrent image has already committed', async () => {

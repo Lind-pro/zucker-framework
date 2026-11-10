@@ -13,10 +13,8 @@ import {
   Select,
   Textarea,
   crudLoader,
-  formatDateTime,
   toast,
   useAdminApi,
-  useAdminI18n,
   usePermissionCheck,
   type ResourceTableHandle,
 } from '@zucker-framework/fe-admin';
@@ -41,7 +39,6 @@ interface FormDefinition {
   description?: string;
   version?: number;
   fields?: FieldDefinition[];
-  updatedAt?: string;
 }
 const FIELD_TYPES: FieldDefinition['type'][] = ['string', 'number', 'date', 'boolean', 'enum', 'json', 'array'];
 
@@ -224,7 +221,6 @@ function DefinitionEditor({ definition, onClose, onSaved }: { definition: FormDe
 /** Dynamic form definitions (`/form/definition`). */
 export function FormEnginePage() {
   const api = useAdminApi();
-  const { locale } = useAdminI18n();
   const tx = useText();
   const can = usePermissionCheck();
   const table = useRef<ResourceTableHandle>(null);
@@ -253,6 +249,7 @@ export function FormEnginePage() {
       <ResourceTable<FormDefinition>
         ref={table}
         label={tx('表单定义', 'Form definitions')}
+        // `name$like` is a case-insensitive contains filter (FormController allow-lists id/name/description).
         load={crudLoader(api, '/form/definition', (filters) => (filters.name ? { name$like: filters.name } : {}))}
         rowKey={(row) => row.id}
         filters={[{ name: 'name', label: tx('表单名称', 'Form name') }]}
@@ -261,7 +258,6 @@ export function FormEnginePage() {
           { key: 'id', title: 'ID', field: 'id', hideOnMobile: true },
           { key: 'description', title: tx('描述', 'Description'), field: 'description', hideOnMobile: true },
           { key: 'version', title: tx('版本', 'Version'), field: 'version' },
-          { key: 'updatedAt', title: tx('更新时间', 'Updated'), render: (row) => formatDateTime(row.updatedAt, locale) },
         ]}
         actions={(row) => (
           <>

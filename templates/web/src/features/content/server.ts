@@ -9,13 +9,14 @@ export class ContentUnavailableError extends Error {}
 export async function publicContent<T>(
   resource: string,
   query: Record<string, string> = {},
+  timeoutMs = 8000,
 ): Promise<T> {
   const base = (process.env.API_URL ?? 'http://localhost:4200/api').replace(/\/+$/, '');
   const url = new URL(`${base}/content/public/${resource}`);
   for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value);
   let response: Response;
   try {
-    response = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(8000) });
+    response = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(timeoutMs) });
   } catch {
     throw new ContentUnavailableError('Content is temporarily unavailable');
   }
@@ -29,7 +30,9 @@ export const readEntry = cache((kind: ContentKind, locale: string, slug: string)
 );
 export const readSiteSettings = cache(async (locale: string): Promise<PublicSiteSettings> => {
   try {
-    return await publicContent<PublicSiteSettings>('settings', { locale });
+    // Every route's layout waits for this read; a short timeout keeps first byte fast during an
+    // API outage (the defaults below then apply).
+    return await publicContent<PublicSiteSettings>('settings', { locale }, 3000);
   } catch {
     // Visual defaults keep account routes usable during a content-service outage. Article reads never fall back.
     return {

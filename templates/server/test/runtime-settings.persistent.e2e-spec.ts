@@ -79,7 +79,7 @@ run('encrypted connection settings PostgreSQL and administrator HTTP contracts',
       await tx.query("DELETE FROM operation_logs WHERE module='runtime-settings'");
     }); events.length = 0;
   });
-  afterAll(async () => { try { await app?.close(); await database?.onModuleDestroy(); } finally { if (pool) { try { await pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`); } finally { await pool.end(); } } } });
+  afterAll(async () => { try { await app?.close(); await database?.disconnect(); } finally { if (pool) { try { await pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`); } finally { await pool.end(); } } } });
   it('separates read and write permissions and enforces trusted mutation origins', async () => {
     await request(app.getHttpServer()).get('/api/management/connection-settings').expect(401); await get('', member.token).expect(403);
     const view = await get('', reader.token).expect(200); expect(view.headers['cache-control']).toBe('private, no-store'); expect(view.body.profiles).toHaveLength(16);
@@ -141,7 +141,7 @@ run('encrypted connection settings PostgreSQL and administrator HTTP contracts',
       expect(restarted.get<DeliveryOptions>(DELIVERY_OPTIONS).provider?.isConfigured()).toBe(true);
       expect(() => restarted.get<AccountMailer>(ACCOUNT_MAILER).assertConfigured()).not.toThrow();
       expect(await restarted.get(ConnectionSettingsService).get('payment-creem')).toMatchObject({ storedRevision: 1, appliedRevision: 1, pendingRestart: false });
-    } finally { await restarted.close(); await restartedDatabase.onModuleDestroy(); }
+    } finally { await restarted.close(); await restartedDatabase.disconnect(); }
   });
   it('preserves keep and explicitly clears an environment secret instead of falling back after restart', async () => {
     await put('identity-google', { expectedRevision: 0, values: { GOOGLE_CLIENT_ID: 'saved-client' }, secrets: { GOOGLE_CLIENT_SECRET: { action: 'keep' } } }).expect(200);
@@ -233,7 +233,7 @@ run('encrypted connection settings PostgreSQL and administrator HTTP contracts',
       await request(restarted.getHttpServer()).get('/api/site/public/integrations').expect(200);
       expect(JSON.stringify(active.body)).not.toContain('SYNTHETIC-PRIVATE'); expect(JSON.stringify(active.body)).not.toContain(key); expect(fetch).not.toHaveBeenCalled();
       await request(restarted.getHttpServer()).get('/api/management/connection-settings').expect(401);
-    } finally { await restarted?.close(); await restartedDatabase?.onModuleDestroy(); fetch.mockRestore(); }
+    } finally { await restarted?.close(); await restartedDatabase?.disconnect(); fetch.mockRestore(); }
   });
   it('uses public resolvers to reject invalid enabled IDs, script paths and advertising policy while rejecting private fields', async () => {
     await put('web-analytics', { expectedRevision: 0, values: { SITE_ANALYTICS_ENABLED: 'true', GOOGLE_ANALYTICS_ENABLED: 'true', GOOGLE_ANALYTICS_MEASUREMENT_ID: 'private-not-ga4' } }).expect(400);

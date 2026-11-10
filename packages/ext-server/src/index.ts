@@ -4,6 +4,7 @@ export type {
   ActivateInput,
   ConsumeFreeInput,
   CreateLicensesInput,
+  ExtCheckoutPolicy,
   ExtMailer,
   ExtServerOptions,
   ExtStore,

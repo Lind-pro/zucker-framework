@@ -115,8 +115,8 @@ export class HttpDeviceGateway extends AbstractDeviceGateway {
       async () => { /* HTTP 场景下行通过响应体发送 */ },
     );
 
-    await this.onSessionConnected(session);
     try {
+      await this.onSessionConnected(session);
       await this.handleIncoming({
         payload: body,
         session,

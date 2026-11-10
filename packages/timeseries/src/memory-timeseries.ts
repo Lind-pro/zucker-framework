@@ -60,7 +60,7 @@ class MemoryTimeSeriesService implements TimeSeriesService {
     const allResults: TimeSeriesData[] = [];
     for (const q of queries) {
       const results = await this.query(q);
-      allResults.push(...results);
+      appendAll(allResults, results);
     }
     return allResults.sort((a, b) => a.timestamp - b.timestamp);
   }
@@ -144,14 +144,12 @@ class MemoryTimeSeriesService implements TimeSeriesService {
       const buckets = this.buildBuckets(data, query);
       const results: AggregationResult[] = [];
 
-      for (const [bucketKey, items] of buckets) {
+      for (const { timestamp, tags, items } of buckets.values()) {
         const result: AggregationResult = {
           value: 0,
           values: {},
         };
 
-        // 解析 bucket key
-        const { timestamp, tags } = this.parseBucketKey(bucketKey, query);
         if (timestamp !== undefined) result.timestamp = timestamp;
         if (tags) result.tags = tags;
 
@@ -192,58 +190,36 @@ class MemoryTimeSeriesService implements TimeSeriesService {
     }];
   }
 
+  /**
+   * 按时间桶 / 分组标签分桶。桶键用 JSON 编码的元组，标签值中包含 `|`、`=`、`,`
+   * 时也不会相互冲突；时间戳与标签直接保存在桶中，不再从字符串键反解析。
+   */
   private buildBuckets(
     data: TimeSeriesData[],
     query: AggregationQuery,
-  ): Map<string, TimeSeriesData[]> {
-    const buckets = new Map<string, TimeSeriesData[]>();
+  ): Map<string, { timestamp?: number; tags?: Record<string, string>; items: TimeSeriesData[] }> {
+    const buckets = new Map<string, { timestamp?: number; tags?: Record<string, string>; items: TimeSeriesData[] }>();
 
     for (const d of data) {
-      const parts: string[] = [];
-
-      if (query.interval) {
-        const bucketStart = Math.floor(d.timestamp / query.interval) * query.interval;
-        parts.push(`t=${bucketStart}`);
-      }
-
+      const timestamp = query.interval
+        ? Math.floor(d.timestamp / query.interval) * query.interval
+        : undefined;
+      let tags: Record<string, string> | undefined;
       if (query.groupBy?.length) {
-        for (const tag of query.groupBy) {
-          parts.push(`${tag}=${d.tags[tag] ?? ''}`);
-        }
+        tags = {};
+        for (const tag of query.groupBy) tags[tag] = d.tags[tag] ?? '';
       }
 
-      const key = parts.join('|');
-      const bucket = buckets.get(key) ?? [];
-      bucket.push(d);
-      buckets.set(key, bucket);
+      const key = JSON.stringify([timestamp ?? null, query.groupBy?.map((tag) => d.tags[tag] ?? '') ?? []]);
+      let bucket = buckets.get(key);
+      if (!bucket) {
+        bucket = { timestamp, tags, items: [] };
+        buckets.set(key, bucket);
+      }
+      bucket.items.push(d);
     }
 
     return buckets;
-  }
-
-  private parseBucketKey(
-    key: string,
-    query: AggregationQuery,
-  ): { timestamp?: number; tags?: Record<string, string> } {
-    const parts = key.split('|');
-    let timestamp: number | undefined;
-    const tags: Record<string, string> = {};
-    let hasTags = false;
-
-    for (const part of parts) {
-      const eqIdx = part.indexOf('=');
-      if (eqIdx < 0) continue;
-      const k = part.substring(0, eqIdx);
-      const v = part.substring(eqIdx + 1);
-      if (k === 't') {
-        timestamp = Number(v);
-      } else {
-        tags[k] = v;
-        hasTags = true;
-      }
-    }
-
-    return { timestamp, tags: hasTags ? tags : undefined };
   }
 
   private aggregateByInterval(
@@ -274,22 +250,23 @@ class MemoryTimeSeriesService implements TimeSeriesService {
     data: TimeSeriesData[],
     query: AggregationQuery,
   ): AggregationResult[] {
-    const groups = new Map<string, TimeSeriesData[]>();
+    const groups = new Map<string, { tags: Record<string, string>; items: TimeSeriesData[] }>();
 
     for (const d of data) {
-      const groupKey = query.groupBy!.map(tag => `${tag}=${d.tags[tag] ?? ''}`).join(',');
-      const group = groups.get(groupKey) ?? [];
-      group.push(d);
-      groups.set(groupKey, group);
+      const values = query.groupBy!.map(tag => d.tags[tag] ?? '');
+      const groupKey = JSON.stringify(values);
+      let group = groups.get(groupKey);
+      if (!group) {
+        const tags: Record<string, string> = {};
+        query.groupBy!.forEach((tag, i) => { tags[tag] = values[i]; });
+        group = { tags, items: [] };
+        groups.set(groupKey, group);
+      }
+      group.items.push(d);
     }
 
     const results: AggregationResult[] = [];
-    for (const [key, items] of groups) {
-      const tags: Record<string, string> = {};
-      for (const part of key.split(',')) {
-        const [k, v] = part.split('=');
-        tags[k] = v;
-      }
+    for (const { tags, items } of groups.values()) {
       results.push({
         tags,
         value: this.computeAggregation(items, query.field, query.aggregation),
@@ -336,9 +313,10 @@ class MemoryTimeSeriesService implements TimeSeriesService {
       case AggregationType.AVG:
         return values.reduce((a, b) => a + b, 0) / values.length;
       case AggregationType.MIN:
-        return Math.min(...values);
+        // 不用 Math.min(...values)：大数组展开会超出参数上限并抛 RangeError
+        return values.reduce((a, b) => (b < a ? b : a), values[0]);
       case AggregationType.MAX:
-        return Math.max(...values);
+        return values.reduce((a, b) => (b > a ? b : a), values[0]);
       default:
         return 0;
     }
@@ -420,7 +398,7 @@ export class MemoryTimeSeriesManager implements TimeSeriesManager {
       query: async (query) => {
         const allResults: TimeSeriesData[] = [];
         for (const s of services) {
-          allResults.push(...await s.query(query));
+          appendAll(allResults, await s.query(query));
         }
         allResults.sort((a, b) =>
           query.order === 'desc' ? b.timestamp - a.timestamp : a.timestamp - b.timestamp,
@@ -437,11 +415,16 @@ export class MemoryTimeSeriesManager implements TimeSeriesManager {
       aggregate: async (query) => {
         const allResults: AggregationResult[] = [];
         for (const s of services) {
-          allResults.push(...await s.aggregate(query));
+          appendAll(allResults, await s.aggregate(query));
         }
         return allResults;
       },
     };
     return combinedService;
   }
+}
+
+/** 逐个追加，避免 `push(...items)` 在大数组上超出参数上限 */
+function appendAll<T>(target: T[], items: readonly T[]): void {
+  for (const item of items) target.push(item);
 }

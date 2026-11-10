@@ -4,6 +4,12 @@ import { type DatabaseAdapter, BusinessException, NotFoundException } from '@zuc
 export interface ThirdPartyProfile {
   providerAccountId: string;
   email?: string;
+  /**
+   * True only when the provider asserted that `email` is verified (e.g. Google
+   * `email_verified`, a verified GitHub address). Required before an OAuth login may be
+   * linked to an existing account by email.
+   */
+  emailVerified?: boolean;
   displayName?: string;
   avatarUrl?: string;
   accessToken?: string;
@@ -140,8 +146,15 @@ export class ThirdPartyAccountService {
 
   /**
    * OAuth 登录时查找或创建用户
-   * 如果第三方账号已绑定，返回绑定的用户
-   * 如果未绑定，创建新用户并绑定
+   *
+   * - An already bound provider account returns its user.
+   * - An existing local account is linked by email only when the provider asserted
+   *   `emailVerified === true` AND the local account's email is verified. Otherwise the
+   *   login is refused with `THIRD_PARTY_EMAIL_UNVERIFIED` / `THIRD_PARTY_EMAIL_IN_USE`, so a
+   *   provider account claiming someone else's address cannot take over that account.
+   * - New users get a provider-derived username (never the attacker-controlled display
+   *   name) and `emailVerified` only when the provider verified the address. User and
+   *   binding are created in one transaction; a concurrent first login returns the winner.
    */
   async findOrCreateUser(
     provider: string,
@@ -155,35 +168,50 @@ export class ThirdPartyAccountService {
       return { userId: existing.userId, isNew: false };
     }
 
-    // 如果有 email，尝试通过 email 查找已有用户
+    const emailVerified = profile.emailVerified === true;
     if (profile.email) {
       const userByEmail = await this.db.model(this.usersModel).findUnique({
         where: { email: profile.email },
-      }) as { id: string } | null;
+      }) as { id: string; emailVerified?: boolean | null } | null;
 
       if (userByEmail) {
+        if (!emailVerified) {
+          throw new BusinessException('第三方账号邮箱未验证，请先登录后再绑定', 'THIRD_PARTY_EMAIL_UNVERIFIED', 409);
+        }
+        if (userByEmail.emailVerified !== true) {
+          throw new BusinessException('该邮箱已被未验证的账号使用，请先登录后再绑定', 'THIRD_PARTY_EMAIL_IN_USE', 409);
+        }
         await this.bindAccount(userByEmail.id, provider, profile);
         return { userId: userByEmail.id, isNew: false };
       }
     }
 
-    // 创建新用户
-    const username =
-      profile.displayName ||
-      `${provider}_${profile.providerAccountId}`;
-    const newUser = await this.db.model(this.usersModel).create({
-      data: {
-        username,
-        name: profile.displayName || username,
-        typeId: 'oauth',
-        email: profile.email,
-        emailVerified: !!profile.email,
-        status: true,
-      },
-    }) as { id: string };
-
-    // 绑定第三方账号
-    await this.bindAccount(newUser.id, provider, profile);
+    // 创建新用户（与绑定在同一事务中）
+    const username = `${provider}_${profile.providerAccountId}`;
+    let newUser: { id: string };
+    try {
+      newUser = await this.db.$transaction(async (tx) => {
+        const user = await tx.model(this.usersModel).create({
+          data: {
+            username,
+            name: profile.displayName || username,
+            typeId: 'oauth',
+            email: profile.email,
+            emailVerified: Boolean(profile.email) && emailVerified,
+            status: true,
+          },
+        }) as { id: string };
+        await tx.model(this.bindingsModel).create({ data: {
+          userId: user.id, provider, providerAccountId: profile.providerAccountId, ...this.profileData(profile),
+        } });
+        return user;
+      });
+    } catch (error) {
+      // A concurrent first login may have created the binding; return that user.
+      const raced = await this.findAccount(provider, profile.providerAccountId);
+      if (raced) return { userId: raced.userId, isNew: false };
+      throw error;
+    }
 
     this.logger.log(
       `通过 ${provider} OAuth 创建新用户 ${newUser.id}`,

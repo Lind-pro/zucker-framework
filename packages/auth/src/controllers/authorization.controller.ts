@@ -31,12 +31,19 @@ import {
   createLoginFailedEvent,
 } from '../events';
 import { UnauthorizedException, ValidationException } from '@zucker-framework/core';
+import { randomUUID } from 'node:crypto';
 
 interface TopicEventBusLike {
   publish(topic: string, payload: unknown): Promise<void>;
 }
 
 const TOPIC_EVENT_BUS = 'TOPIC_EVENT_BUS';
+
+const SECRET_FIELDS = new Set(['password', 'newPassword', 'oldPassword', 'confirmPassword', 'decodedPassword']);
+
+function withoutSecrets<T extends Record<string, unknown>>(body: T): T {
+  return Object.fromEntries(Object.entries(body ?? {}).filter(([key]) => !SECRET_FIELDS.has(key))) as T;
+}
 
 export interface LoginRequest {
   username: string;
@@ -67,7 +74,6 @@ export class AuthorizationController {
     @Inject(AUTHENTICATION_MANAGER)
     private readonly authManager: AuthenticationManagerLike,
     @Optional()
-    @Inject('AUTHENTICATION_HOLDER')
     private readonly authHolder?: AuthenticationHolder,
     @Optional()
     @Inject(TOPIC_EVENT_BUS)
@@ -101,6 +107,9 @@ export class AuthorizationController {
   @SetMetadata('ZUCKER_RATE_LIMIT', { limiter: 'login', keyExtractor: '#ip', message: '登录尝试过于频繁，请稍后再试' })
   async login(@Body() body: LoginRequest): Promise<LoginResult> {
     let { username, password } = body;
+    // Only the in-process decode step may see the credential; every other event (which may be
+    // queued or logged by a distributed bus) gets the body without secrets.
+    const safeBody = withoutSecrets(body);
 
     if (!username?.trim()) {
       throw new ValidationException(
@@ -128,7 +137,7 @@ export class AuthorizationController {
       // 2. BeforeEvent — allow listeners to pre-authorize or block
       let preAuthorizedUserId: string | undefined;
       if (this.eventBus) {
-        const beforeEvent = createLoginBeforeEvent(username, body);
+        const beforeEvent = createLoginBeforeEvent(username, safeBody);
         await this.eventBus.publish(AUTH_EVENT_TOPICS.LOGIN_BEFORE, beforeEvent);
         if (beforeEvent.isAuthorized && beforeEvent.authorizedUserId) {
           preAuthorizedUserId = beforeEvent.authorizedUserId;
@@ -154,7 +163,11 @@ export class AuthorizationController {
       }
 
       // 4. Sign in and create token
-      const jwt = this.tokenService['jwtService']?.sign?.({ sub: user.id, username: user.username }) ?? user.id;
+      const jwtService = this.tokenService['jwtService'];
+      if (!jwtService) throw new Error('JwtService is required to issue access tokens');
+      // typ/jti: bind the token to the access-token audience and make each login revocable
+      // on its own even when two logins happen within the same second.
+      const jwt = jwtService.sign({ sub: user.id, username: user.username, typ: 'access', jti: randomUUID() });
       const tokenInfo = await this.tokenService.signIn(
         user.id,
         jwt,
@@ -170,7 +183,7 @@ export class AuthorizationController {
 
       // 5. SuccessEvent
       if (this.eventBus) {
-        const successEvent = createLoginSuccessEvent(user.id, username, result, body);
+        const successEvent = createLoginSuccessEvent(user.id, username, result, safeBody);
         await this.eventBus.publish(AUTH_EVENT_TOPICS.LOGIN_SUCCESS, successEvent);
       }
 
@@ -183,7 +196,7 @@ export class AuthorizationController {
           username,
           errorMsg,
           error instanceof Error ? error : undefined,
-          body,
+          safeBody,
         );
         await this.eventBus.publish(AUTH_EVENT_TOPICS.LOGIN_FAILED, failedEvent);
       }

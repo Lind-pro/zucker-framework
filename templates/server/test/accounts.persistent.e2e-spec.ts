@@ -150,6 +150,7 @@ run('persistent template accounts over HTTP', () => {
     await request(app.getHttpServer()).delete(`/api/authorize/sessions/${bSessions.body[0].id}`)
       .set('Origin', origin).set(bearer(a.login.body.token)).expect(403);
     await post('forgot-password', { email: a.email }).expect(200);
+    await app.get(AccountService).settled();
     const ticket = deliveries.at(-1)!.ticket;
     await post('reset-password', { ticket, password: 'short' }).expect(400);
     const nextPassword = 'NewSynthetic9!';
@@ -175,6 +176,7 @@ run('persistent template accounts over HTTP', () => {
     await post('profile', { name: 'Updated name', locale: 'zh' }).set(bearer(user.login.body.token)).expect(200);
     await post('profile', { emailVerified: true }).set(bearer(user.login.body.token)).expect(400);
     await post('forgot-password', { email: user.email }).expect(200);
+    await app.get(AccountService).settled();
     const oldTicket = deliveries.at(-1)!.ticket;
     await post('password', { currentPassword: 'Incorrect9', password: 'ChangedUser9!' }).set(bearer(user.login.body.token)).expect(401);
     await post('password', { currentPassword: password, password: 'ChangedUser9!' }).set(bearer(user.login.body.token)).expect(200);
@@ -231,6 +233,7 @@ run('persistent template accounts over HTTP', () => {
   it('invalidates sessions and tickets for password writes through the shared user-management service', async () => {
     const user = await verifiedUser('managedpassword');
     await post('forgot-password', { email: user.email }).expect(200);
+    await app.get(AccountService).settled();
     const ticket = deliveries.at(-1)!.ticket;
     await app.get(UserService).updateUser(user.login.body.userId, { password: 'ManagerChanged9!' });
     await request(app.getHttpServer()).get('/api/authorize/me').set(bearer(user.login.body.token)).expect(401);

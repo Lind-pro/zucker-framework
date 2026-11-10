@@ -67,7 +67,7 @@ describe('SVG security policy', () => {
       sanitizeSvgMarkup(
         '<svg onload="run()"><script>run()</script><iframe/><path onclick=x href=javascript:run() /></svg>',
       ),
-    ).toBe('<svg><path /></svg>');
+    ).toBe('<svg><path/></svg>');
   });
 
   it('rejects non-SVG and doctype payloads', () => {

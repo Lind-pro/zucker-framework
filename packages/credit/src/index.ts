@@ -1,6 +1,7 @@
 import type { CreditTransactionType as _CreditTransactionType } from './credit.service';
 
 export { CreditTransactionType, CreditService, CREDIT_EVENT_TOPICS } from './credit.service';
+export type { CreditOperationOptions } from './credit.service';
 export { QuotaReservationService, QuotaReservationError } from './quota-reservation';
 export type {
   QuotaReservationState,

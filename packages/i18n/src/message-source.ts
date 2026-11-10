@@ -2,6 +2,8 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join, extname } from 'node:path';
 import { Logger } from '@nestjs/common';
 
+const LOCALE_TAG = /^[A-Za-z]{2,8}(?:[-_][A-Za-z0-9]{1,8})*$/;
+
 /**
  * MessageSource — i18n message resolution interface.
  */
@@ -62,10 +64,13 @@ export class FileMessageSource implements MessageSource {
       return this.messages.get(locale)!;
     }
 
+    // The locale names a file: only well-formed BCP 47-like tags are accepted (no path traversal),
+    // and misses are not cached so arbitrary caller-supplied values cannot grow the cache.
+    if (!LOCALE_TAG.test(locale)) return {};
+
     const filePath = join(this.basePath, `${locale}.json`);
 
     if (!existsSync(filePath)) {
-      this.messages.set(locale, {});
       return {};
     }
 
@@ -78,7 +83,7 @@ export class FileMessageSource implements MessageSource {
       return flat;
     } catch (err) {
       this.logger.warn(`Failed to load i18n messages for locale "${locale}": ${err instanceof Error ? err.message : String(err)}`);
-      this.messages.set(locale, {});
+      this.messages.set(locale, {}); // the file exists: cache the failure instead of re-reading it
       return {};
     }
   }

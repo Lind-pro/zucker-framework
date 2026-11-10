@@ -79,8 +79,22 @@ export class RedisReplayEventBus<TContext, TPayload> extends ReplayEventBus<TCon
   override stream(context: TContext): Observable<TPayload> {
     const channel = this.options.channel(context);
     const stream = this.channelStream(channel);
-    this.ensureSubscribed(channel);
+    // A retained terminal channel only replays its last event; it needs no Redis subscription.
+    if (!this.isTerminalChannel(channel)) this.ensureSubscribed(channel);
     return stream;
+  }
+
+  protected override onChannelFinished(channel: string): void {
+    this.releaseSubscription(channel);
+  }
+
+  private releaseSubscription(channel: string): void {
+    const subscribed = this.subscriptions.delete(channel);
+    if (subscribed && this.subscriber) {
+      void this.subscriber.unsubscribe(channel).catch(() => {
+        this.redisOptions.logger?.warn('Redis event unsubscribe failed');
+      });
+    }
   }
 
   protected override removeChannel(channel: string): void {
@@ -118,8 +132,16 @@ export class RedisReplayEventBus<TContext, TPayload> extends ReplayEventBus<TCon
     const token = {};
     this.subscriptions.set(channel, token);
     void this.subscriber.subscribe(channel).catch(() => {
-      if (this.subscriptions.get(channel) === token) this.subscriptions.delete(channel);
+      if (this.subscriptions.get(channel) !== token) return;
+      this.subscriptions.delete(channel);
       this.redisOptions.logger?.error('Redis event subscribe failed');
+      // Streams already handed out would never receive data: error them so SSE clients reconnect
+      // (the next stream() call creates a fresh channel and retries the subscription).
+      const entry = this.channels.get(channel);
+      if (entry && !entry.terminal) {
+        this.channels.delete(channel);
+        entry.subject.error(new Error('Progress subscription unavailable'));
+      }
     });
   }
 }

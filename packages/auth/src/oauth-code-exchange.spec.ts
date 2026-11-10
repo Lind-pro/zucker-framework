@@ -49,7 +49,8 @@ describe('OAuth authorization code exchange', () => {
     });
     expect(fetcher).toHaveBeenNthCalledWith(2, 'https://www.googleapis.com/oauth2/v2/userinfo', {
       headers: { Authorization: 'Bearer synthetic-access' },
-      signal,
+      // The caller's signal is combined with the default request timeout.
+      signal: expect.any(AbortSignal),
     });
     expect(profile).toEqual({
       provider: 'google',
@@ -101,7 +102,15 @@ describe('OAuth authorization code exchange', () => {
     const profile = await exchangeGitHubOAuthCode({ ...options, fetcher });
     expect(fetcher).toHaveBeenCalledTimes(3);
     expect(profile.email).toBe('primary@example.test');
-    expect(profile).not.toHaveProperty('emailVerified');
+    // The emails list was fetched, so its verification evidence is reported (unverified here).
+    expect(profile.emailVerified).toBe(false);
+  });
+
+  it('aborts an unresponsive provider after the default timeout', async () => {
+    const fetcher = vi.fn<typeof fetch>((_url, init) => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+    }));
+    await expect(exchangeGitHubOAuthCode({ ...options, fetcher, timeoutMs: 20 })).rejects.toThrow('github OAuth token request failed');
   });
 
   it('rejects HTTP/token/profile failures without returning provider response bodies', async () => {

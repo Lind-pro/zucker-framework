@@ -34,6 +34,13 @@ export interface BullMqWorkerHostOptions {
   prefix?: string;
   onError?: (queueName: string, error: Error) => void;
   workerFactory?: WorkerFactory;
+  /**
+   * Maximum time `onModuleDestroy` waits for active jobs before force-closing
+   * the workers (default 30 000 ms). Jobs still running after the deadline are
+   * abandoned and will be recovered by BullMQ's stalled-job check on another
+   * worker. Use `Infinity` to wait indefinitely (previous behaviour).
+   */
+  shutdownTimeoutMs?: number;
 }
 
 export interface QueueWorkerHealth {
@@ -183,7 +190,27 @@ export class BullMqWorkerHost {
   }
 
   async onModuleDestroy(): Promise<void> {
-    await this.close();
+    if (this.closing) {
+      await this.closing;
+      return;
+    }
+    const timeoutMs = this.options.shutdownTimeoutMs ?? 30_000;
+    if (timeoutMs === Infinity) {
+      await this.close();
+      return;
+    }
+    // Stop fetching and wait (bounded) for active jobs; BullMQ's close() caches its
+    // first call, so the graceful wait must happen before a single close(force) call.
+    const workers = [...this.workers.values()];
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const drained = await Promise.race([
+      Promise.allSettled(workers.map((worker) => worker.pause())).then(() => true),
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(false), Math.max(0, timeoutMs));
+        timer.unref?.();
+      }),
+    ]).finally(() => { if (timer) clearTimeout(timer); });
+    await this.close(!drained);
   }
 
   private requireWorker(queueName: string): Worker {

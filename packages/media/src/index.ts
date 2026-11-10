@@ -6,5 +6,5 @@ export type { ExtractedDocumentText, PdfTextResult, PdfTextParser, DocumentZipEn
 export { ommlToLatex, readDocxDocumentText } from './docx-math';
 export { renderSmilesSvg, RdkitLoadError, InvalidSmilesError } from './rdkit-svg-renderer';
 export type { RdkitSvgModule, RdkitMolecule } from './rdkit-svg-renderer';
-export { renderVegaLiteSvg, VegaSvgRenderError } from './vega-svg-renderer';
-export type { VegaSvgModules, VegaSvgView } from './vega-svg-renderer';
+export { renderVegaLiteSvg, VegaSvgRenderError, DENY_ALL_VEGA_LOADER } from './vega-svg-renderer';
+export type { VegaSvgModules, VegaSvgView, VegaLoader } from './vega-svg-renderer';

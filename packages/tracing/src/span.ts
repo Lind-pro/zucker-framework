@@ -17,6 +17,8 @@ export interface SpanLink {
 
 export interface SpanOptions {
   parentSpanId?: string;
+  /** Use this 16-hex span id (e.g. the id already sent in the response traceparent). */
+  spanId?: string;
   traceId?: string;
   attributes?: Record<string, unknown>;
 }
@@ -39,7 +41,10 @@ export class Span {
   constructor(name: string, options?: SpanOptions) {
     this.name = name;
     this.traceId = options?.traceId ?? randomUUID().replace(/-/g, '');
-    this.spanId = randomUUID().replace(/-/g, '').substring(0, 16);
+    this.spanId =
+      options?.spanId && /^[0-9a-f]{16}$/.test(options.spanId) && !/^0+$/.test(options.spanId)
+        ? options.spanId
+        : randomUUID().replace(/-/g, '').substring(0, 16);
     this.parentSpanId = options?.parentSpanId;
     this.startTime = new Date();
     this.attributes = options?.attributes ?? {};

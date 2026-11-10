@@ -13,8 +13,16 @@ export type {
 export {
   RowLevelIsolation,
   SchemaLevelIsolation,
+  TenantContextRequiredError,
 } from './tenant-isolation';
-export type { TenantIsolationStrategy } from './tenant-isolation';
+export type { TenantIsolationStrategy, RowLevelIsolationOptions } from './tenant-isolation';
+export {
+  TenantResolver,
+  isValidTenantId,
+  DEFAULT_TENANT_ID_PATTERN,
+  TENANT_MODULE_OPTIONS,
+} from './tenant-resolver';
+export type { VerifyTenantFn, TenantRequestLike } from './tenant-resolver';
 
 export { TenantAware, SkipTenant, TENANT_AWARE_KEY, SKIP_TENANT_KEY } from './tenant.decorator';
 

@@ -23,7 +23,8 @@ interface CachedValue {
 export class CacheService implements OnModuleInit, OnModuleDestroy {
   private readonly memory: MemoryCache<CachedValue>;
   private readonly inFlight = new Map<string, Promise<unknown>>();
-  private generation = 0;
+  /** Per-key fence for in-flight loads: a mutation of key A must not discard a load of key B. */
+  private readonly loadFences = new Map<string, { fenced: boolean }>();
   private cleanup?: ReturnType<typeof setInterval>;
   private stopped = false;
 
@@ -67,19 +68,21 @@ export class CacheService implements OnModuleInit, OnModuleDestroy {
   getOrSet<T>(key: string, factory: () => Promise<T>, ttlSeconds = this.defaultTtl): Promise<T> {
     const existing = this.inFlight.get(key);
     if (existing) return existing as Promise<T>;
-    const generation = this.generation;
+    const fence = { fenced: false };
+    this.loadFences.set(key, fence);
     const pending = (async () => {
       const cached = await this.get<T>(key);
       if (cached !== null) return cached;
       const value = await factory();
-      // An explicit mutation or shutdown fences every earlier load. A completed
+      // A mutation of this key or shutdown fences the earlier load. A completed
       // caller still receives its own result, but it cannot repopulate stale data.
-      if (generation === this.generation && !this.stopped) {
-        await this.write(key, value, ttlSeconds, generation);
+      if (!fence.fenced && !this.stopped) {
+        await this.write(key, value, ttlSeconds, fence);
       }
       return value;
     })().finally(() => {
       if (this.inFlight.get(key) === pending) this.inFlight.delete(key);
+      if (this.loadFences.get(key) === fence) this.loadFences.delete(key);
     });
     this.inFlight.set(key, pending);
     return pending;
@@ -89,7 +92,9 @@ export class CacheService implements OnModuleInit, OnModuleDestroy {
     this.invalidate(key);
     // Remove the fallback copy as well, so a later outage cannot resurrect it.
     await this.memory.del(key);
-    if (this.redis.isAvailable()) await this.redis.delete(key);
+    // While Redis is degraded this records the key and deletes it on recovery, so the
+    // old Redis value cannot be served again once reads return to Redis.
+    if (this.options.preferredProvider !== 'memory') await this.redis.delete(key);
   }
 
   async exists(key: string): Promise<boolean> {
@@ -101,8 +106,14 @@ export class CacheService implements OnModuleInit, OnModuleDestroy {
     this.invalidate(key);
     if (this.stopped) return 0;
     if (this.getProviderType() === 'redis') return this.redis.incr(key, ttlSeconds);
-    const value = ((await this.get<number>(key)) ?? 0) + 1;
-    await this.write(key, value, ttlSeconds);
+    // Synchronous read-modify-write: concurrent increments cannot interleave, and the
+    // expiry is fixed by the first increment (as with Redis INCR + EXPIRE on a new key).
+    const now = Date.now();
+    const current = this.memory.getSync(key);
+    const live = current && current.expiresAt > now ? current : undefined;
+    const value = (typeof live?.value === 'number' ? live.value : 0) + 1;
+    const expiresAt = live ? live.expiresAt : now + Math.max(1, ttlSeconds * 1000);
+    this.memory.setSync(key, { value, expiresAt }, Math.max(1, expiresAt - now));
     return value;
   }
 
@@ -118,25 +129,32 @@ export class CacheService implements OnModuleInit, OnModuleDestroy {
     this.stopped = true;
     if (this.cleanup) clearInterval(this.cleanup);
     this.cleanup = undefined;
-    this.generation += 1;
+    for (const fence of this.loadFences.values()) fence.fenced = true;
+    this.loadFences.clear();
     this.inFlight.clear();
     await this.memory.clear();
   }
 
   private get defaultTtl(): number { return this.options.defaultTtlSeconds ?? 3600; }
   private invalidate(key: string): void {
-    this.generation += 1;
+    const fence = this.loadFences.get(key);
+    if (fence) fence.fenced = true;
+    this.loadFences.delete(key);
     this.inFlight.delete(key);
   }
 
-  private async write<T>(key: string, value: T, ttlSeconds: number, generation?: number): Promise<void> {
+  private async write<T>(
+    key: string, value: T, ttlSeconds: number, fence?: { fenced: boolean },
+  ): Promise<void> {
     if (this.stopped) return;
     if (this.getProviderType() === 'redis') {
       await this.memory.del(key);
-      if (this.stopped || (generation !== undefined && generation !== this.generation)) return;
+      if (this.stopped || fence?.fenced) return;
       await this.redis.set(key, value, ttlSeconds);
       return;
     }
+    // The memory copy is now newer than whatever Redis holds for this key.
+    if (this.options.preferredProvider !== 'memory') this.redis.markStale(key);
     await this.memory.set(key, {
       value, expiresAt: Date.now() + ttlSeconds * 1000,
     }, ttlSeconds === 0 ? 1 : ttlSeconds * 1000);

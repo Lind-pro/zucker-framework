@@ -27,6 +27,9 @@ describe('TaskOutboxDispatcher', () => {
       published: 1,
       rescheduled: 0,
       conflicts: 0,
+      deferred: 0,
+      errors: 0,
+      exhausted: 0,
     });
     expect(publisher.publish).toHaveBeenCalledWith(expect.objectContaining({ id: 'event-1' }));
   });
@@ -55,6 +58,9 @@ describe('TaskOutboxDispatcher', () => {
       published: 0,
       rescheduled: 1,
       conflicts: 0,
+      deferred: 0,
+      errors: 0,
+      exhausted: 0,
     });
     await expect(
       repository.claimBatch({
@@ -74,5 +80,96 @@ describe('TaskOutboxDispatcher', () => {
         now: at(6),
       }),
     ).resolves.toHaveLength(1);
+  });
+
+  const appendEvents = async (repository: InMemoryTaskOutboxRepository, count: number) => {
+    for (let index = 1; index <= count; index += 1) {
+      await repository.append({
+        id: `event-${index}`,
+        taskId: `task-${index}`,
+        topic: 'task.created',
+        payload: {},
+        now: at(index - 1),
+      });
+    }
+  };
+
+  it('stops publishing a batch once its shared lease is nearly exhausted', async () => {
+    const repository = new InMemoryTaskOutboxRepository();
+    await appendEvents(repository, 3);
+    let clock = 10;
+    const publisher: TaskQueuePublisher = {
+      publish: vi.fn(async () => {
+        clock += 25; // each publish takes 25s against a 30s lease
+      }),
+    };
+    const dispatcher = new TaskOutboxDispatcher(repository, publisher, {
+      workerId: 'dispatcher-a',
+      createLeaseToken: () => 'lease-a',
+      leaseDurationMs: 30_000,
+      leaseSafetyMarginMs: 5_000,
+      now: () => at(clock),
+    });
+
+    await expect(dispatcher.runOnce()).resolves.toMatchObject({
+      claimed: 3,
+      published: 1,
+      deferred: 2,
+    });
+    expect(publisher.publish).toHaveBeenCalledTimes(1);
+  });
+
+  it('continues the batch when a reschedule throws', async () => {
+    const repository = new InMemoryTaskOutboxRepository();
+    await appendEvents(repository, 2);
+    vi.spyOn(repository, 'reschedule').mockRejectedValueOnce(new Error('db blip'));
+    const publisher: TaskQueuePublisher = {
+      publish: vi
+        .fn()
+        .mockRejectedValueOnce(new Error('redis unavailable'))
+        .mockResolvedValue(undefined),
+    };
+    const dispatcher = new TaskOutboxDispatcher(repository, publisher, {
+      workerId: 'dispatcher-a',
+      createLeaseToken: () => 'lease-a',
+      now: () => at(5),
+    });
+
+    await expect(dispatcher.runOnce()).resolves.toMatchObject({
+      claimed: 2,
+      published: 1,
+      errors: 1,
+    });
+  });
+
+  it('parks a message after maxAttempts and reports it', async () => {
+    const repository = new InMemoryTaskOutboxRepository();
+    await appendEvents(repository, 1);
+    const onExhausted = vi.fn();
+    const publisher: TaskQueuePublisher = {
+      publish: vi.fn().mockRejectedValue(new Error('poison')),
+    };
+    let clock = 1;
+    const dispatcher = new TaskOutboxDispatcher(repository, publisher, {
+      workerId: 'dispatcher-a',
+      createLeaseToken: () => `lease-${clock}`,
+      retryDelayMs: () => 1_000,
+      maxAttempts: 2,
+      exhaustedRetryDelayMs: 600_000,
+      onExhausted,
+      now: () => new Date(at(0).getTime() + clock * 1_000),
+    });
+
+    await expect(dispatcher.runOnce()).resolves.toMatchObject({ rescheduled: 1, exhausted: 0 });
+    clock = 3;
+    await expect(dispatcher.runOnce()).resolves.toMatchObject({ rescheduled: 1, exhausted: 1 });
+    expect(onExhausted).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'event-1', attempt: 2 }),
+      expect.any(Error),
+    );
+    clock = 100;
+    await expect(dispatcher.runOnce()).resolves.toMatchObject({ claimed: 0 });
+    clock = 700;
+    await expect(dispatcher.runOnce()).resolves.toMatchObject({ claimed: 1 });
   });
 });

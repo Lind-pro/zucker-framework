@@ -34,6 +34,18 @@ describe('Stripe typed refund protocol', () => {
     await expect(f.adapter.create({ payment: reference, money: { amount: '15.00', currency: 'USD' }, commandKey: 'remaining' })).resolves.toMatchObject({ state: 'succeeded' });
     expect(f.methods.create).toHaveBeenCalledOnce();
   });
+  it('replays a lost-response full refund for the same command instead of rejecting it (M4)', async () => {
+    const f = fixture();
+    f.methods.refunds.mockResolvedValue({ data: [refund({ id: 're_full', amount: 2900, metadata: { zucker_refund_command: 'full-1' } })], has_more: false });
+    await expect(f.adapter.create({ payment: reference, money: { amount: '29.00', currency: 'USD' }, commandKey: 'full-1' }))
+      .resolves.toMatchObject({ refundId: 're_full', state: 'succeeded', commandKey: 'full-1', money: { amount: '29.00' } });
+    expect(f.methods.create).not.toHaveBeenCalled();
+    // A different command still sees no remaining amount.
+    await expect(f.adapter.create({ payment: reference, money: { amount: '1.00', currency: 'USD' }, commandKey: 'other' })).rejects.toThrow('remaining');
+    // Same key, different amount is a correlation error, never a second refund.
+    await expect(f.adapter.create({ payment: reference, money: { amount: '10.00', currency: 'USD' }, commandKey: 'full-1' })).rejects.toThrow('different amount');
+    expect(f.methods.create).not.toHaveBeenCalled();
+  });
   it('follows invoice-payment pagination and retains the original invoice while binding its real charge', async () => {
     const f = fixture(); f.methods.invoicePayments.mockResolvedValueOnce({ data: [{ ...f.inpay, id: 'inpay_zero', amount_paid: 0 }], has_more: true }).mockResolvedValueOnce({ data: [f.inpay], has_more: false });
     const result = await f.adapter.create({ payment: { ...reference, paymentId: 'in_1', paymentKind: 'invoice' }, money: { amount: '10.00', currency: 'USD' }, commandKey: 'invoice-command' });

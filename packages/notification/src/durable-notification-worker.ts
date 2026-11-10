@@ -30,6 +30,9 @@ export interface DurableNotificationWorkerOptions {
   observer?: NotificationDeliveryObserver;
 }
 
+/** Bounded re-tries of the DELIVERED commit after the provider accepted a message. */
+const DELIVERED_COMMIT_ATTEMPTS = 3;
+
 /** Runs one durable attempt; process loops and concurrency stay application-owned. */
 export class DurableNotificationWorker {
   private readonly classifyError: NotificationDeliveryErrorClassifier;
@@ -85,6 +88,7 @@ export class DurableNotificationWorker {
       input.signal,
     );
 
+    let delivered: { providerMessageId?: string } | undefined;
     try {
       const result = await this.handler.deliver({
         deliveryRef: claim.deliveryRef,
@@ -96,14 +100,7 @@ export class DurableNotificationWorker {
       await heartbeat.stop();
       const heartbeatFailure = heartbeat.failure();
       if (heartbeatFailure !== undefined) throw heartbeatFailure;
-      await this.repository.markDelivered({
-        id: claim.id,
-        leaseToken: claim.leaseToken,
-        providerMessageId: result.providerMessageId,
-        now: this.clock(),
-      });
-      this.observeAttempt(claim, 'DELIVERED', startedAtMs);
-      return { kind: 'delivered', deliveryId: claim.id };
+      delivered = result;
     } catch (error) {
       const deliveryError = heartbeat.failure() ?? error;
       if (deliveryError instanceof NotificationLeaseLostError) {
@@ -169,6 +166,39 @@ export class DurableNotificationWorker {
     } finally {
       await heartbeat.stop();
     }
+    // The provider has accepted the message. A failure to record that is never turned into a
+    // retry (that would send it again on channels without provider idempotency, e.g. SMS/SMTP):
+    // the commit is retried a bounded number of times under the same lease and otherwise the
+    // error propagates and the lease is left to expire (at-least-once delivery semantics).
+    return this.commitDelivered(claim, delivered?.providerMessageId, startedAtMs);
+  }
+
+  private async commitDelivered(
+    claim: NotificationDeliveryClaim,
+    providerMessageId: string | undefined,
+    startedAtMs: number,
+  ): Promise<NotificationWorkerOutcome> {
+    let lastError: unknown;
+    for (let attempt = 0; attempt < DELIVERED_COMMIT_ATTEMPTS; attempt += 1) {
+      try {
+        await this.repository.markDelivered({
+          id: claim.id,
+          leaseToken: claim.leaseToken,
+          providerMessageId,
+          now: this.clock(),
+        });
+        this.observeAttempt(claim, 'DELIVERED', startedAtMs);
+        return { kind: 'delivered', deliveryId: claim.id };
+      } catch (error) {
+        if (error instanceof NotificationLeaseLostError) {
+          this.observeAttempt(claim, 'LOST_LEASE', startedAtMs);
+          return { kind: 'lost-lease', deliveryId: claim.id };
+        }
+        lastError = error;
+      }
+    }
+    this.observeAttempt(claim, 'ERROR', startedAtMs);
+    throw lastError;
   }
 
   private observeAttempt(

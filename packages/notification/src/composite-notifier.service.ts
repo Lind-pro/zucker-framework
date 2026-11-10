@@ -69,13 +69,19 @@ export class CompositeNotifierService {
     const orderedChannels = this.buildChannelOrder(message.channel);
     let lastError: Error | undefined;
     let attempts = 0;
-    const recipients = Array.isArray(message.to) ? message.to : [message.to];
+    let partiallyDelivered = false;
 
     for (const channel of orderedChannels) {
       if (attempts >= this.strategy.maxAttempts) break;
+      // After part of a batch was delivered on one channel, never repeat it on another channel.
+      if (partiallyDelivered && channel !== message.channel) break;
 
       const channelProviders = this.providersByChannel.get(channel);
       if (!channelProviders?.length) continue;
+
+      // Addresses are channel-specific: fall back to another channel only with its own recipients.
+      let pending = channel === message.channel ? message.to : message.fallbackRecipients?.[channel];
+      if (pending === undefined || (Array.isArray(pending) && pending.length === 0)) continue;
 
       for (const provider of channelProviders) {
         if (attempts >= this.strategy.maxAttempts) break;
@@ -86,14 +92,15 @@ export class CompositeNotifierService {
           await this.delay(this.strategy.retryDelayMs);
         }
 
+        const to = recipientLabel(pending);
         try {
-          await provider.send({ ...message, channel, to: recipients.join(',') });
+          await provider.send({ ...message, channel, to: pending });
 
           const result: NotifyResult = {
             success: true,
             timestamp: new Date(),
             channel,
-            to: recipients.join(','),
+            to,
           };
 
           this.logger.log(`Notification sent via ${channel} (attempt ${attempts})`);
@@ -110,9 +117,18 @@ export class CompositeNotifierService {
             error: lastError.message,
             timestamp: new Date(),
             channel,
-            to: recipients.join(','),
+            to,
           };
           this.recordHistory(message, failResult, attempts);
+
+          // A provider that reports which recipients failed gets only those on the next attempt,
+          // so recipients that already received the message are not sent it again.
+          const failed = failedRecipientsOf(err);
+          if (failed) {
+            partiallyDelivered = true;
+            pending = failed;
+            if (failed.length === 0) break;
+          }
         }
       }
     }
@@ -174,4 +190,15 @@ export class CompositeNotifierService {
   private delay(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
+}
+
+function recipientLabel(recipients: string | string[]): string {
+  return Array.isArray(recipients) ? recipients.join(',') : recipients;
+}
+
+/** Reads `failedRecipients` from a partial-delivery error (see `PartialNotificationDeliveryError`). */
+function failedRecipientsOf(error: unknown): string[] | undefined {
+  if (!error || typeof error !== 'object' || !('failedRecipients' in error)) return undefined;
+  const failed = (error as { failedRecipients?: unknown }).failedRecipients;
+  return Array.isArray(failed) && failed.every((item) => typeof item === 'string') ? failed : undefined;
 }

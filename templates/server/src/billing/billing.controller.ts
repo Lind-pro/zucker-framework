@@ -3,6 +3,7 @@ import { Permissions, Public } from '@zucker-framework/auth';
 import { HostedCheckoutError } from '@zucker-framework/payment';
 import { RateLimit, RateLimitGuard } from '@zucker-framework/rate-limiter';
 import { BillingService } from './billing.service';
+import { BILLING_WEBHOOK_LIMITER } from '../rate-limits';
 
 interface BillingRequest {
   user: { id: string };
@@ -68,7 +69,8 @@ export class BillingController {
   }
   @Get('balance')
   balance(@Req() req: BillingRequest) { return this.result(() => this.billing.balance(req.user.id)); }
-  @Post('webhooks/:provider') @Public() @HttpCode(200)
+  /** Provider callbacks get their own generous per-source budget: a sale spike must not 429 behind the user budget. */
+  @Post('webhooks/:provider') @Public() @HttpCode(200) @RateLimit(BILLING_WEBHOOK_LIMITER)
   webhook(@Req() req: BillingRequest, @Param('provider') provider: string) {
     const rawBody = req.rawBody;
     if (!rawBody) throw new BadRequestException('Raw webhook bytes are required');

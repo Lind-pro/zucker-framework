@@ -38,6 +38,14 @@ describe('defineConfig', () => {
 });
 
 describe('mergeConfigs', () => {
+  it('ignores __proto__/constructor keys from parsed layers (no prototype pollution)', () => {
+    const layer = JSON.parse('{"__proto__": {"polluted": true}, "a": {"__proto__": {"polluted2": true}}}');
+    const result = mergeConfigs<Record<string, unknown>>({ a: { b: 1 } }, layer);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    expect(({} as Record<string, unknown>).polluted2).toBeUndefined();
+    expect(result).toEqual({ a: { b: 1 } });
+  });
+
   it('should merge flat objects', () => {
     const result = mergeConfigs<Record<string, unknown>>(
       { a: 1, b: 2 },

@@ -90,10 +90,18 @@ export class DataSourceInterceptor implements NestInterceptor {
     }
 
     return new Observable((subscriber) => {
+      let inner: { unsubscribe(): void } | undefined;
+      let torndown = false;
+      let settle: (() => void) | undefined;
       this.holder
         .useDataSource(options.id, async () => {
           return new Promise<void>((resolve, reject) => {
-            next.handle().subscribe({
+            if (torndown) {
+              resolve();
+              return;
+            }
+            settle = resolve;
+            inner = next.handle().subscribe({
               next: (value) => subscriber.next(value),
               error: (err) => {
                 subscriber.error(err);
@@ -107,6 +115,13 @@ export class DataSourceInterceptor implements NestInterceptor {
           });
         })
         .catch((err) => subscriber.error(err));
+      // 外部取消订阅（请求中止/超时）时同时取消内部订阅
+      return () => {
+        torndown = true;
+        inner?.unsubscribe();
+        // 让 useDataSource 的作用域正常结束，避免悬挂的 Promise
+        settle?.();
+      };
     });
   }
 }

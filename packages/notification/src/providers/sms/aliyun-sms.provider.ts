@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as crypto from 'crypto';
 import type { SmsProvider, SmsMessage, SmsResult } from './sms.interface';
+import { maskPhoneNumber } from '../../delivery-log';
 
 export interface AliyunSmsOptions {
   accessKeyId: string;
@@ -9,6 +10,8 @@ export interface AliyunSmsOptions {
   signName: string;
   /** API 端点，默认 dysmsapi.aliyuncs.com */
   endpoint?: string;
+  /** Request timeout in milliseconds. Default 10000. */
+  timeoutMs?: number;
 }
 
 /**
@@ -42,6 +45,7 @@ export class AliyunSmsProvider implements SmsProvider {
 
       const response = await fetch(`https://${this.endpoint}/?${queryString}`, {
         method: 'GET',
+        signal: AbortSignal.timeout(this.options.timeoutMs ?? 10_000),
       });
 
       const result = await response.json() as { Code?: string; Message?: string; BizId?: string };
@@ -51,7 +55,7 @@ export class AliyunSmsProvider implements SmsProvider {
         return { success: false, error: `${result.Code}: ${result.Message}` };
       }
 
-      this.logger.log(`短信已发送: phone=${message.phone}, templateId=${message.templateId}`);
+      this.logger.log(`短信已发送: phone=${maskPhoneNumber(message.phone)}, templateId=${message.templateId}`);
       return { success: true, messageId: result.BizId };
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));

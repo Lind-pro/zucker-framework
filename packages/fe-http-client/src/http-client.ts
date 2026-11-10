@@ -23,6 +23,30 @@ function generateRequestId(): string {
   return `req-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+const ABSOLUTE_URL = /^([a-z][a-z\d+\-.]*:)?\/\//i;
+
+function originOf(url: string | undefined, base?: string): string | null {
+  if (!url) return null;
+  try {
+    return new URL(url, base).origin;
+  } catch {
+    return null;
+  }
+}
+
+function currentOrigin(): string | undefined {
+  try {
+    return typeof window !== 'undefined' && window.location?.origin && window.location.origin !== 'null'
+      ? window.location.origin
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Refresh result carrying an optional rotated refresh token for the refreshTokenFn flow. */
+type RefreshResult = { access_token: string; refresh_token?: string };
+
 /**
  * 默认配置
  */
@@ -56,6 +80,8 @@ interface InternalConfig {
   refreshTokenFn?: HttpClientConfig['refreshTokenFn'];
   refreshWithCookie?: HttpClientConfig['refreshWithCookie'];
   refreshLockName?: string;
+  trustedOrigins?: readonly string[];
+  acceptResponseToken?: HttpClientConfig['acceptResponseToken'];
   getRefreshToken?: HttpClientConfig['getRefreshToken'];
   setRefreshToken?: HttpClientConfig['setRefreshToken'];
   errorHandler: (error: Error, response?: ApiResponse<unknown>) => void;
@@ -118,8 +144,9 @@ export class HttpClient {
     this.api.interceptors.request.use(
       (config) => {
         // 添加 token 到请求头
+        // Never leak the bearer to an origin other than the API's (M9).
         const token = this.config.getToken();
-        if (token && config.headers) {
+        if (token && config.headers && this.isTrustedUrl(this.resolveRequestUrl(config))) {
           config.headers['Authorization'] = `Bearer ${token}`;
         }
 
@@ -149,19 +176,8 @@ export class HttpClient {
   private setupResponseInterceptor(): void {
     this.api.interceptors.response.use(
       (response: AxiosResponse) => {
-        // 检查响应头中的新token并更新
-        const newToken =
-          response.headers['x-auth-token'] ||
-          response.headers['authorization'] ||
-          response.headers['x-token'];
-
-        if (newToken) {
-          const token =
-            typeof newToken === 'string' && newToken.startsWith('Bearer ')
-              ? newToken.slice(7)
-              : newToken;
-          this.config.setToken(token);
-        }
+        // 检查响应头中的新token并更新（仅可信来源、且会话未变化）
+        this.adoptResponseToken(response);
 
         // Explicit opt-out is needed by consumers of third-party JSON schemas.
         if ((response.config as RequestConfig | undefined)?._rawResponse) return response;
@@ -194,6 +210,12 @@ export class HttpClient {
             if (!success && data.message) {
               // errorHandler 由 request() 的 catch 统一调用，避免重复
               return Promise.reject(new Error(data.message));
+            }
+            // A numeric non-success business status is a failure even without a message.
+            if (!success && typeof data.status === 'number') {
+              return Promise.reject(
+                Object.assign(new Error(`请求失败 (${data.status})`), { code: String(data.status), response }),
+              );
             }
 
             // 直接返回 result 中的业务数据
@@ -241,8 +263,10 @@ export class HttpClient {
               ...extra,
             });
 
+          // A foreign origin's 401/403 says nothing about this application's session.
+          const trustedRequest = !!originalRequest && this.isTrustedUrl(this.resolveRequestUrl(originalRequest));
           // 处理401未授权错误
-          if (status === 401) {
+          if (status === 401 && trustedRequest) {
             // 检查是否是重试的请求，避免无限循环
             const isRetry = (originalRequest as any)?._isRetry;
             if (isRetry) {
@@ -266,7 +290,7 @@ export class HttpClient {
                 const failedAccessToken = this.readBearerToken(originalRequest.headers);
                 const tokens = await this.refreshAccessToken(refreshFn, failedAccessToken);
                 if (originalRequest.signal?.aborted) throw new axios.CanceledError();
-                this.config.setToken(tokens.access_token);
+                // refreshWithCrossTabLock already stored the token after re-checking the session.
                 originalRequest.headers = originalRequest.headers || {};
                 originalRequest.headers['Authorization'] = `Bearer ${tokens.access_token}`;
                 (originalRequest as any)._isRetry = true;
@@ -301,7 +325,7 @@ export class HttpClient {
             return Promise.reject(attachStatus(new Error(errorMsg), { _authHandled: true }));
           }
           // 处理403禁止访问错误
-          else if (status === 403) {
+          else if (status === 403 && trustedRequest) {
             this.config.onForbidden();
             return Promise.reject(attachStatus(new Error(errorMsg), { _authHandled: true }));
           } else {
@@ -324,7 +348,7 @@ export class HttpClient {
     );
   }
 
-  private resolveRefresh(): InternalConfig['refreshWithCookie'] {
+  private resolveRefresh(): (() => Promise<RefreshResult>) | undefined {
     if (this.config.refreshWithCookie) return this.config.refreshWithCookie;
     const refresh = this.config.refreshTokenFn;
     if (!refresh || !this.config.getRefreshToken?.()) return undefined;
@@ -332,14 +356,59 @@ export class HttpClient {
       // Re-read after acquiring the cross-tab lock: another caller may have rotated it.
       const token = this.config.getRefreshToken?.();
       if (!token) throw new Error('Refresh token unavailable');
-      const result = await refresh(token);
-      this.config.setRefreshToken?.(result.refresh_token);
-      return result;
+      // The rotated refresh token is stored only after the session re-check below.
+      return refresh(token);
     };
   }
 
+  /** Resolve a request's target the way axios combines baseURL and url (no query string). */
+  private resolveRequestUrl(config: { url?: string; baseURL?: string }): string {
+    const url = config.url ?? '';
+    if (ABSOLUTE_URL.test(url)) return url;
+    const base = config.baseURL ?? this.config.baseURL;
+    if (!base) return url;
+    return url ? `${base.replace(/\/+$/, '')}/${url.replace(/^\/+/, '')}` : base;
+  }
+
+  /** Whether a fully resolved request URL targets the API (or an explicitly trusted) origin. */
+  private isTrustedUrl(url: string): boolean {
+    if (!ABSOLUTE_URL.test(url)) return true; // relative: same origin as the page / baseURL path
+    const here = currentOrigin();
+    const origin = originOf(url, here);
+    if (!origin) return false;
+    if (origin === here) return true;
+    const trusted = [this.config.baseURL, this.config.streamBaseURL, ...(this.config.trustedOrigins ?? [])];
+    return trusted.some((candidate) => {
+      if (!candidate || !ABSOLUTE_URL.test(candidate)) return false;
+      return originOf(candidate, here) === origin;
+    });
+  }
+
+  /** Adopt a token sent in a response header only when it cannot move the tab to another session. */
+  private adoptResponseToken(response: AxiosResponse): void {
+    const accept = this.config.acceptResponseToken ?? true;
+    if (accept === false) return;
+    const raw =
+      response.headers['x-auth-token'] ||
+      response.headers['authorization'] ||
+      response.headers['x-token'];
+    if (typeof raw !== 'string' || !raw) return;
+    const request = response.config;
+    if (!request || request.signal?.aborted) return;
+    const url = this.resolveRequestUrl(request);
+    if (!this.isTrustedUrl(url)) return;
+    // The request must have been sent with the credential that is still current: a late
+    // response after sign-out or an account switch must not restore the old session.
+    const sent = this.readBearerToken(request.headers) ?? null;
+    if (sent !== (this.config.getToken() ?? null)) return;
+    const token = raw.startsWith('Bearer ') ? raw.slice(7) : raw;
+    if (!token || token === sent) return;
+    if (typeof accept === 'function' && !accept(token, { url })) return;
+    this.config.setToken(token);
+  }
+
   private refreshAccessToken(
-    refresh: NonNullable<InternalConfig['refreshWithCookie']>,
+    refresh: () => Promise<RefreshResult>,
     failedAccessToken?: string,
   ): Promise<{ access_token: string }> {
     if (!this.refreshPromise) {
@@ -351,7 +420,7 @@ export class HttpClient {
   }
 
   private async refreshWithCrossTabLock(
-    refresh: NonNullable<InternalConfig['refreshWithCookie']>,
+    refresh: () => Promise<RefreshResult>,
     failedAccessToken?: string,
   ): Promise<{ access_token: string }> {
     const execute = async () => {
@@ -361,8 +430,16 @@ export class HttpClient {
       }
 
       const tokens = await refresh();
+      // Re-check the session after the (possibly long) refresh: a sign-out or account switch
+      // that happened meanwhile must not be overwritten with the refreshed credentials.
+      const afterRefresh = this.config.getToken();
+      if ((afterRefresh ?? null) !== (currentAccessToken ?? null)) {
+        if (afterRefresh) return { access_token: afterRefresh };
+        throw new axios.CanceledError('Session ended during token refresh');
+      }
       this.config.setToken(tokens.access_token);
-      return tokens;
+      if (tokens.refresh_token) this.config.setRefreshToken?.(tokens.refresh_token);
+      return { access_token: tokens.access_token };
     };
 
     if (typeof navigator === 'undefined' || !navigator.locks) {
@@ -653,9 +730,10 @@ export class HttpClient {
       ...headers,
     };
 
-    // 添加 Authorization
+    // 添加 Authorization（仅发往 API / 可信来源）
+    const trustedRequest = this.isTrustedUrl(url);
     const token = this.config.getToken();
-    if (token) {
+    if (token && trustedRequest) {
       requestHeaders['Authorization'] = `Bearer ${token}`;
     }
 
@@ -678,19 +756,22 @@ export class HttpClient {
     }
 
     // 设置超时和 abort signal
-    let controller: AbortController | undefined;
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
     let signal: AbortSignal | undefined;
 
-    if (externalSignal) {
+    if (externalSignal && !timeout) {
       // 使用外部提供的 signal
       signal = externalSignal;
     } else {
-      // 创建内部 controller
-      controller = new AbortController();
-      signal = controller.signal;
+      // 创建内部 controller；同时跟随外部 signal，使 timeout 与调用方取消可以并存
+      const internal = new AbortController();
+      signal = internal.signal;
+      if (externalSignal) {
+        if (externalSignal.aborted) internal.abort(externalSignal.reason);
+        else externalSignal.addEventListener('abort', () => internal.abort(externalSignal.reason), { once: true });
+      }
       if (timeout) {
-        timeoutId = setTimeout(() => controller!.abort(), timeout);
+        timeoutId = setTimeout(() => internal.abort(new DOMException('Timeout', 'AbortError')), timeout);
       }
     }
 
@@ -705,8 +786,8 @@ export class HttpClient {
 
       if (timeoutId) clearTimeout(timeoutId);
 
-      // 处理 401 未授权
-      if (response.status === 401) {
+      // 处理 401 未授权（外部来源的 401 与本应用会话无关）
+      if (response.status === 401 && trustedRequest) {
         const refreshFn = this.resolveRefresh();
 
         // 尝试刷新 token
@@ -714,12 +795,12 @@ export class HttpClient {
           try {
             const tokens = await awaitWithSignal(this.refreshAccessToken(refreshFn, token ?? undefined), signal);
             externalSignal?.throwIfAborted();
-            this.config.setToken(tokens.access_token);
 
             requestHeaders['Authorization'] = `Bearer ${tokens.access_token}`;
 
           } catch (error) {
             if (externalSignal?.aborted) throw externalSignal.reason ?? error;
+            if (axios.isCancel(error)) throw error;
             // 如果已经处理过（例如 retryResponse.status === 401 的 throw 被捕获），直接向上抛出避免重复处理
             if ((error as { _authHandled?: boolean } | null)?._authHandled) throw error;
             const failure = normalizeRefreshFailure(error);
@@ -747,7 +828,7 @@ export class HttpClient {
       }
 
       // 处理 403 禁止访问
-      if (response.status === 403) {
+      if (response.status === 403 && trustedRequest) {
         this.config.onForbidden();
         throw Object.assign(new Error('没有访问权限'), { _authHandled: true });
       }
@@ -772,6 +853,14 @@ export class HttpClient {
       // Caller cancellation is not a timeout or lost authentication, including
       // aborts while awaiting a shared refresh. Never show a global failure toast.
       if (externalSignal?.aborted) throw externalSignal.reason ?? error;
+      // The session ended while refreshing: an expected cancellation, not a failure toast.
+      if (axios.isCancel(error)) throw error;
+      // DOMException is not always an Error instance of this realm (e.g. jsdom).
+      if ((error as { name?: unknown } | null)?.name === 'AbortError') {
+        const timeoutError = new Error('请求超时');
+        this.config.errorHandler(timeoutError);
+        throw timeoutError;
+      }
       if (error instanceof Error) {
         if (error.name === 'AbortError') {
           const timeoutError = new Error('请求超时');

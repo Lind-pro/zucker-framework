@@ -1,6 +1,7 @@
 import { Inject, Injectable, Optional, type NestMiddleware } from '@nestjs/common';
 import { getCorrelationId } from './correlation-id';
 import { AccessLogService, type AccessLogCompletionResponse } from './persistent-logs';
+import { RejectedLogRateLimiter, type RejectedLogRateLimitOptions } from './rejected-log-limiter';
 
 export interface HttpRequestObservation {
   method: string;
@@ -26,6 +27,12 @@ export interface HttpRequestObservationOptions {
   /** Retain a detail for unannotated slow responses. Requires persistence. */
   slowRequestMs?: number;
   retainClientIp?: boolean;
+  /**
+   * Bounds persisted access-log details for rejected/slow responses per status + client and in
+   * total per window (defaults: 20 per key, 300 total, 60 s). Metrics via onComplete are never
+   * sampled. `false` persists every detail (previous behaviour).
+   */
+  detailRateLimit?: RejectedLogRateLimitOptions | false;
 }
 
 export const HTTP_REQUEST_OBSERVATION_OPTIONS = Symbol('HTTP_REQUEST_OBSERVATION_OPTIONS');
@@ -60,11 +67,17 @@ interface ResponseData {
 /** Observes once at HTTP completion, including guard failures, 404s and streaming responses. */
 @Injectable()
 export class HttpRequestObservationMiddleware implements NestMiddleware {
+  private readonly limiter?: RejectedLogRateLimiter;
+
   constructor(
     @Inject(HTTP_REQUEST_OBSERVATION_OPTIONS)
     private readonly options: HttpRequestObservationOptions,
     @Optional() @Inject(AccessLogService) private readonly logs?: AccessLogService,
-  ) {}
+  ) {
+    this.limiter = options.detailRateLimit === false
+      ? undefined
+      : new RejectedLogRateLimiter(options.detailRateLimit);
+  }
 
   use(request: RequestData, response: ResponseData, next: () => void): void {
     if (
@@ -120,10 +133,18 @@ export class HttpRequestObservationMiddleware implements NestMiddleware {
         .then(() => this.options.onComplete(observation))
         .then((persisted) => acknowledge(persisted === true), () => acknowledge(false))
         .finally(() => clearTimeout(timeout));
-      if (this.logs && !request[HTTP_ACCESS_CAPTURED] && (
+      const wantsDetail = this.logs && !request[HTTP_ACCESS_CAPTURED] && (
         observation.statusCode >= 400 ||
         (this.options.slowRequestMs !== undefined && observation.durationMs >= this.options.slowRequestMs)
-      )) {
+      );
+      if (
+        wantsDetail &&
+        this.limiter &&
+        !this.limiter.allow(observation.statusCode, request.ip || request.socket?.remoteAddress)
+      ) {
+        // Suppressed by the rate limit: also stop later rejected-request writers for this request.
+        request[HTTP_ACCESS_CAPTURED] = true;
+      } else if (this.logs && wantsDetail) {
         request[HTTP_ACCESS_CAPTURED] = true;
         const userAgent = request.headers?.['user-agent'];
         void this.logs.log({

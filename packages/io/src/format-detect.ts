@@ -59,14 +59,17 @@ export function detectFormatFromBuffer(buffer: Buffer): FileFormat | null {
     return 'xlsx';
   }
 
-  // Try to detect JSON vs CSV from first non-whitespace character
-  const text = buffer.slice(0, Math.min(buffer.length, 1024)).toString('utf-8').trimStart();
+  // Try to detect JSON vs CSV from first non-whitespace character (UTF-8 BOM ignored)
+  const head = buffer.subarray(0, Math.min(buffer.length, 1024));
+  const text = head.toString('utf-8').replace(/^\uFEFF/, '').trimStart();
   if (text.startsWith('[') || text.startsWith('{')) {
     return 'json';
   }
 
-  // Default to CSV if it looks like text
-  if (/^[\x20-\x7E\r\n\t]/.test(text)) {
+  // Default to CSV if it looks like text: printable ASCII or valid UTF-8 (e.g. a Chinese header).
+  // A replacement character is tolerated only at the very end, where the sample may cut a character.
+  const body = text.replace(/\uFFFD{1,3}$/, '');
+  if (body && !/[\x00-\x08\x0E-\x1F\uFFFD]/.test(body)) {
     return 'csv';
   }
 

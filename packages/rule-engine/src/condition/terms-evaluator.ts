@@ -95,8 +95,11 @@ export class TermsEvaluator {
       }
 
       const fieldValue = getNestedValue(data, term.column);
-      const operator = OPERATORS[term.termType];
-      if (!operator) {
+      // Own-property lookup only: 'toString', '__proto__' etc. must not resolve to inherited functions.
+      const operator = Object.prototype.hasOwnProperty.call(OPERATORS, term.termType)
+        ? OPERATORS[term.termType]
+        : undefined;
+      if (typeof operator !== 'function') {
         throw new Error(`Unknown term type: ${term.termType}`);
       }
       return operator(fieldValue, term.value);

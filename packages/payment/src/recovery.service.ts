@@ -49,14 +49,17 @@ export interface RecoveryOptions {
   maxAttempts?: number;
   /** 重试链接有效期（小时，默认 48） */
   retryLinkExpireHours?: number;
-  /** 前端基础 URL（用于默认重试链接生成） */
+  /**
+   * 前端基础 URL（用于默认重试链接生成）。未配置且未注入 RECOVERY_URL_GENERATOR 时不发送挽回邮件，
+   * 绝不把客户引向 localhost。
+   */
   frontendUrl?: string;
 }
 
 const DEFAULT_OPTIONS: Required<RecoveryOptions> = {
   maxAttempts: 3,
   retryLinkExpireHours: 48,
-  frontendUrl: 'http://localhost:3000',
+  frontendUrl: '',
 };
 
 /**
@@ -199,7 +202,8 @@ export class PaymentRecoveryService {
     if (this.urlGenerator) {
       return this.urlGenerator.generateRetryUrl(order);
     }
-    return `${this.options.frontendUrl}/payment/retry/${order.id}`;
+    if (!this.options.frontendUrl) return null;
+    return `${this.options.frontendUrl.replace(/\/+$/, '')}/payment/retry/${encodeURIComponent(order.id)}`;
   }
 }
 
@@ -216,6 +220,8 @@ export function friendlyErrorReason(errorCode?: string, errorMessage?: string): 
   };
 
   if (errorCode && codeMap[errorCode]) return codeMap[errorCode];
-  if (errorMessage) return errorMessage;
+  // Raw provider messages (errorMessage) are never put into customer mail: they can carry
+  // internal identifiers or English provider jargon. Log them on the caller side instead.
+  void errorMessage;
   return '支付过程中出现问题，请重试或更换支付方式';
 }

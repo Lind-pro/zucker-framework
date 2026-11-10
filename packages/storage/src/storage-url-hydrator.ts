@@ -4,6 +4,8 @@ export interface StorageUrlHydrationOptions {
   getDownloadUrl: (key: string) => Promise<string>;
   storageKeyField: string;
   urlFields: readonly string[];
+  /** Maximum nesting depth of arrays/records. Default 64; deeper graphs are rejected. */
+  maxDepth?: number;
 }
 
 type UnknownRecord = Record<string, unknown>;
@@ -24,11 +26,26 @@ export async function hydrateStorageUrls<T>(
   options: StorageUrlHydrationOptions,
 ): Promise<T> {
   const signedUrls = new Map<string, Promise<string>>();
-  const hydrate = async (current: unknown): Promise<unknown> => {
-    if (Array.isArray(current)) return Promise.all(current.map(hydrate));
+  const maxDepth = options.maxDepth ?? 64;
+  // Containers on the current path (not merely visited: shared subgraphs are fine).
+  type Path = { container: object; parent?: Path; depth: number };
+  const enter = (container: object, parent: Path | undefined): Path => {
+    const depth = parent ? parent.depth + 1 : 0;
+    if (depth > maxDepth) throw new Error(`Storage URL hydration exceeded depth ${maxDepth}`);
+    for (let node = parent; node; node = node.parent) {
+      if (node.container === container) throw new Error('Storage URL hydration does not support cyclic graphs');
+    }
+    return { container, parent, depth };
+  };
+  const hydrate = async (current: unknown, parent?: Path): Promise<unknown> => {
+    if (Array.isArray(current)) {
+      const path = enter(current, parent);
+      return Promise.all(current.map((item) => hydrate(item, path)));
+    }
     if (!isPlainRecord(current)) return current;
+    const path = enter(current, parent);
     const entries = await Promise.all(
-      Object.entries(current).map(async ([key, nested]) => [key, await hydrate(nested)] as const),
+      Object.entries(current).map(async ([key, nested]) => [key, await hydrate(nested, path)] as const),
     );
     const result: UnknownRecord = Object.fromEntries(entries);
     const key = result[options.storageKeyField];

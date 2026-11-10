@@ -7,7 +7,6 @@ import {
   useRef,
   useState,
   type FormEvent,
-  type KeyboardEvent,
   type ReactNode,
   type Ref,
 } from 'react';
@@ -100,12 +99,21 @@ export function DataTable<T>({
     if (kept.length !== selectedKeys.length) selectionChange.current?.(kept);
     // rowKey is a pure accessor; rows identity changes on every load.
   }, [rows, selectedKeys, loading]);
-  const activate = (row: T) => (event: KeyboardEvent<HTMLElement>) => {
-    // Only the row itself; keys pressed inside its buttons or inputs keep their own behavior.
-    if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return;
-    event.preventDefault();
-    onRowClick?.(row);
-  };
+  // Clicking a row is a pointer convenience. Keyboard and screen-reader users get a real, named
+  // button (visually hidden until focused) instead of a focusable <tr>/<dl> with no role or name.
+  const openButton = (row: T, key: string) =>
+    onRowClick ? (
+      <button
+        type="button"
+        className="sr-only focus-visible:not-sr-only focus-visible:mb-1 focus-visible:inline-flex focus-visible:rounded-md focus-visible:px-2 focus-visible:py-1 focus-visible:text-xs focus-visible:outline-2 focus-visible:outline-ring"
+        onClick={(event) => {
+          event.stopPropagation();
+          onRowClick(row);
+        }}
+      >
+        {t('common.openRow', { id: key })}
+      </button>
+    ) : null;
   const selectable = selection ? rows.filter((row) => !selection.isDisabled?.(row)) : [];
   const allSelected = selectable.length > 0 && selectable.every((row) => selected.has(rowKey(row)));
   const someSelected = selectable.some((row) => selected.has(rowKey(row)));
@@ -180,8 +188,6 @@ export function DataTable<T>({
                         onRowClick && 'cursor-pointer hover:bg-muted/50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring',
                       )}
                       onClick={onRowClick ? () => onRowClick(row) : undefined}
-                      tabIndex={onRowClick ? 0 : undefined}
-                      onKeyDown={onRowClick ? activate(row) : undefined}
                     >
                       {selection && (
                         <td className="px-3 py-2.5" onClick={(event) => event.stopPropagation()}>
@@ -193,12 +199,13 @@ export function DataTable<T>({
                           />
                         </td>
                       )}
-                      {columns.map((column) => (
+                      {columns.map((column, position) => (
                         <td
                           key={column.key}
                           className={cn('px-3 py-2.5 break-words [overflow-wrap:anywhere]', column.className)}
                           style={{ textAlign: column.align }}
                         >
+                          {position === 0 && openButton(row, key)}
                           {cellValue(column, row, index)}
                         </td>
                       ))}
@@ -233,12 +240,10 @@ export function DataTable<T>({
                       {t('common.selectRow', { id: key })}
                     </label>
                   )}
+                  {openButton(row, key)}
                   <dl
-                    className={cn('space-y-2', onRowClick && 'cursor-pointer rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring')}
+                    className={cn('space-y-2', onRowClick && 'cursor-pointer')}
                     onClick={onRowClick ? () => onRowClick(row) : undefined}
-                    role={onRowClick ? 'button' : undefined}
-                    tabIndex={onRowClick ? 0 : undefined}
-                    onKeyDown={onRowClick ? activate(row) : undefined}
                   >
                     {visible.map((column, position) => (
                       <div key={column.key} className="min-w-0">
@@ -278,17 +283,21 @@ export function Pagination({
         {t('common.pageStatus', { page, pages, total })}
       </span>
       <div className="flex items-center gap-2">
-        <label htmlFor={id} className="sr-only">
-          {t('common.pageSize')}
-        </label>
-        <Select
-          id={id}
-          className="h-8 w-auto"
-          disabled={disabled}
-          value={String(pageSize)}
-          options={pageSizeOptions.map((size) => ({ value: String(size), label: String(size) }))}
-          onChange={(event) => onChange(1, Number(event.target.value))}
-        />
+        {pageSizeOptions.length > 1 && (
+          <>
+            <label htmlFor={id} className="sr-only">
+              {t('common.pageSize')}
+            </label>
+            <Select
+              id={id}
+              className="h-8 w-auto"
+              disabled={disabled}
+              value={String(pageSize)}
+              options={pageSizeOptions.map((size) => ({ value: String(size), label: String(size) }))}
+              onChange={(event) => onChange(1, Number(event.target.value))}
+            />
+          </>
+        )}
         <Button size="icon" aria-label={t('common.previousPage')} disabled={disabled || page <= 1} onClick={() => onChange(page - 1, pageSize)}>
           <ChevronLeft />
         </Button>
@@ -416,8 +425,9 @@ export interface ServerTable<T> {
 }
 
 /**
- * Server-side pagination state. Each load is aborted when superseded or unmounted; a failure keeps
- * the previous rows visible behind an explicit error instead of clearing them to an empty list.
+ * Server-side pagination state. Each load is aborted when superseded or unmounted. A failed reload of
+ * the same query keeps the previous rows visible behind an explicit error; a new filter or new `deps`
+ * clears them first, so rows of another query are never shown under that error.
  */
 export function useServerTable<T>(
   load: PageLoader<T>,
@@ -440,6 +450,9 @@ export function useServerTable<T>(
   if (previousDeps.length !== deps.length || previousDeps.some((value, index) => !Object.is(value, deps[index]))) {
     setPreviousDeps(deps);
     if (page !== 1) setPageState(1);
+    // Rows of the previous parent must not stay actionable if the new query fails.
+    setRows([]);
+    setTotal(0);
   }
   useEffect(() => {
     const controller = new AbortController();
@@ -471,6 +484,9 @@ export function useServerTable<T>(
   const setFilters = useCallback((next: FilterValues) => {
     setFiltersState(next);
     setPageState(1);
+    // A different query: drop rows of the old filter so a failure cannot leave them actionable.
+    setRows([]);
+    setTotal(0);
   }, []);
   const reload = useCallback(() => setVersion((value) => value + 1), []);
   return {
@@ -497,6 +513,8 @@ export interface ResourceTableProps<T> extends Omit<DataTableProps<T>, 'rows' | 
   filters?: readonly FilterSpec[];
   initialFilters?: FilterValues;
   pageSize?: number;
+  /** Page sizes offered to the user; pass a single value when the server uses a fixed page size. */
+  pageSizeOptions?: readonly number[];
   /** Toolbar content (create, batch actions) shown above the table. */
   toolbar?: ReactNode;
   /** Re-run the query when any of these change. */
@@ -512,6 +530,7 @@ export function ResourceTable<T>({
   filters = [],
   initialFilters,
   pageSize,
+  pageSizeOptions,
   toolbar,
   deps,
   ref,
@@ -539,7 +558,7 @@ export function ResourceTable<T>({
         loading={state.loading}
         error={state.error}
         onRetry={state.reload}
-        pagination={state.pagination}
+        pagination={pageSizeOptions ? { ...state.pagination, pageSizeOptions } : state.pagination}
       />
     </div>
   );

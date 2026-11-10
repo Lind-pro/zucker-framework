@@ -57,6 +57,28 @@ describe('streamPromiseAsSSE', () => {
     expect(response.write).toHaveBeenCalledWith('event: task\ndata: {"taskId":"task-1"}\n\n');
   });
 
+  it('does not stream internal error details to the client', async () => {
+    const response = createResponse();
+    await streamPromiseAsSSE(response, {
+      task: async () => {
+        throw new Error('connect ECONNREFUSED 10.0.0.5:5432 password=hunter2');
+      },
+    });
+    const written = (response.write as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0])).join('');
+    expect(written).not.toContain('hunter2');
+    expect(written).toContain('event: error');
+  });
+
+  it('keeps the message of client (4xx) errors', async () => {
+    const response = createResponse();
+    await streamPromiseAsSSE(response, {
+      task: async () => {
+        throw Object.assign(new Error('credits required'), { status: 402, code: 'CREDITS' });
+      },
+    });
+    expect(response.write).toHaveBeenCalledWith('event: error\ndata: {"message":"credits required","code":"CREDITS"}\n\n');
+  });
+
   it('still supports an explicit business timeout', async () => {
     const response = createResponse();
     let observedSignal: AbortSignal | undefined;

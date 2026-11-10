@@ -53,6 +53,7 @@ export async function* importFromExcel<T = Record<string, unknown>>(
     sheetCount++;
 
     let headers: Map<number, ColumnMapping> | null = null;
+    let missingRequired: string[] = [];
     let rowNumber = 0;
 
     for await (const row of worksheet) {
@@ -68,6 +69,9 @@ export async function* importFromExcel<T = Record<string, unknown>>(
             headers!.set(colNumber, col);
           }
         });
+        // A required mapping whose column is absent from the sheet fails every row.
+        const present = new Set(headers.values());
+        missingRequired = mapping.filter((m) => m.required && !present.has(m)).map((m) => m.header);
         continue;
       }
 
@@ -75,7 +79,9 @@ export async function* importFromExcel<T = Record<string, unknown>>(
       if (maxRows > 0 && yieldedRows >= maxRows) break;
 
       const data: Record<string, unknown> = {};
-      const errors: string[] = [];
+      const errors: string[] = missingRequired.map(
+        (header) => `Column "${header}": required column is missing`,
+      );
 
       for (const [colNumber, col] of headers) {
         const cell = row.getCell(colNumber);

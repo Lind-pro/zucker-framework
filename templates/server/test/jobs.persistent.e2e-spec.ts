@@ -77,7 +77,7 @@ run('durable runtime with actual PostgreSQL and synthetic providers', () => {
   });
   afterEach(async () => { await Promise.all(hosts.splice(0).map(host => host.stop())); vi.restoreAllMocks(); });
   afterAll(async () => {
-    try { await Promise.all([first?.onModuleDestroy(), second?.onModuleDestroy()]); }
+    try { await Promise.all([first?.disconnect(), second?.disconnect()]); }
     finally { try { if (pool) { try { await pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`); } finally { await pool.end(); } } }
       finally { if (directory) rmSync(directory, { recursive: true, force: true }); } }
   });
@@ -319,7 +319,7 @@ const files=new FilesService(db,new LocalFileStorage({basePath:input.directory})
 if(input.mode==='claim'){await jobs.repository.claim({id:input.id,workerId:'killed-node',leaseToken:'killed-lease',now:new Date(),leaseExpiresAt:new Date(Date.now()+250)});process.stdout.write('CLAIMED\n');setInterval(()=>{},1000);return;}
 const host=new JobsHost(jobs,delivery,{enabled:true,workerId:'fresh-node',concurrency:1,scanIntervalMs:50,leaseMs:1000,heartbeatMs:200,shutdownWaitMs:1000});
 try{await host.onApplicationBootstrap();await host.waitForIdle();const task=await jobs.repository.findById(input.id);process.stdout.write('EVIDENCE:'+JSON.stringify({pid:process.pid,status:task.status,attempt:task.attempt}));}
-finally{await host.stop();await db.onModuleDestroy();}})().catch(()=>{process.stderr.write('Synthetic job worker failed');process.exitCode=1;});
+finally{await host.stop();await db.disconnect();}})().catch(()=>{process.stderr.write('Synthetic job worker failed');process.exitCode=1;});
 `);
     try {
       const killed = spawn(process.execPath, [script], { cwd: resolve('.'), env: { ...process.env, TEST_DATABASE_URL: scopedUrl }, stdio: ['pipe', 'pipe', 'pipe'] });

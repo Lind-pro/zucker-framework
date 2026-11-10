@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { AuthGuard } from '@nestjs/passport';
+import { Reflector } from '@nestjs/core';
+import type { ExecutionContext } from '@nestjs/common';
+import { MemoryCache } from '@zucker-framework/cache';
 import { TokenService } from './token.service';
+import { UserService } from './user.service';
+import { JwtAuthGuard } from '../guards/jwt-auth.guard';
+import { TokenState } from '../interfaces';
 
 describe('TokenService without cache revocation', () => {
   afterEach(() => vi.useRealTimers());
@@ -32,5 +39,96 @@ describe('TokenService without cache revocation', () => {
     expect(await service.getByUserId('owner')).toEqual([]);
     expect(await service.isBlacklisted('one')).toBe(true);
     expect(await service.isBlacklisted('two')).toBe(true);
+  });
+});
+
+function jwt(payload: Record<string, unknown>): string {
+  const part = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
+  return `${part({ alg: 'HS256', typ: 'JWT' })}.${part(payload)}.signature`;
+}
+const nowSec = () => Math.floor(Date.now() / 1000);
+
+function context(token: string): ExecutionContext {
+  const request = { headers: { authorization: `Bearer ${token}` }, user: { id: 'u1' } };
+  return { switchToHttp: () => ({ getRequest: () => request }), getHandler: () => () => {}, getClass: () => class {} } as unknown as ExecutionContext;
+}
+
+describe('TokenService revocation (H3)', () => {
+  it('blacklists signed-out tokens', async () => {
+    const tokens = new TokenService();
+    const token = jwt({ sub: 'u1', iat: nowSec() });
+    await tokens.signIn('u1', token);
+    await tokens.signOut(token);
+    expect(await tokens.checkAccessToken(token, { sub: 'u1', iat: nowSec() })).toBe('revoked');
+  });
+
+  it('kicks a user on every instance sharing the cache, including unknown tokens', async () => {
+    const shared = new MemoryCache();
+    const a = new TokenService(shared);
+    const b = new TokenService(shared);
+    const issuedBefore = nowSec() - 5;
+    const token = jwt({ sub: 'u1', iat: issuedBefore });
+    // Token issued by instance B (or before a restart): instance A never saw it.
+    await b.signIn('u1', token);
+    await a.signOutByUserId('u1');
+    expect(await b.checkAccessToken(token, { sub: 'u1', iat: issuedBefore })).not.toBeNull();
+    expect(await a.checkAccessToken('other-token', { sub: 'u1', iat: issuedBefore })).toBe('user_revoked');
+    // A token issued after the revocation second is accepted.
+    expect(await a.checkAccessToken('new-token', { sub: 'u1', iat: nowSec() + 2 })).toBeNull();
+    expect(await a.checkAccessToken('x', { sub: 'u2', iat: issuedBefore })).toBeNull();
+  });
+
+  it('rejects locked or offline sessions and blacklists terminal states', async () => {
+    const tokens = new TokenService();
+    await tokens.signIn('u1', 't1');
+    await tokens.changeState('t1', TokenState.LOCK);
+    expect(await tokens.checkAccessToken('t1', { sub: 'u1', iat: nowSec() })).toBe('inactive');
+    await tokens.changeState('t1', TokenState.NORMAL);
+    expect(await tokens.checkAccessToken('t1', { sub: 'u1', iat: nowSec() })).toBeNull();
+    await tokens.changeState('t1', TokenState.OFFLINE);
+    expect(await tokens.isBlacklisted('t1')).toBe(true);
+  });
+
+  it('enforces maxInactiveInterval at request time', async () => {
+    const tokens = new TokenService();
+    const info = await tokens.signIn('u1', 't1', 'default', 1000);
+    info.lastRequestTime = new Date(Date.now() - 5000);
+    expect(await tokens.checkAccessToken('t1', { sub: 'u1', iat: nowSec() })).not.toBeNull();
+  });
+
+  it('JwtAuthGuard rejects tokens of a user revoked on another instance', async () => {
+    const base = vi.spyOn(AuthGuard('jwt').prototype, 'canActivate').mockResolvedValue(true);
+    try {
+      const shared = new MemoryCache();
+      const token = jwt({ sub: 'u1', iat: nowSec() - 10 });
+      const guard = new JwtAuthGuard(new Reflector(), new TokenService(shared));
+      await expect(guard.canActivate(context(token))).resolves.toBe(true);
+      await new TokenService(shared).revokeUserTokens('u1');
+      await expect(guard.canActivate(context(token))).rejects.toThrow('Token 已被撤销');
+    } finally { base.mockRestore(); }
+  });
+});
+
+describe('UserService session revocation (H4)', () => {
+  function db(user: Record<string, unknown>) {
+    const model = {
+      findUnique: vi.fn().mockResolvedValue(user),
+      findMany: vi.fn().mockResolvedValue([user]),
+      update: vi.fn().mockResolvedValue(user),
+      delete: vi.fn(), deleteMany: vi.fn(),
+    };
+    return { model: () => model, $transaction: async (work: (tx: unknown) => unknown) => work({ model: () => model }) };
+  }
+
+  it('revokes tokens when a user is disabled, deleted or changes password', async () => {
+    const tokens = new TokenService();
+    const revoke = vi.spyOn(tokens, 'revokeUserTokens');
+    const encoder = { encode: async (v: string) => `h:${v}`, matches: async (raw: string, hash: string) => hash === `h:${raw}` };
+    const users = new UserService(db({ id: 'u1', username: 'a', status: true, password: 'h:Old-password1!' }) as never, encoder, undefined, tokens);
+    await users.changeState(['u1'], false);
+    await users.changePassword('u1', 'Old-password1!', 'New-password2@');
+    await users.deleteUser('u1', []);
+    expect(revoke).toHaveBeenCalledTimes(3);
+    expect(await tokens.checkAccessToken('any', { sub: 'u1', iat: nowSec() - 1 })).toBe('user_revoked');
   });
 });

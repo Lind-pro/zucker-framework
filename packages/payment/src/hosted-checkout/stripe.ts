@@ -1,5 +1,5 @@
 import type Stripe from 'stripe';
-import { fromMinorUnits, toMinorUnits } from '../contract/money';
+import { fromStripeMinorUnits, toStripeMinorUnits } from '../contract/money';
 import { createStripeCheckoutSession, retrieveStripeCheckoutSession, stripeResourceId, verifyStripeWebhookEvent } from '../providers/stripe';
 import { HostedCheckoutError, type HostedCheckoutAdapter, type HostedCheckoutObservation, type HostedCheckoutOffer } from './types';
 import { snapshotProviderMetadata } from './validation';
@@ -36,8 +36,8 @@ export function createStripeHostedCheckoutAdapter(options: StripeHostedCheckoutO
       state: raw.payment_status === 'paid' ? 'paid' : raw.status === 'expired' ? 'unpaid' : 'pending',
       // ISK/UGX charges use two API decimals, while requiring whole-unit prices.
       paidMoney: raw.payment_status === 'paid' && currency && amount != null
-        ? { currency, amount: fromMinorUnits(amount, currency === 'UGX' ? 'USD' : currency) } : undefined,
-      dueMoney: currency && amount != null ? { currency, amount: fromMinorUnits(amount, currency === 'UGX' ? 'USD' : currency) } : undefined,
+        ? { currency, amount: fromStripeMinorUnits(amount, currency) } : undefined,
+      dueMoney: currency && amount != null ? { currency, amount: fromStripeMinorUnits(amount, currency) } : undefined,
       paymentId, paymentKind,
       subscriptionId: stripeResourceId(raw.subscription),
     };
@@ -47,8 +47,7 @@ export function createStripeHostedCheckoutAdapter(options: StripeHostedCheckoutO
     id: 'stripe', accountScope: options.accountScope, modes: ['payment', 'subscription'], supportsMetadata: true,
     validate(offer) {
       const { amount, currency } = offer.money;
-      toMinorUnits(amount, currency === 'UGX' ? 'USD' : currency);
-      if (currency === 'UGX' || currency === 'ISK') toMinorUnits(amount, 'JPY');
+      toStripeMinorUnits(amount, currency);
     },
     ...(prices ? { quote: async (offer: Readonly<HostedCheckoutOffer>) => {
       const price = await prices.retrieve(offer.catalogReference);
@@ -58,7 +57,7 @@ export function createStripeHostedCheckoutAdapter(options: StripeHostedCheckoutO
       const amount = price.unit_amount;
       // Tiered, metered or customer-chosen prices have no single amount to compare.
       if (!currency || amount === null || amount === undefined || !Number.isSafeInteger(amount) || amount < 0) return null;
-      return { money: { currency, amount: fromMinorUnits(amount, currency === 'UGX' ? 'USD' : currency) },
+      return { money: { currency, amount: fromStripeMinorUnits(amount, currency) },
         mode: price.type === 'recurring' ? 'subscription' as const : 'payment' as const };
     } } : {}),
     async create(order) {

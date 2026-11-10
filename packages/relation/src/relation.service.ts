@@ -19,6 +19,12 @@ export interface RelatedObject {
 /**
  * Generate a composite key from type + id segments.
  * Mirrors Java RelatedEntity.generateKey() which uses MD5.
+ *
+ * The `|` join is kept for compatibility with keys already persisted by this
+ * function and by the Java implementation. It is ambiguous when a segment
+ * itself contains `|` (`("a|b","c")` and `("a","b|c")` collide), so the key is
+ * an index, not an identity: stores must still compare the raw type/id fields
+ * (as `InMemoryRelationStore` does) and ids should not contain `|`.
  */
 export function generateRelationKey(...segments: string[]): string {
   return createHash('md5').update(segments.join('|')).digest('hex');
@@ -42,6 +48,18 @@ export interface RelationStore {
    * Mirrors Java RelationService.saveRelated() which deletes by objectKey + relatedType + relation.
    */
   removeByRelation?(sourceType: string, sourceId: string, relation: string, targetType: string): Promise<void>;
+  /**
+   * Optional atomic replacement used by `RelationService.saveRelated()`. Database-backed
+   * stores should implement it in one transaction so a failure cannot leave the
+   * source with its old relations deleted and the new ones only partly written.
+   */
+  replaceRelated?(
+    sourceType: string,
+    sourceId: string,
+    relation: string,
+    targetType: string,
+    relations: RelatedObject[],
+  ): Promise<void>;
 }
 
 /**
@@ -227,9 +245,35 @@ export class RelationService {
     targetType: string,
     targets: Array<{ id: string; name?: string }>,
   ): Promise<void> {
-    // Remove existing relations for this combination
+    if (this.store.replaceRelated) {
+      const createdAt = new Date();
+      await this.store.replaceRelated(
+        sourceType,
+        sourceId,
+        relation,
+        targetType,
+        targets.map((target) => ({
+          sourceType,
+          sourceId,
+          sourceKey: generateRelationKey(sourceType, sourceId),
+          relation,
+          targetType,
+          targetId: target.id,
+          targetKey: generateRelationKey(targetType, target.id),
+          targetName: target.name,
+          createdAt,
+        })),
+      );
+      return;
+    }
+
+    // Non-atomic fallback: remove existing relations for this combination, then save.
     if (this.store.removeByRelation) {
       await this.store.removeByRelation(sourceType, sourceId, relation, targetType);
+    } else {
+      this.logger.warn(
+        'RelationStore implements neither replaceRelated nor removeByRelation; saveRelated only appends and does not remove stale relations',
+      );
     }
 
     // Save new relations

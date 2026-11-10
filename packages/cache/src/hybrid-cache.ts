@@ -3,6 +3,10 @@ import { ICache } from './cache.interface';
 /**
  * 混合缓存：先查本地 (L1) 再查远程 (L2, 通常是 Redis)
  * 写入时同时写 L1 和 L2
+ *
+ * L1 is process-local: a write or delete on another instance is not propagated, so an
+ * L1 copy can be stale for up to `l1BackfillTtlMs` (default 60 s). Lower it for data that
+ * must be invalidated across replicas.
  */
 export class HybridCache<T = unknown> implements ICache<T> {
   private readonly l1BackfillTtlMs: number;
@@ -21,7 +25,12 @@ export class HybridCache<T = unknown> implements ICache<T> {
 
     const l2Val = await this.l2.get(key);
     if (l2Val !== undefined) {
-      await this.l1.set(key, l2Val, this.l1BackfillTtlMs);
+      // L1 must never outlive the L2 entry it copies.
+      let ttl = this.l1BackfillTtlMs;
+      const remaining = this.l2.remainingTtlMs ? await this.l2.remainingTtlMs(key) : null;
+      if (remaining === undefined) return l2Val;
+      if (remaining !== null) ttl = Math.min(ttl, remaining);
+      if (ttl > 0) await this.l1.set(key, l2Val, ttl);
     }
     return l2Val;
   }

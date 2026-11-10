@@ -4,7 +4,9 @@ import {
   ExecutionContext,
   ForbiddenException,
   Logger,
+  UnauthorizedException,
 } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import { Reflector } from '@nestjs/core';
 import { TWO_FACTOR_KEY } from '../decorators/constants';
 import type { TwoFactorOptions } from '../decorators';
@@ -41,7 +43,9 @@ export class TwoFactorGuard implements CanActivate {
     const user = request.user;
 
     if (!user || !user.id) {
-      return true; // Let auth guards handle unauthenticated users
+      // Fail closed: if this guard runs before authentication (e.g. as a global guard),
+      // skipping it would bypass the second factor entirely.
+      throw new UnauthorizedException('not_logged_in');
     }
 
     const parameterName = options.parameter ?? 'verifyCode';
@@ -50,6 +54,7 @@ export class TwoFactorGuard implements CanActivate {
       user.id,
       options.operation,
       provider,
+      this.sessionId(request),
     );
     if (!validator) {
       throw new ForbiddenException(
@@ -61,13 +66,13 @@ export class TwoFactorGuard implements CanActivate {
       return true;
     }
 
+    // Body or header only: query strings end up in access logs.
     const code =
       request.body?.[parameterName] ??
-      request.query?.[parameterName] ??
-      request.headers?.[parameterName] ??
+      request.headers?.[parameterName.toLowerCase()] ??
       request.headers?.['x-verify-code'];
 
-    if (!code) {
+    if (!code || typeof code !== 'string' && typeof code !== 'number') {
       throw new ForbiddenException('validation.need_two_factor_verify');
     }
 
@@ -86,5 +91,16 @@ export class TwoFactorGuard implements CanActivate {
     }
 
     return true;
+  }
+
+  /** Bind a successful verification to the current credential, not to every session of the user. */
+  private sessionId(request: { user?: { jti?: unknown; sid?: unknown }; headers?: Record<string, unknown> }): string | undefined {
+    const claim = request.user?.jti ?? request.user?.sid;
+    if (typeof claim === 'string' && claim) return claim;
+    const authorization = request.headers?.authorization;
+    if (typeof authorization === 'string' && authorization) {
+      return createHash('sha256').update(authorization).digest('base64url');
+    }
+    return undefined;
   }
 }

@@ -1,6 +1,30 @@
 import type { FormRule as Rule } from 'antd';
 import type { FieldValidator } from './types';
 
+/**
+ * Read a validator parameter using the server's name (`@zucker-framework/form`: `min`, `max`,
+ * `pattern`) and fall back to the legacy client spelling `value`.
+ */
+function param(params: Record<string, unknown> | undefined, name: string): unknown {
+  return params?.[name] ?? params?.value;
+}
+
+function finiteNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+/** Compile a caller-authored pattern; an invalid one is skipped instead of crashing the render. */
+export function compilePattern(source: unknown): RegExp | undefined {
+  if (source instanceof RegExp) return source;
+  if (typeof source !== 'string') return undefined;
+  try {
+    return new RegExp(source);
+  } catch {
+    if (typeof console !== 'undefined') console.warn('[fe-form] Ignoring invalid validator pattern');
+    return undefined;
+  }
+}
+
 export function toAntdRules(
   validators: FieldValidator[] = [],
   required?: boolean,
@@ -17,23 +41,34 @@ export function toAntdRules(
       case 'required':
         rules.push({ required: true, message: v.message });
         break;
-      case 'minLength':
-        rules.push({ min: v.params?.value as number, message: v.message });
+      case 'minLength': {
+        const min = finiteNumber(param(v.params, 'min'));
+        if (min !== undefined) rules.push({ min, message: v.message });
         break;
-      case 'maxLength':
-        rules.push({ max: v.params?.value as number, message: v.message });
+      }
+      case 'maxLength': {
+        const max = finiteNumber(param(v.params, 'max'));
+        if (max !== undefined) rules.push({ max, message: v.message });
         break;
-      case 'min':
-        rules.push({ type: 'number', min: v.params?.value as number, message: v.message });
+      }
+      case 'min': {
+        const min = finiteNumber(param(v.params, 'min'));
+        if (min !== undefined) rules.push({ type: 'number', min, message: v.message });
         break;
-      case 'max':
-        rules.push({ type: 'number', max: v.params?.value as number, message: v.message });
+      }
+      case 'max': {
+        const max = finiteNumber(param(v.params, 'max'));
+        if (max !== undefined) rules.push({ type: 'number', max, message: v.message });
         break;
-      case 'pattern':
-        rules.push({ pattern: new RegExp(v.params?.value as string), message: v.message });
+      }
+      case 'pattern': {
+        const pattern = compilePattern(param(v.params, 'pattern'));
+        if (pattern) rules.push({ pattern, message: v.message });
         break;
+      }
       case 'enum':
-        rules.push({ type: 'enum', enum: v.params?.values as unknown[], message: v.message });
+        if (Array.isArray(v.params?.values))
+          rules.push({ type: 'enum', enum: v.params.values as unknown[], message: v.message });
         break;
       case 'email':
         rules.push({ type: 'email', message: v.message });

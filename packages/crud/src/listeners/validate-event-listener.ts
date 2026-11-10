@@ -1,7 +1,7 @@
 /**
  * ValidateEventListener — 实体验证监听器
  *
- * 监听 PREPARE 阶段事件，对实体进行验证：
+ * 监听 PREPARE 阶段事件，对实体进行验证（失败时拒绝写入，抛出 ValidationException）：
  * - CREATE / SAVE → 使用 CreateGroup 规则验证
  * - UPDATE → 使用 UpdateGroup 规则验证
  */
@@ -13,6 +13,7 @@ import {
   EntityEventType,
   type TopicEventBus,
   TOPIC_EVENT_BUS,
+  vetoEvent,
 } from '@zucker-framework/event';
 import {
   type ValidationSchema,
@@ -77,7 +78,15 @@ export class ValidateEventListener {
 
     for (const entity of entities) {
       if (typeof entity !== 'object' || entity === null) continue;
-      tryValidate(entity as Record<string, unknown>, schema);
+      try {
+        tryValidate(entity as Record<string, unknown>, schema);
+      } catch (error) {
+        // Mark the failure as a veto so the event bus propagates it to the writer (fail closed)
+        // instead of logging and continuing; also cancel for buses that still swallow errors.
+        const reason = error instanceof Error ? error.message : String(error);
+        event.cancel(`Validation failed: ${reason}`);
+        throw vetoEvent(error);
+      }
     }
   }
 }

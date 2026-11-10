@@ -66,12 +66,14 @@ export class TwoFactorService {
     userId: string,
     operation: string,
     provider: string,
+    /** Scopes a successful verification to one session (token/jti) instead of every session of the user. */
+    sessionId?: string,
   ): TwoFactorValidator | undefined {
     const validatorProvider = this.providerMap.get(provider);
     if (!validatorProvider) {
       this.logger.warn(`Two-factor provider not found: ${provider}`);
       return undefined;
     }
-    return validatorProvider.createTwoFactorValidator(userId, operation);
+    return validatorProvider.createTwoFactorValidator(userId, operation, sessionId);
   }
 }

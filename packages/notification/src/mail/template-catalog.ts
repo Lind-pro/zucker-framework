@@ -2,9 +2,14 @@ import { BadRequestException, Logger, NotFoundException } from '@nestjs/common';
 import {
   parseTemplate,
   parseTemplateWithMapper,
+  safeHtmlLinkHref,
   type DatabaseAdapter,
   type ModelOperations,
 } from '@zucker-framework/core';
+
+/** Placeholder at the start of a URL-valued attribute (href/src/action/formaction/xlink:href). */
+const URL_ATTRIBUTE_VARIABLE = /(\b(?:href|src|action|formaction|xlink:href)\s*=\s*["']?\s*)\{\{(\w+)\}\}/gi;
+const URL_MARKER = '__zucker_url_attr__';
 
 export type ResolvedTemplate = Record<string, string | null>;
 export interface BuiltInMailTemplate {
@@ -134,9 +139,14 @@ export class MailTemplateCatalog {
   }
   interpolate(html: string, data: Record<string, unknown>): string {
     const missing = new Set<string>();
+    // A variable that starts a URL attribute decides the scheme, so it is restricted to HTTP(S)/mailto
+    // (safeHtmlLinkHref). Variables in text or later in a URL only need HTML escaping.
+    const marked = html.replace(URL_ATTRIBUTE_VARIABLE, `$1{{${URL_MARKER}$2}}`);
     const result = parseTemplateWithMapper(
-      html,
-      (key) => {
+      marked,
+      (placeholder) => {
+        const urlContext = placeholder.startsWith(URL_MARKER);
+        const key = urlContext ? placeholder.slice(URL_MARKER.length) : placeholder;
         if (!/^\w+$/.test(key)) return `{{${key}}}`;
         if (!Object.hasOwn(data, key)) {
           missing.add(key);
@@ -145,7 +155,7 @@ export class MailTemplateCatalog {
         const raw = data[key];
         if (raw == null) return '';
         const text = String(raw);
-        if (/^\s*(javascript|data|vbscript):/i.test(text)) return '#';
+        if (urlContext) return safeHtmlLinkHref(text);
         return parseTemplate('${value}', { value: text }, { escapeHtml: true });
       },
       { startSymbol: '{{', endSymbol: '}}' },

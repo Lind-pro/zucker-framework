@@ -28,7 +28,12 @@ export class ScopedCancellationRegistry<TKey = string> {
     return true;
   }
 
-  cleanup(key: TKey): void {
+  /**
+   * Forget the signal for `key`. Pass the signal returned by `register` so a task that was
+   * replaced by a newer registration does not remove the newer task's controller.
+   */
+  cleanup(key: TKey, signal?: AbortSignal): void {
+    if (signal && this.controllers.get(key)?.signal !== signal) return;
     this.controllers.delete(key);
   }
 }

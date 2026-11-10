@@ -4,26 +4,85 @@ const CACHE_METADATA = Symbol('CACHE_METADATA');
 
 /**
  * 解析缓存 key 模板，将 #0, #1 替换为对应参数值
+ * Strings, numbers and booleans are inserted as text (unchanged keys for existing
+ * templates); other values use the type-preserving encoding below.
  *
  * @example resolveCacheKey('user:#0', ['42']) => 'user:42'
  */
 function resolveCacheKey(template: string, args: unknown[]): string {
   return template.replace(/#(\d+)/g, (_, index) => {
     const idx = parseInt(index, 10);
-    return idx < args.length ? String(args[idx]) : '';
+    if (idx >= args.length) return '';
+    const arg = args[idx];
+    return typeof arg === 'string' || typeof arg === 'number' || typeof arg === 'boolean'
+      ? String(arg)
+      : stableStringify(arg);
   });
+}
+
+/** Map a value to a JSON-safe structure that keeps type distinctions (string vs number, Date, Map...). */
+function normalizeKeyPart(value: unknown, seen: WeakSet<object>): unknown {
+  if (value === undefined) return { $u: 1 };
+  if (value === null || typeof value === 'boolean' || typeof value === 'string') return value;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : { $n: String(value) };
+  if (typeof value === 'bigint') return { $big: value.toString() };
+  if (typeof value === 'symbol' || typeof value === 'function') return { $t: typeof value, v: String(value) };
+  if (value instanceof Date) return { $date: Number.isNaN(value.getTime()) ? 'invalid' : value.toISOString() };
+  const obj = value as object;
+  if (seen.has(obj)) return { $cycle: 1 };
+  seen.add(obj);
+  try {
+    if (Array.isArray(value)) return value.map((item) => normalizeKeyPart(item, seen));
+    if (value instanceof Map) {
+      return { $map: [...value.entries()]
+        .map(([k, v]) => [normalizeKeyPart(k, seen), normalizeKeyPart(v, seen)])
+        .sort((a, b) => (JSON.stringify(a[0]) < JSON.stringify(b[0]) ? -1 : 1)) };
+    }
+    if (value instanceof Set) {
+      return { $set: [...value].map((item) => normalizeKeyPart(item, seen))
+        .sort((a, b) => (JSON.stringify(a) < JSON.stringify(b) ? -1 : 1)) };
+    }
+    const record = value as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(record).sort()) out[key] = normalizeKeyPart(record[key], seen);
+    return out;
+  } finally {
+    seen.delete(obj);
+  }
 }
 
 /**
  * 稳定序列化：对象按 key 排序后 stringify，保证相同内容生成相同 key。
- * 避免 {a:1,b:2} 和 {b:2,a:1} 生成不同缓存 key 的问题。
+ * Type-preserving: `1` and `"1"` differ, every Date has its own key, and separators
+ * inside arguments cannot make two different argument lists collide.
  */
 function stableStringify(value: unknown): string {
-  if (value === null || value === undefined) return String(value);
-  if (typeof value !== 'object') return String(value);
-  if (Array.isArray(value)) return '[' + value.map(stableStringify).join(',') + ']';
-  const sorted = Object.keys(value as Record<string, unknown>).sort();
-  return '{' + sorted.map(k => `${k}:${stableStringify((value as Record<string, unknown>)[k])}`).join(',') + '}';
+  return JSON.stringify(normalizeKeyPart(value, new WeakSet()));
+}
+
+function defaultCacheKey(cacheName: string, propertyKey: string | symbol, args: unknown[]): string {
+  return `${cacheName}:${propertyKey.toString()}:${stableStringify(args)}`;
+}
+
+/**
+ * Keys written through a custom `key` template do not necessarily start with
+ * `cacheName:`; remember them (per cache service, process-local) so
+ * `@CacheEvict({ allEntries: true })` removes them too.
+ */
+const customKeyRegistry = new WeakMap<object, Map<string, Set<string>>>();
+function rememberCustomKey(cache: ICache, cacheName: string, key: string): void {
+  let byName = customKeyRegistry.get(cache);
+  if (!byName) customKeyRegistry.set(cache, (byName = new Map()));
+  let keys = byName.get(cacheName);
+  if (!keys) byName.set(cacheName, (keys = new Set()));
+  keys.add(key);
+}
+function takeCustomKeys(cache: ICache, cacheName: string): string[] {
+  const byName = customKeyRegistry.get(cache);
+  const keys = byName?.get(cacheName);
+  if (!keys) return [];
+  byName!.delete(cacheName);
+  return [...keys];
 }
 
 /** 获取实例上挂载的 __cacheService__（由 @InjectCache 配合 CacheModule 注入） */
@@ -54,7 +113,7 @@ export function Cacheable(
 
       const cacheKey = options?.key
         ? resolveCacheKey(options.key, args)
-        : `${cacheName}:${propertyKey.toString()}:${args.map(stableStringify).join(':')}`;
+        : defaultCacheKey(cacheName, propertyKey, args);
 
       const cached = await cache.get(cacheKey);
       if (cached !== undefined && cached !== null) return cached;
@@ -62,6 +121,7 @@ export function Cacheable(
       const result = await originalMethod.apply(this, args);
       if (result !== undefined && result !== null) {
         await cache.set(cacheKey, result, options?.ttl);
+        if (options?.key) rememberCustomKey(cache, cacheName, cacheKey);
       }
       return result;
     };
@@ -95,7 +155,10 @@ export function CacheEvict(
           if (typeof cache.keys === 'function') {
             const allKeys = await cache.keys();
             const prefix = `${cacheName}:`;
-            const toDelete = allKeys.filter((k) => k.startsWith(prefix));
+            const toDelete = [...new Set([
+              ...allKeys.filter((k) => k.startsWith(prefix)),
+              ...takeCustomKeys(cache, cacheName),
+            ])];
             if (cache.evictAll) {
               await cache.evictAll(toDelete);
             } else {
@@ -107,7 +170,7 @@ export function CacheEvict(
         } else {
           const cacheKey = options?.key
             ? resolveCacheKey(options.key, args)
-            : `${cacheName}:${propertyKey.toString()}:${args.map(stableStringify).join(':')}`;
+            : defaultCacheKey(cacheName, propertyKey, args);
           await cache.del(cacheKey);
         }
       }
@@ -137,8 +200,9 @@ export function CachePut(
       if (cache && result !== undefined) {
         const cacheKey = options?.key
           ? resolveCacheKey(options.key, args)
-          : `${cacheName}:${propertyKey.toString()}:${args.map(stableStringify).join(':')}`;
+          : defaultCacheKey(cacheName, propertyKey, args);
         await cache.set(cacheKey, result, options?.ttl);
+        if (options?.key) rememberCustomKey(cache, cacheName, cacheKey);
       }
       return result;
     };

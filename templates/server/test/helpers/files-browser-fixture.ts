@@ -75,7 +75,7 @@ export async function filesBrowserFixture(databaseUrl: string, origin: string) {
   async function close() {
     try {
       await app?.close();
-      await database.onModuleDestroy();
+      await database.disconnect();
     } finally {
       try {
         await pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);

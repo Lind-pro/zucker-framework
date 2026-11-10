@@ -39,8 +39,11 @@ import { ZuckerProviderModule } from '@zucker-framework/provider';
 import { ZuckerReferenceModule } from '@zucker-framework/reference';
 import { ZuckerScriptModule } from '@zucker-framework/script';
 import { ZuckerRuleEngineModule } from '@zucker-framework/rule-engine';
+// Bare import mounts only /health; /metrics and /monitoring/alerts stay off (opt-in via forRoot with permissions).
 import { ZuckerMonitoringModule } from '@zucker-framework/monitoring';
+import { RetentionModule } from './maintenance/retention';
 import { ZuckerAdminModule } from '@zucker-framework/admin';
+import { AdminUserSessionHooks } from './accounts/admin-user-hooks';
 import { ZuckerFormModule } from '@zucker-framework/form';
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -88,6 +91,8 @@ if (!jwtSecret || jwtSecret.length < 32) throw new Error('JWT_SECRET must be an 
       // Controllers run this guard after authentication; a global copy would consume twice.
       globalGuard: false,
       limiters: { ...APP_RATE_LIMITERS },
+      // Shared budgets across replicas/restarts; requires the optional `ioredis` package. Memory otherwise.
+      ...(process.env.RATE_LIMIT_REDIS_URL?.trim() ? { redis: { url: process.env.RATE_LIMIT_REDIS_URL.trim() } } : {}),
     }),
     ZuckerStorageModule.forRootAsync({ inject: [RUNTIME_ENVIRONMENT],
       useFactory: environment => storageOptionsFromEnvironment(environment as NodeJS.ProcessEnv) }),
@@ -105,10 +110,13 @@ if (!jwtSecret || jwtSecret.length < 32) throw new Error('JWT_SECRET must be an 
     ZuckerScriptModule,
     ZuckerRuleEngineModule,
     ZuckerMonitoringModule,
+    RetentionModule,
 
     // ============ Admin 管理后台路由 ============
     ZuckerAdminModule.forRoot({ features: ['users', 'roles', 'permissions', 'dictionary', 'config',
-      'form', 'dashboard'] }),
+      'form', 'dashboard'],
+    // Back-office password/e-mail/status changes end the account's sessions (credentialVersion).
+    users: { hooks: AdminUserSessionHooks } }),
   ],
 })
 export class AppModule {}

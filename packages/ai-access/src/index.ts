@@ -26,6 +26,7 @@ export { AIAccessProviderRegistry } from './provider-registry';
 export { InMemoryCredentialProfileStore } from './in-memory-profile-store';
 export { PostgresCredentialProfileStore } from './postgres-profile-store';
 export type {
+  CredentialCodec,
   PostgresCredentialProfileStoreOptions,
   PostgresPoolClient,
   PostgresPoolLike,

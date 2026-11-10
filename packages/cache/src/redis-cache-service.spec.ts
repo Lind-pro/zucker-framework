@@ -68,8 +68,10 @@ describe('RedisCacheService bounded degradation', () => {
     await service.set('item', { count: 1 }, 60);
     expect(client.set).toHaveBeenCalledWith('item', '{"count":1}', 'PX', 60000);
     await service.set('zero', 'invalid', 0);
-    await service.set('fraction', 'invalid', 0.5);
-    expect(client.set).toHaveBeenCalledTimes(1);
+    expect(client.del).toHaveBeenCalledWith('zero');
+    await service.set('fraction', 'short', 0.5);
+    expect(client.set).toHaveBeenLastCalledWith('fraction', '"short"', 'PX', 500);
+    expect(client.set).toHaveBeenCalledTimes(2);
     client.get.mockResolvedValue('{"count":1}');
     await expect(service.get('item')).resolves.toEqual({ count: 1 });
     await expect(service.incr('count', 60)).resolves.toBe(1);

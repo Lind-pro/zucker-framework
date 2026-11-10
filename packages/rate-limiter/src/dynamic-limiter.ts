@@ -4,6 +4,9 @@ import { Injectable, Logger } from '@nestjs/common';
  * 动态限流规则管理。
  *
  * 支持运行时修改限流规则，无需重启服务。
+ *
+ * Note: this is a rule registry only. `RateLimitGuard` does not consult it; callers
+ * resolve a rule with `matchRule()` and apply it themselves.
  */
 export interface DynamicLimiterRule {
   id: string;
@@ -60,8 +63,7 @@ export class DynamicLimiterManager {
   matchRule(path: string, roles?: string[]): DynamicLimiterRule | undefined {
     for (const rule of this.getRules()) {
       if (rule.pathPattern) {
-        const regex = this.globToRegex(rule.pathPattern);
-        if (!regex.test(path)) continue;
+        if (!globMatch(rule.pathPattern, path)) continue;
       }
       if (rule.roles?.length) {
         if (!roles?.some(r => rule.roles!.includes(r))) continue;
@@ -111,12 +113,31 @@ export class DynamicLimiterManager {
       try { listener(rules); } catch { /* ignore */ }
     }
   }
+}
 
-  private globToRegex(glob: string): RegExp {
-    const escaped = glob
-      .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-      .replace(/\*/g, '.*')
-      .replace(/\?/g, '.');
-    return new RegExp(`^${escaped}$`);
+/**
+ * Glob match (`*` = any run, `?` = one char) in O(pattern * path) worst case, without
+ * building a backtracking RegExp from admin-supplied patterns.
+ */
+export function globMatch(pattern: string, value: string): boolean {
+  let p = 0;
+  let v = 0;
+  let star = -1;
+  let mark = 0;
+  while (v < value.length) {
+    if (p < pattern.length && (pattern[p] === '?' || pattern[p] === value[v])) {
+      p++;
+      v++;
+    } else if (p < pattern.length && pattern[p] === '*') {
+      star = p++;
+      mark = v;
+    } else if (star !== -1) {
+      p = star + 1;
+      v = ++mark;
+    } else {
+      return false;
+    }
   }
+  while (p < pattern.length && pattern[p] === '*') p++;
+  return p === pattern.length;
 }

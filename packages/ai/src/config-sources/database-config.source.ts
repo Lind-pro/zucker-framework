@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { BusinessException, type DatabaseAdapter } from '@zucker-framework/core';
 import type { AIModelConfig, AIScenario } from '../ai-provider.interface';
 import type { AIConfigSource, AIConfigSourceOptions, ScenarioConfigOptions } from '../config-source';
@@ -28,6 +29,7 @@ export class DatabaseAIConfigSource implements AIConfigSource {
   readonly priority: number;
   readonly failureMode;
   private readonly modelName: string;
+  private readonly logger = new Logger(DatabaseAIConfigSource.name);
 
   constructor(
     private readonly db: DatabaseAdapter,
@@ -42,16 +44,25 @@ export class DatabaseAIConfigSource implements AIConfigSource {
   async getScenarioConfig(scenario: string, options: ScenarioConfigOptions = {}): Promise<AIModelConfig | null> {
     try {
       const operations = this.db.model(this.modelName);
+      // Deterministic choice when several enabled models claim the same scenario.
+      const orderBy = { id: 'asc' };
       let model = operations.findFirst
-        ? await operations.findFirst({ where: { isEnabled: true, scenarios: { has: scenario } } })
+        ? await operations.findFirst({
+            where: { isEnabled: true, scenarios: { has: scenario } },
+            orderBy,
+          })
         : null;
       if (!model && options.allowDefault !== false && operations.findFirst) {
-        model = await operations.findFirst({ where: { isEnabled: true, isDefault: true } });
+        model = await operations.findFirst({ where: { isEnabled: true, isDefault: true }, orderBy });
       }
       return model ? this.toConfig(model as AIModelRecord) : null;
     } catch (error) {
-      throw new BusinessException(
+      // The ORM message can contain schema/connection details; keep it in the server log only.
+      this.logger.error(
         `AI 模型查询失败 (scenario=${scenario}): ${error instanceof Error ? error.message : String(error)}`,
+      );
+      throw new BusinessException(
+        `AI 模型查询失败 (scenario=${scenario})`,
         'AI_MODEL_QUERY_FAILED',
         500,
       );

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { TenantContext } from './tenant-context';
-import { RowLevelIsolation, SchemaLevelIsolation } from './tenant-isolation';
+import { RowLevelIsolation, SchemaLevelIsolation, TenantContextRequiredError } from './tenant-isolation';
 
 describe('RowLevelIsolation', () => {
   const isolation = new RowLevelIsolation();
@@ -16,10 +16,15 @@ describe('RowLevelIsolation', () => {
     });
   });
 
-  it('applyQueryFilter returns unchanged when outside context', () => {
+  it('applyQueryFilter fails closed outside a tenant context', () => {
+    expect(() => isolation.applyQueryFilter({ status: 'active' })).toThrow(TenantContextRequiredError);
+  });
+
+  it('applyQueryFilter is unfiltered only inside an explicit bypass or with allowMissingTenant', () => {
     const where = { status: 'active' };
-    const result = isolation.applyQueryFilter(where);
-    expect(result).toEqual(where);
+    expect(TenantContext.runWithoutTenantIsolation(() => isolation.applyQueryFilter(where))).toEqual(where);
+    expect(new RowLevelIsolation('tenantId', { allowMissingTenant: true }).applyQueryFilter(where)).toEqual(where);
+    expect(TenantContext.runWithoutTenantIsolation(() => TenantContext.getCurrentTenantId())).toBeUndefined();
   });
 
   it('applyCreateData injects tenantId when in context', () => {
@@ -29,10 +34,8 @@ describe('RowLevelIsolation', () => {
     });
   });
 
-  it('applyCreateData returns unchanged when outside context', () => {
-    const data = { name: 'test' };
-    const result = isolation.applyCreateData(data);
-    expect(result).toEqual(data);
+  it('applyCreateData fails closed outside a tenant context', () => {
+    expect(() => isolation.applyCreateData({ name: 'test' })).toThrow(TenantContextRequiredError);
   });
 
   it('supports custom tenant field name', () => {

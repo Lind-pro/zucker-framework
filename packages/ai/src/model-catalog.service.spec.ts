@@ -139,3 +139,43 @@ it('discovers with decrypted stored credentials without disclosing them in the r
     spy.mockRestore();
   }
 });
+
+describe('model catalog credential destination (M7)', () => {
+  it('requires re-entering the API key when the destination changes', async () => {
+    const { service, models } = harness();
+    await expect(service.updateModel('old', { baseUrl: 'https://attacker.test/v1' })).rejects.toThrow(
+      '重新填写 API Key',
+    );
+    await expect(
+      service.updateModel('old', { proxyHost: 'proxy.attacker.test', proxyPort: 8080 }),
+    ).rejects.toThrow('重新填写 API Key');
+    expect(models.update).not.toHaveBeenCalled();
+    // Same value or a fresh key is accepted.
+    await expect(
+      service.updateModel('old', { baseUrl: 'https://new.test/v1', apiKey: 'fresh-key-123' }),
+    ).resolves.toMatchObject({ baseUrl: 'https://new.test/v1' });
+    await expect(service.updateModel('old', { baseUrl: 'https://new.test/v1' })).resolves.toBeDefined();
+  });
+});
+
+describe('model catalog optional generation settings', () => {
+  it('clears temperature and maxTokens with null and still validates numeric ranges', async () => {
+    const { service, models } = harness();
+    await service.updateModel('old', { temperature: 0.7, maxTokens: 2048 });
+    expect(models.update).toHaveBeenLastCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ temperature: 0.7, maxTokens: 2048 }) }),
+    );
+    await service.updateModel('old', { temperature: null, maxTokens: null });
+    expect(models.update).toHaveBeenLastCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ temperature: null, maxTokens: null }) }),
+    );
+    await expect(service.updateModel('old', { temperature: 3 })).rejects.toThrow('temperature');
+    await expect(service.updateModel('old', { maxTokens: 1.5 })).rejects.toThrow('maxTokens');
+    await expect(service.updateModel('old', { temperature: '0.5' })).rejects.toThrow('有限数字');
+    // proxyPort is a destination field and is not clearable through this path.
+    await expect(service.updateModel('old', { proxyPort: null })).rejects.toThrow('有限数字');
+    const created = models.create.mock.calls.length;
+    await service.createModel({ name: 'New', provider: 'Example', modelId: 'v2', apiKey: 'k', temperature: null });
+    expect(models.create.mock.calls[created][0].data).not.toHaveProperty('temperature');
+  });
+});

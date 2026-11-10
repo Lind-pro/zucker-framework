@@ -19,33 +19,52 @@ const EXECUTION_TIMEOUT_MS = 100;
  */
 const DANGEROUS_PATTERNS = /\b(process|require|import|eval|Function|constructor|__proto__|prototype|globalThis|global|this|Reflect|Proxy)\b|`/;
 
-/** 沙箱白名单：只暴露安全的内置函数 */
-const SANDBOX_GLOBALS = Object.freeze({
-  Math,
-  Date,
-  JSON: Object.freeze({ parse: JSON.parse, stringify: JSON.stringify }),
-  Number,
-  String,
-  Boolean,
-  Array,
-  parseInt,
-  parseFloat,
-  isNaN,
-  isFinite,
-  undefined,
-  NaN,
-  Infinity,
-});
+/**
+ * Copies a caller value into the sandbox realm.
+ *
+ * Host-realm objects must never be reachable from the expression: every host object's
+ * prototype chain leads to the host `Function` constructor (`x.constructor.constructor`),
+ * which compiles code with access to `process`. Values are therefore re-created inside the
+ * sandbox from JSON (Dates are preserved). Functions, symbols and other non-data values are
+ * not copied.
+ */
+function toSandboxValue(value: unknown, sandboxFromJson: (json: string) => unknown): unknown {
+  if (value === null || value === undefined) return value;
+  const type = typeof value;
+  if (type === 'string' || type === 'number' || type === 'boolean') return value;
+  if (type === 'bigint') return Number(value);
+  if (type !== 'object') return undefined;
+  const json = JSON.stringify(value, function replacer(this: unknown, key: string, jsonValue: unknown) {
+    // `jsonValue` has already been through Date#toJSON; read the raw holder value instead.
+    const raw = key === '' ? value : (this as Record<string, unknown>)[key];
+    if (raw instanceof Date) return { [DATE_TAG]: raw.getTime() };
+    if (typeof jsonValue === 'bigint') return Number(jsonValue);
+    return jsonValue;
+  });
+  return json === undefined ? undefined : sandboxFromJson(json);
+}
+
+const DATE_TAG = '__zuckerExpressionDate';
+
+/** Runs inside the sandbox realm, so the parsed objects use the sandbox's own intrinsics. */
+const SANDBOX_JSON_READER = `(function (json) {
+  return JSON.parse(json, function (key, value) {
+    if (value && typeof value === 'object' && Object.keys(value).length === 1 && typeof value['${DATE_TAG}'] === 'number') {
+      return new Date(value['${DATE_TAG}']);
+    }
+    return value;
+  });
+})`;
 
 /**
  * JS 表达式求值
  * @param expression - JS 表达式字符串
- * @param context - 上下文变量
+ * @param context - 上下文变量（按数据复制进沙箱；函数不会被传入）
  *
- * 求值规则：
- * - 支持 JavaScript 表达式
- * - 增加表达式长度限制防止滥用
- * - 使用 vm.runInNewContext() 沙箱执行，防止 RCE
+ * SECURITY: expressions must be developer-authored. `node:vm` is not a security boundary;
+ * this function only limits accidental damage (keyword blacklist, a fresh realm whose
+ * intrinsics are not host objects, data-only context, a synchronous + microtask timeout).
+ * Never pass end-user supplied text here; use a dedicated expression language for that.
  */
 export function evaluate(expression: string, context: Record<string, unknown> = {}): unknown {
   if (expression.length > MAX_EXPRESSION_LENGTH) {
@@ -57,18 +76,21 @@ export function evaluate(expression: string, context: Record<string, unknown> = 
     throw new Error(`Expression contains blocked keyword: ${expression}`);
   }
 
-  // Build frozen sandbox with whitelisted globals + user context
-  const sandbox: Record<string, unknown> = Object.create(null);
-  for (const [k, v] of Object.entries(SANDBOX_GLOBALS)) {
-    sandbox[k] = v;
-  }
+  // A fresh context exposes its own Math/Date/JSON/Number/String/Array... intrinsics; none of
+  // them are host-realm objects, so their constructor chain ends at the sandbox Function.
+  const vmContext = vm.createContext(Object.create(null), {
+    codeGeneration: { strings: false, wasm: false },
+    microtaskMode: 'afterEvaluate',
+  });
+  const readJson = vm.runInContext(SANDBOX_JSON_READER, vmContext) as (json: string) => unknown;
   for (const [k, v] of Object.entries(context)) {
-    sandbox[k] = v;
+    if (!/^[A-Za-z_$][\w$]*$/.test(k)) continue;
+    const copied = toSandboxValue(v, readJson);
+    if (copied !== undefined) (vmContext as Record<string, unknown>)[k] = copied;
   }
-  Object.freeze(sandbox);
 
   try {
-    return vm.runInNewContext(`"use strict"; (${expression});`, sandbox, {
+    return vm.runInContext(`"use strict"; (${expression});`, vmContext, {
       timeout: EXECUTION_TIMEOUT_MS,
       filename: 'expression',
     });

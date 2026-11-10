@@ -15,7 +15,7 @@ export interface AccessLoggerOptions {
   logParameters?: boolean;
   /** 是否记录响应结果（默认 false） */
   logResult?: boolean;
-  /** 需要排除的敏感字段列表 */
+  /** 额外需要脱敏的字段（与内置敏感字段合并，不会替换内置列表） */
   excludeFields?: string[];
   /**
    * 是否忽略日志记录

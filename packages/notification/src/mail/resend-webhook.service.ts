@@ -68,7 +68,14 @@ export class ResendWebhookService {
     if (event.type === 'email.bounced') {
       const bounce = event.data?.bounce?.type;
       const kind = typeof bounce === 'string' ? bounce.toLowerCase() : '';
-      if (kind && !/permanent|hard/.test(kind)) return;
+      // Only a bounce explicitly classified as permanent suppresses; missing/undetermined types do not.
+      if (!/permanent|hard/.test(kind)) return;
+      // The event lists every recipient of the message, not the one that bounced: suppressing all of
+      // them would block valid addresses, so multi-recipient bounces are left to the operator.
+      if (recipients.length > 1) {
+        this.logger.warn(`Hard bounce on a ${recipients.length}-recipient message not suppressed automatically`);
+        return;
+      }
     }
     await this.options.suppressRecipients(
       recipients,

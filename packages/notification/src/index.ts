@@ -8,6 +8,7 @@ export {
   renderVariableMap,
   createNotifyType,
   createNotifyProvider,
+  PartialNotificationDeliveryError,
 } from './notifier.interface';
 export type {
   NotifyType,
@@ -54,7 +55,7 @@ export type { NotifyConfigManager } from './notifier-manager.service';
 export { NOTIFY_CONFIG_MANAGER } from './notifier-manager.service';
 
 export { NotifyHistoryService } from './notify-history.service';
-export type { NotifyHistoryRecord, NotifyHistoryStore } from './notify-history.service';
+export type { NotifyHistoryFilter, NotifyHistoryRecord, NotifyHistoryStore } from './notify-history.service';
 
 export {
   ZuckerNotificationModule,

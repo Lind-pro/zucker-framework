@@ -257,4 +257,13 @@ describe('TermsEvaluator', () => {
       ),
     ).toBe(true);
   });
+
+  it('does not resolve inherited Object.prototype members as operators (L15)', () => {
+    const evaluator = new TermsEvaluator();
+    for (const termType of ['toString', 'constructor', '__proto__', 'hasOwnProperty']) {
+      expect(() =>
+        evaluator.evaluate({ a: 1 }, { type: 'and', terms: [{ column: 'a', termType, value: 1 } as never] }),
+      ).toThrow(/Unknown term type/);
+    }
+  });
 });

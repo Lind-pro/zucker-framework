@@ -33,11 +33,12 @@ export class AccountAvatarService {
     return { assetId: asset?.ownerId === user.id && asset.state === 'ready' && asset.mimeType === 'image/png' ? user.avatarFileId : null, revision: user.avatarRevision };
   }
   metadata(userId: string): Promise<AvatarSnapshot> { return this.database.transaction(async tx => this.present(tx, await this.user(tx, userId))); }
-  private async preflight(userId: string, command: AvatarCommand, action: AvatarReceipt['action']): Promise<void> {
-    await this.database.transaction(async tx => {
+  private async preflight(userId: string, command: AvatarCommand, action: AvatarReceipt['action']): Promise<AvatarReceipt | null> {
+    return this.database.transaction(async tx => {
       const user = await this.user(tx, userId), receipt = await this.receipt(tx, userId, command.key);
       if (receipt) { if (receipt.action !== action || receipt.expectedRevision !== command.expectedRevision) throw new ConflictException('Avatar request key was reused'); }
       else if (user.avatarRevision !== command.expectedRevision) throw new ConflictException('The avatar changed in another request');
+      return receipt;
     });
   }
   private async normalize(file?: UploadedPrivateFile): Promise<Buffer> {
@@ -59,23 +60,47 @@ export class AccountAvatarService {
     if (!file || !Buffer.isBuffer(file.buffer) || !file.buffer.length || file.buffer.length > AVATAR_MAX_INPUT_BYTES)
       throw new BadRequestException('One PNG or JPEG image no larger than 2 MiB is required');
     const snapshot = { originalname: 'avatar.png', buffer: Buffer.from(file.buffer) };
-    await this.preflight(userId, request, 'UPLOAD');
+    const receipt = await this.preflight(userId, request, 'UPLOAD');
     const body = await this.normalize(snapshot);
+    if (receipt?.assetId) {
+      // A replay of an applied upload: its image may already have been superseded and deleted, so match
+      // the request against the stored digest instead of re-uploading under the old key.
+      const stored = await this.database.model('fileAssets').findUnique({ where: { id: receipt.assetId }, select: { ownerId: true, sha256: true } }) as { ownerId: string; sha256: string } | null;
+      if (!stored || stored.ownerId !== userId || stored.sha256 !== createHash('sha256').update(body).digest('hex'))
+        throw new ConflictException('Avatar request key was reused');
+      return (await this.bind(userId, request, 'UPLOAD', receipt.assetId)).snapshot;
+    }
     const key = `avatar_${createHash('sha256').update(request.key).digest('hex')}`;
     const asset = await this.files.upload(userId, key, { originalname: 'avatar.png', buffer: body });
-    return this.bind(userId, request, 'UPLOAD', asset.id);
+    return this.release(userId, await this.bind(userId, request, 'UPLOAD', asset.id));
   }
-  async remove(userId: string, command: AvatarCommand): Promise<AvatarSnapshot> { return this.bind(userId, { ...command }, 'REMOVE', null); }
+  /** Removing the avatar deliberately keeps the image among the owner's files. */
+  async remove(userId: string, command: AvatarCommand): Promise<AvatarSnapshot> { return (await this.bind(userId, { ...command }, 'REMOVE', null)).snapshot; }
+  /**
+   * Best effort: start deletion of the avatar-owned asset that a new upload replaced, so replaced avatars do
+   * not accumulate in private storage (and count against the owner's file quota). Files the user uploaded
+   * through /files are never touched; a failure leaves the old asset as before.
+   */
+  private async release(userId: string, result: { snapshot: AvatarSnapshot; superseded: string | null }): Promise<AvatarSnapshot> {
+    if (result.superseded) {
+      try {
+        const rows = await this.database.model('fileAssets').findMany({ where: { id: result.superseded, ownerId: userId,
+          idempotencyKey: { startsWith: 'avatar_' }, state: { not: 'deleted' } }, select: { id: true }, take: 1 }) as Array<{ id: string }>;
+        if (rows[0]) await this.files.delete(userId, rows[0].id);
+      } catch { /* the asset stays listed under the owner's files and can be deleted there */ }
+    }
+    return result.snapshot;
+  }
   private receipt(tx: ApplicationTransaction, userId: string, key: string) {
     return tx.model('accountAvatarChanges').findUnique({ where: { userId_idempotencyKey: { userId, idempotencyKey: key } } }) as Promise<AvatarReceipt | null>;
   }
-  private bind(userId: string, command: AvatarCommand, action: AvatarReceipt['action'], assetId: string | null): Promise<AvatarSnapshot> {
+  private bind(userId: string, command: AvatarCommand, action: AvatarReceipt['action'], assetId: string | null): Promise<{ snapshot: AvatarSnapshot; superseded: string | null }> {
     return this.database.transaction(async tx => {
       const user = await this.user(tx, userId, true), previous = await this.receipt(tx, userId, command.key);
       if (previous) {
         if (previous.action !== action || previous.assetId !== assetId || previous.expectedRevision !== command.expectedRevision)
           throw new ConflictException('Avatar request key was reused');
-        return { ...await this.present(tx, user), appliedRevision: previous.appliedRevision };
+        return { snapshot: { ...await this.present(tx, user), appliedRevision: previous.appliedRevision }, superseded: null };
       }
       if (user.avatarRevision !== command.expectedRevision) throw new ConflictException('The avatar changed in another request');
       if (assetId) {
@@ -89,7 +114,8 @@ export class AccountAvatarService {
         id: `avatar_${createHash('sha256').update(JSON.stringify([userId, command.key])).digest('hex')}`,
         userId, idempotencyKey: command.key, action, assetId, expectedRevision: command.expectedRevision, appliedRevision: revision,
       } });
-      return { ...await this.present(tx, { ...user, avatarFileId: assetId, avatarRevision: revision }), appliedRevision: revision };
+      return { snapshot: { ...await this.present(tx, { ...user, avatarFileId: assetId, avatarRevision: revision }), appliedRevision: revision },
+        superseded: user.avatarFileId && user.avatarFileId !== assetId ? user.avatarFileId : null };
     });
   }
   async content(userId: string, revision: number): Promise<Buffer> {

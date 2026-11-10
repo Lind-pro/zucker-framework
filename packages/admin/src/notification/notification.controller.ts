@@ -23,6 +23,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { NotFoundException } from '@zucker-framework/core';
+import { adminPage } from '../query-filter';
 import { JwtAuthGuard, PermissionsGuard, Permissions } from '@zucker-framework/auth';
 import {
   TemplateService,
@@ -147,21 +148,17 @@ export class NotificationController {
   @Post('history/_query')
   @HttpCode(HttpStatus.OK)
   queryHistory(@Body() body: HistoryQueryRequest): PageResult<NotifyHistoryRecord> {
-    const pageIndex = body.pageIndex ?? 0;
-    const pageSize = body.pageSize ?? 10;
-
-    // Query all matching records once, then slice — avoids a second DB/memory pass.
-    // NotifyHistoryService is in-memory (max 10 000 records), so this is acceptable.
-    const allRecords = this.notifyHistoryService.query({
+    const { pageIndex, pageSize } = adminPage(body);
+    const filter = {
       channel: body.channel,
       to: body.to,
       success: body.success,
       startTime: body.startTime ? new Date(body.startTime) : undefined,
       endTime: body.endTime ? new Date(body.endTime) : undefined,
-    });
-
-    const total = allRecords.length;
-    const data = allRecords.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
+    };
+    // NotifyHistoryService is per-process memory (max 10 000 records); results differ between replicas.
+    const total = this.notifyHistoryService.count(filter);
+    const data = this.notifyHistoryService.query({ ...filter, offset: pageIndex * pageSize, limit: pageSize });
 
     return { data, total, pageIndex, pageSize };
   }

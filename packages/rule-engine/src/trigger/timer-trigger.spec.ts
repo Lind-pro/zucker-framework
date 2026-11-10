@@ -80,12 +80,10 @@ describe('TimerTrigger', () => {
       const handler = vi.fn().mockResolvedValue(undefined);
       trigger.start({ cron: '* * * * *' }, handler);
 
-      vi.advanceTimersByTime(60_000);
-      await Promise.resolve(); // flush microtasks
+      await vi.advanceTimersByTimeAsync(60_000);
       expect(handler).toHaveBeenCalledTimes(1);
 
-      vi.advanceTimersByTime(60_000);
-      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(60_000);
       expect(handler).toHaveBeenCalledTimes(2);
     });
 
@@ -93,8 +91,7 @@ describe('TimerTrigger', () => {
       const handler = vi.fn().mockResolvedValue(undefined);
       trigger.start({ cron: '*/2 * * * * *' }, handler);
 
-      vi.advanceTimersByTime(6_000);
-      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(6_000);
       expect(handler).toHaveBeenCalledTimes(3);
     });
 
@@ -102,8 +99,7 @@ describe('TimerTrigger', () => {
       const handler = vi.fn().mockRejectedValue(new Error('boom'));
       trigger.start({ cron: '*/1 * * * * *' }, handler);
 
-      vi.advanceTimersByTime(3_000);
-      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(3_000);
       // Should have been called despite errors
       expect(handler.mock.calls.length).toBeGreaterThanOrEqual(1);
       expect(trigger.isRunning()).toBe(true);
@@ -117,8 +113,7 @@ describe('TimerTrigger', () => {
       const handler = vi.fn().mockResolvedValue(undefined);
       trigger.start({ cron: '*/1 * * * * *' }, handler);
 
-      vi.advanceTimersByTime(3_000);
-      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(3_000);
       expect(trigger.getExecutionCount()).toBe(3);
     });
 
@@ -126,8 +121,7 @@ describe('TimerTrigger', () => {
       const handler = vi.fn().mockResolvedValue(undefined);
       trigger.start({ cron: '*/1 * * * * *', maxTimes: 2 }, handler);
 
-      vi.advanceTimersByTime(5_000);
-      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(5_000);
       expect(handler).toHaveBeenCalledTimes(2);
       expect(trigger.isRunning()).toBe(false);
     });
@@ -138,8 +132,7 @@ describe('TimerTrigger', () => {
 
       expect(trigger.getLastExecutionTime()).toBeUndefined();
 
-      vi.advanceTimersByTime(1_000);
-      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(1_000);
       expect(trigger.getLastExecutionTime()).toBeInstanceOf(Date);
     });
   });
@@ -154,10 +147,41 @@ describe('TimerTrigger', () => {
       trigger.start({ cron: '* * * * *' }, handler1);
       trigger.reload({ cron: '*/1 * * * * *' }, handler2);
 
-      vi.advanceTimersByTime(1_000);
-      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(1_000);
       expect(handler1).not.toHaveBeenCalled();
       expect(handler2).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ─── real cron semantics (H6) ────────────────────────────────────────────────
+
+  describe('cron semantics', () => {
+    it('a daily 02:00 cron does not fire every second or minute', async () => {
+      vi.setSystemTime(new Date('2026-03-10T10:00:00Z'));
+      const handler = vi.fn().mockResolvedValue(undefined);
+      trigger.start({ cron: '0 0 2 * * *', timezone: 'UTC' }, handler);
+      await vi.advanceTimersByTimeAsync(15 * 3600 * 1000); // until 01:00 next day
+      expect(handler).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(3600 * 1000);
+      expect(handler).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(24 * 3600 * 1000);
+      expect(handler).toHaveBeenCalledTimes(2);
+    });
+
+    it('skips ticks while the previous run is in flight', async () => {
+      let release!: () => void;
+      const handler = vi.fn(() => new Promise<void>((r) => { release = r; }));
+      trigger.start({ cron: '* * * * * *' }, handler);
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(handler).toHaveBeenCalledTimes(1);
+      release();
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(handler).toHaveBeenCalledTimes(2);
+    });
+
+    it('rejects unsupported syntax instead of approximating it', () => {
+      expect(() => trigger.validate({ cron: '0 0 L * *' })).toThrow();
+      expect(() => trigger.validate({ cron: '0 0 * * *', timezone: 'Not/AZone' })).toThrow();
     });
   });
 });

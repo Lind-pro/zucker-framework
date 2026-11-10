@@ -21,6 +21,14 @@ import type {
 // 等 async_payment_succeeded 事件再处理。
 const FULFILLABLE_PAYMENT_STATUSES = ['paid', 'no_payment_required'];
 
+// Identifiers supplied by unauthenticated clients are bounded before they reach the database.
+const MAX_CLIENT_ID_LENGTH = 256;
+
+function isUniqueViolation(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  return code === 'P2002' || code === '23505' || /unique constraint/i.test(String((error as Error)?.message));
+}
+
 // 浏览器扩展变现服务端核心：激活码授权（激活/权益/撤销/补发）、免费额度账本、
 // Stripe webhook 发码、授权邮件、运营统计。产品维度全部参数化：
 // 产品信息先查 ExtensionProduct 表，未登记时用 options.fallbackProducts 兜底。
@@ -31,7 +39,19 @@ export class ExtensionCore {
     protected readonly store: ExtStore,
     protected readonly mailer: ExtMailer,
     protected readonly options: ExtServerOptions,
-  ) {}
+  ) {
+    if (!options.licenseSecret) {
+      throw new Error('ExtensionCore requires a non-empty licenseSecret');
+    }
+  }
+
+  // Runs fn atomically when the store supports interactive transactions; a transaction client
+  // (no $transaction) or a minimal store runs it directly.
+  protected inTransaction<T>(fn: (store: ExtStore, atomic: boolean) => Promise<T>): Promise<T> {
+    return this.store.$transaction
+      ? this.store.$transaction((tx: ExtStore) => fn(tx, true))
+      : fn(this.store, false);
+  }
 
   // 激活码激活：绑定设备并下发短期 token
   async activate(dto: ActivateInput) {
@@ -41,53 +61,80 @@ export class ExtensionCore {
       throw new BadRequestException('激活码和设备标识不能为空');
     }
 
-    const license = await this.store.extensionLicense.findUnique({
-      where: { codeHash: this.hash(code) },
-      include: { activations: true },
-    });
-    if (!license || license.status === 'revoked') {
-      throw new ForbiddenException('激活码无效');
+    if (deviceId.length > MAX_CLIENT_ID_LENGTH) {
+      throw new BadRequestException('设备标识无效');
     }
+    const codeHash = this.hash(code);
 
-    const now = new Date();
-    const existing = license.activations.find(
-      (a: { deviceId: string }) => a.deviceId === deviceId,
-    );
-    if (!existing && license.activations.length >= license.maxDevices) {
-      throw new ForbiddenException('该激活码绑定设备数已满');
-    }
-
-    const token = randomBytes(32).toString('base64url');
-    const activation = existing
-      ? await this.store.extensionActivation.update({
-          where: { id: existing.id },
-          data: {
-            tokenHash: this.hash(token),
-            lastSeenAt: now,
-            email: existing.email || (dto.email || '').trim(),
-            deviceName: (dto.deviceName || existing.deviceName || '').trim(),
-          },
-        })
-      : await this.store.extensionActivation.create({
-          data: {
-            licenseId: license.id,
-            deviceId,
-            email: (dto.email || '').trim(),
-            deviceName: (dto.deviceName || '').trim(),
-            tokenHash: this.hash(token),
-            expiresAt: this.addDays(now, license.durationDays),
-            lastSeenAt: now,
-          },
-        });
-
-    if (license.status !== 'active') {
-      await this.store.extensionLicense.update({
-        where: { id: license.id },
-        data: { status: 'active' },
+    // With a transactional store the device-limit check and the insert are serialized by a row lock on
+    // the license (a same-value update), so parallel activations of different devices cannot exceed
+    // maxDevices. Without one, the historical unlocked check applies.
+    return this.inTransaction(async (store, atomic) => {
+      let license = await store.extensionLicense.findUnique({
+        where: { codeHash },
+        include: { activations: true },
       });
-    }
+      if (!license || license.status === 'revoked') {
+        throw new ForbiddenException('激活码无效');
+      }
+      if (atomic) {
+        await store.extensionLicense.update({ where: { id: license.id }, data: { id: license.id } });
+        license = await store.extensionLicense.findUnique({
+          where: { id: license.id },
+          include: { activations: true },
+        });
+        if (!license || license.status === 'revoked') {
+          throw new ForbiddenException('激活码无效');
+        }
+      }
 
-    return { token, entitlement: this.buildEntitlement(license, activation) };
+      const now = new Date();
+      const activations: Array<{ id: string; deviceId: string; expiresAt: Date; email?: string | null; deviceName?: string | null }> =
+        license.activations || [];
+      const existing = activations.find((a) => a.deviceId === deviceId);
+      if (!existing && activations.length >= license.maxDevices) {
+        throw new ForbiddenException('该激活码绑定设备数已满');
+      }
+      let expiresAt = this.addDays(now, license.durationDays);
+      if (!existing && this.options.activationExpiry === 'license' && activations.length) {
+        expiresAt = new Date(Math.min(...activations.map((a) => new Date(a.expiresAt).getTime())));
+        if (expiresAt.getTime() <= now.getTime()) {
+          throw new ForbiddenException('授权已过期');
+        }
+      }
+
+      const token = randomBytes(32).toString('base64url');
+      const activation = existing
+        ? await store.extensionActivation.update({
+            where: { id: existing.id },
+            data: {
+              tokenHash: this.hash(token),
+              lastSeenAt: now,
+              email: existing.email || (dto.email || '').trim(),
+              deviceName: (dto.deviceName || existing.deviceName || '').trim(),
+            },
+          })
+        : await store.extensionActivation.create({
+            data: {
+              licenseId: license.id,
+              deviceId,
+              email: (dto.email || '').trim(),
+              deviceName: (dto.deviceName || '').trim(),
+              tokenHash: this.hash(token),
+              expiresAt,
+              lastSeenAt: now,
+            },
+          });
+
+      if (license.status !== 'active') {
+        await store.extensionLicense.update({
+          where: { id: license.id },
+          data: { status: 'active' },
+        });
+      }
+
+      return { token, entitlement: this.buildEntitlement(license, activation) };
+    });
   }
 
   // 查询当前权益（Bearer token）
@@ -124,6 +171,13 @@ export class ExtensionCore {
     const accountLabel = (dto.accountLabel || '').trim() || accountKey;
     if (!deviceId || !accountKey) {
       throw new BadRequestException('设备标识和账号标识不能为空');
+    }
+    if (
+      deviceId.length > MAX_CLIENT_ID_LENGTH ||
+      accountKey.length > MAX_CLIENT_ID_LENGTH ||
+      accountLabel.length > MAX_CLIENT_ID_LENGTH
+    ) {
+      throw new BadRequestException('设备标识或账号标识过长');
     }
 
     const today = this.today();
@@ -180,17 +234,20 @@ export class ExtensionCore {
     return { codes };
   }
 
-  private async createLicense(input: {
-    plan?: string;
-    durationDays?: number;
-    maxDevices?: number;
-    features?: string[];
-  }) {
+  private async createLicense(
+    input: {
+      plan?: string;
+      durationDays?: number;
+      maxDevices?: number;
+      features?: string[];
+    },
+    store: ExtStore = this.store,
+  ) {
     const code = this.generateCode();
-    const license = await this.store.extensionLicense.create({
+    const license = await store.extensionLicense.create({
       data: {
         codeHash: this.hash(this.normalizeCode(code)),
-        codePreview: `${code.slice(0, 12)}…`,
+        codePreview: this.previewCode(code),
         plan: input.plan || 'pro',
         durationDays: input.durationDays || 365,
         maxDevices: input.maxDevices || 1,
@@ -234,7 +291,7 @@ export class ExtensionCore {
       return { received: true };
     }
 
-    // 幂等：Stripe 会重试投递，同一 session 只发一次码
+    // Fast path for Stripe retries. The authoritative idempotency guard is the unique order row below.
     const existing = await this.store.extensionOrder.findUnique({
       where: { stripeSessionId: sessionId },
     });
@@ -249,44 +306,96 @@ export class ExtensionCore {
     const product = String(
       metadata.product || session.client_reference_id || this.options.defaultProduct,
     ).toLowerCase();
-    const { code, license } = await this.createLicense({
-      plan: String(metadata.plan || 'pro'),
-      durationDays: Number(metadata.durationDays) || 365,
-      maxDevices: Number(metadata.maxDevices) || 2,
-    });
-
-    let status = 'fulfilled';
-    if (email) {
-      const sent = await this.sendLicenseEmail(email, code, product).catch((error) => {
-        this.logger.error(`激活码邮件发送异常: ${(error as Error)?.message}`);
-        return false;
-      });
-      if (!sent) {
-        status = 'email_failed';
-        this.logger.error(
-          `激活码邮件发送失败，需人工补发: session=${sessionId} email=${email} code=${license.codePreview}`,
-        );
-      }
-    } else {
-      status = 'email_failed';
-      this.logger.error(`Stripe session 无买家邮箱: session=${sessionId}`);
+    if (!(await this.acceptsCheckout(session, product))) {
+      this.logger.warn(`Ignoring checkout session outside the extension checkout policy: session=${sessionId}`);
+      return { received: true, ignored: true };
     }
 
-    await this.store.extensionOrder.create({
-      data: {
-        stripeSessionId: sessionId,
-        stripeEventId: String(event.id || ''),
-        product,
-        email,
-        amountTotal: Number(session.amount_total) || null,
-        currency: String(session.currency || '') || null,
-        licenseId: license.id,
-        licenseCodePreview: license.codePreview,
-        status,
-      },
+    // Claim the session first: the order row (unique stripeSessionId) is inserted before the license and
+    // in the same transaction, so concurrent or repeated deliveries mint at most one code. The order stays
+    // `email_failed` until delivery is confirmed, which keeps a crash or mail failure visible to admin resend.
+    let claimed: { code: string; license: { id: string; codePreview: string } };
+    try {
+      claimed = await this.inTransaction(async (store) => {
+        await store.extensionOrder.create({
+          data: {
+            stripeSessionId: sessionId,
+            stripeEventId: String(event.id || ''),
+            product,
+            email,
+            amountTotal: Number(session.amount_total) || null,
+            currency: String(session.currency || '') || null,
+            status: 'email_failed',
+          },
+        });
+        const created = await this.createLicense(
+          {
+            plan: String(metadata.plan || 'pro'),
+            durationDays: Number(metadata.durationDays) || 365,
+            maxDevices: Number(metadata.maxDevices) || 2,
+          },
+          store,
+        );
+        await store.extensionOrder.update({
+          where: { stripeSessionId: sessionId },
+          data: { licenseId: created.license.id, licenseCodePreview: created.license.codePreview },
+        });
+        return created;
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        return { received: true, duplicated: true };
+      }
+      throw error;
+    }
+    const { code, license } = claimed;
+
+    if (!email) {
+      this.logger.error(`Stripe session 无买家邮箱: session=${sessionId}`);
+      return { received: true };
+    }
+    const sent = await this.sendLicenseEmail(email, code, product).catch((error) => {
+      this.logger.error(`激活码邮件发送异常: ${(error as Error)?.message}`);
+      return false;
     });
+    if (!sent) {
+      this.logger.error(
+        `激活码邮件发送失败，需人工补发: session=${sessionId} license=${license.id}`,
+      );
+      return { received: true };
+    }
+    // The code is already delivered: a failed status write must not make Stripe retry (the retry would be
+    // a duplicate anyway). The order stays `email_failed` and an operator can confirm or resend.
+    await this.store.extensionOrder
+      .update({ where: { stripeSessionId: sessionId }, data: { status: 'fulfilled' } })
+      .catch((error) => {
+        this.logger.error(
+          `激活码已发送但订单状态未更新: session=${sessionId} error=${(error as Error)?.message}`,
+        );
+      });
 
     return { received: true };
+  }
+
+  protected async acceptsCheckout(session: Record<string, any>, product: string): Promise<boolean> {
+    const policy = this.options.checkout;
+    if (!policy) {
+      return true;
+    }
+    if (policy.requireProductMetadata && !session.metadata?.product) {
+      return false;
+    }
+    if (policy.allowedProducts && !policy.allowedProducts.map((p) => p.toLowerCase()).includes(product)) {
+      return false;
+    }
+    if (policy.allowedPaymentLinks) {
+      const link = session.payment_link;
+      const linkId = typeof link === 'string' ? link : link?.id;
+      if (!linkId || !policy.allowedPaymentLinks.includes(linkId)) {
+        return false;
+      }
+    }
+    return policy.accept ? Boolean(await policy.accept(session, product)) : true;
   }
 
   // 产品信息：先查 ExtensionProduct 表（新产品只需插一行 DB），
@@ -333,6 +442,7 @@ export class ExtensionCore {
   // ===== 管理端（消费方 controller 负责鉴权） =====
 
   async adminListLicenses(page: number, pageSize: number) {
+    ({ page, pageSize } = this.pageArgs(page, pageSize));
     const skip = (page - 1) * pageSize;
     const [items, total] = await Promise.all([
       this.store.extensionLicense.findMany({
@@ -364,6 +474,7 @@ export class ExtensionCore {
   }
 
   async adminListOrders(page: number, pageSize: number) {
+    ({ page, pageSize } = this.pageArgs(page, pageSize));
     const skip = (page - 1) * pageSize;
     const [items, total] = await Promise.all([
       this.store.extensionOrder.findMany({
@@ -402,27 +513,35 @@ export class ExtensionCore {
       durationDays: previous?.durationDays,
       maxDevices: previous?.maxDevices,
     });
-    if (previous) {
-      await this.store.extensionLicense.update({
-        where: { id: previous.id },
-        data: { status: 'revoked' },
-      });
-    }
 
+    // Deliver first: the customer's current license stays valid until the replacement has been sent.
     const sent = await this.sendLicenseEmail(order.email, code, order.product || '').catch(
       () => false,
     );
     if (!sent) {
+      await this.store.extensionLicense
+        .update({ where: { id: license.id }, data: { status: 'revoked' } })
+        .catch((error) => {
+          this.logger.error(`补发失败后撤销新码失败: license=${license.id} error=${(error as Error)?.message}`);
+        });
       throw new ServiceUnavailableException('邮件发送失败，请检查邮件服务配置');
     }
 
-    await this.store.extensionOrder.update({
-      where: { id },
-      data: {
-        licenseId: license.id,
-        licenseCodePreview: license.codePreview,
-        status: 'fulfilled',
-      },
+    await this.inTransaction(async (store) => {
+      if (previous && previous.id !== license.id) {
+        await store.extensionLicense.update({
+          where: { id: previous.id },
+          data: { status: 'revoked' },
+        });
+      }
+      await store.extensionOrder.update({
+        where: { id },
+        data: {
+          licenseId: license.id,
+          licenseCodePreview: license.codePreview,
+          status: 'fulfilled',
+        },
+      });
     });
     return { resent: true, codePreview: license.codePreview };
   }
@@ -515,6 +634,18 @@ export class ExtensionCore {
       .trim()
       .toUpperCase()
       .replace(/[^A-Z0-9]/g, '');
+  }
+
+  // Only the prefix and the last two characters: the code has 48 random bits, the preview is returned
+  // to clients and logged, and must not shrink the secret part meaningfully.
+  private previewCode(code: string) {
+    return `${code.slice(0, this.options.codePrefix.length + 1)}…${code.slice(-2)}`;
+  }
+
+  private pageArgs(page: number, pageSize: number) {
+    const safePage = Number.isInteger(Number(page)) && Number(page) >= 1 ? Number(page) : 1;
+    const size = Number.isInteger(Number(pageSize)) ? Number(pageSize) : 20;
+    return { page: safePage, pageSize: Math.min(Math.max(size, 1), 100) };
   }
 
   private generateCode() {

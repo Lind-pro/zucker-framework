@@ -10,7 +10,11 @@ export interface PayPalPaymentTransportOptions {
   mode: 'live' | 'sandbox';
   fetcher?: typeof fetch;
   logger?: { warn: (message: string) => void; error: (message: string) => void };
+  /** Per-request timeout for SDK and REST calls (milliseconds). Defaults to 10 000. */
+  timeoutMs?: number;
 }
+
+const PAYPAL_REQUEST_TIMEOUT_MS = 10000;
 
 export interface PayPalCaptureRefundRequest {
   /**
@@ -204,6 +208,7 @@ export class PayPalPaymentTransport {
   private readonly baseUrl: string;
   private readonly fetcher: typeof fetch;
   get environment(): 'live' | 'sandbox' { return this.options.mode; }
+  private get requestTimeoutMs(): number { return this.options.timeoutMs ?? PAYPAL_REQUEST_TIMEOUT_MS; }
 
   constructor(private readonly options: PayPalPaymentTransportOptions) {
     const { Client, Environment, LogLevel, OrdersController } = requireSdk(
@@ -214,7 +219,8 @@ export class PayPalPaymentTransport {
         oAuthClientId: options.clientId,
         oAuthClientSecret: options.clientSecret,
       },
-      timeout: 0,
+      // A finite timeout: an SDK call that never returns would hold a capture claim and request forever.
+      timeout: options.timeoutMs ?? PAYPAL_REQUEST_TIMEOUT_MS,
       environment: options.mode === 'live' ? Environment.Production : Environment.Sandbox,
       logging: {
         logLevel: LogLevel.Info,
@@ -254,8 +260,9 @@ export class PayPalPaymentTransport {
       body: 'grant_type=client_credentials',
       ...(signal ? { signal } : {}),
     });
+    if (!response.ok) throw new Error('Unable to obtain PayPal access token');
     const data = (await response.json()) as { access_token?: unknown };
-    if (!response.ok || typeof data.access_token !== 'string' || !data.access_token) {
+    if ( typeof data.access_token !== 'string' || !data.access_token) {
       throw new Error('Unable to obtain PayPal access token');
     }
     return data.access_token;
@@ -264,8 +271,8 @@ export class PayPalPaymentTransport {
   /** Fixed-origin subscription endpoints; errors never include credentials, raw bodies or provider URLs. */
   private async subscriptionRequest(method: 'GET' | 'POST', path: string, body?: unknown, requestId?: string): Promise<Record<string, unknown>> {
     try {
-      const accessToken = await this.getAccessToken(AbortSignal.timeout(10000));
-      const response = await this.fetcher(`${this.baseUrl}${path}`, { method, signal: AbortSignal.timeout(10000), redirect: 'error',
+      const accessToken = await this.getAccessToken(AbortSignal.timeout(this.requestTimeoutMs));
+      const response = await this.fetcher(`${this.baseUrl}${path}`, { method, signal: AbortSignal.timeout(this.requestTimeoutMs), redirect: 'error',
         headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json',
           ...(requestId ? { 'PayPal-Request-Id': requestId, Prefer: 'return=representation' } : {}) },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
@@ -358,11 +365,12 @@ export class PayPalPaymentTransport {
       return false;
     }
     try {
-      const accessToken = await this.getAccessToken();
+      const accessToken = await this.getAccessToken(AbortSignal.timeout(this.requestTimeoutMs));
       const response = await this.fetcher(
         `${this.baseUrl}/v1/notifications/verify-webhook-signature`,
         {
           method: 'POST',
+          signal: AbortSignal.timeout(this.requestTimeoutMs),
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
           body: JSON.stringify({
             auth_algo: authAlgo,
@@ -375,8 +383,9 @@ export class PayPalPaymentTransport {
           }),
         },
       );
+      if (!response.ok) return false;
       const result = (await response.json()) as { verification_status?: unknown };
-      return response.ok && result.verification_status === 'SUCCESS';
+      return result.verification_status === 'SUCCESS';
     } catch (error) {
       this.options.logger?.error(
         `PayPal webhook verification failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -390,30 +399,32 @@ export class PayPalPaymentTransport {
     request: PayPalCaptureRefundRequest,
     requestId?: string,
   ): Promise<PayPalCaptureRefundResponse> {
-    const accessToken = await this.getAccessToken();
+    const accessToken = await this.getAccessToken(AbortSignal.timeout(this.requestTimeoutMs));
     const response = await this.fetcher(
       `${this.baseUrl}/v2/payments/captures/${encodeURIComponent(captureId)}/refund`,
       {
         method: 'POST',
+        signal: AbortSignal.timeout(this.requestTimeoutMs),
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}`,
           ...(requestId ? { 'PayPal-Request-Id': requestId } : {}),
         },
         body: JSON.stringify(request),
       },
     );
-    const result = (await response.json()) as PayPalCaptureRefundResponse;
+    // Check the status before parsing: a non-JSON 5xx must surface as a refund failure, not a SyntaxError.
     if (!response.ok)
-      throw new Error(`PayPal refund request failed (${response.status})`);
-    return result;
+      // statusCode lets callers tell a definite 4xx rejection from an unknown outcome.
+      throw Object.assign(new Error(`PayPal refund request failed (${response.status})`), { statusCode: response.status });
+    return (await response.json()) as PayPalCaptureRefundResponse;
   }
 
   private async paymentRequest(method: 'GET' | 'POST', path: string, body?: unknown, requestId?: string): Promise<Record<string, unknown>> {
     if (requestId !== undefined && (!requestId || requestId.length > 78 || /[\r\n\u0000]/.test(requestId))) throw new PayPalPaymentProtocolError('rejected');
     let accessToken: string;
-    try { accessToken = await this.getAccessToken(AbortSignal.timeout(10000)); }
+    try { accessToken = await this.getAccessToken(AbortSignal.timeout(this.requestTimeoutMs)); }
     catch { throw new PayPalPaymentProtocolError('rejected'); }
     try {
-      const response = await this.fetcher(`${this.baseUrl}${path}`, { method, redirect: 'error', signal: AbortSignal.timeout(10000),
+      const response = await this.fetcher(`${this.baseUrl}${path}`, { method, redirect: 'error', signal: AbortSignal.timeout(this.requestTimeoutMs),
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}`, Prefer: 'return=representation',
           ...(requestId ? { 'PayPal-Request-Id': requestId } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
       if (!response.ok) throw new PayPalPaymentProtocolError([400, 401, 403, 404, 422].includes(response.status) ? 'rejected' : 'unknown', response.status);

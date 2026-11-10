@@ -15,6 +15,12 @@ import { ApiResponse, ApiOperation } from '@nestjs/swagger';
 import type { CrudEntity } from './crud-entity';
 import { CrudService } from './base.service';
 import { type DynamicQueryParam } from './dynamic-query.service';
+import {
+  type CrudWritePolicy,
+  assertSafeBatchWhere,
+  sanitizeWriteBodies,
+  sanitizeWriteBody,
+} from './write-policy';
 
 export class BaseControllerHost<T extends CrudEntity> {
   declare protected readonly service: CrudService<T>;
@@ -81,17 +87,43 @@ export interface BaseControllerRouteOptions {
   path?: string;
   decorators?: MethodDecorator[];
 }
+/** Routes that are only registered when listed in `only` or configured in `routes`. */
+const OPT_IN_ROUTES: readonly BaseControllerMethod[] = ['saveOrUpdate', 'updateMany', 'deleteMany'];
+const QUERY_ROUTES: readonly BaseControllerMethod[] = [
+  'findAll', 'queryNoPaging', 'queryNoPagingPost', 'queryPager', 'queryPagerPost',
+  'count', 'countPost', 'exists', 'existsPost',
+];
+
 export interface BaseControllerOptions {
-  /** Restrict the generated HTTP surface to these operations. Defaults to existing standard routes. */
+  /**
+   * Restrict the generated HTTP surface to these operations. Without `only`, the standard routes
+   * are registered except the opt-in ones (`saveOrUpdate`, `updateMany`, `deleteMany`), which need
+   * to be listed here or configured in `routes`.
+   */
   only?: readonly BaseControllerMethod[];
   routes?: Partial<Record<BaseControllerMethod, BaseControllerRouteOptions | false>>;
-  /** Runtime query DTO for the host's validation/defaults policy. */
+  /** Runtime query DTO used by Nest validation on every generated query route (GET and POST). */
   queryDto?: Type<DynamicQueryParam>;
+  /** Runtime DTO validated (and whitelisted by a whitelisting ValidationPipe) for create bodies. */
+  createDto?: Type<unknown>;
+  /** Runtime DTO for update / saveOrUpdate bodies. Defaults to `createDto` for saveOrUpdate. */
+  updateDto?: Type<unknown>;
+  /**
+   * Body policy for generated write routes. Defaults: server-controlled audit fields
+   * (creatorId, createdAt, updatedAt, deletedAt, ...) are dropped, `id` is dropped on update and
+   * Prisma nested relation writes are rejected. See {@link CrudWritePolicy}.
+   */
+  writePolicy?: CrudWritePolicy;
+  /** Max items per createMany / save request (default 1000). */
+  maxBatchItems?: number;
 }
 export function BaseController<T extends CrudEntity>(
   EntityClass: Type<T>,
   options: BaseControllerOptions = {},
 ): Type<BaseControllerHost<T>> {
+  const writePolicy = options.writePolicy ?? {};
+  const maxBatchItems = options.maxBatchItems ?? 1000;
+
   class BaseControllerHostImpl {
     constructor(protected readonly service: CrudService<T>) {}
 
@@ -206,7 +238,33 @@ export function BaseController<T extends CrudEntity>(
     /** Explicitly opt into single-record upsert through routes/only. */
     @Patch('save')
     async saveOrUpdate(@Body() data: Partial<T>): Promise<T> {
-      return this.service.saveOrUpdate(data);
+      return this.service.saveOrUpdate(sanitizeWriteBody<T>(data, writePolicy, 'create'));
+    }
+
+    // Static batch routes are declared before ':id' so PUT/DELETE /batch is not captured by ':id'.
+
+    /**
+     * 批量更新记录（需显式启用）
+     */
+    @Put('batch')
+    @ApiOperation({ summary: '批量更新记录' })
+    @ApiResponse({ status: HttpStatus.OK })
+    async updateMany(
+      @Body('where') where: Record<string, unknown>,
+      @Body('data') data: Partial<T>,
+    ): Promise<{ count: number }> {
+      const safeWhere = assertSafeBatchWhere(where);
+      return this.service.updateMany(safeWhere, sanitizeWriteBody<T>(data, writePolicy, 'update'));
+    }
+
+    /**
+     * 批量删除记录（需显式启用）
+     */
+    @Delete('batch')
+    @ApiOperation({ summary: '批量删除记录' })
+    @ApiResponse({ status: HttpStatus.OK })
+    async deleteMany(@Body('where') where: Record<string, unknown>): Promise<{ count: number }> {
+      return this.service.deleteMany(assertSafeBatchWhere(where));
     }
 
     // ===================== Save Routes  =====================
@@ -218,7 +276,7 @@ export function BaseController<T extends CrudEntity>(
     @ApiOperation({ summary: '新增单个数据,并返回新增后的数据' })
     @ApiResponse({ status: HttpStatus.CREATED, type: EntityClass })
     async create(@Body() data: Partial<T>): Promise<T> {
-      return this.service.create(data);
+      return this.service.create(sanitizeWriteBody<T>(data, writePolicy, 'create'));
     }
 
     /**
@@ -228,7 +286,7 @@ export function BaseController<T extends CrudEntity>(
     @ApiOperation({ summary: '批量新增数据' })
     @ApiResponse({ status: HttpStatus.CREATED })
     async createMany(@Body() data: Partial<T>[]): Promise<{ count: number }> {
-      return this.service.createMany(data);
+      return this.service.createMany(sanitizeWriteBodies<T>(data, writePolicy, 'create', maxBatchItems));
     }
 
     /**
@@ -243,7 +301,7 @@ export function BaseController<T extends CrudEntity>(
     async save(
       @Body() data: Partial<T>[],
     ): Promise<{ created: number; updated: number; total: number }> {
-      return this.service.save(data);
+      return this.service.save(sanitizeWriteBodies<T>(data, writePolicy, 'create', maxBatchItems));
     }
 
     /**
@@ -253,7 +311,7 @@ export function BaseController<T extends CrudEntity>(
     @ApiOperation({ summary: '根据ID修改数据' })
     @ApiResponse({ status: HttpStatus.OK, type: EntityClass })
     async update(@Param('id') id: string, @Body() data: Partial<T>): Promise<T> {
-      return this.service.update(id, data);
+      return this.service.update(id, sanitizeWriteBody<T>(data, writePolicy, 'update'));
     }
 
     // ===================== Delete Routes  =====================
@@ -267,35 +325,6 @@ export function BaseController<T extends CrudEntity>(
     async delete(@Param('id') id: string): Promise<T> {
       return this.service.delete(id);
     }
-
-    /**
-     * 批量更新记录
-     */
-    @Put('batch')
-    @ApiOperation({ summary: '批量更新记录' })
-    @ApiResponse({ status: HttpStatus.OK })
-    async updateMany(
-      @Body('where') where: Record<string, unknown>,
-      @Body('data') data: Partial<T>,
-    ): Promise<{ count: number }> {
-      if (!where || Object.keys(where).length === 0) {
-        throw new BadRequestException('deleteMany/updateMany 不允许空 where 条件');
-      }
-      return this.service.updateMany(where, data);
-    }
-
-    /**
-     * 批量删除记录
-     */
-    @Delete('batch')
-    @ApiOperation({ summary: '批量删除记录' })
-    @ApiResponse({ status: HttpStatus.OK })
-    async deleteMany(@Body('where') where: Record<string, unknown>): Promise<{ count: number }> {
-      if (!where || Object.keys(where).length === 0) {
-        throw new BadRequestException('deleteMany/updateMany 不允许空 where 条件');
-      }
-      return this.service.deleteMany(where);
-    }
   }
 
   const prototype = BaseControllerHostImpl.prototype;
@@ -306,7 +335,7 @@ export function BaseController<T extends CrudEntity>(
     const route = options.routes?.[key];
     const enabled = options.only
       ? options.only.includes(key)
-      : key !== 'saveOrUpdate' || route !== undefined;
+      : !OPT_IN_ROUTES.includes(key) || route !== undefined;
     if (!enabled || route === false) {
       Reflect.deleteProperty(prototype, key);
       continue;
@@ -319,9 +348,19 @@ export function BaseController<T extends CrudEntity>(
       for (const decorator of route.decorators ?? []) decorator(prototype, key, descriptor);
     }
   }
-  if (options.queryDto && Object.hasOwn(prototype, 'findAll')) {
-    Reflect.defineMetadata('design:paramtypes', [options.queryDto], prototype, 'findAll');
+  if (options.queryDto) {
+    for (const key of QUERY_ROUTES) {
+      if (Object.hasOwn(prototype, key)) {
+        Reflect.defineMetadata('design:paramtypes', [options.queryDto], prototype, key);
+      }
+    }
   }
+  const bodyDto = (key: BaseControllerMethod, types: (dto: Type<unknown>) => unknown[], dto?: Type<unknown>) => {
+    if (dto && Object.hasOwn(prototype, key)) Reflect.defineMetadata('design:paramtypes', types(dto), prototype, key);
+  };
+  bodyDto('create', (dto) => [dto], options.createDto);
+  bodyDto('update', (dto) => [String, dto], options.updateDto);
+  bodyDto('saveOrUpdate', (dto) => [dto], options.updateDto ?? options.createDto);
 
   return BaseControllerHostImpl as unknown as Type<BaseControllerHost<T>>;
 }

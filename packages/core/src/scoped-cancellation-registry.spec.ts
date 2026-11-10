@@ -23,4 +23,13 @@ describe('ScopedCancellationRegistry', () => {
     expect(registry.abort('a')).toBe(false);
     expect(replacement.aborted).toBe(false);
   });
+
+  it('does not let a replaced task clean up the newer registration', () => {
+    const registry = new ScopedCancellationRegistry<string>();
+    const first = registry.register('job');
+    const second = registry.register('job');
+    registry.cleanup('job', first);
+    expect(registry.abort('job')).toBe(true);
+    expect(second.aborted).toBe(true);
+  });
 });

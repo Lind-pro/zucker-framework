@@ -72,6 +72,8 @@ describe('analytics consumer transport', () => {
   });
 
   it('keeps a stable in-memory session when browser storage is blocked', async () => {
+    const readBeacon = async (payload: Blob | string) =>
+      JSON.parse(typeof payload === 'string' ? payload : await payload.text());
     const { trackEvent } = await createTracker();
     vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
       throw new Error('blocked');
@@ -83,7 +85,8 @@ describe('analytics consumer transport', () => {
       trackEvent('first');
       trackEvent('second');
     }).not.toThrow();
-    expect(beacon.mock.calls.map(([, payload]) => JSON.parse(payload)[0].sessionId)).toEqual([
+    const sessions = await Promise.all(beacon.mock.calls.map(async ([, payload]) => (await readBeacon(payload))[0].sessionId));
+    expect(sessions).toEqual([
       'generated-session',
       'generated-session',
     ]);

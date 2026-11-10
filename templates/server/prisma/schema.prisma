@@ -65,6 +65,7 @@ model accountSessions {
 
   @@index([userId, revokedAt])
   @@index([expiresAt])
+  @@index([revokedAt])
   @@map("account_sessions")
 }
 
@@ -175,6 +176,7 @@ model accountApiKeyUsage {
 
   @@index([apiKeyId, timestamp])
   @@index([userId, timestamp])
+  @@index([timestamp])
   @@map("account_api_key_usage")
 }
 
@@ -1318,6 +1320,7 @@ model AsyncJob {
   @@index([userId, status, createdAt(sort: Desc)])
   @@index([orderId])
   @@index([providerRequestId])
+  @@index([kind, status, updatedAt])
   @@map("async_jobs")
 }
 

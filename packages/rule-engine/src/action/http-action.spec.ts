@@ -255,4 +255,65 @@ describe('HttpAction', () => {
       await expectation;
     });
   });
+
+  // ─── M10: injection and destination policy ───────────────────────────────────
+
+  describe('injection and destination policy', () => {
+    const okFetch = () => vi.fn().mockResolvedValue({ ok: true, text: async () => '{}' });
+
+    it('quotes in data cannot inject JSON body fields', async () => {
+      const mockFetch = okFetch();
+      vi.stubGlobal('fetch', mockFetch);
+      await action.execute(
+        { url: 'http://api.example.com/r', method: 'POST', body: { name: '${name}' } },
+        { name: 'x","admin":true,"y":"' },
+      );
+      const sent = JSON.parse(mockFetch.mock.calls[0][1].body as string);
+      expect(sent).toEqual({ name: 'x","admin":true,"y":"' });
+      expect(sent.admin).toBeUndefined();
+    });
+
+    it('URL placeholders are percent-encoded', async () => {
+      const mockFetch = okFetch();
+      vi.stubGlobal('fetch', mockFetch);
+      await action.execute(
+        { url: 'http://api.example.com/devices/${id}', method: 'GET' },
+        { id: '../admin?x=@evil.com/' },
+      );
+      const sentUrl = new URL(mockFetch.mock.calls[0][0] as string);
+      expect(sentUrl.host).toBe('api.example.com');
+      expect(sentUrl.pathname).toBe('/devices/..%2Fadmin%3Fx%3D%40evil.com%2F');
+      expect(sentUrl.search).toBe('');
+    });
+
+    it.each([
+      'http://127.0.0.1/x',
+      'http://169.254.169.254/latest/meta-data',
+      'http://10.0.0.5/',
+      'http://localhost:8080/',
+      'http://[::1]/',
+      'http://[::ffff:127.0.0.1]/',
+      'file:///etc/passwd',
+    ])('refuses private or non-http destination %s by default', async (url) => {
+      const mockFetch = okFetch();
+      vi.stubGlobal('fetch', mockFetch);
+      await expect(action.execute({ url, method: 'GET' }, {})).rejects.toThrow(/not allowed/);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('allowPrivateNetwork opt-in permits internal destinations', async () => {
+      const mockFetch = okFetch();
+      vi.stubGlobal('fetch', mockFetch);
+      await new HttpAction({ allowPrivateNetwork: true }).execute({ url: 'http://10.0.0.5/', method: 'GET' }, {});
+      expect(mockFetch).toHaveBeenCalledOnce();
+      expect(mockFetch.mock.calls[0][1].redirect).toBe('error');
+    });
+
+    it('caps response size', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, text: async () => 'x'.repeat(20) }));
+      await expect(
+        new HttpAction({ maxResponseBytes: 10 }).execute({ url: 'http://api.example.com', method: 'GET' }, {}),
+      ).rejects.toThrow(/exceeds/);
+    });
+  });
 });

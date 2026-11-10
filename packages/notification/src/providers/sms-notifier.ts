@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { SimpleNotifierProvider, NotifyChannel, NotifyMessage } from '../notifier.interface';
 import type { SmsProvider } from './sms/sms.interface';
+import { PartialNotificationDeliveryError } from '../notifier.interface';
+import { maskPhoneNumber } from '../delivery-log';
 
 /**
  * SMS notification adapter.
@@ -34,12 +36,15 @@ export class SmsNotifierAdapter implements SimpleNotifierProvider {
       }));
 
       const results = await this.smsProvider.sendBatch(messages);
-      const failures = results.filter((r) => !r.success);
-      if (failures.length > 0) {
-        throw new Error(
-          `SMS batch send: ${failures.length}/${results.length} failed. ` +
-          `First error: ${failures[0].error}`,
-        );
+      const failedPhones = phones.filter((_phone, index) => !results[index]?.success);
+      if (failedPhones.length > 0) {
+        const firstError = results.find((r) => !r?.success)?.error ?? 'missing result';
+        const message = `SMS batch send: ${failedPhones.length}/${phones.length} failed. First error: ${firstError}`;
+        // Only the failed recipients may be retried; the others already received the message.
+        if (failedPhones.length < phones.length) {
+          throw new PartialNotificationDeliveryError(message, failedPhones, phones.length - failedPhones.length);
+        }
+        throw new Error(message);
       }
 
       this.logger.log(`SMS batch sent: ${phones.length} recipients`);
@@ -58,7 +63,7 @@ export class SmsNotifierAdapter implements SimpleNotifierProvider {
       throw new Error(`SMS send failed: ${result.error}`);
     }
 
-    this.logger.log(`SMS sent: phone=${phones[0]}`);
+    this.logger.log(`SMS sent: phone=${maskPhoneNumber(phones[0])}`);
   }
 
   /**

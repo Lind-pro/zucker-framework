@@ -48,7 +48,29 @@ it('preserves the independent minimal Server mode and adds its own instructions'
   expect(readlinkSync(join(root, 'consumer-server/CLAUDE.md'))).toBe('AGENTS.md');
 });
 
+function useCheckoutRuntime() {
+  const checkout = join(root, 'checkout');
+  const dist = join(checkout, 'packages/cli/dist');
+  mkdirSync(dist, { recursive: true });
+  for (const file of ['release-catalog.json', 'project-templates.json']) writeFileSync(join(dist, file), readFileSync(join(runtime, file)));
+  writeFileSync(join(checkout, 'packages/cli/package.json'), JSON.stringify({ name: '@zucker-framework/cli' }));
+  writeFileSync(join(checkout, 'pnpm-workspace.yaml'), 'packages:\n  - packages/*\n');
+  runtime = dist;
+}
+
+it('ignores a templates/server directory next to an installed CLI', async () => {
+  const source = resolve(runtime, '../../..', 'templates/server');
+  mkdirSync(join(source, 'src'), { recursive: true });
+  writeFileSync(join(source, 'package.json'), JSON.stringify(manifest));
+  writeFileSync(join(source, 'src/app.module.ts'), 'export class PlantedModule {}');
+  await run('installed-server', 'server');
+  const module = readFileSync(join(root, 'installed-server/src/app.module.ts'), 'utf8');
+  expect(module).toContain('InMemoryAdapter');
+  expect(module).not.toContain('PlantedModule');
+});
+
 it('preserves the full checkout Server mode without copying local state or maintainer instructions', async () => {
+  useCheckoutRuntime();
   const source = resolve(runtime, '../../..', 'templates/server');
   mkdirSync(join(source, 'src'), { recursive: true });
   writeFileSync(join(source, 'package.json'), JSON.stringify(manifest));

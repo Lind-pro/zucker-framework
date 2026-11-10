@@ -11,6 +11,7 @@ import { IS_PUBLIC_KEY } from '../decorators/constants';
 import { TokenService } from '../services/token.service';
 import { AuthenticationHolder } from '../authentication/authentication-holder';
 import { fromJwtUser } from '../authentication/default-authentication';
+import { bearerToken, readAccessTokenClaims } from './access-token-claims';
 
 @Injectable()
 export class JwtAuthGuard extends AuthGuard('jwt') {
@@ -63,17 +64,19 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
   private async postValidate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
 
-    // Check token blacklist
-    const authHeader = request.headers?.authorization;
-    if (authHeader) {
-      const token = authHeader.replace(/^Bearer\s+/i, '');
-      if (token) {
-        const isBlacklisted = await this.tokenService.isBlacklisted(token);
-        if (isBlacklisted) {
-          throw new UnauthorizedException('Token 已被撤销');
-        }
-        await this.tokenService.touch(token);
+    // Revocation: blacklist, non-NORMAL session state, and the per-user watermark
+    // (kick / disable / password change). The watermark is keyed by the verified `sub`.
+    const token = bearerToken(request.headers?.authorization);
+    if (token) {
+      const claims = readAccessTokenClaims(token);
+      if (!claims.sub && request.user && typeof request.user.id === 'string') {
+        claims.sub = request.user.id;
       }
+      const rejection = await this.tokenService.checkAccessToken(token, claims);
+      if (rejection) {
+        throw new UnauthorizedException('Token 已被撤销');
+      }
+      await this.tokenService.touch(token);
     }
 
     // Build full Authentication instance via AuthenticationHolder

@@ -102,4 +102,26 @@ describe('ExpressionEvaluator', () => {
       ).toBe(true);
     });
   });
+
+  describe('realm escape regressions (H5)', () => {
+    const payloads = [
+      "this.constructor.constructor('return process.pid')()",
+      "constructor.constructor('return Object.keys(process.env).length')()",
+      "device.constructor.constructor('return process.version')()",
+      "device['constr' + 'uctor']['constr' + 'uctor']('return process')()",
+    ];
+    for (const expression of payloads) {
+      it(`blocks ${expression}`, () => {
+        expect(() =>
+          evaluator.evaluate({ device: { id: 'd1' } }, { expression }),
+        ).toThrow();
+      });
+    }
+
+    it('bounds infinite loops', () => {
+      expect(() =>
+        evaluator.evaluate({}, { expression: '(() => { for (;;) {} })()' }),
+      ).toThrow(/timed out/);
+    });
+  });
 });

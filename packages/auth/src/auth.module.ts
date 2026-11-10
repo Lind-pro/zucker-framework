@@ -1,5 +1,6 @@
 import {
   Global,
+  Logger,
   Module,
   type DynamicModule,
   type Provider,
@@ -7,9 +8,9 @@ import {
   type InjectionToken,
   type OptionalFactoryDependency,
 } from '@nestjs/common';
-import { DiscoveryModule, Reflector } from '@nestjs/core';
+import { DiscoveryModule, ModuleRef, Reflector } from '@nestjs/core';
 import { PassportModule } from '@nestjs/passport';
-import { JwtModule, JwtService } from '@nestjs/jwt';
+import { JwtModule, JwtService, type JwtModuleOptions, type JwtSignOptions } from '@nestjs/jwt';
 import type { DatabaseAdapter } from '@zucker-framework/core';
 import type { ICache } from '@zucker-framework/cache';
 import {
@@ -77,21 +78,57 @@ const AUTH_MODULE_OPTIONS = Symbol('AUTH_MODULE_OPTIONS');
  * Resolve the JWT secret from options, enforcing explicit configuration
  * in non-development environments.
  */
-function resolveJwtSecret(options: ZuckerAuthModuleOptions): string {
-  if (options.jwtSecret) return options.jwtSecret;
+/** Environments in which the public development secret may be used. */
+const INSECURE_SECRET_ENVIRONMENTS = new Set(['development', 'test']);
+const MIN_JWT_SECRET_LENGTH = 32;
 
-  const nodeEnv = process.env.NODE_ENV ?? 'development';
-  if (nodeEnv === 'production' || nodeEnv === 'staging') {
+/**
+ * Resolve the JWT secret from options (or the JWT_SECRET environment variable).
+ * The public development fallback is only allowed when NODE_ENV is explicitly
+ * `development` or `test`; every other environment (including an unset NODE_ENV)
+ * must configure a secret of at least 32 characters.
+ */
+export function resolveJwtSecret(options: ZuckerAuthModuleOptions): string {
+  const nodeEnv = process.env.NODE_ENV;
+  const relaxed = nodeEnv !== undefined && INSECURE_SECRET_ENVIRONMENTS.has(nodeEnv);
+  const secret = options.jwtSecret || process.env.JWT_SECRET;
+  const logger = new Logger('ZuckerAuthModule');
+
+  if (secret) {
+    if (secret.length < MIN_JWT_SECRET_LENGTH) {
+      if (!relaxed) {
+        throw new Error(
+          `[ZuckerAuthModule] jwtSecret must be at least ${MIN_JWT_SECRET_LENGTH} characters outside development/test.`,
+        );
+      }
+      logger.warn(`jwtSecret is shorter than ${MIN_JWT_SECRET_LENGTH} characters.`);
+    }
+    return secret;
+  }
+
+  if (!relaxed) {
     throw new Error(
-      '[ZuckerAuthModule] jwtSecret is required in production/staging. ' +
+      '[ZuckerAuthModule] jwtSecret is required unless NODE_ENV is development or test. ' +
         'Set it via ZuckerAuthModule.forRoot({ jwtSecret }) or the JWT_SECRET environment variable.',
     );
   }
 
   // Development fallback — logged as warning so it's never silent
-  const logger = new (require('@nestjs/common').Logger)('ZuckerAuthModule');
   logger.warn('Using insecure default JWT secret. Set jwtSecret for production use.');
   return '__zucker_dev_only_secret__';
+}
+
+const DEFAULT_ACCESS_TOKEN_TTL = '7d';
+
+function jwtModuleOptions(opts: ZuckerAuthModuleOptions): JwtModuleOptions {
+  return {
+    secret: resolveJwtSecret(opts),
+    signOptions: {
+      expiresIn: (opts.accessTokenTtl ?? DEFAULT_ACCESS_TOKEN_TTL) as JwtSignOptions['expiresIn'],
+      algorithm: 'HS256',
+    },
+    verifyOptions: { algorithms: ['HS256'] },
+  };
 }
 
 /**
@@ -150,8 +187,9 @@ export class ZuckerAuthModule {
       // --- Services that need DatabaseAdapter ---
       {
         provide: RoleHierarchyService,
-        useFactory: (db: DatabaseAdapter) => new RoleHierarchyService(db),
-        inject: [DATABASE_ADAPTER],
+        useFactory: (db: DatabaseAdapter, opts: ZuckerAuthModuleOptions) =>
+          new RoleHierarchyService(db, opts.roleHierarchyCacheTtlMs),
+        inject: [DATABASE_ADAPTER, optionsToken],
       },
       {
         provide: PermissionService,
@@ -178,9 +216,11 @@ export class ZuckerAuthModule {
         provide: TokenService,
         useFactory: (opts: ZuckerAuthModuleOptions, cache: ICache | null, jwtSvc: JwtService) => {
           const svc = new TokenService(cache || undefined, jwtSvc);
-          if (opts.maxActiveSessions) {
-            svc.configure({ maxActiveSessions: opts.maxActiveSessions });
-          }
+          svc.configure({
+            ...(opts.maxActiveSessions ? { maxActiveSessions: opts.maxActiveSessions } : {}),
+            ...(opts.allopatricLoginMode !== undefined ? { allopatricLoginMode: opts.allopatricLoginMode } : {}),
+            ...(opts.tokenBlacklistTtlMs !== undefined ? { blacklistTtlMs: opts.tokenBlacklistTtlMs } : {}),
+          });
           return svc;
         },
         inject: [optionsToken, TOKEN_CACHE, JwtService],
@@ -189,13 +229,19 @@ export class ZuckerAuthModule {
       // --- User / Role / Authorization ---
       {
         provide: UserService,
-        useFactory: (db: DatabaseAdapter) => new UserService(db),
-        inject: [DATABASE_ADAPTER],
+        // Disabling, deleting or re-passwording a user revokes that user's tokens.
+        useFactory: (db: DatabaseAdapter, tokens: TokenService) => new UserService(db, undefined, undefined, tokens),
+        inject: [DATABASE_ADAPTER, TokenService],
       },
       {
         provide: RoleService,
-        useFactory: (db: DatabaseAdapter) => new RoleService(db),
-        inject: [DATABASE_ADAPTER],
+        // Wired so role changes invalidate the hierarchy and permission caches.
+        useFactory: (db: DatabaseAdapter, permissions: PermissionService, hierarchy: RoleHierarchyService) => {
+          const svc = new RoleService(db, undefined, permissions);
+          svc.setRoleHierarchyService(hierarchy);
+          return svc;
+        },
+        inject: [DATABASE_ADAPTER, PermissionService, RoleHierarchyService],
       },
       {
         provide: AuthorizationSettingService,
@@ -265,13 +311,22 @@ export class ZuckerAuthModule {
         provide: AUTHENTICATION_MANAGER,
         useFactory: (userService: UserService) => {
           const encoder = new BcryptEncoder();
+          // Compared against when the user is missing so response time does not reveal
+          // whether a username exists.
+          let dummyHash: Promise<string> | undefined;
           return {
             async authenticate(username: string, password: string) {
               const user = await userService.findByUsername(username);
-              if (!user) return null;
-              if (!user.password) return null;
+              if (!user || !user.password) {
+                dummyHash ??= encoder.encode('__zucker_dummy_password__');
+                await encoder.matches(password, await dummyHash);
+                return null;
+              }
               const ok = await encoder.matches(password, user.password);
-              return ok ? user : null;
+              // Disabled accounts cannot obtain new tokens.
+              if (!ok || !user.status) return null;
+              const { password: _password, ...safeUser } = user;
+              return safeUser as typeof user;
             },
           };
         },
@@ -308,7 +363,7 @@ export class ZuckerAuthModule {
   }
 
   static forRoot(options: ZuckerAuthModuleOptions = {}): DynamicModule {
-    const jwtSecret = resolveJwtSecret(options);
+    const jwtOptions = jwtModuleOptions(options);
 
     // Sync options: provide a literal-value token so buildProviders can inject it
     const optionsProvider: Provider = {
@@ -322,10 +377,7 @@ export class ZuckerAuthModule {
       imports: [
         DiscoveryModule,
         PassportModule.register({ defaultStrategy: 'jwt' }),
-        JwtModule.register({
-          secret: jwtSecret,
-          signOptions: { expiresIn: '7d' },
-        }),
+        JwtModule.register(jwtOptions),
       ],
       controllers: options.registerControllers === false ? [] : MODULE_CONTROLLERS,
       providers: [
@@ -348,10 +400,7 @@ export class ZuckerAuthModule {
         DiscoveryModule,
         PassportModule.register({ defaultStrategy: 'jwt' }),
         JwtModule.registerAsync({
-          useFactory: (opts: ZuckerAuthModuleOptions) => ({
-            secret: resolveJwtSecret(opts),
-            signOptions: { expiresIn: '7d' },
-          }),
+          useFactory: (opts: ZuckerAuthModuleOptions) => jwtModuleOptions(opts),
           inject: [AUTH_MODULE_OPTIONS],
         }),
       ],
@@ -359,8 +408,14 @@ export class ZuckerAuthModule {
       providers: [
         ...asyncProviders,
         ...this.buildProviders(AUTH_MODULE_OPTIONS),
-        // For async path, TOKEN_CACHE defaults to null; consumers can override
-        { provide: TOKEN_CACHE, useValue: null },
+        // Resolve the configured cacheProvider once the async options are known, so the
+        // token blacklist / revocation watermark is shared across processes.
+        {
+          provide: TOKEN_CACHE,
+          useFactory: (opts: ZuckerAuthModuleOptions, moduleRef: ModuleRef) =>
+            opts.cacheProvider ? moduleRef.get(opts.cacheProvider, { strict: false }) : null,
+          inject: [AUTH_MODULE_OPTIONS, ModuleRef],
+        },
       ],
       exports: MODULE_EXPORTS,
     };

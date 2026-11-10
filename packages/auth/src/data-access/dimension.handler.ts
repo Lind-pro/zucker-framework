@@ -6,7 +6,9 @@ import { DefaultDataAccessType } from './data-access-config';
 import type { DataAccessResult } from './data-access-result';
 import { filterResult, allowResult, denyResult } from './data-access-result';
 import { DATABASE_ADAPTER } from '../guards/data-permission.guard';
-import type { DimensionService } from '../services/dimension.service';
+// Value import: a type-only import would emit `Object` as the DI token and @Optional()
+// would silently resolve undefined, disabling dimension scoping.
+import { DimensionService } from '../services/dimension.service';
 
 /**
  * Handles dimension-based row-level access control.
@@ -21,7 +23,7 @@ export class DimensionDataAccessHandler implements DataAccessHandler {
 
   constructor(
     @Inject(DATABASE_ADAPTER) private readonly db: DatabaseAdapter,
-    @Optional() private readonly dimensionService?: DimensionService,
+    @Optional() @Inject(DimensionService) private readonly dimensionService?: DimensionService,
   ) {}
 
   isSupport(config: DataAccessConfig): boolean {
@@ -30,8 +32,9 @@ export class DimensionDataAccessHandler implements DataAccessHandler {
 
   async handle(config: DataAccessConfig, context: AuthorizingContext): Promise<DataAccessResult> {
     if (!this.dimensionService) {
-      // No dimension service available, skip this handler
-      return allowResult();
+      // A configured dimension scope that cannot be evaluated must not widen access.
+      this.logger.warn('DimensionService is not available; denying dimension-scoped access');
+      return denyResult();
     }
 
     const dimConfig = config as DimensionDataAccessConfig;

@@ -45,6 +45,7 @@ describe('OpenAIImageProvider', () => {
       apiKey: 'test-key',
       baseURL: undefined,
       timeout: 2_147_000_000,
+      maxRetries: 0,
     });
     expect(sdk.generate).toHaveBeenCalledWith(
       expect.objectContaining({

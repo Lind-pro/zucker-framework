@@ -163,3 +163,22 @@ describe('legacy PayPal order-to-capture refund reference', () => {
     expect(transport.refundCapture).not.toHaveBeenCalled();
   });
 });
+
+describe('legacy PayPal webhook refund mapping (M3)', () => {
+  const refundEvent = JSON.stringify({ event_type: 'PAYMENT.CAPTURE.REFUNDED',
+    resource: { id: 'refund-1', supplementary_data: { related_ids: { order_id: 'order-1' } } } });
+  function webhookFixture(captureStatus: string) {
+    const { transport } = fixture({ id: 'order-1', status: 'COMPLETED',
+      purchaseUnits: [{ payments: { captures: [{ id: 'capture-1', status: captureStatus }] } }] });
+    transport.verifyWebhookSignature.mockResolvedValue(true);
+    const adapter = createPayPalAdapter({ transport: transport as unknown as PayPalPaymentTransport, webhookId: 'wh' });
+    return adapter.parseWebhook({ headers: {}, rawBody: refundEvent });
+  }
+  it('reports a partial refund as partially_refunded, not refunded', async () => {
+    await expect(webhookFixture('PARTIALLY_REFUNDED')).resolves.toMatchObject({ providerRef: 'order-1', state: 'partially_refunded' });
+  });
+  it('reports refunded only when the capture itself is fully refunded', async () => {
+    await expect(webhookFixture('REFUNDED')).resolves.toMatchObject({ state: 'refunded' });
+    await expect(webhookFixture('COMPLETED')).resolves.toMatchObject({ state: 'unknown' });
+  });
+});

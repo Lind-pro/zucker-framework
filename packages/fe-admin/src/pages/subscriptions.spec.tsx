@@ -144,6 +144,13 @@ describe('assignment payload', () => {
     });
   });
 
+  it('sends a cleared end date as null instead of dropping it', () => {
+    const initial = assignmentInitialValues(base as never);
+    expect(assignmentPayload({ ...initial, endDate: '' }, initial)).toEqual({
+      planSlug: 'pro', billingCycle: 'MONTHLY', status: 'ACTIVE', endDate: null,
+    });
+  });
+
   it('never sends an end date for a lifetime term', () => {
     const initial = assignmentInitialValues(base as never);
     expect(assignmentPayload({ ...initial, billingCycle: 'LIFETIME', endDate: '2027-01-01T08:00' }, initial)).toEqual({

@@ -1,6 +1,18 @@
-import { Injectable, Inject, Logger, Optional } from '@nestjs/common';
+import { Injectable, Inject, Logger, Optional, BadRequestException } from '@nestjs/common';
 import { type DatabaseAdapter, type Term } from '@zucker-framework/core';
-import { FilterOperatorFactory } from './operators';
+import { FilterOperatorFactory, normalizeOperatorType } from './operators';
+import {
+  CRUD_QUERY_POLICY,
+  type CrudQueryPolicy,
+  assertFilterValue,
+  assertQueryField,
+  isRawFilterField,
+  mergeQueryPolicy,
+  resolveMaxFilterConditions,
+  resolveMaxFilterDepth,
+  resolveMaxPageSize,
+  resolveMaxUnpagedRows,
+} from './query/query-policy';
 import { resolvePageTotal, type PaginatedResult } from './pagination';
 import { DATABASE_ADAPTER } from './crud.module';
 import { TermExpressionParser } from './expression/term-expression-parser';
@@ -52,9 +64,60 @@ export interface DynamicQueryParam {
   terms?: Term[];
 }
 
+/** Extra, trusted options for {@link DynamicQueryService.findMany}. */
+export interface DynamicQueryOptions {
+  /** Service policy merged over the module default ({@link CRUD_QUERY_POLICY}). */
+  policy?: CrudQueryPolicy;
+}
+
+/** Projection arguments produced from includes / excludes. */
+export type QueryProjection =
+  | { select: Record<string, boolean> }
+  | { omit: Record<string, boolean> }
+  | Record<string, never>;
+
+/** Coerce a query-string number (`"2"`) to a number; reject non-numeric input with 400. */
+function toOptionalNumber(name: string, value: unknown): number | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value.trim()) : NaN;
+  if (!Number.isFinite(parsed)) throw new BadRequestException(`${name} must be a number`);
+  return parsed;
+}
+
+/** Accept `includes=a,b` from a query string as well as an array. */
+function toFieldList(name: string, value: unknown): string[] | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (typeof value === 'string') return value.split(',').map((item) => item.trim()).filter(Boolean);
+  if (Array.isArray(value)) return value as string[];
+  throw new BadRequestException(`${name} must be a list of field names`);
+}
+
+function toFlag(value: unknown): boolean {
+  return value === true || value === 'true' || value === '1';
+}
+
+/** Normalize the loosely-typed query (GET query strings arrive as strings). */
+export function normalizeDynamicQueryParam(query: DynamicQueryParam = {}): DynamicQueryParam {
+  const raw = query as Record<string, unknown>;
+  return {
+    ...query,
+    page: toOptionalNumber('page', raw.page),
+    pageIndex: toOptionalNumber('pageIndex', raw.pageIndex),
+    pageSize: toOptionalNumber('pageSize', raw.pageSize),
+    total: toOptionalNumber('total', raw.total),
+    includes: toFieldList('includes', raw.includes),
+    excludes: toFieldList('excludes', raw.excludes),
+    parallelPager: toFlag(raw.parallelPager),
+    inferTotal: toFlag(raw.inferTotal),
+  };
+}
+
 /**
  * Service for parsing dynamic query parameters into Prisma-compatible query arguments.
  * Handles filter maps, sort expressions, pagination, and field selection.
+ *
+ * Caller-supplied input is validated against a {@link CrudQueryPolicy}: plain scalar field names only,
+ * no sensitive fields, known operators only and scalar values only (400 otherwise).
  */
 @Injectable()
 export class DynamicQueryParamService {
@@ -71,24 +134,39 @@ export class DynamicQueryParamService {
    * - 嵌套 AND 组：{ "$nest": { ... } } → 递归解析，AND 到外层
    * - 嵌套 OR 组：{ "$orNest": { ... } } → 递归解析，OR 到外层
    */
-  parseFilters(filters: Record<string, unknown> = {}): Record<string, unknown> {
+  parseFilters(filters: Record<string, unknown> = {}, policy?: CrudQueryPolicy): Record<string, unknown> {
+    const budget = { remaining: resolveMaxFilterConditions(policy) };
+    return this.parseFilterLevel(filters, policy, 0, budget);
+  }
+
+  private parseFilterLevel(
+    filters: Record<string, unknown>,
+    policy: CrudQueryPolicy | undefined,
+    depth: number,
+    budget: { remaining: number },
+  ): Record<string, unknown> {
+    if (typeof filters !== 'object' || filters === null || Array.isArray(filters)) {
+      throw new BadRequestException('filters must be an object');
+    }
+    if (depth > resolveMaxFilterDepth(policy)) throw new BadRequestException('filters are nested too deeply');
     const andConditions: Record<string, unknown>[] = [];
     const orConditions: Record<string, unknown>[] = [];
     let hasOrTerms = false;
 
     for (const [key, value] of Object.entries(filters)) {
       if (value === undefined || value === null || value === '') continue;
+      if (--budget.remaining < 0) throw new BadRequestException('Too many filter conditions');
 
       // $nest → nested AND group
       if (key === '$nest' && typeof value === 'object' && !Array.isArray(value)) {
-        const nested = this.parseFilters(value as Record<string, unknown>);
+        const nested = this.parseFilterLevel(value as Record<string, unknown>, policy, depth + 1, budget);
         if (Object.keys(nested).length > 0) andConditions.push(nested);
         continue;
       }
 
       // $orNest → nested OR group
       if (key === '$orNest' && typeof value === 'object' && !Array.isArray(value)) {
-        const nested = this.parseFilters(value as Record<string, unknown>);
+        const nested = this.parseFilterLevel(value as Record<string, unknown>, policy, depth + 1, budget);
         if (Object.keys(nested).length > 0) {
           orConditions.push(nested);
           hasOrTerms = true;
@@ -101,7 +179,6 @@ export class DynamicQueryParamService {
       let fieldKey = key;
       if (key.startsWith('$or$')) {
         isOrType = true;
-        hasOrTerms = true;
         fieldKey = key.slice(4); // strip '$or$'
       }
 
@@ -110,9 +187,10 @@ export class DynamicQueryParamService {
       const op = dollarIdx >= 0 ? fieldKey.slice(dollarIdx + 1) : 'eq';
       if (!field) continue;
 
-      const result = this.operatorFactory.applyFilter(field, op || 'eq', value);
+      const result = this.applyUserFilter(field, op || 'eq', value, policy);
       if (result && Object.keys(result).length > 0) {
         if (isOrType) {
+          hasOrTerms = true;
           orConditions.push(result);
         } else {
           andConditions.push(result);
@@ -151,22 +229,53 @@ export class DynamicQueryParamService {
   }
 
   /**
+   * Validate and apply one caller-supplied condition. Fields listed in `policy.rawFilterFields`
+   * keep the legacy raw passthrough (object values / unknown operators) as an explicit opt-in.
+   */
+  private applyUserFilter(
+    field: string,
+    op: string,
+    value: unknown,
+    policy?: CrudQueryPolicy,
+  ): Record<string, unknown> | null {
+    assertQueryField(field, 'filter', policy);
+    const canonical = normalizeOperatorType(op);
+    const known = this.operatorFactory.getOperator(canonical);
+    if (isRawFilterField(field, policy) && (!known || (typeof value === 'object' && value !== null && !Array.isArray(value) && !(value instanceof Date)))) {
+      return { [field]: value };
+    }
+    if (!known) throw new BadRequestException(`Unsupported filter operator: ${op.slice(0, 32)}`);
+    if (policy?.allowedOperators && !policy.allowedOperators.includes(canonical)) {
+      throw new BadRequestException(`Filter operator "${canonical}" is not allowed`);
+    }
+    assertFilterValue(field, value);
+    return known.apply(field, value);
+  }
+
+  /**
    * 解析排序
    * @param orderBy 排序字符串，格式：'field1 desc,field2 asc'
-   * @param defaultField 默认排序字段
+   * @param defaultField 默认排序字段（服务端可信，不受策略限制）
+   * @param policy 调用方字段策略
    */
-  parseOrderBy(orderBy?: string, defaultField?: string): Record<string, string>[] {
+  parseOrderBy(orderBy?: string, defaultField?: string, policy?: CrudQueryPolicy): Record<string, string>[] {
     const field = defaultField || 'createdAt';
+    if (orderBy !== undefined && orderBy !== null && typeof orderBy !== 'string') {
+      throw new BadRequestException('orderBy must be a string');
+    }
     if (!orderBy || orderBy.trim().length === 0) return [{ [field]: 'desc' }];
 
-    return orderBy.split(',')
+    const parts = orderBy.split(',')
       .map((order) => order.trim())
-      .filter((order) => order.length > 0)
-      .map((order) => {
-        const [orderField, direction] = order.split(' ');
-        if (!orderField) return { [field]: 'desc' };
-        return { [orderField]: direction?.toLowerCase() === 'desc' ? 'desc' : 'asc' };
-      });
+      .filter((order) => order.length > 0);
+    if (parts.length > 10) throw new BadRequestException('Too many orderBy fields');
+    return parts.map((order) => {
+      const [orderField, direction, ...rest] = order.split(/\s+/);
+      if (!orderField) return { [field]: 'desc' };
+      if (rest.length > 0) throw new BadRequestException(`Invalid orderBy: ${order.slice(0, 64)}`);
+      assertQueryField(orderField, 'sort', policy);
+      return { [orderField]: direction?.toLowerCase() === 'desc' ? 'desc' : 'asc' };
+    });
   }
 
   /**
@@ -182,58 +291,104 @@ export class DynamicQueryParamService {
   }
 
   /**
-   * 解析字段选择
+   * 解析字段选择（兼容接口）。新代码请使用 {@link parseProjection}：仅 excludes 时
+   * Prisma 不接受全 false 的 select，需要 omit。
    */
-  parseSelect(includes?: string[], excludes?: string[]): Record<string, boolean> | undefined {
+  parseSelect(includes?: string[], excludes?: string[], policy?: CrudQueryPolicy): Record<string, boolean> | undefined {
     if (!includes?.length && !excludes?.length) return undefined;
 
     const select: Record<string, boolean> = {};
 
     if (includes?.length) {
-      includes.forEach((field) => (select[field] = true));
+      includes.forEach((field) => (select[assertQueryField(field, 'select', policy)] = true));
     }
 
     if (excludes?.length) {
-      excludes.forEach((field) => (select[field] = false));
+      excludes.forEach((field) => (select[assertQueryField(field, 'select', { sensitiveFieldPattern: false })] = false));
     }
 
     return select;
   }
 
   /**
-   * 将 DataAccess Term[] 转换为 Prisma WHERE 条件
+   * Build Prisma projection args.
+   * - includes → `select` of the included scalar fields minus excluded / denied ones;
+   * - excludes only → `omit` (an all-false `select` is rejected by Prisma).
+   * Included fields are validated against the policy (no relations by default when an allow-list is
+   * set, never sensitive fields); excluded fields only need to be plain identifiers.
+   */
+  parseProjection(includes?: string[], excludes?: string[], policy?: CrudQueryPolicy): QueryProjection {
+    const excluded = new Set(
+      (excludes ?? []).map((field) => assertQueryField(field, 'select', { sensitiveFieldPattern: false })),
+    );
+    if (includes?.length) {
+      if (includes.length > 200) throw new BadRequestException('Too many includes');
+      const select: Record<string, boolean> = {};
+      for (const field of includes) {
+        assertQueryField(field, 'select', policy);
+        if (!excluded.has(field)) select[field] = true;
+      }
+      if (Object.keys(select).length === 0) throw new BadRequestException('includes selects no field');
+      return { select };
+    }
+    if (excluded.size > 0) {
+      return { omit: Object.fromEntries([...excluded].map((field) => [field, true])) };
+    }
+    return {};
+  }
+
+  /**
+   * 将 Term[] 转换为 Prisma WHERE 条件
    *
    * Term 是 Zucker 统一的过滤条件格式（column + termType + value），
    * 由 DataAccessHandler 生成，需注入到查询中以实现行级数据权限。
    *
-   * @param terms DataAccess 产生的过滤条件
+   * @param terms 过滤条件
+   * @param policy 调用方策略；为 undefined 时视为可信 term（DataAccess 产生），只做操作符解析
    * @returns Prisma 兼容的 WHERE 条件对象
    */
-  termsToWhere(terms: Term[]): Record<string, unknown> {
+  termsToWhere(terms: Term[], policy?: CrudQueryPolicy): Record<string, unknown> {
+    const budget = { remaining: resolveMaxFilterConditions(policy) };
+    return this.termsLevel(terms, policy, 0, budget);
+  }
+
+  /** Same as {@link termsToWhere} but always validates as caller input (default policy when none given). */
+  userTermsToWhere(terms: Term[], policy: CrudQueryPolicy = {}): Record<string, unknown> {
+    return this.termsToWhere(terms, policy);
+  }
+
+  private termsLevel(
+    terms: Term[],
+    policy: CrudQueryPolicy | undefined,
+    depth: number,
+    budget: { remaining: number },
+  ): Record<string, unknown> {
     if (!terms || terms.length === 0) return {};
+    if (!Array.isArray(terms)) throw new BadRequestException('terms must be an array');
+    if (policy && depth > resolveMaxFilterDepth(policy)) throw new BadRequestException('terms are nested too deeply');
 
     const conditions: Record<string, unknown>[] = [];
 
     for (const term of terms) {
+      if (typeof term !== 'object' || term === null) throw new BadRequestException('Invalid term');
+      if (policy && --budget.remaining < 0) throw new BadRequestException('Too many filter conditions');
       // 'nest' 类型 term 只处理嵌套子条件，不对自身 apply operator
       if (term.termType === 'nest' || (term.column === '' && term.terms?.length)) {
         if (term.terms && term.terms.length > 0) {
-          const nested = this.termsToWhere(term.terms);
+          const nested = this.termsLevel(term.terms, policy, depth + 1, budget);
           if (Object.keys(nested).length > 0) conditions.push(nested);
         }
         continue;
       }
 
-      const result = this.operatorFactory.applyFilter(
-        term.column,
-        term.termType,
-        term.value,
-      );
+      const result = policy
+        ? this.applyUserFilter(term.column, term.termType || 'eq', term.value, policy)
+        : this.operatorFactory.applyFilter(term.column, term.termType, term.value);
       if (result) conditions.push(result);
 
       // 递归处理嵌套 terms（非 nest 类型的附加子条件）
       if (term.terms && term.terms.length > 0) {
-        const nested = this.termsToWhere(term.terms);
+        const nested = this.termsLevel(term.terms, policy, depth + 1, budget);
         if (Object.keys(nested).length > 0) conditions.push(nested);
       }
     }
@@ -259,16 +414,61 @@ export class DynamicQueryService {
   constructor(
     @Inject(DATABASE_ADAPTER) private readonly db: DatabaseAdapter,
     private readonly dynamicQueryParam: DynamicQueryParamService,
+    @Optional() @Inject(CRUD_QUERY_POLICY) private readonly defaultPolicy?: CrudQueryPolicy,
   ) {}
+
+  /** Resolve the user WHERE from any of the four caller filter representations. */
+  parseUserWhere(queryParam: DynamicQueryParam, policy?: CrudQueryPolicy): Record<string, unknown> {
+    const effective = mergeQueryPolicy(this.defaultPolicy, policy);
+    const { filters, filter, where: whereExpr, terms } = queryParam;
+    // Resolve user WHERE: terms > whereExpr > filter object > filters JSON string
+    if (terms !== undefined && terms !== null && !Array.isArray(terms)) {
+      throw new BadRequestException('terms must be an array');
+    }
+    if (terms && terms.length > 0) {
+      return this.dynamicQueryParam.termsToWhere(terms, effective);
+    }
+    if (whereExpr) {
+      if (typeof whereExpr !== 'string') throw new BadRequestException('where must be a string');
+      let parsed: unknown;
+      try {
+        parsed = new TermExpressionParser().parse(whereExpr);
+      } catch (error) {
+        throw new BadRequestException(`Invalid where expression: ${(error as Error).message}`.slice(0, 200));
+      }
+      return this.dynamicQueryParam.termsToWhere(parsed as Term[], effective);
+    }
+    if (filter !== undefined && filter !== null) {
+      if (typeof filter !== 'object' || Array.isArray(filter)) throw new BadRequestException('filter must be an object');
+      if (Object.keys(filter).length > 0) return this.dynamicQueryParam.parseFilters(filter, effective);
+    }
+    if (filters) {
+      let parsed: unknown;
+      if (typeof filters === 'object') {
+        parsed = filters;
+      } else {
+        try {
+          parsed = JSON.parse(String(filters));
+        } catch {
+          // Fail closed: an unparseable filter must never widen the result to the whole table.
+          this.logger.warn(`Invalid filters JSON (length=${String(filters).length})`);
+          throw new BadRequestException('filters must be valid JSON');
+        }
+      }
+      return this.dynamicQueryParam.parseFilters(parsed as Record<string, unknown>, effective);
+    }
+    return {};
+  }
 
   /**
    * 通用分页查询
    * @param model 模型名称
-   * @param queryParam 查询参数
+   * @param queryParam 查询参数（调用方输入，按策略校验）
    * @param defaultOrderField 默认排序字段
-   * @param dataAccessTerms DataAccess 产生的过滤条件（由 DataPermissionGuard 注入）
-   * @param requiredWhere Trusted service-owned constraints, ANDed with user and access filters
+   * @param dataAccessTerms DataAccess 产生的过滤条件（由 DataPermissionGuard 注入，可信）
    * @param denyFields DataAccess 产生的禁止字段列表
+   * @param requiredWhere Trusted service-owned constraints, ANDed with user and access filters
+   * @param options Service query policy
    * @returns 分页查询结果
    */
   async findMany<T = unknown>(
@@ -278,36 +478,23 @@ export class DynamicQueryService {
     dataAccessTerms?: Term[],
     denyFields?: string[],
     requiredWhere?: Record<string, unknown>,
+    options?: DynamicQueryOptions,
   ): Promise<PaginatedResult<T>> {
+    const policy = mergeQueryPolicy(this.defaultPolicy, options?.policy);
+    const normalized = normalizeDynamicQueryParam(queryParam);
     const {
-      filters, filter, where: whereExpr, terms,
       orderBy, pageSize,
       includes, excludes,
       total: clientTotal, parallelPager,
-    } = queryParam;
+    } = normalized;
     // 支持 pageIndex (0-based) 和 page (1-based)，pageIndex 优先
-    const page = queryParam.pageIndex !== undefined
-      ? queryParam.pageIndex + 1
-      : queryParam.page;
+    const page = normalized.pageIndex !== undefined
+      ? normalized.pageIndex + 1
+      : normalized.page;
 
-    // Resolve user WHERE: terms > whereExpr > filter object > filters JSON string
-    let userWhere: Record<string, unknown> = {};
-    if (terms && terms.length > 0) {
-      userWhere = this.dynamicQueryParam.termsToWhere(terms);
-    } else if (whereExpr) {
-      const parsed = new TermExpressionParser().parse(whereExpr);
-      userWhere = this.dynamicQueryParam.termsToWhere(parsed as Term[]);
-    } else if (filter && Object.keys(filter).length > 0) {
-      userWhere = this.dynamicQueryParam.parseFilters(filter);
-    } else if (filters) {
-      try {
-        userWhere = this.dynamicQueryParam.parseFilters(JSON.parse(filters));
-      } catch {
-        this.logger.warn(`Invalid filters JSON: ${filters.slice(0, 100)}`);
-      }
-    }
+    const userWhere = this.parseUserWhere(normalized, options?.policy);
 
-    // Merge DataAccess filterConditions into WHERE
+    // Merge DataAccess filterConditions into WHERE (trusted terms: operator parsing only)
     const accessWhere = dataAccessTerms
       ? this.dynamicQueryParam.termsToWhere(dataAccessTerms)
       : {};
@@ -319,23 +506,28 @@ export class DynamicQueryService {
       ? { AND: [scopedWhere, requiredWhere] }
       : scopedWhere;
 
-    const sort = this.dynamicQueryParam.parseOrderBy(orderBy, defaultOrderField);
+    const sort = this.dynamicQueryParam.parseOrderBy(orderBy, defaultOrderField, policy);
 
     // Merge denyFields into excludes
     const mergedExcludes = denyFields
       ? [...(excludes ?? []), ...denyFields.filter((f) => !(excludes ?? []).includes(f))]
       : excludes;
-    const select = this.dynamicQueryParam.parseSelect(includes, mergedExcludes);
+    const projection = this.dynamicQueryParam.parseProjection(includes, mergedExcludes, policy);
 
     const modelOps = this.db.model(model);
 
     // No-paging mode: when both page and pageSize are absent
     if (page === undefined && pageSize === undefined) {
+      const limit = resolveMaxUnpagedRows(policy);
       const data = await modelOps.findMany({
         where,
         orderBy: sort,
-        ...(select ? { select } : {}),
+        ...(Number.isFinite(limit) ? { take: limit } : {}),
+        ...projection,
       }) as T[];
+      if (Number.isFinite(limit) && data.length >= limit) {
+        this.logger.warn(`Unpaged ${model} query reached the ${limit}-row limit; result may be truncated`);
+      }
 
       return {
         data,
@@ -348,7 +540,7 @@ export class DynamicQueryService {
     }
 
     const safePage = Math.max(1, Math.floor(page ?? 1));
-    const safePageSize = Math.max(1, Math.floor(pageSize ?? 10));
+    const safePageSize = Math.min(resolveMaxPageSize(policy), Math.max(1, Math.floor(pageSize ?? 10)));
     const pagination = this.dynamicQueryParam.parsePagination(safePage, safePageSize);
 
     // total 复用：前端传了 total 就跳过 count 查询
@@ -357,7 +549,7 @@ export class DynamicQueryService {
         where,
         orderBy: sort,
         ...pagination,
-        ...(select ? { select } : {}),
+        ...projection,
       }) as T[];
 
       return {
@@ -378,7 +570,7 @@ export class DynamicQueryService {
           where,
           orderBy: sort,
           ...pagination,
-          ...(select ? { select } : {}),
+          ...projection,
         }) as Promise<T[]>,
       ]);
 
@@ -392,9 +584,9 @@ export class DynamicQueryService {
       };
     }
 
-    if (queryParam.inferTotal) {
+    if (normalized.inferTotal) {
       const data = await modelOps.findMany({
-        where, orderBy: sort, ...pagination, ...(select ? { select } : {}),
+        where, orderBy: sort, ...pagination, ...projection,
       }) as T[];
       const total = await resolvePageTotal(data.length, pagination, () => modelOps.count({ where }));
       return { data, total, page: safePage, pageSize: safePageSize,
@@ -407,7 +599,7 @@ export class DynamicQueryService {
       where,
       orderBy: sort,
       ...pagination,
-      ...(select ? { select } : {}),
+      ...projection,
     }) as T[];
 
     return {
@@ -428,12 +620,16 @@ export class DynamicQueryService {
     id: string,
     includes?: string[],
     excludes?: string[],
+    options?: DynamicQueryOptions,
   ) {
-    const select = this.dynamicQueryParam.parseSelect(includes, excludes);
+    const policy = mergeQueryPolicy(this.defaultPolicy, options?.policy);
+    const projection = this.dynamicQueryParam.parseProjection(
+      toFieldList('includes', includes), toFieldList('excludes', excludes), policy,
+    );
 
     return this.db.model(model).findUnique({
       where: { id },
-      ...(select ? { select } : {}),
+      ...projection,
     });
   }
 }

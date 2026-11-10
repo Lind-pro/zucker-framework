@@ -41,12 +41,12 @@ describe('PermissionGuard', () => {
     expect(getByText('Admin')).toBeTruthy();
   });
 
-  it('should always grant access to admin', () => {
+  it('does not treat a plain "admin" permission as super-admin (matches usePermission)', () => {
     const Guard = createGuardWithPermissions(['admin']);
-    const { getByText } = render(
+    const { queryByText } = render(
       <Guard permission="some:perm"><span>Admin</span></Guard>,
     );
-    expect(getByText('Admin')).toBeTruthy();
+    expect(queryByText('Admin')).toBeNull();
   });
 
   it('should always grant access to wildcard *', () => {

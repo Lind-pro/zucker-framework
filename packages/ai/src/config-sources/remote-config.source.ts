@@ -109,7 +109,8 @@ export class RemoteAIConfigSource implements AIConfigSource {
       const response = await this.fetcher(url, { headers, signal: controller.signal });
       if (response.status === 404) return null;
       if (!response.ok) throw new Error(`远程 AI 配置请求失败: HTTP ${response.status}`);
-      return response.json();
+      // Await inside the try so the timeout also covers reading the body.
+      return await response.json();
     } finally {
       clearTimeout(timeout);
     }

@@ -11,6 +11,10 @@ export interface ScriptActionConfig {
 /**
  * 脚本动作执行器 — 对齐 jetlinks ScriptTaskExecutorProvider
  *
+ * SECURITY: scripts run in the hardened `@zucker-framework/script` sandbox (no host objects,
+ * no code generation, timeout covering promise jobs and the onMessage handler). It is still a
+ * `node:vm` realm without a memory cap: only let trusted operators author script actions.
+ *
  * 增强：
  * - 支持 handler 模式（脚本中定义 onMessage 回调）
  * - 对脚本返回值进行规范化处理
@@ -33,14 +37,19 @@ export class ScriptAction {
 
     // 注入 handler 对象，脚本可以通过 handler.onMessage(fn) 注册回调
     // 对齐 jetlinks ScriptTaskExecutorProvider.Handler
+    // The registered callback is a sandbox callable: invoking it re-enters the sandbox under
+    // the same timeout, so a handler cannot block the host event loop.
     let messageHandler: ((data: Record<string, unknown>) => unknown) | null = null;
     const handler = {
-      onMessage(fn: (data: Record<string, unknown>) => unknown) {
-        messageHandler = fn;
+      onMessage(fn: unknown) {
+        if (typeof fn !== 'function') {
+          throw new TypeError('handler.onMessage expects a function');
+        }
+        messageHandler = fn as (data: Record<string, unknown>) => unknown;
       },
     };
 
-    const result = sandbox.execute(config.script, {
+    const result = await sandbox.executeAsync(config.script, {
       data,
       context: data,
       handler,
@@ -48,7 +57,7 @@ export class ScriptAction {
 
     // 如果脚本注册了 onMessage handler，则使用它来处理数据
     if (messageHandler) {
-      const handlerResult = (messageHandler as (d: Record<string, unknown>) => unknown)(data);
+      const handlerResult = await (messageHandler as (d: Record<string, unknown>) => unknown)(data);
       return this.normalizeResult(handlerResult);
     }
 

@@ -58,6 +58,16 @@ describe('persistent localized mail templates', () => {
         name: 'Safe',
       }),
     ).toBe('<a href="#">Safe</a>');
+    expect(
+      catalog.interpolate('<a href="{{url}}">x</a>', { url: '\u0001java\tscript:alert(1)' }),
+    ).toBe('<a href="#">x</a>');
+    expect(
+      catalog.interpolate("<a href='{{url}}'>x</a>", { url: 'https://example.com/?a=1&b=2' }),
+    ).toBe("<a href='https://example.com/?a=1&amp;b=2'>x</a>");
+    expect(catalog.interpolate('<p>{{name}}</p>', { name: 'Data: quarterly' })).toBe(
+      '<p>Data: quarterly</p>',
+    );
+    expect(catalog.interpolate('<a href="{{missing}}">x</a>', {})).toBe('<a href="{{missing}}">x</a>');
     expect(catalog.interpolate('{{toString}}', {})).toBe('{{toString}}');
     expect(catalog.hasBuiltIn('__proto__')).toBe(false);
   });

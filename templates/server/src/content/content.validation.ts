@@ -43,6 +43,12 @@ export function page(value: unknown): number {
   if (!Number.isSafeInteger(number) || number < 1 || number > 100000) throw new BadRequestException('Invalid content page');
   return number;
 }
+/** Admin list page size: 1-100 rows, 20 when omitted. */
+export function pageSize(value: unknown): number {
+  const number = value === undefined || value === '' ? 20 : Number(value);
+  if (!Number.isSafeInteger(number) || number < 1 || number > 100) throw new BadRequestException('Invalid content page size');
+  return number;
+}
 export function boundedText(value: unknown, max: number, required = false): string {
   if (value === undefined && !required) return '';
   if (typeof value !== 'string' || value.length > max || /[\u0000-\u001f\u007f]/.test(value) || required && !value.trim())

@@ -34,12 +34,14 @@ export class NodeRegistry implements OnModuleInit, OnModuleDestroy {
   async onModuleInit(): Promise<void> {
     if (!this.redis || !this.nodeId) return;
     await this.register();
-    this.heartbeatInterval = setInterval(() => this.heartbeat(), this.heartbeatIntervalMs);
+    this.heartbeatInterval = setInterval(() => void this.heartbeat(), this.heartbeatIntervalMs);
+    this.heartbeatInterval.unref?.();
   }
 
   async onModuleDestroy(): Promise<void> {
     if (this.heartbeatInterval) {
       clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
     }
     await this.deregister();
   }
@@ -92,24 +94,46 @@ export class NodeRegistry implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /** 获取所有存活节点 */
+  /**
+   * 获取所有存活节点 — iterates node keys with `SCAN` (non-blocking). Falls
+   * back to `KEYS` only when the client has no `scan()`.
+   */
   async getAliveNodes(): Promise<ClusterNodeInfo[]> {
     if (!this.redis) return [];
-    // Redis SCAN + 前缀匹配需要 keys 命令（简化实现）
-    // 生产环境建议用 Redis SET 维护节点列表
     try {
-      const keys = await (this.redis as any).keys?.(`${this.keyPrefix}*`) ?? [];
+      const keys = await this.listNodeKeys();
       const nodes: ClusterNodeInfo[] = [];
       for (const key of keys) {
         const raw = await this.redis.get(key);
-        if (raw) {
+        if (!raw) continue;
+        try {
           nodes.push(JSON.parse(raw) as ClusterNodeInfo);
+        } catch {
+          this.logger.warn(`Ignoring corrupt node registry entry: ${key}`);
         }
       }
       return nodes;
-    } catch {
+    } catch (err) {
+      this.logger.warn(`Failed to list cluster nodes: ${err instanceof Error ? err.message : String(err)}`);
       return [];
     }
+  }
+
+  private async listNodeKeys(): Promise<string[]> {
+    const redis = this.redis!;
+    const match = `${this.keyPrefix}*`;
+    if (typeof redis.scan === 'function') {
+      const keys = new Set<string>();
+      let cursor = '0';
+      do {
+        const [next, batch] = await redis.scan(cursor, 'MATCH', match, 'COUNT', 100);
+        for (const key of batch) keys.add(key);
+        cursor = String(next);
+      } while (cursor !== '0');
+      return [...keys];
+    }
+    const legacy = redis as RedisLike & { keys?: (pattern: string) => Promise<string[]> };
+    return (await legacy.keys?.(match)) ?? [];
   }
 
   /** 获取当前节点ID */

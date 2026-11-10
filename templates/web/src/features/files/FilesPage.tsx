@@ -284,7 +284,8 @@ function FilesPanel() {
       document.body.append(anchor);
       anchor.click();
       anchor.remove();
-      setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+      // Revoke late: an early revoke can cancel a large download that is still being written.
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
       setNotice(text.downloadStarted);
     } catch {
       setError(text.downloadFailed);

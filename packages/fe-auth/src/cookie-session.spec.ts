@@ -40,9 +40,9 @@ function tab(options: { refresh?: () => Promise<{ access_token: string }>; accou
     events,
   });
   /** Deliver another tab's write as a `storage` event. */
-  const storageEvent = (newValue: string | null) => {
+  const storageEvent = (newValue: string | null, key: string | null = KEY) => {
     const event = new Event('storage') as StorageEvent;
-    Object.defineProperty(event, 'key', { value: KEY });
+    Object.defineProperty(event, 'key', { value: key });
     Object.defineProperty(event, 'newValue', { value: newValue });
     events.dispatchEvent(event);
   };
@@ -176,6 +176,20 @@ describe('cross-tab session sync', () => {
     // An explicit sign-in in this tab still wins.
     await first.session.adoptToken(token('u3', 's3'));
     expect(first.summary.persistedIdentity()).toBe('u3');
+  });
+
+  it('signs this tab out when another tab clears the whole storage area', async () => {
+    const first = tab();
+    await first.session.adoptToken(token('u1', 's1'));
+    first.storageEvent(null, null);
+    expect(first.store.getState().isAuthenticated).toBe(false);
+  });
+
+  it('ignores writes to unrelated storage keys', async () => {
+    const first = tab();
+    await first.session.adoptToken(token('u1', 's1'));
+    first.storageEvent(null, 'unrelated');
+    expect(first.store.getState().isAuthenticated).toBe(true);
   });
 
   it('ignores same-identity writes from other tabs', async () => {

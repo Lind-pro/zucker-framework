@@ -238,6 +238,7 @@ export class AICallWrapper {
     let chunkCount = 0;
     let usage: TokenUsage | undefined;
     let iterator: AsyncIterator<TChunk> | undefined;
+    let exhausted = false;
 
     try {
       const stream = await waitForAbortable(
@@ -253,7 +254,10 @@ export class AICallWrapper {
       iterator = stream[Symbol.asyncIterator]();
       while (true) {
         const next = await waitForAbortable(iterator.next(), abortScope.signal);
-        if (next.done) break;
+        if (next.done) {
+          exhausted = true;
+          break;
+        }
         const chunk = next.value;
         const extracted = extractor(chunk);
         if (extracted.content) content += extracted.content;
@@ -304,13 +308,17 @@ export class AICallWrapper {
         metadata: this.selectObserverMetadata(metadata, observerMetadata),
       });
       throw err;
+      // Close the provider stream on every failure (extractor/observer errors included), not
+      // only on abort; otherwise the underlying HTTP stream stays open.
     } finally {
-      if (abortScope.signal.aborted && iterator?.return) {
-        try {
-          await iterator.return();
-        } catch {
-          // Provider cancellation is best effort; preserve the original abort error.
-        }
+      // Close the provider stream whenever it was not fully consumed (abort, timeout, extractor
+      // or stream error). On abort a plain async generator's return() waits for the pending
+      // next(), so it is not awaited there: the timeout must not wait for a slow provider.
+      if (!exhausted && iterator?.return) {
+        const closing = Promise.resolve()
+          .then(() => iterator?.return?.())
+          .catch(() => undefined); // best effort; keep the original error
+        if (!abortScope.signal.aborted) await closing;
       }
       abortScope.dispose();
     }

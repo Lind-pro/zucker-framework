@@ -36,10 +36,8 @@ export function createPermissionGuard(config: PermissionGuardConfig) {
 
     const permissions = getAllPermissions();
 
-    const isSuperAdmin =
-      permissions.includes('*') ||
-      permissions.includes('superadmin') ||
-      permissions.includes('admin');
+    // Same rule as usePermission and the backend: only '*' and 'superadmin' bypass checks.
+    const isSuperAdmin = permissions.includes('*') || permissions.includes('superadmin');
 
     if (isSuperAdmin) {
       return <>{children}</>;

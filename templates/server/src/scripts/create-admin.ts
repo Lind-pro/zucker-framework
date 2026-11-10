@@ -15,6 +15,6 @@ async function main() {
     await createAdministrator(db, { username: BOOTSTRAP_ADMIN_USERNAME, password: BOOTSTRAP_ADMIN_PASSWORD, email: BOOTSTRAP_ADMIN_EMAIL },
       { plans: planSeedsFromBillingCatalog(readBillingCatalog(process.env.BILLING_CATALOG_JSON)) });
     process.stdout.write('Administrator created. Remove the bootstrap password from local configuration.\n');
-  } finally { await db.onModuleDestroy(); }
+  } finally { await db.disconnect(); }
 }
 main().catch(() => { process.stderr.write('Administrator setup failed; verify required configuration, account uniqueness and password policy.\n'); process.exitCode = 1; });

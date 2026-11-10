@@ -15,8 +15,51 @@ const ZERO_DECIMAL = new Set([
   "PYG", "RWF", "UGX", "VND", "VUV", "XAF", "XOF", "XPF",
 ]);
 
+/** 三位小数币种（ISO 4217，Stripe 亦按 3 位最小单位收取） */
+const THREE_DECIMAL = new Set(["BHD", "JOD", "KWD", "OMR", "TND"]);
+
+/**
+ * Stripe API 的特例：这些币种对外是整数金额，但 API 仍按两位小数传（必须是 100 的倍数）。
+ * 见 Stripe "Special cases" 文档。
+ */
+const STRIPE_TWO_DECIMAL_WHOLE_UNIT = new Set(["ISK", "UGX"]);
+
+function currencyCode(currency: string): string {
+  const code = currency.trim().toUpperCase();
+  // A malformed code must not silently fall back to two decimals.
+  if (!/^[A-Z]{3}$/.test(code)) throw new Error(`币种代码非法：${currency}`);
+  return code;
+}
+
 export function currencyExponent(currency: string): number {
-  return ZERO_DECIMAL.has(currency.toUpperCase()) ? 0 : 2;
+  const code = currencyCode(currency);
+  if (ZERO_DECIMAL.has(code)) return 0;
+  if (THREE_DECIMAL.has(code)) return 3;
+  return 2;
+}
+
+/**
+ * 十进制金额 → Stripe API 最小单位。处理 Stripe 与 ISO 指数不一致的币种：
+ * - ISK / UGX：API 用两位小数，但只接受整数金额；
+ * - BHD/JOD/KWD/OMR/TND：三位小数，Stripe 要求最后一位为 0。
+ */
+export function toStripeMinorUnits(amount: string, currency: string): number {
+  const code = currencyCode(currency);
+  if (STRIPE_TWO_DECIMAL_WHOLE_UNIT.has(code)) {
+    toMinorUnits(amount, "JPY"); // whole units only
+    return toMinorUnits(amount, "USD");
+  }
+  const value = toMinorUnits(amount, code);
+  if (THREE_DECIMAL.has(code) && value % 10 !== 0) {
+    throw new Error(`Stripe 要求 ${code} 金额的最后一位小数为 0，收到 ${amount}`);
+  }
+  return value;
+}
+
+/** Stripe API 最小单位 → 十进制金额（ISK/UGX 按两位小数还原）。 */
+export function fromStripeMinorUnits(value: number, currency: string): string {
+  const code = currencyCode(currency);
+  return fromMinorUnits(value, STRIPE_TWO_DECIMAL_WHOLE_UNIT.has(code) ? "USD" : code);
 }
 
 /** "29.00" + USD → 2900；"500" + JPY → 500 */

@@ -45,8 +45,16 @@ export class EnvironmentAIConfigSource implements AIConfigSource {
     const modelId = this.env[`${scopedPrefix}MODEL_ID`] ?? this.env[`${scopedPrefix}MODEL`] ??
       this.env[`${this.prefix}_MODEL_ID`] ?? this.env[`${this.prefix}_MODEL`];
     if (!modelId) return null;
+    // A scoped model that targets a different provider or endpoint must carry its own key;
+    // inheriting the global key would send one provider's credential to another host.
+    const unscoped = (name: string) => this.env[`${this.prefix}_${name}`];
+    const scoped = (name: string) => this.env[`${scopedPrefix}${name}`];
+    const targetDiffers =
+      (scoped('PROVIDER') !== undefined && scoped('PROVIDER') !== unscoped('PROVIDER')) ||
+      (scoped('BASE_URL') !== undefined && scoped('BASE_URL') !== unscoped('BASE_URL'));
+    const apiKey = targetDiffers ? scoped('API_KEY') : read('API_KEY');
     return {
-      apiKey: read('API_KEY') ?? '',
+      apiKey: apiKey ?? '',
       baseURL: read('BASE_URL'),
       modelId,
       providerId: read('PROVIDER')?.toLowerCase(),

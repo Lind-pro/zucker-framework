@@ -37,6 +37,14 @@ export interface NotifyHistoryRecord {
  * Applications implement this to store notification delivery history
  * in their database for auditing and tracking.
  */
+export interface NotifyHistoryFilter {
+  channel?: NotifyChannel;
+  to?: string;
+  success?: boolean;
+  startTime?: Date;
+  endTime?: Date;
+}
+
 export interface NotifyHistoryStore {
   save(record: NotifyHistoryRecord): Promise<void>;
   query(filter: {
@@ -108,25 +116,10 @@ export class NotifyHistoryService {
   }
 
   /**
-   * Query notification history with optional filters.
+   * Query notification history with optional filters (newest first, default limit 100).
    */
-  query(filter: {
-    channel?: NotifyChannel;
-    to?: string;
-    success?: boolean;
-    startTime?: Date;
-    endTime?: Date;
-    limit?: number;
-    offset?: number;
-  }): NotifyHistoryRecord[] {
-    const results = this.records.filter((r) => {
-      if (filter.channel && r.channel !== filter.channel) return false;
-      if (filter.to && r.to !== filter.to) return false;
-      if (filter.success !== undefined && r.success !== filter.success) return false;
-      if (filter.startTime && r.timestamp < filter.startTime) return false;
-      if (filter.endTime && r.timestamp > filter.endTime) return false;
-      return true;
-    });
+  query(filter: NotifyHistoryFilter & { limit?: number; offset?: number }): NotifyHistoryRecord[] {
+    const results = this.matching(filter);
 
     // Sort by timestamp descending
     results.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
@@ -134,6 +127,22 @@ export class NotifyHistoryService {
     const offset = filter.offset ?? 0;
     const limit = filter.limit ?? 100;
     return results.slice(offset, offset + limit);
+  }
+
+  /** Number of records matching the filter (no paging limit). */
+  count(filter: NotifyHistoryFilter): number {
+    return this.matching(filter).length;
+  }
+
+  private matching(filter: NotifyHistoryFilter): NotifyHistoryRecord[] {
+    return this.records.filter((r) => {
+      if (filter.channel && r.channel !== filter.channel) return false;
+      if (filter.to && r.to !== filter.to) return false;
+      if (filter.success !== undefined && r.success !== filter.success) return false;
+      if (filter.startTime && r.timestamp < filter.startTime) return false;
+      if (filter.endTime && r.timestamp > filter.endTime) return false;
+      return true;
+    });
   }
 
   /**

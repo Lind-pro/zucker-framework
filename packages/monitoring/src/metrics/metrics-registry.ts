@@ -12,6 +12,20 @@ function serializeLabels(labels: MetricLabels): string {
   return JSON.stringify(normalizeLabels(labels));
 }
 
+/**
+ * Distinct label sets kept per metric. New label sets beyond the cap are folded into one
+ * `{ overflow: "true" }` series so totals stay correct while memory and /metrics output stay
+ * bounded when a label carries unbounded values (ids, raw paths, user input).
+ */
+export const MAX_SERIES_PER_METRIC = 1000;
+const OVERFLOW_KEY = serializeLabels({ overflow: 'true' });
+
+function writeKey(series: ReadonlyMap<string, unknown>, labels: MetricLabels): string {
+  const key = serializeLabels(labels);
+  if (series.has(key) || series.size < MAX_SERIES_PER_METRIC) return key;
+  return OVERFLOW_KEY;
+}
+
 function deserializeLabels(key: string): MetricLabels {
   if (!key) return {};
   return JSON.parse(key) as MetricLabels;
@@ -29,7 +43,7 @@ export class Counter {
   ) {}
 
   increment(labels: MetricLabels = {}, amount = 1): void {
-    const key = this.labelsKey(labels);
+    const key = writeKey(this.values, labels);
     this.values.set(key, (this.values.get(key) ?? 0) + amount);
   }
 
@@ -65,7 +79,7 @@ export class Gauge {
   ) {}
 
   set(value: number, labels: MetricLabels = {}): void {
-    this.values.set(this.labelsKey(labels), value);
+    this.values.set(writeKey(this.values, labels), value);
   }
 
   get(labels: MetricLabels = {}): number {
@@ -73,12 +87,12 @@ export class Gauge {
   }
 
   increment(labels: MetricLabels = {}, amount = 1): void {
-    const key = this.labelsKey(labels);
+    const key = writeKey(this.values, labels);
     this.values.set(key, (this.values.get(key) ?? 0) + amount);
   }
 
   decrement(labels: MetricLabels = {}, amount = 1): void {
-    const key = this.labelsKey(labels);
+    const key = writeKey(this.values, labels);
     this.values.set(key, (this.values.get(key) ?? 0) - amount);
   }
 
@@ -124,7 +138,7 @@ export class Histogram {
   }
 
   observe(value: number, labels: MetricLabels = {}): void {
-    const key = this.labelsKey(labels);
+    const key = writeKey(this.observations, labels);
     const observation = this.observations.get(key) ?? {
       count: 0,
       sum: 0,
@@ -251,7 +265,7 @@ export class Summary {
   }
 
   observe(value: number, labels: MetricLabels = {}): void {
-    const key = this.labelsKey(labels);
+    const key = writeKey(this.observations, labels);
     const now = Date.now();
     const observation = this.observations.get(key) ?? {
       count: 0,

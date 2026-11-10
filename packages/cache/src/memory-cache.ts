@@ -17,7 +17,8 @@ export class MemoryCache<T = unknown> implements ICache<T> {
   private readonly defaultTtlMs: number | null;
 
   constructor(private readonly options: MemoryCacheOptions = {}) {
-    this.defaultTtlMs = options?.defaultTtlMs ?? null;
+    // A non-positive default keeps the historical meaning "no expiry".
+    this.defaultTtlMs = options?.defaultTtlMs && options.defaultTtlMs > 0 ? options.defaultTtlMs : null;
   }
 
   /** Resident size, including entries not yet pruned by a read or keys(). */
@@ -42,8 +43,14 @@ export class MemoryCache<T = unknown> implements ICache<T> {
 
   setSync(key: string, value: T, ttlMs?: number): void {
     const effectiveTtl = ttlMs ?? this.defaultTtlMs;
+    // An explicit non-positive TTL means "already expired", never "keep forever".
+    if (ttlMs !== undefined && ttlMs !== null && !(ttlMs > 0)) {
+      this.store.delete(key);
+      return;
+    }
     if (!this.store.has(key) && this.options.maxEntries !== undefined) {
       if (this.options.maxEntries <= 0) return;
+      if (this.store.size >= this.options.maxEntries) this.pruneExpired();
       while (this.store.size >= this.options.maxEntries) {
         const oldest = this.store.keys().next();
         if (oldest.done) break;
@@ -54,6 +61,19 @@ export class MemoryCache<T = unknown> implements ICache<T> {
       value,
       expiresAt: effectiveTtl ? Date.now() + effectiveTtl : null,
     });
+  }
+
+  private pruneExpired(): void {
+    const now = Date.now();
+    for (const [key, entry] of this.store) {
+      if (entry.expiresAt !== null && now >= entry.expiresAt) this.store.delete(key);
+    }
+  }
+
+  async remainingTtlMs(key: string): Promise<number | null | undefined> {
+    if (this.getSync(key) === undefined) return undefined;
+    const entry = this.store.get(key)!;
+    return entry.expiresAt === null ? null : Math.max(0, entry.expiresAt - Date.now());
   }
 
   async del(key: string): Promise<void> {

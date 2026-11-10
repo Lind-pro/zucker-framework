@@ -8,6 +8,7 @@ import { DateField } from './renderers/DateField';
 import { EnumField } from './renderers/EnumField';
 import { FileField } from './renderers/FileField';
 import { JsonField } from './renderers/JsonField';
+import { ArrayField } from './renderers/ArrayField';
 
 interface Props {
   field: FieldDefinition;
@@ -34,8 +35,9 @@ export function DynamicFormField({ field, fetchDictItems }: Props) {
     case FieldType.JSON:
       return <JsonField field={field} />;
     case FieldType.ARRAY:
+      return <ArrayField field={field} />;
     case FieldType.RELATION:
-      // 降级为文本输入
+      // 降级为文本输入（关系目标由调用方解释）
       return <StringField field={field} />;
     default:
       return <StringField field={field} />;

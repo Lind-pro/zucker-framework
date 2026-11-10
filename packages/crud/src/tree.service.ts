@@ -3,6 +3,8 @@ import { type TreeSortSupportEntity, type TreePathStrategy, list2tree, validateT
 import { BaseService } from './base.service';
 import { type DynamicQueryParam } from './dynamic-query.service';
 import { type PaginatedResult, type SaveResult } from './pagination';
+import { assertQueryField } from './query/query-policy';
+import { EntityEventPhase, EntityEventType } from '@zucker-framework/event';
 
 export interface TreeServiceOptions {
   /** 路径生成策略，默认使用节点 ID 作为路径段 */
@@ -209,9 +211,12 @@ export abstract class TreeService<T extends TreeSortSupportEntity> extends BaseS
       duplicatePathCheck.add(node.path);
 
       // 使用 path 前缀查询所有后代，保留 includes/excludes
+      const includes = typeof queryParam.includes === 'string'
+        ? (queryParam.includes as string).split(',').map((f) => f.trim()).filter(Boolean)
+        : queryParam.includes;
       const selectFields: Record<string, boolean> | undefined =
-        queryParam.includes?.length
-          ? Object.fromEntries(queryParam.includes.map((f) => [f, true]))
+        includes?.length
+          ? Object.fromEntries(includes.map((f) => [assertQueryField(f, 'select', this.queryPolicy), true]))
           : undefined;
 
       const descendants = await this.db.model(this.modelName).findMany({
@@ -350,22 +355,51 @@ export abstract class TreeService<T extends TreeSortSupportEntity> extends BaseS
    */
   override async delete(id: string): Promise<T> {
     const entity = await this.findOne(id);
+    await this.emitPrepareAndBefore(EntityEventType.DELETE, entity);
 
-    // 删除该节点及所有后代（通过 path 前缀匹配）
-    if (entity.path) {
-      await this.db.model(this.modelName).deleteMany({
-        where: {
-          OR: [
-            { id },
-            { path: { startsWith: `${entity.path}/` } },
-          ],
-        },
-      });
-    } else {
-      await this.db.model(this.modelName).delete({ where: { id } });
-    }
+    // 删除该节点及所有后代（通过 path 前缀匹配），在同一事务中执行
+    await this.transaction(async () => {
+      if (entity.path) {
+        await this.db.model(this.modelName).deleteMany({
+          where: this.scopeWhere({
+            OR: [
+              { id },
+              { path: { startsWith: `${entity.path}/` } },
+            ],
+          }),
+        });
+      } else {
+        await this.db.model(this.modelName).delete({ where: this.scopeWhere({ id }) });
+      }
+    });
 
+    await this.emitEvent(EntityEventType.DELETE, EntityEventPhase.AFTER, entity);
     return entity;
+  }
+
+  /**
+   * 更新节点。`path` / `level` 由服务维护，调用方传入的值会被忽略；
+   * `parentId` 变化时经过循环校验并通过 {@link moveNode} 重算本节点及后代的 path/level，
+   * 避免通用 PUT 路由造成 path 失效（随后按旧前缀级联删除会误删）。
+   */
+  override async update(id: string, data: Partial<T>): Promise<T> {
+    const { path: _path, level: _level, ...rest } = data as Partial<T> & { path?: unknown; level?: unknown };
+    void _path;
+    void _level;
+    if (!('parentId' in rest)) return super.update(id, rest as Partial<T>);
+
+    const existing = await this.findOne(id);
+    const nextParent = (rest.parentId as string | null | undefined) ?? null;
+    const currentParent = existing.parentId ?? null;
+    if (nextParent === currentParent) return super.update(id, rest as Partial<T>);
+
+    await this.checkCyclicDependency(id, nextParent);
+    return this.transaction(async () => {
+      const { parentId: _parentId, ...fields } = rest as Partial<T> & { parentId?: unknown };
+      void _parentId;
+      if (Object.keys(fields).length > 0) await super.update(id, fields as Partial<T>);
+      return this.moveNode(id, nextParent);
+    });
   }
 
   /**
@@ -545,6 +579,11 @@ export abstract class TreeService<T extends TreeSortSupportEntity> extends BaseS
   async moveNode(id: string, newParentId: string | null): Promise<T> {
     // 校验循环依赖
     await this.checkCyclicDependency(id, newParentId);
+    // Parent change and path/level rewrite of the subtree commit together.
+    return this.transaction(() => this.moveNodeInTransaction(id, newParentId));
+  }
+
+  private async moveNodeInTransaction(id: string, newParentId: string | null): Promise<T> {
     const node = await this.findOne(id);
 
     // 自动分配新的 sortIndex
@@ -568,7 +607,7 @@ export abstract class TreeService<T extends TreeSortSupportEntity> extends BaseS
     // 预计算移动节点的祖先路径前缀
     const { path: rootPath, level: rootLevel } = await this.computePathByAncestors(id, newParentId);
 
-    const updates: Promise<unknown>[] = [];
+    const updates: Array<{ id: string; path: string; level: number }> = [];
     for (const desc of descendants) {
       let path: string;
       let level: number;
@@ -595,14 +634,15 @@ export abstract class TreeService<T extends TreeSortSupportEntity> extends BaseS
         path = fullParts.join('/');
         level = path.split('/').length - 1;
       }
-      updates.push(
-        this.db.model(this.modelName).update({
-          where: { id: desc.id },
-          data: { path, level },
-        }),
-      );
+      updates.push({ id: desc.id, path, level });
     }
-    await Promise.all(updates);
+    // Sequential: interactive transactions run one statement at a time.
+    for (const update of updates) {
+      await this.db.model(this.modelName).update({
+        where: { id: update.id },
+        data: { path: update.path, level: update.level },
+      });
+    }
 
     return result;
   }
