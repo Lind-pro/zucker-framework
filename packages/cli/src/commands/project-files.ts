@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'fs';
 import { join, resolve } from 'path';
-import { installConsumerAgentInstructions } from '../../tooling/agent-instructions.mjs';
+import { installConsumerAgentInstructions, installConsumerAgentSkills } from '../../tooling/agent-instructions.mjs';
 import { validateProjectBundle, type ProjectBundle } from '../../tooling/project-templates.mjs';
 
 /** Released versions shipped with this CLI build (dist/release-catalog.json). */
@@ -28,6 +28,19 @@ export function readProjectBundle(runtimeDirectory: string): ProjectBundle {
 
 export function installInstructions(targetDir: string, bundle: ProjectBundle): void {
   const result = installConsumerAgentInstructions(targetDir, bundle.consumerInstructions);
+  for (const warning of result.warnings) console.warn(warning);
+}
+
+/**
+ * Installs the bundled assistant skills into `.agents/skills` (plus `.claude/skills` links). Existing
+ * files are preserved; bundles built before skills existed install nothing.
+ */
+export function installSkills(targetDir: string, bundle: ProjectBundle): void {
+  if (!bundle.skills || !Object.keys(bundle.skills).length) return;
+  const result = installConsumerAgentSkills(targetDir, bundle.skills);
+  const names = [...new Set(result.created.map(path => path.split('/')[2]))];
+  if (names.length) console.log(`  Assistant skills: ${names.join(', ')} (.agents/skills)`);
+  if (result.preserved.length) console.warn(`  Kept ${result.preserved.length} existing skill file(s) unchanged.`);
   for (const warning of result.warnings) console.warn(warning);
 }
 

@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "description": "Files and keys the brand-quickstart skill may change. Paths are relative to the workspace root; a project created by zucker init drops the apps/<name>/ prefix. The root .env is governed only by the env section. Anything not allowed here is denied; deny entries win over allow entries.",
+  "env": {
+    "file": ".env",
+    "allowKeys": ["SITE_NAME", "DEFAULT_LOCALE", "VITE_DEFAULT_LOCALE"],
+    "rule": "Edit only these keys in place. Never add, print, copy or move other values; never touch secrets."
+  },
+  "allow": [
+    { "path": "apps/web/tailwind.config.ts", "scope": "theme.extend.colors.primary scale only" },
+    { "path": "apps/web/src/app/globals.css", "scope": "--color-* custom properties in :root and .dark only" },
+    { "path": "apps/web/public/**", "scope": "logo and image files supplied by the user" },
+    { "path": "apps/web/src/app/icon.svg", "scope": "browser icon (Next.js file convention)" },
+    { "path": "apps/web/src/app/icon.png", "scope": "browser icon (Next.js file convention)" },
+    { "path": "apps/web/src/app/apple-icon.png", "scope": "home-screen icon (Next.js file convention)" },
+    { "path": "apps/web/src/messages/*.json", "scope": "string values only; keys unchanged and identical across locales" },
+    { "path": "apps/server/content/**/*.md", "scope": "starter pages, posts, docs and changelog in the documented front matter format" },
+    { "path": "apps/server/content/**/*.json", "scope": "block documents validated by content:check" },
+    { "path": "apps/admin/index.html", "scope": "<title> text only" },
+    { "path": "README.md", "scope": "product description" }
+  ],
+  "deny": [
+    ".env.example",
+    "apps/**/.env*",
+    "**/*.pem",
+    "**/*.key",
+    "apps/server/prisma/**",
+    "apps/server/src/**",
+    "apps/web/src/app/api/**",
+    "**/package.json",
+    "pnpm-lock.yaml",
+    "pnpm-workspace.yaml",
+    "**/Dockerfile",
+    "docker-compose.yml",
+    ".github/**",
+    ".agents/**",
+    "AGENTS.md"
+  ],
+  "finish": [
+    "pnpm --filter ./apps/server content:check",
+    "pnpm lint",
+    "Tell the user: legal pages are placeholders; have them reviewed before launch."
+  ]
+}

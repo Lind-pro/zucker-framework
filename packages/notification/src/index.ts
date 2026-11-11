@@ -168,3 +168,5 @@ export {
   type WebhookProviderCanaryOptions,
 } from './provider-canary';
 export { WebhookDeliveryError, type WebhookFetch } from './providers/webhook';
+
+export * from './connection-descriptor';

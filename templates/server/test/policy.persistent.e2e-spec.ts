@@ -296,9 +296,10 @@ run('policy store PostgreSQL and HTTP contract', () => {
     expect(live.body.revisions.analytics).toBe(before + 1);
     await putAnalytics(before + 1, { SITE_ANALYTICS_ENABLED: 'false' }).expect(200);
     expect((await integrations()).body.analytics).toEqual({ enabled: false });
-    // A restart-mode profile in the same list stays pending until restart.
     const listed = await api('get', '/management/connection-settings', admin.token).expect(200);
     expect(listed.body.profiles.find((row: { id: string }) => row.id === 'web-analytics')).toMatchObject({ applyMode: 'hot', pendingRestart: false });
-    expect(listed.body.profiles.filter((row: { applyMode: string }) => row.applyMode === 'hot').map((row: { id: string }) => row.id).sort()).toEqual(['web-analytics', 'web-connections']);
+    // Public site profiles and (since WP 4.1b) sign-in, mail, AI and storage profiles are hot.
+    expect(listed.body.profiles.filter((row: { applyMode: string }) => row.applyMode === 'hot').map((row: { id: string }) => row.id))
+      .toEqual(expect.arrayContaining(['web-analytics', 'web-connections', 'identity-google', 'identity-github', 'account-email', 'durable-email', 'private-files', 'ai-openai']));
   });
 });

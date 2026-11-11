@@ -33,6 +33,8 @@ function securityHeaders(production = process.env.NODE_ENV === "production") {
 }
 
 const nextConfig: NextConfig = {
+  // Optional separate build directory (several e2e builds with different API_URL side by side).
+  ...(process.env.NEXT_DIST_DIR?.trim() ? { distDir: process.env.NEXT_DIST_DIR.trim() } : {}),
   ...(process.env.VERCEL ? {} : { output: "standalone" }),
   env: { DEFAULT_LOCALE: defaultLocale() },
   transpilePackages: [

@@ -4,7 +4,7 @@ import { join, resolve } from 'path';
 import { randomBytes } from 'node:crypto';
 import { writeTemplateAssets, type TemplateAssets } from '../../tooling/project-templates.mjs';
 import {
-  assertReleasedVersions, installInstructions, pinReleasedVersions, readProjectBundle, readReleaseCatalog,
+  assertReleasedVersions, installInstructions, installSkills, pinReleasedVersions, readProjectBundle, readReleaseCatalog,
   type ReleaseCatalog,
 } from './project-files';
 
@@ -223,6 +223,7 @@ export function createCreateCommand(runtimeDirectory?: string, workingDirectory?
         writeFileSync(join(targetDir, '.env.example'), composeEnvironment(sections, { ...settings, ...blankSecrets }, omit), { flag: 'wx' });
         writeFileSync(join(targetDir, '.env'), composeEnvironment(sections, { ...settings, ...secretKeys }, omit), { mode: 0o600, flag: 'wx' });
         installInstructions(targetDir, bundle);
+        installSkills(targetDir, bundle);
       } catch (error) {
         // Never leave a half-written workspace (with secrets) behind; the directory was created above.
         rmSync(targetDir, { recursive: true, force: true });

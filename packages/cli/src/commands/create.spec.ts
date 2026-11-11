@@ -19,7 +19,7 @@ const bundle = (): ProjectBundle => ({ version: 1, consumerInstructions: '# Cons
   web: { 'package.json': encode({ name: 'web', dependencies: { '@zucker-framework/fe-auth': 'workspace:*' } }), 'next.config.ts': encode(''), 'tsconfig.json': encode('{}'), 'src/app/[locale]/layout.tsx': encode(''), 'src/app/[locale]/(home)/page.tsx': encode(''), '.env.example': encode('API_URL=\nSITE_URL=\nDEFAULT_LOCALE=en\nADMIN_URL=\n') },
   admin: { 'package.json': encode({ name: 'admin', packageManager: 'pnpm@1.0.0', dependencies: { '@zucker-framework/fe-admin': 'workspace:*' } }), 'index.html': encode(''), 'vite.config.ts': encode(''), 'tsconfig.json': encode('{}'), 'src/main.tsx': encode(''), '.env.example': encode('API_PROXY_TARGET=\n') },
   workspace: { 'pnpm-workspace.yaml': encode('packages:\n  - "apps/*"\n'), 'docker-compose.yml': encode(compose), '.env.example': encode('POSTGRES_PASSWORD=\nDEFAULT_LOCALE=en\nVITE_DEFAULT_LOCALE=en\nREVALIDATE_SECRET=\n'), '.gitignore': encode('.env*\n!.env.example\n'), '.dockerignore': encode('**/.env*\n'), 'README.md': encode('# __NAME__\n<!-- <zucker:admin> -->\nadmin row\n<!-- </zucker:admin> -->\n'), 'scripts/with-env.mjs': encode('// synthetic\n') },
-} });
+}, skills: { 'demo/SKILL.md': encode('---\nname: demo\ndescription: "Synthetic."\n---\nSynthetic skill.\n'), 'demo/references/list.json': encode('{}\n') } });
 const run = (...args: string[]) => createCreateCommand(runtime, root).parseAsync(args, { from: 'user' });
 const env = (text: string) => Object.fromEntries(text.split('\n').filter(line => /^[A-Z0-9_]+=/.test(line)).map(line => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1)]));
 
@@ -105,4 +105,19 @@ it('keeps the first assignment of a key and nested app blocks', () => {
   expect(composeEnvironment([{ title: '', text: 'A=1\n# c\nB=\n' }, { title: 'Web', text: 'A=2\nC=x\n' }], { B: 'b' }, { C: 'reason' }))
     .toBe('A=1\n# c\nB=b\n\n# ═══ Web ═══════════════════════════════════════════════════════════════════\n# C is not set here: reason\n');
   expect(selectAppBlocks('a\n# <zucker:web>\nw\n# <zucker:admin>\nx\n# </zucker:admin>\n# </zucker:web>\nz', new Set(['server', 'admin']))).toBe('a\nz');
+});
+
+it('installs the bundled assistant skills with Claude links, also without web and admin', async () => {
+  await run('skills');
+  await run('api-skills', '--no-web', '--no-admin');
+  for (const name of ['skills', 'api-skills']) {
+    expect(readFileSync(join(root, name, '.agents/skills/demo/SKILL.md'), 'utf8')).toContain('Synthetic skill.');
+    expect(existsSync(join(root, name, '.agents/skills/demo/references/list.json'))).toBe(true);
+    expect(lstatSync(join(root, name, '.claude/skills/demo')).isSymbolicLink()).toBe(true);
+  }
+  const legacy = bundle();
+  delete legacy.skills;
+  writeFileSync(join(runtime, 'project-templates.json'), JSON.stringify(legacy));
+  await run('no-skills');
+  expect(existsSync(join(root, 'no-skills/.agents'))).toBe(false);
 });

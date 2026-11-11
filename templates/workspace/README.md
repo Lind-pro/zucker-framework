@@ -12,8 +12,8 @@ An AI SaaS workspace created by `zucker create`, built on released `@zucker-fram
 | Admin (back office) | `apps/admin` | http://localhost:4201 |
 <!-- </zucker:admin> -->
 
-Supporting services in `docker-compose.yml`: PostgreSQL, Redis (shared rate-limit budgets), MinIO
-(S3-compatible private files) and Mailpit (catches all mail, UI at http://localhost:8025).
+Supporting services in `docker-compose.yml`: PostgreSQL, Redis (shared rate-limit budgets), SeaweedFS
+(S3-compatible private files, service `minio`) and Mailpit (catches all mail, UI at http://localhost:8025).
 
 ## Configuration
 
@@ -27,7 +27,7 @@ Apps read the root `.env` through `scripts/with-env.mjs`, so do not copy it into
 
 ```bash
 pnpm install            # first install writes pnpm-lock.yaml; commit it
-pnpm dev:infra          # PostgreSQL, Redis, MinIO and Mailpit in Docker
+pnpm dev:infra          # PostgreSQL, Redis, S3 storage and Mailpit in Docker
 pnpm db:migrate         # apply the Prisma migrations
 pnpm dev                # all apps in watch mode
 ```

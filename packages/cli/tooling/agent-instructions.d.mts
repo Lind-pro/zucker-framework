@@ -47,3 +47,37 @@ export declare function installConsumerAgentInstructions(
   source: string,
   options?: ConsumerAgentInstructionOptions,
 ): ConsumerAgentInstructionInstallation;
+
+/** `{ '<skill>/<relative path>': base64 }`, `.md`/`.json` only. */
+export type ConsumerSkillAssets = Record<string, string>;
+
+export declare const CONSUMER_SKILL_LIMITS: Readonly<{ maxFiles: number; maxFileBytes: number }>;
+
+export interface ConsumerSkillFile {
+  name: string;
+  path: string;
+  relative: string[];
+  text: string;
+}
+
+/** Throws on an invalid path, encoding, size, count or a skill without SKILL.md. */
+export declare function validateConsumerSkills(skills: unknown): ConsumerSkillFile[];
+
+export interface ConsumerSkillInstallation {
+  /** Project-relative files written by this call. */
+  created: string[];
+  /** Project-relative files that already existed and were left untouched. */
+  preserved: string[];
+  links: { created: string[]; preserved: string[] };
+  /** Nonfatal skips (non-local directories, unsupported symlinks). */
+  warnings: string[];
+}
+
+/**
+ * Writes `.agents/skills/<name>/...` with exclusive creation and adds `.claude/skills/<name>` relative
+ * links. Never overwrites, never follows a symbolic link out of the project.
+ */
+export declare function installConsumerAgentSkills(
+  repository: string,
+  skills: ConsumerSkillAssets,
+): ConsumerSkillInstallation;

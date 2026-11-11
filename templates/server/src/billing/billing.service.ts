@@ -16,6 +16,8 @@ import { BillingExtensions, type BillingFulfillmentHooks, type BillingPlanOffers
 import { createCreditPackStore, creditPacksConfigured } from './credit-packs.store';
 import { BILLING_POLICY, type BillingPolicyValues } from './billing.policy';
 import { PolicyService } from '../policy/policy.service';
+import type { PaymentCredentialResolver } from './payment-credentials';
+import type { PaymentProviderSet } from './providers';
 
 export const BILLING_OPTIONS = Symbol('BILLING_OPTIONS');
 
@@ -48,13 +50,23 @@ export interface BillingOptions {
   catalogJson?: string;
   webUrl: string;
   referralProviders?: readonly ReferralProvider[];
-  /** Revision of the payment connection configuration in effect; recorded on each new order. */
+  /**
+   * Revision of the payment connection configuration in effect; recorded on each new order created
+   * through a fixed provider list (with `credentials`, the resolver records the revision it used).
+   */
   configRevision?: string | null;
+  /**
+   * Hot-applied payment credentials (WP 4.1c). When present, new orders use the current saved payment
+   * configuration and existing orders, subscriptions and refunds resolve the credentials of their own
+   * account (D12); `providers`/`subscriptionProviders`/`refundProviders` then only seed the catalog
+   * until its first refresh.
+   */
+  credentials?: PaymentCredentialResolver;
 }
 /**
  * BILLING_OPTIONS may be a value or a resolver. With a resolver, the static catalog and the config
- * revision recorded on new orders follow the resolver on every call; provider SDK instances are
- * still built once (hot provider swapping is the runtime-settings Phase 1 work).
+ * revision recorded on new orders follow the resolver on every call. Payment provider instances follow
+ * the saved payment configuration through `credentials`.
  */
 export type BillingOptionsSource = BillingOptions | (() => BillingOptions);
 export function billingOptionsFromEnvironment(env: NodeJS.ProcessEnv): BillingOptions {
@@ -75,7 +87,10 @@ export class BillingService {
   readonly packs: CreditPackCatalogService;
   /** Plan offers and fulfillment hooks registered by other modules (see {@link usePlanOffers}). */
   readonly extensions = new BillingExtensions();
-  private readonly providerIds: ReadonlySet<string>;
+  /** Adapters that accept new orders now, shared with the catalog and updated in place by {@link refreshProviders}. */
+  private readonly liveCheckouts: HostedCheckoutAdapter[];
+  private readonly liveSubscriptions: SubscriptionAdapter[];
+  private readonly credentials?: PaymentCredentialResolver;
   private promotions: BillingPromotions | null = null;
   constructor(@Inject(DATABASE_ADAPTER) private readonly database: ApplicationDatabase,
     @Inject(BILLING_OPTIONS) source: BillingOptionsSource,
@@ -91,15 +106,18 @@ export class BillingService {
       return parsed.items;
     };
     items(); // fail fast on an invalid catalog
-    this.providerIds = new Set(options.providers.map(provider => provider.id));
+    this.credentials = options.credentials;
+    this.liveCheckouts = [...options.providers];
+    this.liveSubscriptions = [...options.subscriptionProviders ?? []];
     this.packs = new CreditPackCatalogService(createCreditPackStore(database));
-    this.catalog = new BillingCatalog(items, options.providers, options.referralProviders, options.subscriptionProviders,
+    const refresh = () => this.refreshProviders();
+    this.catalog = new LiveBillingCatalog(refresh, items, this.liveCheckouts, options.referralProviders, this.liveSubscriptions,
       () => this.extensions.planOffers, { service: this.packs, configured: () => creditPacksConfigured(database) });
-    this.refunds = new BillingRefundsService(database, options.refundProviders ?? []);
-    this.subscriptions = new BillingSubscriptionsService(database, options.subscriptionProviders ?? [], options.webUrl, this.refunds, this.extensions);
+    this.refunds = new BillingRefundsService(database, this.credentials?.refunds ?? options.refundProviders ?? []);
+    this.subscriptions = new BillingSubscriptionsService(database, this.credentials?.subscriptions ?? options.subscriptionProviders ?? [], options.webUrl, this.refunds, this.extensions);
     this.checkout = new HostedCheckoutService({
       persistence: createCheckoutPersistence(database, { extensions: this.extensions, configRevision: () => current().configRevision ?? null }),
-      providers: options.providers,
+      providers: this.credentials ?? options.providers,
       // The price comes from the catalog; a promotion (never the browser's amount) is frozen on top of it.
       resolveOffer: async selection => {
         const offer = await this.catalog.resolve(selection);
@@ -114,6 +132,20 @@ export class BillingService {
         return { successUrl: success.href, cancelUrl: cancel.href };
       },
     });
+  }
+  /** Hot-applied payment credentials, when this process manages them (internal; never HTTP). */
+  get paymentCredentials(): PaymentCredentialResolver | undefined { return this.credentials; }
+  /**
+   * Replaces the catalog's provider lists with the providers that accept new orders now (strict read of
+   * the saved payment revisions). Without `credentials` the lists are fixed and this does nothing.
+   * The lists only drive what the catalog offers; every new order still resolves its own adapter.
+   */
+  async refreshProviders(): Promise<void> {
+    if (!this.credentials) return;
+    const sets: PaymentProviderSet[] = await this.credentials.currentSets();
+    // One synchronous swap, so a catalog read never sees checkout and lifecycle adapters of different revisions.
+    this.liveCheckouts.splice(0, this.liveCheckouts.length, ...sets.map(set => set.checkout));
+    this.liveSubscriptions.splice(0, this.liveSubscriptions.length, ...sets.flatMap(set => set.subscription ? [set.subscription] : []));
   }
   /** Registers the plan catalog as the source of plan offers (called by SubscriptionsModule). */
   usePlanOffers(offers: BillingPlanOffers): void {
@@ -153,7 +185,8 @@ export class BillingService {
   async checkoutPolicy(): Promise<{ defaultProvider: string | null; allowProviderChoice: boolean; promoCodes: 'none' | 'alias' }> {
     const values: BillingPolicyValues = this.policies?.ids().includes(BILLING_POLICY.id)
       ? await this.policies.get(BILLING_POLICY) : { defaultProvider: '', allowProviderChoice: true, allowCustomerPromoCodes: false };
-    const preferred = values.defaultProvider && this.providerIds.has(values.defaultProvider) ? values.defaultProvider : null;
+    await this.refreshProviders();
+    const preferred = values.defaultProvider && this.liveCheckouts.some(provider => provider.id === values.defaultProvider) ? values.defaultProvider : null;
     // Buyers type an alias only; the provider's own code entry stays off (its discount could not be frozen).
     const promoCodes = values.allowCustomerPromoCodes === true && this.promotions ? 'alias' as const : 'none' as const;
     return { defaultProvider: preferred, allowProviderChoice: values.allowProviderChoice, promoCodes };
@@ -173,6 +206,9 @@ export class BillingService {
     const promotionCode = typeof input.promoCode === 'string' ? input.promoCode.trim().toUpperCase() : undefined;
     if (promotionCode !== undefined && checkout.promoCodes !== 'alias') promoInvalid();
     const orderId = createHash('sha256').update(JSON.stringify(['checkout', ownerId, key])).digest('hex');
+    // The catalog checks the selection against the providers enabled now; the order itself records the
+    // revision of the adapter `HostedCheckoutService.create` resolves for it.
+    await this.refreshProviders();
     try {
       return await this.checkout.create({ orderId, ownerId, offerId: input.offerId, providerId: input.providerId,
         providerMetadata: this.catalog.metadata(input.providerId, input.referral),
@@ -198,6 +234,13 @@ export class BillingService {
     const current = await readCreditBalance(this.database, ownerId);
     return { balance: current.available, frozenBalance: current.frozen, bookBalance: current.bookBalance };
   }
+}
+
+/** The catalog over live provider lists: listings refresh them first, so a saved payment profile shows without restart. */
+class LiveBillingCatalog extends BillingCatalog {
+  constructor(private readonly refresh: () => Promise<void>, ...args: ConstructorParameters<typeof BillingCatalog>) { super(...args); }
+  override async list() { await this.refresh(); return super.list(); }
+  override async publicPacks(currency?: string, locale?: string) { await this.refresh(); return super.publicPacks(currency, locale); }
 }
 
 /** Do not expose dispatch keys, private fulfillment policy or affiliate claims to the browser. */

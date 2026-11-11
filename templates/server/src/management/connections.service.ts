@@ -10,6 +10,7 @@ import { oauthSettings } from '../oauth/oauth.config';
 import { inspectAIConnections } from '../ai-connections/ai-connections.config';
 import { ConnectionSettingsService } from '../runtime-settings/connection-settings.service';
 import { connectionSdkAvailable } from '../runtime-settings/connection-sdk';
+import { hotConnectionStatus } from '../runtime-settings/hot-apply';
 import {
   siteAnalyticsConfig,
   siteConnectionsConfig,
@@ -41,6 +42,13 @@ export interface ConnectionStatus {
   storedRevision?: number;
   appliedRevision?: number;
   pendingRestart?: boolean;
+  /** `hot`: a save applies to the next request; `restart`: on the next server start. Only with runtime settings. */
+  applyMode?: 'hot' | 'restart';
+  /**
+   * Hot profiles only: the newest saved revision could not be assembled into a provider, so
+   * `appliedRevision` (an older revision) keeps serving. Revision numbers only, never details.
+   */
+  applyError?: { revision: number; reason: 'provider_assembly_failed' };
   registeredProviderIds?: string[];
   configurationSourceIds?: string[];
 }
@@ -88,9 +96,11 @@ function base(
         : !sdkAvailable
           ? 'missing-sdk'
           : 'configured',
-    note: '仅校验本地配置与依赖；未连接外部服务。环境配置修改后需重启服务。',
+    note: RESTART_NOTE,
   };
 }
+const RESTART_NOTE = '仅校验本地配置与依赖；未连接外部服务。环境配置修改后需重启服务。';
+const HOT_NOTE = '仅校验本地配置与依赖；未连接外部服务。保存后的设置从下一次请求起生效（其他服务实例在 30 秒内生效），进行中的发送、上传或对话仍使用原设置完成；进程环境变量修改后仍需重启服务。';
 
 /** Metadata only: use the application's actual config parsers, never verify/send/query a provider. */
 @Injectable()
@@ -106,7 +116,9 @@ export class ConnectionsService {
     checkedAt: string;
     externalRequests: false;
   }> {
-    const env = this.env,
+    // With runtime settings, hot profiles are inspected at their current stored revision (what the
+    // next request uses); restart profiles stay at the start-up snapshot (what is applied).
+    const env = this.settings ? (await this.settings.liveEnvironment()).environment : this.env,
       rows: ConnectionStatus[] = [],
       missing = (keys: readonly string[]) => keys.filter((key) => !env[key]?.trim());
     for (const id of ['stripe', 'paypal', 'creem'] as const) {
@@ -322,13 +334,28 @@ export class ConnectionsService {
     }
     if (this.settings) {
       const { profiles } = await this.settings.list();
+      const hot = hotConnectionStatus(this.settings);
       for (const row of rows) {
         const profile = profiles.find((profile) => profile.id === row.id);
         if (profile) {
           row.source = 'runtime-snapshot';
-          row.appliedRevision = profile.appliedRevision;
+          row.applyMode = profile.applyMode;
           row.storedRevision = profile.storedRevision;
+          row.appliedRevision = profile.appliedRevision;
           row.pendingRestart = profile.pendingRestart;
+          if (profile.applyMode === 'hot') {
+            row.note = row.id.startsWith('web-')
+              ? '展示 Server 当前保存并通过公开配置接口提供给 Web 的设置；未确认浏览器脚本加载或第三方服务连通。保存后下一次请求生效。'
+              : HOT_NOTE;
+            // A hot profile applies to the next request (applied = stored), unless the provider for the
+            // newest saved revision could not be assembled: then the older served revision is reported.
+            const status = hot.get(profile.id);
+            if (status?.failedRevision !== undefined && status.failedRevision >= profile.storedRevision) {
+              row.applyError = { revision: status.failedRevision, reason: 'provider_assembly_failed' };
+              if (status.servedRevision !== undefined) row.appliedRevision = status.servedRevision;
+            }
+            row.pendingRestart = false;
+          }
         }
       }
     }

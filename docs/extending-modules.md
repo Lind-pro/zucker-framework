@@ -633,3 +633,21 @@ ZuckerAIModule.forRoot({
 ```
 
 场景级环境变量使用 `AI_{SCENARIO}_{FIELD}`，并回退到全局 `AI_{FIELD}`。例如 `source-blueprint` 会先读取 `AI_SOURCE_BLUEPRINT_MODEL`，未设置时读取 `AI_MODEL`。如果应用同时注册了 `DATABASE_ADAPTER`，`AIConfigService` 会自动追加默认数据库配置源；无需手工构造 `DatabaseAIConfigSource`。
+
+## 连接配置（`@zucker-framework/config/connections`）
+
+后台可编辑、加密保存的连接配置（支付、登录、邮件、存储、AI、公开站点脚本）由
+`@zucker-framework/config/connections` 提供通用机制，产品只声明配置项并决定何时使用：
+
+- `defineConnectionProfile({ profile, applyMode, validate })` 声明一个配置（字段 `text`/`secret`/`boolean`/`select`/`number`/`url`），
+  `composeConnectionProfiles([...])` 合并各功能的声明；修改端点时必须同时重填或清空随该端点发送的密钥（`assertSecretsFollowEndpoint`）。
+- 各包导出纯数据描述：`@zucker-framework/payment`（Stripe、PayPal、Creem）、`auth`（Google、GitHub）、
+  `notification`（SMTP、Resend）、`storage`（S3/R2）、`ai`（各模型连接），模板在此基础上加产品文案。
+- `ConnectionProfileStore` 负责加锁、修订号比较交换、同事务审计，并把每次保存加密归档到
+  `connection_profile_revisions`；`ConnectionRuntime` 提供启动快照、`liveEnvironment()`（30 秒缓存，本进程保存即失效）、
+  `environmentAt(id, revision)`（某个归档版本）。
+- 需要“保存即生效”的提供方用 `RuntimeProviderSlot`（模板中为 `HotProvider`，`runtime-settings/hot-apply.ts`）：
+  `ttl` 或 `strict` 新鲜度、按租约释放旧实例、新版本组装失败时继续用旧实例并在连接配置页显示 `applyError`。
+  已开始的流式对话、上传和发送在原实例上完成。
+- 支付按订单所属账户解析凭据（同账户最新保留版本），旧凭据只能由运维在保留期（`CONNECTION_REVISION_RETENTION_DAYS`，
+  默认 400 天）后清理未被引用的版本。新增连接时在功能目录内声明 profile 并加到组合中，不要在模块构造时读取一次性环境快照。

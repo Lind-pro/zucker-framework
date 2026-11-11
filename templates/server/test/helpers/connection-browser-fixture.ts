@@ -16,8 +16,9 @@ import { ZuckerAIModule, type NativeModelFactory } from '@zucker-framework/ai';
 import {
   AIConnectionsModule,
   AI_NATIVE_MODEL_FACTORY,
-  aiModuleOptionsFromEnvironment,
+  aiModuleOptionsFromRuntime,
 } from '../../src/ai-connections';
+import { AI_CONNECTION_RUNTIME, AIConnectionRuntimeModule, type AIConnectionRuntime } from '../../src/ai-connections/ai-connection-runtime';
 import request from 'supertest';
 import { ApplicationDatabase } from '../../src/database';
 import { AccountModule } from '../../src/accounts/account.module';
@@ -125,12 +126,11 @@ export async function connectionBrowserFixture(
         AccountModule,
         ...(options.nativeAI
           ? [
+              // Same composition as app.module: model configuration follows the hot `ai-*` profiles.
               ZuckerAIModule.forRootAsync({
-                inject: [RUNTIME_ENVIRONMENT],
-                useFactory: (environment) =>
-                  aiModuleOptionsFromEnvironment(environment as Readonly<NodeJS.ProcessEnv>, {
-                    routes: options.nativeAI?.routes,
-                  }),
+                imports: [AIConnectionRuntimeModule],
+                inject: [AI_CONNECTION_RUNTIME],
+                useFactory: (runtime) => aiModuleOptionsFromRuntime(runtime as AIConnectionRuntime, { routes: options.nativeAI?.routes }),
               }),
               AIConnectionsModule,
             ]

@@ -3,25 +3,58 @@ import type { WebhookRequest } from '../contract/payment-contract';
 import { isDefinitePaymentRejection } from '../contract/rejection';
 import type { OrderPersistence } from '../order-persistence';
 import {
-  HostedCheckoutError, type HostedCheckoutAdapter, type HostedCheckoutObservation,
-  type HostedCheckoutOptions, type HostedCheckoutOrder, type HostedCheckoutSelection,
+  HOSTED_CHECKOUT_MAX_WEBHOOK_CANDIDATES, HostedCheckoutError, type HostedCheckoutAdapter, type HostedCheckoutEvent,
+  type HostedCheckoutObservation, type HostedCheckoutOptions, type HostedCheckoutOrder, type HostedCheckoutProviderResolver,
+  type HostedCheckoutSelection,
 } from './types';
 import { canonicalMoney, checkoutPayable, checkoutUrl, nonempty, snapshotFulfillmentData, snapshotPromotion, snapshotProviderMetadata } from './validation';
 
-/** Durable dispatch claims + read-only reconciliation + atomic initial fulfillment. */
+/**
+ * Resolver over a fixed adapter list (credentials fixed for the process lifetime): one adapter per
+ * provider id, used for new and existing orders alike; an order of another account scope is refused.
+ */
+export function staticHostedCheckoutProviders(adapters: readonly HostedCheckoutAdapter[]): HostedCheckoutProviderResolver {
+  const providers = new Map<string, HostedCheckoutAdapter>();
+  for (const provider of adapters) {
+    nonempty(provider.id, 'Provider'); nonempty(provider.accountScope, 'Account scope');
+    if (providers.has(provider.id)) throw new HostedCheckoutError('invalid_input', 'Duplicate provider');
+    providers.set(provider.id, provider);
+  }
+  return {
+    ids: async () => [...providers.keys()],
+    current: async providerId => { const adapter = providers.get(providerId); return adapter ? { adapter } : undefined; },
+    forOrder: async order => providers.get(order.providerId),
+    webhookCandidates: async providerId => { const adapter = providers.get(providerId); return adapter ? [adapter] : []; },
+  };
+}
+
+const CONFIG_REVISION_LIMIT = 255;
+
+/**
+ * Durable dispatch claims + read-only reconciliation + atomic initial fulfillment.
+ *
+ * Adapters come from a fixed list or a {@link HostedCheckoutProviderResolver}. Each operation
+ * resolves its adapter once and keeps it: a new order uses `current()` and records its configuration
+ * revision before the dispatch claim; an existing order always uses `forOrder()` and must stay on its
+ * own account scope.
+ */
 export class HostedCheckoutService {
-  private readonly providers: Map<string, HostedCheckoutAdapter>;
+  private readonly providers: HostedCheckoutProviderResolver;
   private readonly now: () => Date;
 
   constructor(private readonly options: HostedCheckoutOptions) {
     if (!options.persistence?.orders || !options.persistence.transaction) {
       throw new HostedCheckoutError('invalid_input', 'Durable transactional persistence is required');
     }
-    this.providers = new Map();
-    for (const provider of options.providers) {
-      nonempty(provider.id, 'Provider'); nonempty(provider.accountScope, 'Account scope');
-      if (this.providers.has(provider.id)) throw new HostedCheckoutError('invalid_input', 'Duplicate provider');
-      this.providers.set(provider.id, provider);
+    const providers = options.providers;
+    if (Array.isArray(providers)) this.providers = staticHostedCheckoutProviders(providers);
+    else {
+      const resolver = providers as HostedCheckoutProviderResolver;
+      if (!resolver || typeof resolver.current !== 'function' || typeof resolver.forOrder !== 'function'
+        || typeof resolver.webhookCandidates !== 'function' || typeof resolver.ids !== 'function') {
+        throw new HostedCheckoutError('invalid_input', 'Checkout providers must be an adapter list or a provider resolver');
+      }
+      this.providers = resolver;
     }
     this.now = options.now ?? (() => new Date());
   }
@@ -45,8 +78,19 @@ export class HostedCheckoutService {
     for (const key of ['orderId', 'ownerId', 'offerId', 'providerId'] as const) nonempty(selection[key], key);
     const store = this.options.persistence.orders;
     let order = await store.findUnique({ where: { id: selection.orderId } });
+    // The adapter this call created the order with; it is used for this order's dispatch, so a save
+    // that lands meanwhile cannot make the recorded revision and the dispatching account differ.
+    let created: { adapter: HostedCheckoutAdapter; order: HostedCheckoutOrder } | undefined;
     if (!order) {
-      const provider = this.provider(selection.providerId);
+      const current = await this.providers.current(selection.providerId);
+      if (!current) throw new HostedCheckoutError('unsupported', 'Checkout provider is not configured');
+      const provider = current.adapter;
+      nonempty(provider?.id, 'Provider'); nonempty(provider.accountScope, 'Account scope');
+      if (provider.id !== selection.providerId) throw new HostedCheckoutError('unsupported', 'Checkout provider is not configured');
+      const configRevision = current.configRevision;
+      if (configRevision !== undefined && configRevision !== null && (typeof configRevision !== 'string' || !configRevision || configRevision.length > CONFIG_REVISION_LIMIT)) {
+        throw new HostedCheckoutError('invalid_input', 'Provider configuration revision is invalid');
+      }
       if (metadata && provider.supportsMetadata !== true) throw new HostedCheckoutError('unsupported', 'Provider does not support arbitrary checkout metadata');
       const resolved = await this.options.resolveOffer(selection);
       const fulfillmentData = snapshotFulfillmentData(resolved.fulfillmentData);
@@ -77,8 +121,9 @@ export class HostedCheckoutService {
         createKey: `zf-c-${key}`, captureKey: `zf-p-${key}`, creationState: 'prepared', captureState: 'idle',
         state: 'unknown', checkoutId: null, checkoutUrl: null, paymentId: null, paymentKind: null,
         subscriptionId: null, fulfilledAt: null, createdAt: time, updatedAt: time, revision: 0,
+        ...(configRevision !== undefined ? { configRevision } : {}),
       };
-      try { order = await store.create({ data }); }
+      try { order = await store.create({ data }); created = { adapter: provider, order }; }
       catch (error) {
         // A concurrent insert (or a lost insert response) is recoverable before external dispatch.
         order = await store.findUnique({ where: { id: selection.orderId } });
@@ -89,7 +134,7 @@ export class HostedCheckoutService {
     if (order.offerId !== selection.offerId || order.providerId !== selection.providerId) {
       throw new HostedCheckoutError('conflict', 'Order ID already belongs to another selection');
     }
-    const provider = this.boundProvider(order);
+    const provider = created?.order === order ? this.bind(order, created.adapter) : await this.boundProvider(order);
     if (order.creationState !== 'prepared') return order;
     const claimed = await store.compareAndSet(order.id, { revision: order.revision, creationState: 'prepared' }, {
       creationState: 'submitting', revision: order.revision + 1, updatedAt: this.now(),
@@ -135,13 +180,14 @@ export class HostedCheckoutService {
     const order = await this.get(input.orderId, input.ownerId);
     const id = this.checkoutId(order, input.checkoutId);
     if (!id || order.fulfilledAt) return order;
-    return this.reconcile(order, await this.boundProvider(order).retrieve(id));
+    const provider = await this.boundProvider(order);
+    return this.reconcile(order, await provider.retrieve(id));
   }
 
   /** Explicit user-approved capture. Repeated calls only read after the first dispatch claim. */
   async capture(input: { orderId: string; ownerId: string }): Promise<HostedCheckoutOrder> {
     let order = await this.get(input.orderId, input.ownerId);
-    const provider = this.boundProvider(order);
+    const provider = await this.boundProvider(order);
     if (!provider.capture) throw new HostedCheckoutError('unsupported', 'Provider has no explicit capture operation');
     if (!order.checkoutId) throw new HostedCheckoutError('conflict', 'Checkout identity is not yet known');
     const checkoutId = order.checkoutId;
@@ -183,7 +229,7 @@ export class HostedCheckoutService {
     const order = await this.load(orderId);
     if (order.fulfilledAt) return order;
     const store = this.options.persistence.orders;
-    const provider = this.boundProvider(order);
+    const provider = await this.boundProvider(order);
     if (order.captureState === 'submitting' && order.checkoutId) {
       const observed = await provider.retrieve(order.checkoutId);
       this.verify(order, observed, true);
@@ -203,24 +249,41 @@ export class HostedCheckoutService {
     return order;
   }
 
-  /** Authenticity precedes lookup. Verified event payloads are not payment evidence. */
+  /**
+   * Authenticity precedes lookup. Verified event payloads are not payment evidence. With rotated
+   * credentials the candidates are tried newest first; an order is only acted on through a candidate
+   * of its own account scope that verified the request, and its state is then re-read through the
+   * order's own adapter. A request verified only by another account's credentials changes nothing.
+   */
   async webhook(providerId: string, request: WebhookRequest): Promise<HostedCheckoutOrder | null> {
-    const provider = this.provider(providerId);
-    const event = await provider.verifyWebhook(request);
-    if (!event) return null;
-    let order = event.reference ? await this.options.persistence.orders.findUnique({ where: { id: event.reference } }) : null;
-    if (!order) {
-      const found = await this.options.persistence.orders.findMany({
-        where: { providerId, accountScope: provider.accountScope, checkoutId: event.checkoutId }, take: 2,
-      });
-      if (found.length > 1) throw new HostedCheckoutError('conflict', 'Checkout has multiple local orders');
-      order = found[0] ?? null;
+    const candidates = (await this.providers.webhookCandidates(providerId)).filter(candidate => candidate?.id === providerId && !!candidate.accountScope)
+      .slice(0, HOSTED_CHECKOUT_MAX_WEBHOOK_CANDIDATES);
+    if (!candidates.length) throw new HostedCheckoutError('unsupported', 'Checkout provider is not configured');
+    let failure: unknown, otherAccount = false, unknownCheckout = false;
+    for (const verifier of candidates) {
+      let event: HostedCheckoutEvent | null;
+      try { event = await verifier.verifyWebhook(request); }
+      catch (error) { failure ??= error; continue; }
+      if (!event) return null;
+      let order = event.reference ? await this.options.persistence.orders.findUnique({ where: { id: event.reference } }) : null;
+      if (!order) {
+        const found = await this.options.persistence.orders.findMany({
+          where: { providerId, accountScope: verifier.accountScope, checkoutId: event.checkoutId }, take: 2,
+        });
+        if (found.length > 1) throw new HostedCheckoutError('conflict', 'Checkout has multiple local orders');
+        order = found[0] ?? null;
+      }
+      if (!order) { unknownCheckout = true; continue; }
+      if (order.providerId !== providerId) throw new HostedCheckoutError('verification_failed', 'Webhook provider mismatch');
+      if (order.accountScope !== verifier.accountScope) { otherAccount = true; continue; }
+      const provider = await this.boundProvider(order);
+      this.checkoutId(order, event.checkoutId);
+      return this.reconcile(order, await provider.retrieve(event.checkoutId));
     }
-    if (!order) throw new HostedCheckoutError('not_found', 'Verified checkout has no local order');
-    if (order.providerId !== providerId) throw new HostedCheckoutError('verification_failed', 'Webhook provider mismatch');
-    this.boundProvider(order);
-    this.checkoutId(order, event.checkoutId);
-    return this.reconcile(order, await provider.retrieve(event.checkoutId));
+    if (otherAccount) throw new HostedCheckoutError('verification_failed', 'Webhook account does not match the order');
+    if (unknownCheckout) throw new HostedCheckoutError('not_found', 'Verified checkout has no local order');
+    // Report the newest candidate's refusal (the current credentials).
+    throw failure;
   }
 
   private async reconcile(order: HostedCheckoutOrder, observed: HostedCheckoutObservation): Promise<HostedCheckoutOrder> {
@@ -336,13 +399,14 @@ export class HostedCheckoutService {
   private owner(order: HostedCheckoutOrder, ownerId: string): void {
     if (!ownerId || order.ownerId !== ownerId) throw new HostedCheckoutError('forbidden', 'Order ownership mismatch');
   }
-  private provider(id: string): HostedCheckoutAdapter {
-    const provider = this.providers.get(id);
+  /** The adapter of an existing order: always its own provider and account scope. */
+  private async boundProvider(order: HostedCheckoutOrder): Promise<HostedCheckoutAdapter> {
+    const provider = await this.providers.forOrder(structuredClone(order));
     if (!provider) throw new HostedCheckoutError('unsupported', 'Checkout provider is not configured');
-    return provider;
+    return this.bind(order, provider);
   }
-  private boundProvider(order: HostedCheckoutOrder): HostedCheckoutAdapter {
-    const provider = this.provider(order.providerId);
+  private bind(order: HostedCheckoutOrder, provider: HostedCheckoutAdapter): HostedCheckoutAdapter {
+    if (provider.id !== order.providerId) throw new HostedCheckoutError('unsupported', 'Checkout provider is not configured');
     if (provider.accountScope !== order.accountScope) throw new HostedCheckoutError('verification_failed', 'Provider account scope changed');
     return provider;
   }

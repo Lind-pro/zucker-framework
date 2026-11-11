@@ -22,6 +22,7 @@
     "verify:package-content": "node scripts/verify-package-content.mjs",
     "legal:prepare": "node scripts/prepare-package-legal.mjs --all",
     "pack:release": "node scripts/verify-package-artifacts.mjs --output artifacts/release",
+    "acceptance:launch": "node scripts/acceptance/launch-ready.mjs",
     "publish:packages": "node scripts/publish-packages.mjs",
     "test:e2e:server": "pnpm --filter @zucker-framework/template-server test:e2e",
     "test:e2e:ui": "playwright test",

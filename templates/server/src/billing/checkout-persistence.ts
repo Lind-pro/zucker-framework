@@ -43,7 +43,8 @@ class TransactionCheckoutOrders extends DatabaseOrderPersistence<HostedCheckoutO
     super(transaction.model('billingOrders') as ModelOperations<HostedCheckoutOrder>);
   }
   override async compareAndSet(id: string, expected: Record<string, unknown>, data: Record<string, unknown>): Promise<boolean> {
-    if (['ownerId', 'offer', 'offerId', 'providerId', 'accountScope', 'createKey', 'captureKey'].some(key => key in data))
+    // `configRevision` selects the credentials an existing order resolves (D12); it is written once at creation.
+    if (['ownerId', 'offer', 'offerId', 'providerId', 'accountScope', 'createKey', 'captureKey', 'configRevision'].some(key => key in data))
       throw new HostedCheckoutError('conflict', 'Frozen order identity cannot be changed');
     const order = await this.findUnique({ where: { id } });
     if (!order) return false;
@@ -57,9 +58,14 @@ class RootCheckoutOrders extends DatabaseOrderPersistence<HostedCheckoutOrder> {
     super(database.model('billingOrders') as ModelOperations<HostedCheckoutOrder>);
   }
   override create(args: Record<string, unknown>): Promise<HostedCheckoutOrder> {
-    // The payment configuration revision this order is created with (null when unknown).
-    const revision = this.configRevision?.() ?? null;
+    // The payment configuration revision this order is created with: the one the provider resolver
+    // captured with the order's adapter when present, else the start-up value (null when unknown).
+    const supplied = (args.data as Record<string, unknown>).configRevision;
+    if (supplied !== undefined && supplied !== null && (typeof supplied !== 'string' || !supplied || supplied.length > 255))
+      throw new HostedCheckoutError('invalid_input', 'Order configuration revision is invalid');
+    const revision = supplied ?? this.configRevision?.() ?? null;
     if (revision) args = { ...args, data: { ...(args.data as Record<string, unknown>), configRevision: revision } };
+    else if (supplied === null) { const { configRevision: _none, ...fields } = args.data as Record<string, unknown>; args = { ...args, data: fields }; }
     const data = args.data as Record<string, unknown>;
     if (data.providerMetadata === null) {
       // Omission writes SQL NULL for this optional JSON field; bare JSON null is ambiguous to Prisma.

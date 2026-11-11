@@ -160,7 +160,8 @@ run('real Admin connection settings browser and PostgreSQL', () => {
     await select(dialog, 'Client Secret操作', '清除（屏蔽环境回退）');
     await save(dialog);
     const stored = (await get().expect(200)).body;
-    expect(stored).toMatchObject({ storedRevision: 4, appliedRevision: 0, pendingRestart: true });
+    // Sign-in profiles are hot (WP 4.1b): the saved revision applies to the next request.
+    expect(stored).toMatchObject({ storedRevision: 4, appliedRevision: 4, pendingRestart: false, applyMode: 'hot' });
     expect(
       stored.fields.find((field: { key: string }) => field.key === 'GOOGLE_CLIENT_SECRET'),
     ).toMatchObject({ source: 'cleared', configured: false });
@@ -179,8 +180,8 @@ run('real Admin connection settings browser and PostgreSQL', () => {
     expect(JSON.stringify([rows, audit, await Promise.all(responseBodies)])).not.toContain(
       replacementSecret,
     );
-    await browserExpect(row('Google 登录').getByText('运行 0 / 保存 4')).toBeVisible();
-    await browserExpect(row('Google 登录').getByText('待重启 Server', { exact: true })).toBeVisible();
+    await browserExpect(row('Google 登录').getByText('运行 4 / 保存 4')).toBeVisible();
+    await browserExpect(row('Google 登录').getByText('待重启 Server', { exact: true })).toHaveCount(0);
   });
   it('preserves non-secret drafts on real CAS conflict, clears entered secrets and explicitly rebases before retry', async () => {
     const dialog = await open();
@@ -253,7 +254,7 @@ run('real Admin connection settings browser and PostgreSQL', () => {
     const dialog = await open('网站分析');
     await edit(dialog, 'GA4 Measurement ID', 'G-SYNTHETIC');
     await save(dialog);
-    await browserExpect(row('网站分析').getByText('运行 0 / 保存 1')).toBeVisible();
+    await browserExpect(row('网站分析').getByText('运行 1 / 保存 1')).toBeVisible(); // hot profile: applied as soon as saved
     expect(await noHorizontalOverflow(page)).toBe(true);
     const mobileDialog = await open('网站分析');
     const box = await mobileDialog.boundingBox();
@@ -292,9 +293,9 @@ run('real Admin connection settings browser and PostgreSQL', () => {
     await edit(dialog, '最大输出 Token', '256');
     await edit(dialog, '超时（毫秒）', '3500');
     await save(dialog);
-    await browserExpect(row('OpenAI 兼容接口').getByText('运行 0 / 保存 1')).toBeVisible();
+    await browserExpect(row('OpenAI 兼容接口').getByText('运行 1 / 保存 1')).toBeVisible();
     const result = (await get('ai-compatible').expect(200)).body;
-    expect(result).toMatchObject({ storedRevision: 1, appliedRevision: 0, pendingRestart: true });
+    expect(result).toMatchObject({ storedRevision: 1, appliedRevision: 1, pendingRestart: false, applyMode: 'hot' });
     expect(
       result.fields.find((field: { key: string }) => field.key === 'AI_COMPATIBLE_API_KEY'),
     ).not.toHaveProperty('value');

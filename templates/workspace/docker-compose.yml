@@ -13,6 +13,13 @@ x-server-environment: &server-environment
   SMTP_SECURE: "false"
   FILES_STORAGE_PROVIDER: s3
   FILES_S3_ENDPOINT: http://minio:9000
+  # Plain http only to a service on this private network (single-label host such as `minio`); any other
+  # endpoint, including one saved later in the admin, still needs https in production.
+  FILES_S3_INTERNAL_HTTP: "true"
+# <zucker:web>
+  # CMS publish hooks reach Web on the private network (WEB_URL is the public origin).
+  REVALIDATE_URL: http://web:3000
+# </zucker:web>
   # Requests arrive through the web rewrite and the admin nginx on the private compose network.
   TRUST_PROXY: uniquelocal
 
@@ -50,50 +57,60 @@ services:
       timeout: 5s
       retries: 20
 
+  # S3-compatible private object storage (SeaweedFS: MinIO no longer publishes community images). The
+  # MINIO_ROOT_* account administers it; the application uses the FILES_S3_* account, which may only read,
+  # write and list objects in FILES_S3_BUCKET (no bucket creation, no anonymous access). The service keeps
+  # the name `minio` so existing .env files and FILES_S3_ENDPOINT stay valid.
   minio:
-    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    image: chrislusf/seaweedfs:4.01
     restart: unless-stopped
-    command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
-    ports:
-      - "127.0.0.1:${MINIO_PORT:-9000}:9000"
-      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
-    volumes:
-      - minio-data:/data
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/minio/health/live"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-
-  # One-shot: private bucket plus a least-privilege application account (not the root account).
-  minio-init:
-    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
-    depends_on:
-      minio:
-        condition: service_healthy
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
       FILES_S3_BUCKET: ${FILES_S3_BUCKET:?set FILES_S3_BUCKET}
       FILES_S3_ACCESS_KEY_ID: ${FILES_S3_ACCESS_KEY_ID:?set FILES_S3_ACCESS_KEY_ID}
       FILES_S3_SECRET_ACCESS_KEY: ${FILES_S3_SECRET_ACCESS_KEY:?set FILES_S3_SECRET_ACCESS_KEY}
     entrypoint: ["/bin/sh", "-c"]
+    # The identity file is written inside the container at start (never into the data volume).
     command:
       - |
         set -e
-        mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" >/dev/null
-        mc mb --ignore-existing "local/$$FILES_S3_BUCKET"
-        mc anonymous set none "local/$$FILES_S3_BUCKET"
-        cat > /tmp/app-policy.json <<POLICY
-        {"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:GetObject","s3:PutObject","s3:DeleteObject","s3:ListBucket","s3:GetBucketLocation","s3:AbortMultipartUpload","s3:ListMultipartUploadParts"],"Resource":["arn:aws:s3:::$$FILES_S3_BUCKET","arn:aws:s3:::$$FILES_S3_BUCKET/*"]}]}
-        POLICY
-        mc admin policy create local app-files /tmp/app-policy.json >/dev/null 2>&1 || true
-        mc admin user add local "$$FILES_S3_ACCESS_KEY_ID" "$$FILES_S3_SECRET_ACCESS_KEY" >/dev/null
-        mc admin policy attach local app-files --user "$$FILES_S3_ACCESS_KEY_ID" >/dev/null 2>&1 || true
-        echo "Bucket $$FILES_S3_BUCKET ready"
+        mkdir -p /data /etc/seaweedfs
+        cat > /etc/seaweedfs/s3.json <<CONFIG
+        {"identities":[
+          {"name":"root","credentials":[{"accessKey":"$$MINIO_ROOT_USER","secretKey":"$$MINIO_ROOT_PASSWORD"}],"actions":["Admin","Read","Write","List","Tagging"]},
+          {"name":"app","credentials":[{"accessKey":"$$FILES_S3_ACCESS_KEY_ID","secretKey":"$$FILES_S3_SECRET_ACCESS_KEY"}],"actions":["Read:$$FILES_S3_BUCKET","Write:$$FILES_S3_BUCKET","List:$$FILES_S3_BUCKET","Tagging:$$FILES_S3_BUCKET"]}
+        ]}
+        CONFIG
+        exec weed server -dir=/data -ip.bind=0.0.0.0 -s3 -s3.port=9000 -s3.config=/etc/seaweedfs/s3.json
+    ports:
+      - "127.0.0.1:${MINIO_PORT:-9000}:9000"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://127.0.0.1:9000/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # One-shot: creates the private bucket (idempotent).
+  minio-init:
+    image: chrislusf/seaweedfs:4.01
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      FILES_S3_BUCKET: ${FILES_S3_BUCKET:?set FILES_S3_BUCKET}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        if echo "s3.bucket.list" | weed shell -master=minio:9333 2>/dev/null | grep -qE "[[:space:]]$$FILES_S3_BUCKET[[:space:]]"; then
+          echo "Bucket $$FILES_S3_BUCKET exists"
+        else
+          echo "s3.bucket.create -name $$FILES_S3_BUCKET" | weed shell -master=minio:9333 >/dev/null
+          echo "Bucket $$FILES_S3_BUCKET ready"
+        fi
 
   # Catches all mail without SMTP authentication: SMTP_USER/SMTP_PASSWORD stay empty, and the server
   # then sends without AUTH. Do not enable MP_SMTP_AUTH* here unless you also set those credentials.
@@ -110,6 +127,8 @@ services:
       context: .
       dockerfile: apps/server/Dockerfile
       target: migrate
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org/}
     env_file: .env
     environment:
       <<: *server-environment
@@ -123,6 +142,8 @@ services:
       context: .
       dockerfile: apps/server/Dockerfile
       target: runtime
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org/}
     restart: unless-stopped
     env_file: .env
     environment:
@@ -151,17 +172,20 @@ services:
       context: .
       dockerfile: apps/web/Dockerfile
       args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org/}
         # Next.js fixes rewrites and the routed default locale at build time.
         API_URL: http://server:4200/api
         SITE_URL: ${SITE_URL}
         DEFAULT_LOCALE: ${DEFAULT_LOCALE:-en}
     restart: unless-stopped
-    # Only public settings: the web host never receives server secrets.
+    # Only public settings and the shared revalidation secret: the web host never receives server secrets.
     environment:
       API_URL: http://server:4200/api
       SITE_URL: ${SITE_URL}
       ADMIN_URL: ${ADMIN_URL:-}
       SITE_CONFIGURATION_SOURCE: ${SITE_CONFIGURATION_SOURCE:-server}
+      # Verifies the server's signed cache revalidation (the same value as the server's).
+      REVALIDATE_SECRET: ${REVALIDATE_SECRET:-}
     ports:
       - "${PUBLIC_BIND:-127.0.0.1}:${WEB_PORT:-4202}:3000"
     depends_on:
@@ -181,6 +205,7 @@ services:
       context: .
       dockerfile: apps/admin/Dockerfile
       args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org/}
         VITE_DEFAULT_LOCALE: ${VITE_DEFAULT_LOCALE:-en}
     restart: unless-stopped
     environment:

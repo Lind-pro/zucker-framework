@@ -7,6 +7,7 @@ import type { BillingRefundsService } from './refunds/refunds.service';
 import type { BillingExtensions } from './billing-extensions';
 import { nextSubscriptionReconcileAt } from './subscription-schedule';
 import { createSubscriptionCyclePersistence, SUBSCRIPTION_RECONCILE_EVENT, type BillingSubscription, type SubscriptionExecutionFence } from './subscription-persistence';
+import { staticAccountAdapters, verifyWithCandidates, type AccountAdapterSource } from './payment-credentials';
 
 const PAGE_SIZE = 20, MAX_PROVIDER_PAGES = 100, MAX_PROVIDER_RECEIPTS = 10000;
 function invalid(message: string): never { throw new HostedCheckoutError('verification_failed', message); }
@@ -35,18 +36,26 @@ function publicUrl(value: string): string {
 
 /** Provider IO stays outside transactions; only explicit, frozen policies can grant credits. */
 export class BillingSubscriptionsService {
-  private readonly providers = new Map<string, SubscriptionAdapter>();
+  private readonly providers: AccountAdapterSource<SubscriptionAdapter>;
   private readonly cycles: SubscriptionCycleService;
   private readonly returnUrl: string;
-  constructor(private readonly database: ApplicationDatabase, adapters: readonly SubscriptionAdapter[], webUrl: string,
+  /**
+   * `adapters`: a fixed list, or per-account resolution of hot-applied credentials (D12: renewals,
+   * portal, cancellation and invoices use the newest retained credentials of the subscription's own account).
+   */
+  constructor(private readonly database: ApplicationDatabase, adapters: readonly SubscriptionAdapter[] | AccountAdapterSource<SubscriptionAdapter>, webUrl: string,
     private readonly refunds?: Pick<BillingRefundsService, 'prepareCycle'>, private readonly extensions?: BillingExtensions) {
     const base = new URL(webUrl);
     if (!['http:', 'https:'].includes(base.protocol) || base.username || base.password) throw new Error('Invalid subscription site URL');
     this.returnUrl = new URL('/billing/subscriptions', base).href;
-    for (const adapter of adapters) {
-      if (!adapter.id || !adapter.accountScope || this.providers.has(adapter.id)) throw new Error('Subscription providers require unique IDs and account scopes');
-      this.providers.set(adapter.id, adapter);
-    }
+    if (Array.isArray(adapters)) {
+      const ids = new Set<string>();
+      for (const adapter of adapters) {
+        if (!adapter.id || !adapter.accountScope || ids.has(adapter.id)) throw new Error('Subscription providers require unique IDs and account scopes');
+        ids.add(adapter.id);
+      }
+      this.providers = staticAccountAdapters(adapters);
+    } else this.providers = adapters as AccountAdapterSource<SubscriptionAdapter>;
     this.cycles = new SubscriptionCycleService(createSubscriptionCyclePersistence(database, undefined, extensions));
   }
   private async owned(id: string, ownerId: string): Promise<BillingSubscription> {
@@ -56,10 +65,11 @@ export class BillingSubscriptionsService {
     if (row.ownerId !== ownerId) throw new HostedCheckoutError('forbidden', 'Subscription owner mismatch');
     return row;
   }
-  private adapter(row: BillingSubscription): SubscriptionAdapter {
-    const adapter = this.providers.get(row.providerId);
+  /** Resolved once per operation; the same adapter is used for that whole operation. */
+  private async adapter(row: BillingSubscription): Promise<SubscriptionAdapter> {
+    const adapter = await this.providers.forAccount(row.providerId, row.accountScope);
     if (!adapter) throw new HostedCheckoutError('unsupported', 'Subscription provider is unavailable');
-    if (adapter.accountScope !== row.accountScope) invalid('Subscription provider account changed');
+    if (adapter.id !== row.providerId || adapter.accountScope !== row.accountScope) invalid('Subscription provider account changed');
     return adapter;
   }
   private update(where: Record<string, unknown>, data: Record<string, unknown>, fence?: SubscriptionExecutionFence) {
@@ -71,9 +81,10 @@ export class BillingSubscriptionsService {
       return changed;
     });
   }
-  private view(row: BillingSubscription) {
-    const configured = this.providers.get(row.providerId);
-    const adapter = configured?.accountScope === row.accountScope ? configured : undefined;
+  private async view(row: BillingSubscription) {
+    // Capabilities are shown only while credentials of the subscription's own account are available.
+    const configured = await this.providers.forAccount(row.providerId, row.accountScope).catch(() => undefined);
+    const adapter = configured?.id === row.providerId && configured.accountScope === row.accountScope ? configured : undefined;
     const refresh = !!adapter && (row.grantBasis === 'period' ? adapter.capabilities.paidPeriodProof !== 'unavailable'
       : row.providerId === 'paypal' && adapter.capabilities.paidReceiptProof === 'provider' && !!adapter.listPaidReceipts);
     return { id: row.id, title: row.offer.description, providerId: row.providerId, status: row.status,
@@ -95,7 +106,7 @@ export class BillingSubscriptionsService {
       this.database.model('billingSubscriptions').findMany({ where, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], skip: (page - 1) * PAGE_SIZE, take: PAGE_SIZE }),
       this.database.model('billingSubscriptions').count({ where }),
     ]);
-    return { data: (data as BillingSubscription[]).map(row => this.view(row)), total, page, pageSize: PAGE_SIZE };
+    return { data: await Promise.all((data as BillingSubscription[]).map(row => this.view(row))), total, page, pageSize: PAGE_SIZE };
   }
   private validateObservation(row: BillingSubscription, observation: SubscriptionDetails): void {
     if (observation.provider !== row.providerId || observation.subscriptionId !== row.providerSubscriptionId || observation.catalogReference !== row.catalogReference
@@ -161,7 +172,7 @@ export class BillingSubscriptionsService {
     return invalid('Subscription reconciliation exceeded the page limit');
   }
   async refresh(id: string, ownerId: string, fence?: SubscriptionExecutionFence) {
-    const row = await this.owned(id, ownerId), adapter = this.adapter(row);
+    const row = await this.owned(id, ownerId), adapter = await this.adapter(row);
     const observation = await adapter.retrieve(row.providerSubscriptionId);
     this.validateObservation(row, observation);
     const payments = await this.payments(row, adapter);
@@ -191,7 +202,7 @@ export class BillingSubscriptionsService {
     return this.get(id, ownerId);
   }
   async cancel(id: string, ownerId: string, mode: SubscriptionCancelMode) {
-    const row = await this.owned(id, ownerId), adapter = this.adapter(row);
+    const row = await this.owned(id, ownerId), adapter = await this.adapter(row);
     if (!adapter.capabilities.cancel.includes(mode)) throw new HostedCheckoutError('unsupported', 'Subscription cancellation mode is unsupported');
     if (row.cancelState !== 'idle') {
       if (row.cancelMode !== mode) throw new HostedCheckoutError('conflict', 'A different subscription cancellation is already in progress');
@@ -209,7 +220,7 @@ export class BillingSubscriptionsService {
     return this.get(id, ownerId);
   }
   async invoices(id: string, ownerId: string, pageValue?: string) {
-    const row = await this.owned(id, ownerId), page = pageNumber(pageValue), adapter = this.adapter(row);
+    const row = await this.owned(id, ownerId), page = pageNumber(pageValue), adapter = await this.adapter(row);
     const where = { bindingId: id, ownerId };
     const [receipts, total] = await Promise.all([
       this.database.model('billingSubscriptionCycles').findMany({ where, orderBy: [{ paidAt: 'desc' }, { id: 'desc' }], skip: (page - 1) * PAGE_SIZE, take: PAGE_SIZE }),
@@ -230,7 +241,7 @@ export class BillingSubscriptionsService {
     return { data, total, page, pageSize: PAGE_SIZE };
   }
   async portal(id: string, ownerId: string) {
-    const row = await this.owned(id, ownerId), adapter = this.adapter(row);
+    const row = await this.owned(id, ownerId), adapter = await this.adapter(row);
     if (!row.customerId || !adapter.capabilities.billingPortal || !adapter.createBillingPortal) throw new HostedCheckoutError('unsupported', 'Subscription billing portal is unavailable');
     const result = await adapter.createBillingPortal({ customerId: row.customerId,
       // Creem's API has no return URL parameter; never claim it supports one.
@@ -238,9 +249,12 @@ export class BillingSubscriptionsService {
     return { url: publicUrl(result.url) };
   }
   async handleWebhook(providerId: string, request: WebhookRequest): Promise<boolean> {
-    const adapter = this.providers.get(providerId);
-    if (!adapter?.verifyWebhook) return false;
-    const event = await adapter.verifyWebhook(request);
+    // Current and retained credentials, newest first (a rotation's previous secret still verifies);
+    // the lookup below stays on the verifying account.
+    const candidates = (await this.providers.webhookCandidates(providerId)).filter(candidate => !!candidate.verifyWebhook);
+    const verified = await verifyWithCandidates(candidates, candidate => candidate.verifyWebhook!(request));
+    if (!verified) return false;
+    const adapter = verified.candidate, event = verified.result;
     if (!event) return false;
     if (!event.eventId || !event.subscriptionId) invalid('Subscription webhook identity is missing');
     const matches = await this.database.model('billingSubscriptions').findMany({ where: { providerId: adapter.id,

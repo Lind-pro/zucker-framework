@@ -37,7 +37,13 @@
     "**/*.tsx",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
-    ".next/dev/dev/types/**/*.ts"
+    ".next/dev/dev/types/**/*.ts",
+    ".next-e2e-web/types/**/*.ts",
+    ".next-e2e-web/dev/types/**/*.ts",
+    ".next-e2e-launch/types/**/*.ts",
+    ".next-e2e-launch/dev/types/**/*.ts",
+    ".next-e2e-integrations/types/**/*.ts",
+    ".next-e2e-integrations/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

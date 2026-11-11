@@ -89,9 +89,19 @@ export async function newPage(context: BrowserContext): Promise<Page> {
   return page;
 }
 
-/** Sign in through the fe-admin login form (zh-CN copy) and wait to leave the login route. */
+/**
+ * Sign in through the fe-admin login form (zh-CN copy) and wait to leave the login route. The admin
+ * default locale is `en` (D7); these specs assert zh-CN copy, so the locale is chosen explicitly here
+ * unless the context already chose one (`admin-locale-browser.ts` `presetLocale`).
+ */
 export async function login(page: Page, username: string, password: string) {
   await page.goto('/login');
+  const chosen = await page.evaluate(() => {
+    if (localStorage.getItem('zucker-admin-locale')) return true;
+    localStorage.setItem('zucker-admin-locale', 'zh-CN');
+    return false;
+  });
+  if (!chosen) await page.reload();
   await labeled(page, '用户名').fill(username);
   await labeled(page, '密码').fill(password);
   await page.getByRole('button', { name: '登录', exact: true }).click();

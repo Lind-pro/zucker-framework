@@ -8,7 +8,8 @@ import {
 import type { NotificationDeliveryHandler, NotificationSqlClient } from '@zucker-framework/notification';
 import { createTaskFingerprint } from '@zucker-framework/task';
 import { ApplicationDatabase, type ApplicationTransaction } from '../database';
-import { DELIVERY_OPTIONS, MAX_DELIVERY_REPLAY_WINDOW_MS, type DeliveryOptions } from './delivery.config';
+import { HotProvider, hotProviderOf } from '../runtime-settings/hot-apply';
+import { DELIVERY_CONNECTION_PROFILE, DELIVERY_OPTIONS, MAX_DELIVERY_REPLAY_WINDOW_MS, type DeliveryOptions } from './delivery.config';
 
 interface Message {
   id: string; ownerId: string; taskId: string | null; providerId: string; providerAccountScope: string;
@@ -18,15 +19,29 @@ export interface EnqueueOwnedMail {
   ownerId: string; idempotencyKey: string; taskId?: string; subject: string; text: string;
 }
 
+const configured = (options: DeliveryOptions) => !!options.accountScope && options.provider?.isConfigured() === true;
+
+/**
+ * Durable owned mail. The provider and account scope come from the hot `durable-email` profile
+ * (`DELIVERY_OPTIONS` is a live view of `DELIVERY_CONNECTION`; a plain `DeliveryOptions` value is served unchanged): an
+ * enqueue records the provider and scope current at that moment, a delivery leases the provider it
+ * checked the row against for the whole send, and a message recorded under another provider or scope
+ * is refused (`MAIL_PROFILE_MISMATCH`), exactly as after a restart. Lease and heartbeat timings and the
+ * replay window are fixed at start-up (they are not part of the profile).
+ */
 @Injectable()
 export class DeliveryService {
   readonly repository: PostgresNotificationDeliveryRepository;
   private readonly worker: DurableNotificationWorker;
   private readonly replayWindowMs: number;
+  private readonly profile: HotProvider<DeliveryOptions>;
   private closed = false;
   private closePromise?: Promise<void>;
   constructor(@Inject(DATABASE_ADAPTER) private readonly database: ApplicationDatabase,
-    @Inject(DELIVERY_OPTIONS) private readonly options: DeliveryOptions) {
+    @Inject(DELIVERY_OPTIONS) source: DeliveryOptions) {
+    this.profile = hotProviderOf<DeliveryOptions>(source) ?? HotProvider.fixed<DeliveryOptions>(source, {
+      name: 'Durable mail delivery', profiles: [DELIVERY_CONNECTION_PROFILE], dispose: options => options.provider?.close() });
+    const options = this.profile.now();
     this.replayWindowMs = options.replayWindowMs ?? MAX_DELIVERY_REPLAY_WINDOW_MS;
     if (!Number.isSafeInteger(this.replayWindowMs) || this.replayWindowMs < 1 || this.replayWindowMs > MAX_DELIVERY_REPLAY_WINDOW_MS)
       throw new Error('Durable mail replay window must be positive and at most 23 hours');
@@ -36,12 +51,21 @@ export class DeliveryService {
       leaseMs: options.leaseMs, heartbeatMs: options.heartbeatMs,
     });
   }
-  isConfigured(): boolean { return !this.closed && !!this.options.accountScope && this.options.provider?.isConfigured() === true; }
+  /** Synchronous check against the newest resolved profile (a save is seen from the next check on). */
+  isConfigured(): boolean {
+    if (this.closed) return false;
+    try { return configured(this.profile.now()); } catch { return false; }
+  }
   assertConfigured(): void {
     if (!this.isConfigured()) throw new ServiceUnavailableException('Durable email delivery is not configured');
   }
+  private async currentOptions(): Promise<DeliveryOptions> {
+    const options = this.closed ? undefined : await this.profile.current().catch(() => undefined);
+    if (!options || !configured(options)) throw new ServiceUnavailableException('Durable email delivery is not configured');
+    return options;
+  }
   async enqueueInTransaction(tx: ApplicationTransaction, input: EnqueueOwnedMail) {
-    this.assertConfigured();
+    const options = await this.currentOptions();
     const command = structuredClone(input);
     if (!command.ownerId || !command.idempotencyKey.trim() || !command.subject.trim() || command.subject.length > 200
       || /[\r\n]/.test(command.subject) || !command.text.trim() || command.text.length > 4096)
@@ -50,8 +74,8 @@ export class DeliveryService {
       { email: string | null; emailVerified: boolean; status: boolean } | null;
     if (!user?.status || !user.emailVerified || !user.email) throw new NotificationDeliveryError('Recipient is unavailable', 'MAIL_RECIPIENT_UNAVAILABLE', false);
     const id = `mail_${createHash('sha256').update(JSON.stringify([command.ownerId, command.idempotencyKey])).digest('hex')}`;
-    const envelope = { ownerId: command.ownerId, taskId: command.taskId ?? null, providerId: this.options.provider!.name,
-      providerAccountScope: this.options.accountScope, recipient: user.email, subject: command.subject, text: command.text };
+    const envelope = { ownerId: command.ownerId, taskId: command.taskId ?? null, providerId: options.provider!.name,
+      providerAccountScope: options.accountScope, recipient: user.email, subject: command.subject, text: command.text };
     const fingerprint = createTaskFingerprint(envelope);
     await tx.query(`INSERT INTO delivery_messages ("id","ownerId","taskId","providerId","providerAccountScope","recipient","subject","text")
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT ("id") DO NOTHING`,
@@ -66,14 +90,19 @@ export class DeliveryService {
   enqueue(input: EnqueueOwnedMail) { return this.database.transaction(tx => this.enqueueInTransaction(tx, input)); }
 
   async runOnce(workerId: string, signal?: AbortSignal) {
-    if (!this.isConfigured()) return { kind: 'unconfigured' as const };
+    if (this.closed || !configured(await this.profile.current().catch(() => ({ accountScope: '' } as DeliveryOptions))))
+      return { kind: 'unconfigured' as const };
     return this.worker.runOnce({ workerId, signal });
   }
 
   private async deliver(input: Parameters<NotificationDeliveryHandler['deliver']>[0]): Promise<{ providerMessageId?: string }> {
     if (input.signal?.aborted) throw new NotificationDeliveryError('Delivery interrupted', 'MAIL_WORKER_ABORTED', true);
-    this.assertConfigured();
-    const provider = this.options.provider!;
+    // The provider is leased for the whole delivery: a profile save while it runs does not close it.
+    return this.profile.use(options => this.deliverWith(options, input));
+  }
+  private async deliverWith(options: DeliveryOptions, input: Parameters<NotificationDeliveryHandler['deliver']>[0]): Promise<{ providerMessageId?: string }> {
+    if (this.closed || !configured(options)) throw new ServiceUnavailableException('Durable email delivery is not configured');
+    const provider = options.provider!;
     // The durable claim and the non-idempotent dispatch marker are checked together.
     // A provider call can outlive a lease, so SMTP never automatically crosses this marker twice.
     const message = await this.database.transaction(async tx => {
@@ -82,7 +111,7 @@ export class DeliveryService {
       [input.deliveryRef, input.attempt, new Date()]);
       if (!active.rows[0]) throw new NotificationLeaseLostError(input.deliveryRef);
       const row = await tx.model('deliveryMessage').findUnique({ where: { id: input.deliveryRef } }) as Message | null;
-      if (!row || input.channel !== NotifyChannel.EMAIL || row.providerId !== provider.name || row.providerAccountScope !== this.options.accountScope)
+      if (!row || input.channel !== NotifyChannel.EMAIL || row.providerId !== provider.name || row.providerAccountScope !== options.accountScope)
         throw new NotificationDeliveryError('Delivery profile changed', 'MAIL_PROFILE_MISMATCH', false);
       const owner = await tx.model('users').findUnique({ where: { id: row.ownerId }, select: { status: true, emailVerified: true, email: true } }) as
         { status: boolean; emailVerified: boolean; email: string | null } | null;
@@ -122,9 +151,9 @@ export class DeliveryService {
     if (!messages[0]) throw new NotFoundException();
     return this.getOwned(ownerId, messages[0].id);
   }
-  /** One host owns provider closure, after interrupting active delivery work. */
+  /** One host owns provider closure, after interrupting active delivery work (a leased provider closes when released). */
   close(): Promise<void> {
     this.closed = true;
-    return this.closePromise ??= Promise.resolve().then(() => this.options.provider?.close());
+    return this.closePromise ??= this.profile.close();
   }
 }

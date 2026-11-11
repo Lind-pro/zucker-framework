@@ -20,12 +20,12 @@ import { ManagementModule } from './management/management.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { MailModule } from './mail/mail.module';
 import { RuntimeSettingsModule } from './runtime-settings/runtime-settings.module';
-import { RUNTIME_ENVIRONMENT } from './runtime-settings/runtime-settings.tokens';
 import { AIConnectionsModule } from './ai-connections/ai-connections.module';
 import { AITasksModule, AI_POLICIES, AI_TASK_RATE_LIMITERS } from './ai-tasks';
 import { ChatModule, CHAT_RATE_LIMITERS } from './chat';
 import { PUBLIC_ASSET_RATE_LIMITERS } from './files/public-assets.controller';
-import { aiModuleOptionsFromEnvironment } from './ai-connections/runtime-ai-config.source';
+import { aiModuleOptionsFromRuntime } from './ai-connections/runtime-ai-config.source';
+import { AI_CONNECTION_RUNTIME, AIConnectionRuntimeModule, type AIConnectionRuntime } from './ai-connections/ai-connection-runtime';
 import { ZuckerLoggingModule } from '@zucker-framework/logging';
 import { ZuckerConfigModule } from '@zucker-framework/config';
 import { ZuckerDictionaryModule } from '@zucker-framework/dictionary';
@@ -35,9 +35,7 @@ import { APP_RATE_LIMITERS, composeRateLimiters } from './rate-limits';
 import { PolicyModule } from './policy/policy.module';
 import { ACCOUNT_POLICIES } from './accounts/account.policy';
 import { BILLING_POLICIES } from './billing/billing.policy';
-import { ZuckerStorageModule } from '@zucker-framework/storage';
-import { FilesModule } from './files/files.module';
-import { storageOptionsFromEnvironment } from './files/files.config';
+import { FilesModule, PrivateStorageModule } from './files/files.module';
 import { ZuckerNotificationModule } from '@zucker-framework/notification';
 import { ZuckerCreditModule } from '@zucker-framework/credit';
 import { ZuckerAIModule } from '@zucker-framework/ai';
@@ -114,14 +112,15 @@ if (!jwtSecret || jwtSecret.length < 32) throw new Error('JWT_SECRET must be an 
       // Shared budgets across replicas/restarts; requires the optional `ioredis` package. Memory otherwise.
       ...(process.env.RATE_LIMIT_REDIS_URL?.trim() ? { redis: { url: process.env.RATE_LIMIT_REDIS_URL.trim() } } : {}),
     }),
-    ZuckerStorageModule.forRootAsync({ inject: [RUNTIME_ENVIRONMENT],
-      useFactory: environment => storageOptionsFromEnvironment(environment as NodeJS.ProcessEnv) }),
+    // Global FILE_MANAGER over the hot `private-files` profile (a save applies to the next storage call).
+    PrivateStorageModule,
     FilesModule,
     ZuckerNotificationModule.forRoot({ providers: [] }),
     ZuckerCreditModule.forRoot(),
     ZuckerFormModule.forRoot(),
-    ZuckerAIModule.forRootAsync({ inject: [RUNTIME_ENVIRONMENT],
-      useFactory: environment => aiModuleOptionsFromEnvironment(environment as Readonly<NodeJS.ProcessEnv>) }),
+    // Model configuration follows the hot `ai-*` profiles (the same runtime AIConnectionsModule reads).
+    ZuckerAIModule.forRootAsync({ imports: [AIConnectionRuntimeModule], inject: [AI_CONNECTION_RUNTIME],
+      useFactory: runtime => aiModuleOptionsFromRuntime(runtime as AIConnectionRuntime) }),
     AIConnectionsModule,
     // Metered media generation (/ai/*, /v1/ai/*) and streaming chat (/chat*) on the shared Jobs host.
     AITasksModule,

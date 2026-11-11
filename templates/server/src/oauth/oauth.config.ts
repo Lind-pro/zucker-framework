@@ -1,5 +1,14 @@
+import type { HotProvider } from '../runtime-settings/hot-apply';
+import type { OAuthProviderClient } from './oauth-provider';
+
 export type OAuthProvider = 'google' | 'github';
+/** Sign-in settings as read by `OAuthService` (composed as a live view over `OAUTH_CONNECTION`). */
 export const OAUTH_SETTINGS = Symbol('OAUTH_SETTINGS');
+/** Hot provider of the parsed sign-in profiles and the provider client built from them. */
+export const OAUTH_CONNECTION = Symbol('OAUTH_CONNECTION');
+/** Connection profiles the sign-in providers read (both hot). */
+export const OAUTH_CONNECTION_PROFILES: readonly string[] = ['identity-google', 'identity-github'];
+export type OAuthConnection = HotProvider<{ readonly settings: OAuthSettings; readonly client: OAuthProviderClient }>;
 export interface OAuthSettings {
   webOrigin: string;
   secureCookies: boolean;

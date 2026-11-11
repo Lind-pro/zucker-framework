@@ -16,6 +16,10 @@ Read the project README, package manifests and relevant existing callers/tests. 
 - Register global infrastructure once at the composition root. Feature modules reuse configured providers. Preserve startup/shutdown for pools, timers and subscriptions.
 - Choose this application's persistence and task topology explicitly. A demo memory adapter is not a durable store for accounts, orders or recoverable work.
 
+## Assistant skills
+
+Project skills live in `.agents/skills/<name>/SKILL.md` (linked from `.claude/skills`): brand quick-start, page builder, feature builder, provider setup and deploy checklist. Load only the skill that matches the task; a skill's allow-list limits which files it may change, and it never authorizes network calls, paid providers or deployment.
+
 ## Local work and verification
 
 Use only this project's documented development dependencies and synthetic data. Keep credentials out of tracked files and logs; do not copy another product's environment, data or secrets.

@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 function within(parent, child) {
@@ -207,6 +207,152 @@ export function installConsumerAgentInstructions(repository, source, options = {
       result.warnings.push('AGENTS.md is available, but this filesystem could not create the optional CLAUDE.md link.');
     } else {
       throw error;
+    }
+  }
+  return result;
+}
+
+/** Limits of skill files shipped with the CLI (bundle field `skills`) and installed into consumers. */
+export const CONSUMER_SKILL_LIMITS = Object.freeze({ maxFiles: 16, maxFileBytes: 32 * 1024 });
+const SKILL_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const SKILL_SEGMENT = /^[a-z0-9][a-z0-9_-]*$/;
+const SKILL_FILE = /^[A-Za-z0-9][A-Za-z0-9_.-]*\.(?:md|json)$/;
+
+/**
+ * Validates `{ '<skill>/<relative path>': base64 }`: lowercase skill names, `.md`/`.json` files only,
+ * no dot segments or absolute paths, at most 16 files of 32 KiB, every skill with a `SKILL.md`.
+ * Returns the decoded files so callers never decode unvalidated input themselves.
+ */
+export function validateConsumerSkills(skills) {
+  if (!skills || typeof skills !== 'object' || Array.isArray(skills)) throw new Error('Skill assets must be an object.');
+  const entries = Object.entries(skills);
+  if (entries.length > CONSUMER_SKILL_LIMITS.maxFiles) {
+    throw new Error(`At most ${CONSUMER_SKILL_LIMITS.maxFiles} skill files are supported.`);
+  }
+  const names = new Set();
+  const entrypoints = new Set();
+  const files = [];
+  for (const [path, content] of entries) {
+    const parts = path.split('/');
+    const [name, ...rest] = parts;
+    if (parts.length < 2 || parts.length > 4 || !SKILL_NAME.test(name) || name.length > 64
+      || !rest.slice(0, -1).every(part => SKILL_SEGMENT.test(part)) || !SKILL_FILE.test(rest.at(-1))) {
+      throw new Error(`Invalid skill asset path: ${path}`);
+    }
+    if (typeof content !== 'string' || Buffer.from(content, 'base64').toString('base64') !== content) {
+      throw new Error(`Invalid skill asset encoding: ${path}`);
+    }
+    const bytes = Buffer.from(content, 'base64');
+    if (bytes.length > CONSUMER_SKILL_LIMITS.maxFileBytes) throw new Error(`Skill asset exceeds 32 KiB: ${path}`);
+    // Skills are text instructions; reject anything that is not valid UTF-8 without control bytes.
+    const text = bytes.toString('utf8');
+    if (Buffer.from(text, 'utf8').compare(bytes) !== 0 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(text)) {
+      throw new Error(`Skill asset is not plain UTF-8 text: ${path}`);
+    }
+    names.add(name);
+    if (rest.length === 1 && rest[0] === 'SKILL.md') entrypoints.add(name);
+    files.push({ name, path, relative: rest, text });
+  }
+  for (const name of names) if (!entrypoints.has(name)) throw new Error(`Skill ${name} has no SKILL.md.`);
+  return files;
+}
+
+/**
+ * Creates `path` when absent, then reports whether it is a real directory (never a symbolic link)
+ * whose real path stays inside `root`. Never follows or replaces an existing non-directory entry.
+ */
+const UNWRITABLE = ['EACCES', 'EPERM', 'EROFS'];
+
+function ensureLocalDirectory(root, path) {
+  if (!lstatSync(path, { throwIfNoEntry: false })) {
+    try {
+      mkdirSync(path);
+    } catch (error) {
+      // Skills are optional: an unwritable directory skips them with a warning, never fails the project.
+      if (UNWRITABLE.includes(error?.code)) return false;
+      if (error?.code !== 'EEXIST') throw error;
+    }
+  }
+  const entry = lstatSync(path, { throwIfNoEntry: false });
+  return !!entry && entry.isDirectory() && !entry.isSymbolicLink() && within(root, realpathSync(path));
+}
+
+/**
+ * Installs bundled skills as `<project>/.agents/skills/<name>/...` with exclusive creation: an existing
+ * file (or link) is preserved and reported, never read or replaced. A directory on the path that is a
+ * symbolic link or resolves outside the project skips that skill. Adds `.claude/skills/<name>` as a
+ * relative link to the canonical directory when `.claude/skills` is absent or a real directory.
+ */
+export function installConsumerAgentSkills(repository, skills) {
+  const files = validateConsumerSkills(skills);
+  const root = realpathSync(repository);
+  if (!lstatSync(root).isDirectory()) throw new Error('Consumer project path must be a directory.');
+  const result = { created: [], preserved: [], links: { created: [], preserved: [] }, warnings: [] };
+  if (files.length === 0) return result;
+  const skillsRoot = join(root, '.agents', 'skills');
+  if (!ensureLocalDirectory(root, join(root, '.agents')) || !ensureLocalDirectory(root, skillsRoot)) {
+    result.warnings.push('.agents/skills is not a local directory; bundled skills were not installed.');
+    return result;
+  }
+  const installed = [];
+  for (const name of [...new Set(files.map(file => file.name))].sort()) {
+    const skillDirectory = join(skillsRoot, name);
+    if (!ensureLocalDirectory(root, skillDirectory)) {
+      result.warnings.push(`.agents/skills/${name} is not a local directory; that skill was not installed.`);
+      continue;
+    }
+    let complete = true;
+    for (const file of files.filter(item => item.name === name).sort((a, b) => a.path.localeCompare(b.path))) {
+      let directory = skillDirectory;
+      let safe = true;
+      for (const segment of file.relative.slice(0, -1)) {
+        directory = join(directory, segment);
+        if (!ensureLocalDirectory(root, directory)) { safe = false; break; }
+      }
+      const label = `.agents/skills/${file.path}`;
+      if (!safe) {
+        complete = false;
+        result.warnings.push(`${label}: a parent directory is not local; the file was not installed.`);
+        continue;
+      }
+      try {
+        // `wx` never follows or replaces an existing entry, including a dangling link.
+        writeFileSync(join(directory, file.relative.at(-1)), file.text, { encoding: 'utf8', flag: 'wx' });
+        result.created.push(label);
+      } catch (error) {
+        if (UNWRITABLE.includes(error?.code)) {
+          complete = false;
+          result.warnings.push(`${label}: the directory is not writable; the file was not installed.`);
+          continue;
+        }
+        if (error?.code !== 'EEXIST') throw error;
+        result.preserved.push(label);
+      }
+    }
+    if (complete) installed.push(name);
+  }
+
+  const claude = join(root, '.claude');
+  const claudeSkills = join(claude, 'skills');
+  if (!ensureLocalDirectory(root, claude) || !ensureLocalDirectory(root, claudeSkills)) {
+    result.warnings.push('.claude/skills is not a local directory; skill links were not created.');
+    return result;
+  }
+  for (const name of installed) {
+    const link = join(claudeSkills, name);
+    if (lstatSync(link, { throwIfNoEntry: false })) { result.links.preserved.push(`.claude/skills/${name}`); continue; }
+    try {
+      symlinkSync(join('..', '..', '.agents', 'skills', name), link, 'dir');
+      result.links.created.push(`.claude/skills/${name}`);
+    } catch (error) {
+      if (error?.code === 'EEXIST') {
+        result.links.preserved.push(`.claude/skills/${name}`);
+      } else if (['EPERM', 'EACCES', 'ENOTSUP', 'EOPNOTSUPP', 'ENOSYS'].includes(error?.code)) {
+        result.warnings.push('Skills are in .agents/skills, but this filesystem could not create the optional .claude/skills links.');
+        break;
+      } else {
+        throw error;
+      }
     }
   }
   return result;

@@ -3,6 +3,8 @@ export interface ProjectBundle {
   version: 1;
   consumerInstructions: string;
   templates: Record<'admin' | 'web' | 'server-full', TemplateAssets> & { workspace?: TemplateAssets };
+  /** Assistant skills `{ '<skill>/<path>': base64 }` installed into `.agents/skills`; absent in older bundles. */
+  skills?: Record<string, string>;
 }
 export interface TemplateAssetOptions {
   /** Require a package.json manifest (default true). */

@@ -5,6 +5,17 @@ object operations to the existing `PrivateFileAssetService`. The bounded HTTP at
 10 MiB; `FILES_MAX_BYTES` can lower it. Upload/import/read use bounded buffers; only server-generated
 AI outputs are streamed (see below). This template does not create public bucket permissions.
 
+## Storage connection (hot)
+
+`FILE_MANAGER` comes from `PrivateStorageModule` (`files.module.ts`, imported once at the composition
+root) over the hot `private-files` connection profile: a save applies to the next storage call, and an
+upload or download that already started finishes on the client it began with (the replaced client is
+closed after its last stream ends). A save that changes the provider, endpoint or bucket while file rows
+exist is refused with 409 `DATA_LOCATION_CHANGE_UNACKNOWLEDGED` unless the body carries
+`acknowledgeDataLocationChange: true` (the admin Connections page asks for this confirmation); the
+acknowledgement is audited in the save's transaction. Existing objects are never moved: rows keep their
+keys, so move the objects yourself before switching. Credential-only changes need no acknowledgement.
+
 ## Owner metadata and operations
 
 `GET /api/files?page=1` returns `{data, total, page, pageSize: 20, limits}` for the authenticated owner.

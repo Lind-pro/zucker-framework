@@ -7,7 +7,13 @@
         "../../tsconfig.base.json",
         "../../scripts/prepare-cli-catalog.mjs",
         "../../packages/*/package.json",
-        "../../templates/server/package.json"
+        "../../templates/server/package.json",
+        "../../scripts/prepare-cli-templates.mjs",
+        "../../templates/**",
+        "!../../templates/**/node_modules/**",
+        "!../../templates/**/.next*/**",
+        "!../../templates/**/dist/**",
+        "../../docs/templates/**"
       ]
     }
   }

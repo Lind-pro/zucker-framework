@@ -20,7 +20,8 @@ import { BILLING_OPTIONS, type BillingOptions } from '../src/billing/billing.ser
 import { OAuthModule } from '../src/oauth/oauth.module';
 import { OAUTH_SETTINGS, type OAuthSettings } from '../src/oauth/oauth.config';
 import { DeliveryModule } from '../src/delivery/delivery.module';
-import { DELIVERY_OPTIONS, type DeliveryOptions } from '../src/delivery/delivery.config';
+import { DELIVERY_CONNECTION, DELIVERY_OPTIONS, type DeliveryOptions } from '../src/delivery/delivery.config';
+import type { HotProvider } from '../src/runtime-settings/hot-apply';
 import { AccountModule } from '../src/accounts/account.module';
 import { AccountGuard } from '../src/accounts/account.guard';
 import { ACCOUNT_MAILER, type AccountMailer } from '../src/accounts/account.service';
@@ -75,6 +76,8 @@ run('encrypted connection settings PostgreSQL and administrator HTTP contracts',
   beforeEach(async () => {
     await database.transaction(async tx => {
       await tx.query('DELETE FROM config WHERE scope=$1', [CONNECTION_SETTINGS_SCOPE]);
+      // Archived revisions are never discarded implicitly (4.1c); tests clean them explicitly.
+      await tx.query('DELETE FROM connection_profile_revisions');
       await tx.query('DELETE FROM config_history WHERE scope=$1', [CONNECTION_SETTINGS_SCOPE]);
       await tx.query("DELETE FROM operation_logs WHERE module='runtime-settings'");
     }); events.length = 0;
@@ -108,7 +111,8 @@ run('encrypted connection settings PostgreSQL and administrator HTTP contracts',
   it('encrypts whole profiles and commits actor audit without secret history or change events', async () => {
     const response = await put('payment-creem', creem()).expect(200);
     expect(response.headers['cache-control']).toBe('private, no-store');
-    expect(response.body).toMatchObject({ storedRevision: 1, appliedRevision: 0, pendingRestart: true, validation: 'local-assembly-only', externalRequests: false });
+    // Payment profiles apply hot (WP 4.1c): the saved revision is the applied one at once.
+    expect(response.body).toMatchObject({ storedRevision: 1, appliedRevision: 1, pendingRestart: false, validation: 'local-assembly-only', externalRequests: false });
     const rows = await database.model('config').findMany({ where: { scope: CONNECTION_SETTINGS_SCOPE } }) as Array<{ value: unknown }>;
     expect(rows).toHaveLength(1); expect(rows[0].value).toMatch(/^v2\./);
     const audit = await database.model('operationLogs').findMany({ where: { module: 'runtime-settings' } });
@@ -126,8 +130,9 @@ run('encrypted connection settings PostgreSQL and administrator HTTP contracts',
       secrets: { DELIVERY_SMTP_PASSWORD: { action: 'replace', value: 'SYNTHETIC-SMTP-PASSWORD' } } }).expect(200);
     await put('account-email', { expectedRevision: 0, values: { SMTP_HOST: 'smtp.example.invalid', SMTP_FROM: 'account@example.invalid' } }).expect(200);
     expect(app.get<BillingOptions>(BILLING_OPTIONS).providers).toHaveLength(0);
-    expect(app.get<OAuthSettings>(OAUTH_SETTINGS).google.code).toBe(false);
-    expect(app.get<DeliveryOptions>(DELIVERY_OPTIONS).provider).toBeUndefined();
+    // Sign-in and durable mail profiles are hot (WP 4.1b): the next request already uses the saved revision.
+    expect((await request(app.getHttpServer()).get('/api/authorize/oauth/providers').expect(200)).body.providers).toEqual([{ id: 'google', code: true }]);
+    expect(await app.get<HotProvider<DeliveryOptions>>(DELIVERY_CONNECTION).current()).toMatchObject({ accountScope: 'synthetic-saved-mail' });
     const restartedDatabase = new ApplicationDatabase(scopedUrl);
     const restarted = await Test.createTestingModule({ imports: [ZuckerCrudModule.forRootAsync({ useFactory: () => restartedDatabase }),
       ZuckerAuthModule.forRoot({ jwtSecret: env.JWT_SECRET!, registerControllers: false }),
@@ -224,7 +229,7 @@ run('encrypted connection settings PostgreSQL and administrator HTTP contracts',
       expect(live.body).toEqual(expected); expect(JSON.stringify(live.body)).not.toContain('SYNTHETIC-PRIVATE');
       const listed = await get().expect(200);
       expect(listed.body.appliesOn).toBe('per-profile');
-      expect(listed.body.profiles.find((row: { id: string }) => row.id === 'payment-creem')).toMatchObject({ applyMode: 'restart', appliesOn: 'server-restart' });
+      expect(listed.body.profiles.find((row: { id: string }) => row.id === 'payment-creem')).toMatchObject({ applyMode: 'hot', appliesOn: 'next-request' });
       await put('web-analytics', { expectedRevision: 0, values: { SITE_ANALYTICS_ENABLED: 'false' } }).expect(409);
       restartedDatabase = new ApplicationDatabase(scopedUrl);
       const module = await Test.createTestingModule({ imports: [ZuckerCrudModule.forRootAsync({ useFactory: () => restartedDatabase! }),

@@ -1,0 +1,18 @@
+// ─── Connection profile revision archive (WP 4.1a) ──────────────────────────────────────────────
+// Every saved revision of a runtime connection profile (`config` scope `runtime.connections`), kept so
+// records created under an older configuration (orders, refunds) can still resolve the credentials
+// they were created with. `ciphertext` is the same `SecretCipher` envelope as the live value and holds
+// `{"revision":n,"values":{...}}`; it is never returned over HTTP (only counts). Written by
+// `ConnectionProfileStore` (`@zucker-framework/config/connections`) in the save transaction; rows are
+// removed only by an explicit operator purge. CHECK constraints live in the migration SQL.
+
+model connectionProfileRevisions {
+  profileId  String
+  revision   Int
+  ciphertext String
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+  createdBy  String?
+
+  @@id([profileId, revision], map: "connection_profile_revisions_pkey")
+  @@map("connection_profile_revisions")
+}

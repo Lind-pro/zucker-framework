@@ -177,3 +177,5 @@ export type { GeminiImageProviderConfig } from './providers/gemini-image.provide
 export * from './structured-output';
 
 export * from './provider-models';
+
+export * from './connection-descriptor';

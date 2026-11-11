@@ -73,6 +73,12 @@ export interface HostedCheckoutOrder {
   createdAt: Date;
   updatedAt: Date;
   revision: number;
+  /**
+   * Opaque payment-configuration revision this order was created under, written once by the service
+   * from {@link HostedCheckoutProviderResolver.current} and never changed afterwards. Absent with a
+   * static provider array (a consumer may then record its own value). Only the resolver interprets it.
+   */
+  configRevision?: string | null;
 }
 
 export interface HostedCheckoutObservation {
@@ -172,9 +178,46 @@ export interface HostedCheckoutSelection {
   promotionCode?: string;
 }
 
+/** The adapter a NEW order is created with, and the configuration revision to record on that order. */
+export interface HostedCheckoutCurrentProvider {
+  readonly adapter: HostedCheckoutAdapter;
+  /** Recorded as `order.configRevision` when defined (opaque; at most 255 characters). */
+  readonly configRevision?: string | null;
+}
+
+/** Most webhook verification candidates the service tries for one request. */
+export const HOSTED_CHECKOUT_MAX_WEBHOOK_CANDIDATES = 8;
+
+/**
+ * Credentials that change while orders are open (hot-applied payment configuration). The service
+ * calls the resolver once per operation and keeps the adapter it got for that whole operation.
+ *
+ * - `current`: new orders only. Undefined when the provider does not accept new orders now.
+ * - `forOrder`: existing orders (duplicate create, confirm, capture, recovery, webhook retrieval).
+ *   It must only return an adapter of `order.providerId` whose `accountScope` equals
+ *   `order.accountScope` (the service re-checks both), or undefined when none is available. A
+ *   recorded `configRevision` that is malformed or cannot belong to this order must be refused by
+ *   throwing `HostedCheckoutError('verification_failed', …)`; never fall back to another account.
+ * - `webhookCandidates`: adapters able to verify a webhook of this provider, newest first, one per
+ *   distinct account scope and signing secret (for example the current secret and the previous one
+ *   during a rotation). The service tries at most {@link HOSTED_CHECKOUT_MAX_WEBHOOK_CANDIDATES},
+ *   uses the first that verifies, and then requires the located order's account scope to equal that
+ *   adapter's, so a webhook verified for one account never settles an order of another.
+ * - `ids`: providers that accept new orders now.
+ *
+ * Revisions and account scopes are never taken from a request.
+ */
+export interface HostedCheckoutProviderResolver {
+  ids(): Promise<readonly string[]>;
+  current(providerId: string): Promise<HostedCheckoutCurrentProvider | undefined>;
+  forOrder(order: Readonly<HostedCheckoutOrder>): Promise<HostedCheckoutAdapter | undefined>;
+  webhookCandidates(providerId: string): Promise<readonly HostedCheckoutAdapter[]>;
+}
+
 export interface HostedCheckoutOptions {
   persistence: HostedCheckoutPersistence;
-  providers: readonly HostedCheckoutAdapter[];
+  /** A fixed adapter list (credentials fixed for the process lifetime) or a resolver (hot-applied credentials). */
+  providers: readonly HostedCheckoutAdapter[] | HostedCheckoutProviderResolver;
   resolveOffer(selection: Readonly<HostedCheckoutSelection>): Promise<HostedCheckoutOffer>;
   /** Server-controlled URLs; the browser must not supply redirect destinations. */
   returnUrls(orderId: string): { successUrl: string; cancelUrl: string };

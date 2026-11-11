@@ -15,6 +15,16 @@
         "default": "./dist/index.js"
       }
     },
+    "./connections": {
+      "import": {
+        "types": "./dist/connections.d.mts",
+        "default": "./dist/connections.mjs"
+      },
+      "require": {
+        "types": "./dist/connections.d.ts",
+        "default": "./dist/connections.js"
+      }
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -24,7 +34,7 @@
     "THIRD_PARTY_NOTICES"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format cjs,esm --dts --external @nestjs/common --external @nestjs/core --external @zucker-framework/core --external @zucker-framework/crud",
+    "build": "tsup src/index.ts src/connections.ts --format cjs,esm --dts --external @nestjs/common --external @nestjs/core --external @zucker-framework/core --external @zucker-framework/crud",
     "clean": "rm -rf dist",
     "lint": "eslint src/",
     "prepack": "node ../../scripts/prepare-package-legal.mjs"

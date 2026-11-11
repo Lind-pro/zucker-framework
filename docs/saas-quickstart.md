@@ -12,7 +12,7 @@
 pnpm create @zucker-framework/app my-saas            # 等同于下一行
 pnpm dlx @zucker-framework/cli@1.0.20 create my-saas [--locale en|zh] [--no-admin] [--no-web]
 cd my-saas && pnpm install
-docker compose up -d --build                         # PostgreSQL、Redis、MinIO、Mailpit、一次性迁移、三个应用
+docker compose up -d --build                         # PostgreSQL、Redis、S3 兼容存储（SeaweedFS）、Mailpit、一次性迁移、三个应用
 # 或者：pnpm dev:infra && pnpm db:migrate && pnpm dev  # 只在 Docker 中运行数据库与邮件，应用跑在本机
 ```
 
@@ -82,13 +82,13 @@ pnpm dev
 | 账户验证／找回／欢迎邮件与购买回执 | Server `MAIL_PROVIDER`（`smtp` 默认或 `resend`）、`SMTP_FROM`，以及 `SMTP_HOST/PORT/SECURE/USER/PASSWORD` 或 `MAIL_RESEND_API_KEY`；或后台账户邮件连接 | 配置后验证注册 → 收信 → 验证 → 登录；`SMTP_USER/PASSWORD` 都为空时不做 SMTP 认证 |
 | 注册开关、邮箱验证、初始角色、欢迎积分、默认支付渠道 | Admin「系统设置 → 产品策略」（`account`、`billing`），或 `POLICY_<策略>_<字段>` 环境变量固定 | 保存后无需重启，最长 30 秒内生效；被环境变量固定的字段在后台只读 |
 | 任务完成通知 | 独立的 `DELIVERY_PROVIDER` 为 `none`、`smtp` 或 `resend`，以及 `DELIVERY_*` 配置 | 默认 `none`；填账户 SMTP 不会自动开启持久任务通知 |
-| 付款、OAuth、私有存储、AI 连接 | Admin「系统设置 → 连接配置」或 Server 的对应环境配置 | 后台保存后重启 Server，再核对已应用版本和真实渠道行为 |
+| 付款、OAuth、邮件、私有存储、AI 连接 | Admin「系统设置 → 连接配置」或 Server 的对应环境配置 | 后台保存后无需重启：下一个请求（付款为下一笔新订单）即用新配置，已有订单、订阅和退款继续使用其创建时的账户；更改私有存储位置需确认（已有文件不迁移）。保存后核对已应用版本和真实渠道行为 |
 | AI 生成（图片/视频/音乐）与对话、模型目录与定价 | Server AI 连接与 `AI_MEDIA_ADAPTERS`；Admin「AI → 模型与定价」（`ai-catalog`、`ai-pricing` 策略） | 策略保存后无需重启；详见 [AI 快速上手](ai-quickstart.md) |
 | 分析、广告、联盟、客服 | 后台公开网站连接 | 默认 Web 的 `SITE_CONFIGURATION_SOURCE=server` 读取 Server 已应用快照；只改 Web 环境变量不会覆盖该来源 |
 
 任务邮件的 SMTP、Resend 都需要 `DELIVERY_ACCOUNT_SCOPE` 和 `DELIVERY_FROM`；Resend 另配置 `DELIVERY_RESEND_API_KEY`，SMTP 另配置 `DELIVERY_SMTP_*`。账户邮件是即时发送，持久投递仓储的恢复保证只适用于实际接入它的任务通知。各字段和失败契约见[Server 模板说明](../templates/server/README.md)。
 
-后台的连接配置（包括邮件与分析连接）保存后均需重启 Server；站点品牌、导航等内容设置保存后刷新 Web 即可。不要把“已保存”当作连接已经应用或供应商已经验证。
+后台的连接配置（付款、登录、邮件、存储、AI 与分析连接）保存后即时生效，无需重启 Server；其他副本最长 30 秒内跟进。新配置无法组装时继续使用上一版本，连接配置页显示应用失败。旧的付款凭据加密保留，只能由运维在 `CONNECTION_REVISION_RETENTION_DAYS`（默认 400 天）后清理未被引用的版本。站点品牌、导航等内容设置保存后刷新 Web 即可。不要把“已保存”当作供应商已经验证。
 
 OAuth 应用登记的回调是 `WEB_URL/api/authorize/oauth/google/callback` 或 `WEB_URL/api/authorize/oauth/github/callback`；Google One Tap 另登记 Web origin。填写凭据后再启用对应开关，按实际登录、绑定和退出流程验收。
 

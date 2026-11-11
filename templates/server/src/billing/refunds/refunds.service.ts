@@ -7,6 +7,7 @@ import type { HostedCheckoutObservation, HostedCheckoutOrder, RefundAdapter, Ref
 import { ApplicationDatabase, type ApplicationTransaction } from '../../database';
 import { createCreditLedger, validateCreditFulfillmentPolicy } from '../ledger';
 import type { BillingSubscription, SubscriptionExecutionFence } from '../subscription-persistence';
+import { staticAccountAdapters, verifyWithCandidates, type AccountAdapterSource } from '../payment-credentials';
 import { minorAmount, minorMoney, requiredCredits } from './refunds.money';
 import { addRefundAlias, lockedRequest, lockedTarget, lockRefundSource, mergeRefundCash, recordRefundEvidence, refundConflict, targetCreditDeficit, updateRefundRow } from './refunds.store';
 import type { RefundLocalPayment, RefundRequestRow, RefundTargetRow, RefundTargetType } from './refunds.types';
@@ -40,17 +41,26 @@ function bodyRecord(value: unknown, fields: string[]): Record<string, unknown> {
 
 /** Durable cash requests and actual provider receipts over existing payment and credit facts. */
 export class BillingRefundsService {
-  private readonly adapters = new Map<string, RefundAdapter>();
+  private readonly adapters: AccountAdapterSource<RefundAdapter>;
   private readonly coordinator = new PostgresCreditOperationCoordinator();
   private readonly ledger: ReturnType<typeof createCreditLedger>;
-  constructor(private readonly database: ApplicationDatabase, adapters: readonly RefundAdapter[]) {
-    for (const adapter of adapters) { if (this.adapters.has(adapter.id)) throw new Error('Duplicate refund provider'); this.adapters.set(adapter.id, adapter); }
+  /**
+   * `adapters`: a fixed list, or per-account resolution of hot-applied credentials (D12: the newest
+   * retained credentials of the payment's own account). A refund is never sent through another account.
+   */
+  constructor(private readonly database: ApplicationDatabase, adapters: readonly RefundAdapter[] | AccountAdapterSource<RefundAdapter>) {
+    if (Array.isArray(adapters)) {
+      const ids = new Set<string>();
+      for (const adapter of adapters) { if (ids.has(adapter.id)) throw new Error('Duplicate refund provider'); ids.add(adapter.id); }
+      this.adapters = staticAccountAdapters(adapters);
+    } else this.adapters = adapters as AccountAdapterSource<RefundAdapter>;
     this.ledger = createCreditLedger(database, { refundSettlement: true });
   }
-  private adapter(providerId: string, accountScope: string) {
-    const adapter = this.adapters.get(providerId);
+  /** Resolved once per operation; the same adapter is used for that whole operation. */
+  private async adapter(providerId: string, accountScope: string): Promise<RefundAdapter> {
+    const adapter = await this.adapters.forAccount(providerId, accountScope);
     if (!adapter) throw new HostedCheckoutError('unsupported', 'Refund provider is unavailable');
-    if (adapter.accountScope !== accountScope) throw new HostedCheckoutError('verification_failed', 'Refund provider account changed'); return adapter;
+    if (adapter.id !== providerId || adapter.accountScope !== accountScope) throw new HostedCheckoutError('verification_failed', 'Refund provider account changed'); return adapter;
   }
   private reference(row: RefundTargetRow): RefundPaymentReference { return { paymentId: row.paymentId, paymentKind: row.paymentKind, paidMoney: row.paidMoney }; }
   private async transaction<T>(ownerId: string, work: (tx: ApplicationTransaction) => Promise<T>, fence?: SubscriptionExecutionFence): Promise<T> {
@@ -139,7 +149,7 @@ export class BillingRefundsService {
     await addRefundAlias(tx, row, local.reference.paymentKind, local.reference.paymentId); await addRefundAlias(tx, row, facts.source.kind, facts.source.id); return row;
   }
   private async observeLocal(local: RefundLocalPayment, fence?: SubscriptionExecutionFence) {
-    const adapter = this.adapter(local.providerId, local.accountScope), { facts, observations } = await this.providerFacts(adapter, local.reference);
+    const adapter = await this.adapter(local.providerId, local.accountScope), { facts, observations } = await this.providerFacts(adapter, local.reference);
     // Cash observations commit independently of all hold/ledger writes. The consumer ledger blocks
     // affected source lots while this known cumulative cash still has unsettled credit recovery.
     const prepared = await this.transaction(local.ownerId, async tx => {
@@ -158,7 +168,7 @@ export class BillingRefundsService {
   }
   /** Verified checkout observation is prepared outside the original fulfillment transaction. */
   async prepareCheckout(order: Readonly<HostedCheckoutOrder>, observation: Readonly<HostedCheckoutObservation>, fence?: SubscriptionExecutionFence): Promise<void> {
-    if (!this.adapters.has(order.providerId)) return;
+    if (!this.adapters.knows(order.providerId)) return;
     // Nothing to block or recover for a purchase that granted no credits (plan purchases).
     if (validateCreditFulfillmentPolicy(order.offer.fulfillmentData).credits === 0) return;
     if (observation.state !== 'paid' || !observation.paidMoney || !observation.paymentId || !observation.paymentKind) refundConflict('Verified checkout payment is required for refund preparation');
@@ -173,7 +183,7 @@ export class BillingRefundsService {
   async prepareCycle(bindingId: string, ownerId: string, payment: SubscriptionPaidPeriod | SubscriptionPaidReceipt, fence?: SubscriptionExecutionFence): Promise<void> {
     const binding = await this.database.model('billingSubscriptions').findUnique({ where: { id: bindingId } }) as BillingSubscription | null;
     if (!binding || binding.ownerId !== ownerId) throw new HostedCheckoutError('forbidden', 'Subscription refund preparation owner mismatch');
-    if (!this.adapters.has(binding.providerId)) return;
+    if (!this.adapters.knows(binding.providerId)) return;
     if (validateCreditFulfillmentPolicy(binding.offer.fulfillmentData).credits === 0) return;
     const cycles = await this.database.model('billingSubscriptionCycles').findMany({ where: { providerId: binding.providerId, accountScope: binding.accountScope, paymentId: payment.paymentId, paymentKind: payment.paymentKind }, take: 1 }) as SubscriptionCycleReceipt[];
     const cycle = cycles[0]; if (cycle && (cycle.ownerId !== ownerId || cycle.bindingId !== bindingId)) refundConflict('Payment already belongs to a different subscription');
@@ -282,7 +292,7 @@ export class BillingRefundsService {
     const input = bodyRecord(body, ['targetType', 'targetId', 'amount', 'reason']);
     if (input.targetType !== 'order' && input.targetType !== 'cycle' || typeof input.targetId !== 'string' || !input.targetId || typeof input.amount !== 'string'
       || input.reason !== undefined && (typeof input.reason !== 'string' || input.reason.length > 255 || /[\u0000-\u001f\u007f]/.test(input.reason))) throw new BadRequestException('Invalid refund selection');
-    const local = await this.local(input.targetType, input.targetId), adapter = this.adapter(local.providerId, local.accountScope);
+    const local = await this.local(input.targetType, input.targetId), adapter = await this.adapter(local.providerId, local.accountScope);
     const amount = minorAmount(input.amount, local.reference.paidMoney.currency, paymentScale(local.reference)), reason = typeof input.reason === 'string' ? input.reason.trim() : null;
     if (amount <= 0n) throw new BadRequestException('Refund amount must be positive');
     const prior = await this.database.transaction(tx => tx.query<RefundRequestRow>('SELECT * FROM billing_refund_requests WHERE id=$1', [id]));
@@ -323,7 +333,7 @@ export class BillingRefundsService {
     await this.dispatch(id); return this.get(id);
   }
   private async dispatch(id: string): Promise<void> {
-    const snapshot = await this.requestSnapshot(id), target = await this.targetSnapshot(snapshot.targetId), adapter = this.adapter(target.providerId, target.accountScope);
+    const snapshot = await this.requestSnapshot(id), target = await this.targetSnapshot(snapshot.targetId), adapter = await this.adapter(target.providerId, target.accountScope);
     const claimed = await this.transaction(snapshot.ownerId, async tx => {
       await lockedTarget(tx, target.id); const row = await lockedRequest(tx, id);
       if (row.state !== 'prepared') return false;
@@ -404,7 +414,7 @@ export class BillingRefundsService {
   }
   /** Provider reads only: this method never calls adapter.create, including prepared/unknown requests. */
   async reconcile(id: string, fence?: SubscriptionExecutionFence) {
-    const row = await this.requestSnapshot(id), target = await this.targetSnapshot(row.targetId), adapter = this.adapter(target.providerId, target.accountScope);
+    const row = await this.requestSnapshot(id), target = await this.targetSnapshot(row.targetId), adapter = await this.adapter(target.providerId, target.accountScope);
     if (row.providerRefundId && adapter.retrieve) await this.applyObservation(id, await adapter.retrieve(row.providerRefundId, this.reference(target)), fence);
     const { facts, observations } = await this.providerFacts(adapter, this.reference(target));
     await this.transaction(row.ownerId, async tx => {
@@ -427,8 +437,11 @@ export class BillingRefundsService {
     const local = await this.local(type, id); await this.observeLocal(local, fence); return this.getTarget(type, id);
   }
   async handleWebhook(providerId: string, request: WebhookRequest): Promise<boolean> {
-    const adapter = this.adapters.get(providerId); if (!adapter) return false;
-    const event = await adapter.verifyWebhook(request); if (!event) return false;
+    // Current and retained credentials of this provider, newest first: a refund event signed with the
+    // previous secret during a rotation still verifies. Lookups below stay on the verifying account.
+    const verified = await verifyWithCandidates(await this.adapters.webhookCandidates(providerId), candidate => candidate.verifyWebhook(request));
+    if (!verified) return false;
+    const adapter = verified.candidate, event = verified.result; if (!event) return false;
     const findTarget = async (tx: ApplicationTransaction): Promise<RefundTargetRow | undefined> => (await tx.query<RefundTargetRow>(`SELECT * FROM billing_refund_payments
       WHERE "providerId"=$1 AND "accountScope"=$2 AND "sourceKind"=$3 AND "sourceId"=$4`, [adapter.id, adapter.accountScope, event.source.kind, event.source.id])).rows[0];
     const journal = async (tx: ApplicationTransaction, targetId?: string) => {
@@ -472,7 +485,7 @@ export class BillingRefundsService {
         : row.state === 'succeeded' && row.creditState === 'held' ? 'pending' : row.state,
       cashState: row.state, creditState: row.creditState, reconcileStatus: row.reconcileStatus,
       creditImpact: { held, revoked: row.revokedCredits, expired: row.expiredCredits, suppressed: row.suppressedCredits, shortfall: row.shortfallCredits },
-      confirmationBasis: row.confirmationBasis, createdAt: row.createdAt, updatedAt: row.updatedAt, canCheck: !!this.adapters.get(target.providerId) };
+      confirmationBasis: row.confirmationBasis, createdAt: row.createdAt, updatedAt: row.updatedAt, canCheck: this.adapters.knows(target.providerId) };
   }
   async getByClientKey(actorId: string, key: string) { return this.get(commandId(actorId, key)); }
   async get(id: string) { const row = await this.requestSnapshot(id); return this.view(row, await this.targetSnapshot(row.targetId)); }
@@ -486,7 +499,7 @@ export class BillingRefundsService {
     const data = await Promise.all(rows.data.map(async row => this.view(row, await this.targetSnapshot(row.targetId)))); return { data, total: rows.total, page, pageSize: 20 };
   }
   async getTarget(type: RefundTargetType, id: string) {
-    const local = await this.local(type, id), adapter = this.adapter(local.providerId, local.accountScope);
+    const local = await this.local(type, id), adapter = await this.adapter(local.providerId, local.accountScope);
     const found = await this.database.transaction(tx => tx.query<RefundTargetRow>(`SELECT payment.* FROM billing_refund_payments AS payment JOIN billing_refund_aliases AS alias ON alias."targetId"=payment.id
       WHERE alias."providerId"=$1 AND alias."accountScope"=$2 AND alias."paymentKind"=$3 AND alias."paymentId"=$4`, [local.providerId, local.accountScope, local.reference.paymentKind, local.reference.paymentId]));
     const row = found.rows[0], scale = row?.minorScale ?? paymentScale(local.reference), paid = row ? BigInt(row.paidMinor) : minorAmount(local.reference.paidMoney.amount, local.reference.paidMoney.currency, scale);

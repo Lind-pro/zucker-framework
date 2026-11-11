@@ -4,7 +4,8 @@ import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
-import { checkAgentInstructions } from './check-agent-instructions.mjs';
+import { fileURLToPath } from 'node:url';
+import { checkAgentInstructions, checkTemplateSkills } from './check-agent-instructions.mjs';
 
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), 'zucker-instructions-'));
@@ -117,4 +118,11 @@ test('non-Git delivery workspaces can validate explicitly without Git visibility
   rmSync(join(f.root, '.git'), { recursive: true });
   assert.ok(f.check().errors.some((error) => error.includes('Unable to verify')));
   assert.deepEqual(checkAgentInstructions(f.root, { checkGit: false }).errors, []);
+});
+
+test('template skills shipped to generated projects pass the same front-matter audit', () => {
+  const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+  const result = checkTemplateSkills(root);
+  assert.deepEqual(result.errors, []);
+  assert.ok(result.skills >= 2);
 });

@@ -330,6 +330,14 @@ out of tracked `.npmrc` files and command history.
 
 ## Consumer checks
 
+Before cutting a release candidate, run the launch acceptance from packed artefacts
+(`pnpm acceptance:launch`, see [the runbook](runbooks/launch-acceptance.md)). It packs every public
+package, generates a workspace with the packed CLI through a local file registry, installs it from
+those tarballs (framework packages are never fetched from the public registry), builds and migrates it on
+the host and in Docker, and runs the "ready to launch" checks with fake payment and AI providers. It
+does not publish anything; `pnpm pack:release` on a clean commit and publication still need their own
+authorisation.
+
 The published 1.0.0 CRUD entry imports cache and event runtime tokens while marking
 those peers optional; rule-engine likewise imports its optional event peer. Consumers remaining on 1.0.0 and using auth/CRUD should install
 `@zucker-framework/cache@1.0.0` and `@zucker-framework/event@1.0.0` explicitly.

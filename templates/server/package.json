@@ -13,7 +13,8 @@
     "db:migrate": "prisma migrate deploy",
     "account:admin": "pnpm prisma:generate && tsx src/scripts/create-admin.ts",
     "account:role": "pnpm prisma:generate && tsx src/accounts/assign-role.cli.ts",
-    "content:seed": "pnpm prisma:generate && tsx src/content/content-seed.cli.ts"
+    "content:seed": "pnpm prisma:generate && tsx src/content/content-seed.cli.ts",
+    "content:check": "tsx --tsconfig tsconfig.json src/content/content-check.cli.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.124.0",

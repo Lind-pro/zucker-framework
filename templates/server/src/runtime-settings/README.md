@@ -6,13 +6,29 @@ The token lives in the dependency-free `runtime-settings.tokens.ts`; factories i
 the resulting environment to their existing options parser. It is resolved once at startup and
 frozen. Saving a profile never changes an active SDK, financial task or mail transport.
 
+The generic machinery (registry, field validation, encrypted store with revision archive, runtime
+environments and provider slots) lives in `@zucker-framework/config/connections`;
+`ConnectionSettingsService` is a thin Nest wrapper that maps its `ConnectionSettingsError` statuses to
+HTTP exceptions. Provider packages export plain-data descriptors (ids, keys, types, English labels);
+`profiles/*.profiles.ts` add product labels and local validation with `localizeConnectionDescriptor`.
+Ids and environment keys are pinned by `test/runtime-settings.profiles.e2e-spec.ts`.
+
 Profiles are declared with `defineConnectionProfile({ profile, applyMode, validate })` (`registry.ts`)
 in per-feature arrays (`profiles/*.profiles.ts`; new features export theirs from their own folder) and
 composed in `connection-settings.descriptors.ts`. `applyMode: 'restart'` profiles reach providers only
-through the startup snapshot. `applyMode: 'hot'` profiles (currently `web-analytics` and
-`web-connections`) are read on demand through `ConnectionSettingsService.liveEnvironment()`: a 30 s
-per-process cache that the saving process invalidates when the save commits; other replicas pick the
-change up within the TTL. Payment, sign-in, mail, storage and AI profiles stay restart-to-apply.
+through the startup snapshot. Every profile shipped with the template is `applyMode: 'hot'`: it is read
+on demand (`ConnectionSettingsService.liveEnvironment()` for the public-site profiles, a
+`RuntimeProviderSlot`/`HotProvider` in `hot-apply.ts` for provider clients) through a 30 s per-process
+cache that the saving process invalidates when the save commits; other replicas pick the change up
+within the TTL. Sign-in, mail, delivery, storage and AI clients are rebuilt on the next request after a
+save; work that already started (a streaming chat, an upload, a send) finishes on the instance it began
+with, and a revision that cannot be assembled keeps the previous one serving (shown as `applyError` on the
+Connections page). Payment profiles apply to the next new order (resolved strictly, never from a stale
+cache); existing orders, subscriptions and refunds keep resolving credentials of the account they were
+created on from the encrypted revision archive (`billing/payment-credentials.ts`), and superseded payment
+revisions are only purged by an operator after `CONNECTION_REVISION_RETENTION_DAYS` (default 400). A
+change of the private-files location (provider, endpoint, bucket) while files exist needs
+`acknowledgeDataLocationChange: true` (`files/files.module.ts`, D14); files are never moved.
 
 The eight non-AI server-provider profiles configure the existing Stripe, PayPal, Creem, Google/GitHub login,
 account SMTP, durable SMTP/Resend and private S3-compatible storage (including R2) providers.
@@ -41,8 +57,17 @@ that would silently activate a different payment or storage account.
 Each profile is an encrypted JSON string `{revision, values}` in the existing `config` table under
 scope `runtime.connections`. The application constructs `ConfigService` using the current
 `ApplicationTransaction`, a local `ConfigScopeManager` that marks each profile encrypted, and core
-`SecretCipher` (AES-256-GCM). No new persistence schema or public library is required. No encryption
-key, secret plaintext, ciphertext or secret hash is exposed through the administrator responses.
+`SecretCipher` (AES-256-GCM). No encryption key, secret plaintext, ciphertext or secret hash is
+exposed through the administrator responses.
+
+Every saved revision is also appended, in the same transaction and with the same cipher envelope, to
+`connection_profile_revisions` (`prisma/models/connection-revisions.prisma`, migration
+`20261112010000_connection_revisions`). At start-up, under the profile locks, the current revision of
+each saved profile is archived if its row is missing (databases saved before the archive). Archive rows
+numbered above the live revision (only possible after the live row was deleted out of band) are
+discarded when the profile is next written. Rows are never purged automatically. Only the count
+(`retainedRevisions`) leaves the server; `environmentAt(profileId, revision)` resolves an archived
+revision internally and fails closed (503) when it cannot be decrypted.
 
 A schema/profile advisory transaction lock and `expectedRevision` compare-and-swap serialize
 updates. The encrypted profile write and mandatory `operationLogs` actor audit commit together.
@@ -76,7 +101,8 @@ credential. Unknown fields, client-supplied actor/profile identity and stale rev
 A no-op keeps the current revision. Revision conflicts require a fresh read before a deliberate save.
 
 Each profile returns `applyMode` (`hot` | `restart`), `appliesOn` (`next-request` | `server-restart`),
-`storedRevision`, `appliedRevision`, `pendingRestart` (always false for hot profiles), `canSave`, field
+`storedRevision`, `appliedRevision`, `pendingRestart` (always false for hot profiles), `canSave`,
+`retainedRevisions` (number of archived revisions), field
 metadata and field provenance (`saved`, `environment`, `default`, `cleared`, `unset`). Secret fields
 return only whether a value is configured and its source; they never contain a `value` property.
 The page can therefore show saved versus active settings without revealing credentials. Non-secret
@@ -94,11 +120,14 @@ work; existing payment/refund bindings continue enforcing their original account
 permissions, synthetic credentials and actual provider factories. It covers restart loading,
 environment fallback and clear/keep semantics, encrypted persistence/no secret events or history,
 concurrent CAS, audit-write rollback, missing/wrong encryption keys, generic config isolation and
-saved settings reaching Billing/OAuth/delivery/account-mail factories only on restart.
+saved settings reaching the provider factories. `test/hot-apply-*.persistent.e2e-spec.ts` and
+`test/payment-hot-apply.persistent.e2e-spec.ts` cover next-request effect, in-flight isolation,
+failed assembly and payment resolution by account after a configuration change.
 
 The editor does not rotate the encryption key. Keep the dedicated key available to every intended
 server startup; changing it without re-encrypting existing profiles makes them unreadable by design.
-No database migration is needed. To roll back application code, preserve encrypted profiles, their
+Apply migration `20261112010000_connection_revisions` before starting this version. To roll back
+application code, preserve encrypted profiles, the revision archive, their
 key and audit records. Reverting to a version that ignores saved profiles would reapply environment
 configuration and therefore needs an explicit provider-account reconciliation decision.
 

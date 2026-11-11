@@ -1,4 +1,6 @@
-import { S3_MAX_PART_SIZE, S3_MIN_PART_SIZE, type StorageModuleOptions } from '@zucker-framework/storage';
+import {
+  LocalFileStorage, S3_MAX_PART_SIZE, S3_MIN_PART_SIZE, S3Storage, WebDavStorage, type FileManager, type StorageModuleOptions,
+} from '@zucker-framework/storage';
 
 export const MAX_FILE_BYTES = 10 * 1024 * 1024;
 export const FILES_OPTIONS = Symbol('FILES_OPTIONS');
@@ -44,6 +46,16 @@ function required(env: NodeJS.ProcessEnv, name: string): string {
   return value;
 }
 
+/**
+ * Production requires https endpoints. `FILES_S3_INTERNAL_HTTP=true` (process environment only, never a
+ * saved connection field) additionally allows plain http to a single-label host, i.e. a service on the
+ * same private container network such as the workspace compose file's `http://minio:9000`. A saved
+ * endpoint on any other host still needs https, so the switch cannot send credentials across the internet.
+ */
+function internalHttpEndpoint(env: NodeJS.ProcessEnv, url: URL): boolean {
+  return env.FILES_S3_INTERNAL_HTTP === 'true' && url.protocol === 'http:' && /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(url.hostname);
+}
+
 /** Composition-root configuration for the application's one shared FileManager. */
 export function storageOptionsFromEnvironment(env: NodeJS.ProcessEnv): StorageModuleOptions {
   const provider = env.FILES_STORAGE_PROVIDER ?? 'local';
@@ -56,7 +68,7 @@ export function storageOptionsFromEnvironment(env: NodeJS.ProcessEnv): StorageMo
   if (endpoint) {
     const url = new URL(endpoint);
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password
-      || (env.NODE_ENV === 'production' && url.protocol !== 'https:')) throw new Error('Invalid private S3 endpoint');
+      || (env.NODE_ENV === 'production' && url.protocol !== 'https:' && !internalHttpEndpoint(env, url))) throw new Error('Invalid private S3 endpoint');
   }
   const forcePathStyle = env.FILES_S3_FORCE_PATH_STYLE;
   if (forcePathStyle !== undefined && forcePathStyle !== 'true' && forcePathStyle !== 'false')
@@ -70,6 +82,23 @@ export function storageOptionsFromEnvironment(env: NodeJS.ProcessEnv): StorageMo
     region: env.FILES_S3_REGION?.trim() || 'us-east-1', endpoint,
     forcePathStyle: forcePathStyle === undefined ? Boolean(endpoint) : forcePathStyle === 'true',
     objectAclMode: 'none', uploadUrlMode: 'public-only', ...(partSize === undefined ? {} : { partSize }) };
+}
+
+/** The hot runtime connection profile that configures private (and public asset) object storage. */
+export const PRIVATE_FILES_CONNECTION_PROFILE = 'private-files';
+/**
+ * Fields that decide where objects live (decision D14). Changing one while file rows exist needs
+ * `acknowledgeDataLocationChange: true` in the save body: existing rows keep their object keys and the
+ * framework does not move objects, so they stay where they were. Credential-only changes need no flag.
+ */
+export const STORAGE_LOCATION_FIELDS: readonly string[] = ['FILES_STORAGE_PROVIDER', 'FILES_S3_ENDPOINT', 'FILES_S3_BUCKET'];
+
+/** Builds one FileManager from parsed options (no network request; S3 clients connect lazily). */
+export function fileManagerFromOptions(options: StorageModuleOptions): FileManager {
+  if (options.provider === 'local') return new LocalFileStorage({ basePath: options.basePath, baseUrl: options.baseUrl });
+  if (options.provider === 'webdav') { const { provider: _provider, ...webdav } = options; return new WebDavStorage(webdav); }
+  const { provider: _provider, ...s3 } = options;
+  return new S3Storage(s3);
 }
 
 /** Conservative byte signatures; unknown content stays a binary attachment, never trusted client MIME. */

@@ -51,8 +51,8 @@ describe('ApplicationMailTransport selection', () => {
 
 describe('account-email connection profile validation', () => {
   const validate = (env: Record<string, string>) => ACCOUNT_EMAIL_CONNECTION_PROFILE.validate!(env as NodeJS.ProcessEnv);
-  it('is restart-applied and exposes MAIL_PROVIDER and the resend key (secret) among its fields', () => {
-    expect(ACCOUNT_EMAIL_CONNECTION_PROFILE.applyMode).toBe('restart');
+  it('is hot-applied and exposes MAIL_PROVIDER and the resend key (secret) among its fields', () => {
+    expect(ACCOUNT_EMAIL_CONNECTION_PROFILE.applyMode).toBe('hot');
     const fields = ACCOUNT_EMAIL_CONNECTION_PROFILE.profile.fields;
     expect(fields.find(field => field.key === 'MAIL_PROVIDER')).toMatchObject({ type: 'select', options: ['smtp', 'resend'] });
     expect(fields.find(field => field.key === 'MAIL_RESEND_API_KEY')).toMatchObject({ type: 'secret' });

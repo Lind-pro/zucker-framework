@@ -231,7 +231,7 @@ run('encrypted AI connections PostgreSQL, HTTP and actual Nest composition', () 
       await f.database.model('config').count({ where: { scope: CONNECTION_SETTINGS_SCOPE } }),
     ).toBe(0);
   });
-  it('saves six encrypted profiles without activating them or leaking secrets in HTTP, audit or public integrations', async () => {
+  it('saves six encrypted hot profiles without leaking secrets in HTTP, audit or public integrations', async () => {
     const responses: unknown[] = [];
     for (const definition of AI_CONNECTIONS) {
       const saved = await put(definition.id, {
@@ -240,10 +240,12 @@ run('encrypted AI connections PostgreSQL, HTTP and actual Nest composition', () 
         secrets: { [`${definition.prefix}_API_KEY`]: { action: 'replace', value: secret } },
       }).expect(200);
       responses.push(saved.body);
+      // AI profiles are hot (WP 4.1b): the saved revision is the applied one, no restart pending.
       expect(saved.body).toMatchObject({
         storedRevision: 1,
-        appliedRevision: 0,
-        pendingRestart: true,
+        appliedRevision: 1,
+        pendingRestart: false,
+        applyMode: 'hot',
         externalRequests: false,
       });
       const field = saved.body.fields.find(
@@ -265,6 +267,8 @@ run('encrypted AI connections PostgreSQL, HTTP and actual Nest composition', () 
     ).body;
     expect(JSON.stringify([stored, audit, responses, publicView])).not.toContain(secret);
     expect(JSON.stringify(publicView)).not.toContain('ai-openai');
+    // This fixture composes ZuckerAIModule from the start-up snapshot (`aiModuleOptionsFromEnvironment`);
+    // the application composition (`aiModuleOptionsFromRuntime`) is covered by hot-apply-connections.
     await expect(
       f.app
         .get(NativeAIClient)

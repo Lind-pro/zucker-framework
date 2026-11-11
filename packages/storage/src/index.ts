@@ -80,3 +80,5 @@ export type {
   RasterImageMime, PublicAssetState, PublicAssetRecord, PublicAssetCandidate, PublicAssetRepository,
   PublicImageNormalizer, PublicAssetServiceOptions, PublicAssetView, PublicAssetErrorCode,
 } from './public-asset';
+
+export * from './connection-descriptor';

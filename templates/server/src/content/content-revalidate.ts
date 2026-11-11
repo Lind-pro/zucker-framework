@@ -45,8 +45,8 @@ export class ContentRevalidator {
   /** Replaceable in tests; production uses the platform fetch. */
   transport: typeof fetch = (...args) => fetch(...args);
   constructor(@Inject(CONTENT_OPTIONS) private readonly options: ContentOptions) {
-    // Only the configured WEB_URL origin is ever contacted; the path is fixed.
-    this.endpoint = new URL(REVALIDATE_PATH, options.siteUrl).href;
+    // Only the configured REVALIDATE_URL (else WEB_URL) origin is ever contacted; the path is fixed.
+    this.endpoint = new URL(REVALIDATE_PATH, options.revalidateUrl ?? options.siteUrl).href;
   }
 
   get enabled(): boolean { return !!this.options.revalidateSecret; }

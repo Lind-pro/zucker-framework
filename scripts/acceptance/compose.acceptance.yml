@@ -1,0 +1,23 @@
+# Launch acceptance override for a generated workspace's docker-compose.yml (scripts/acceptance/launch-ready.mjs).
+# - Image builds use the host network so `pnpm fetch` reaches the local file registry (NPM_REGISTRY, set by
+#   the script) on 127.0.0.1; framework packages come only from the packed tarballs.
+# - Published ports come from the workspace .env, which the script rewrites to free ports.
+# - ACCEPT_NODE_ENV / ACCEPT_TEST_FAKES select the pass: pass 1 runs production with no fakes; pass 2
+#   recreates only the server with NODE_ENV=test and the fake payment/AI providers, which refuse production.
+services:
+  migrate:
+    build:
+      network: host
+  server:
+    build:
+      network: host
+    environment:
+      NODE_ENV: ${ACCEPT_NODE_ENV:-production}
+      BILLING_TEST_FAKE_PROVIDER: ${ACCEPT_TEST_FAKES:-false}
+      AI_TEST_FAKE_PROVIDERS: ${ACCEPT_TEST_FAKES:-false}
+  web:
+    build:
+      network: host
+  admin:
+    build:
+      network: host

@@ -7,8 +7,10 @@
 ARG NODE_IMAGE=node:24-alpine
 
 FROM ${NODE_IMAGE} AS base
+# Package registry for every install in this image (a private mirror, or a local acceptance registry).
+ARG NPM_REGISTRY=https://registry.npmjs.org/
 ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH COREPACK_ENABLE_DOWNLOAD_PROMPT=0 CI=true
-RUN corepack enable
+RUN corepack enable && pnpm config set registry "$NPM_REGISTRY"
 WORKDIR /workspace
 
 # Dependency layer: invalidated only by the lockfile and workspace settings.

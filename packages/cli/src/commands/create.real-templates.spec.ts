@@ -23,6 +23,8 @@ const parseEnv = (text: string) => Object.fromEntries(text.split('\n').filter(l 
 const walk = (dir: string, out: string[] = []): string[] => {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const path = join(dir, entry.name);
+    // Links (CLAUDE.md, .claude/skills/<name>) point at files that are scanned at their real path.
+    if (entry.isSymbolicLink()) continue;
     if (entry.isDirectory()) walk(path, out); else out.push(path);
   }
   return out;
@@ -108,7 +110,9 @@ describe('zucker create with the real templates', () => {
   it('writes the expected tree including Dockerfiles, and no secrets outside the root .env', async () => {
     await run('tree');
     const root = join(cwd, 'tree');
-    for (const path of ['apps/server/Dockerfile', 'apps/server/.dockerignore', 'apps/web/Dockerfile', 'apps/web/.dockerignore', 'apps/admin/Dockerfile', 'apps/admin/nginx.conf', 'docker-compose.yml', 'pnpm-workspace.yaml', '.env', '.env.example', '.gitignore', '.dockerignore', 'scripts/with-env.mjs'])
+    for (const path of ['apps/server/Dockerfile', 'apps/server/.dockerignore', 'apps/web/Dockerfile', 'apps/web/.dockerignore', 'apps/admin/Dockerfile', 'apps/admin/nginx.conf', 'docker-compose.yml', 'pnpm-workspace.yaml', '.env', '.env.example', '.gitignore', '.dockerignore', 'scripts/with-env.mjs',
+      'AGENTS.md', '.agents/skills/brand-quickstart/SKILL.md', '.agents/skills/brand-quickstart/references/allowlist.json',
+      '.agents/skills/page-builder/SKILL.md', '.agents/skills/page-builder/references/blocks.md', '.claude/skills/page-builder/SKILL.md'])
       expect(existsSync(join(root, path)), path).toBe(true);
     const env = parseEnv(readFileSync(join(root, '.env'), 'utf8'));
     const values = SECRET_KEYS.map(key => env[key]);

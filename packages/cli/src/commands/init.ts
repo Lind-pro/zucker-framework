@@ -4,7 +4,7 @@ import { resolve, join } from 'path';
 import { randomBytes } from 'node:crypto';
 import { frameworkCheckoutRoot } from './checkout';
 import { collectTemplateAssets, validateTemplateAssets, writeTemplateAssets } from '../../tooling/project-templates.mjs';
-import { assertReleasedVersions, installInstructions, pinReleasedVersions, readProjectBundle, readReleaseCatalog } from './project-files';
+import { assertReleasedVersions, installInstructions, installSkills, pinReleasedVersions, readProjectBundle, readReleaseCatalog } from './project-files';
 
 function createFullServerEnvironment(targetDir: string): void {
   let environment = readFileSync(join(targetDir, '.env.example'), 'utf8');
@@ -162,6 +162,7 @@ export function createInitCommand(runtimeDirectory?: string, workingDirectory?: 
       ].join('\n'));
 
       installInstructions(targetDir, bundle);
+      installSkills(targetDir, bundle);
       writeFileSync(join(targetDir, 'README.md'), '# ' + name + '\n\nMinimal Server scaffold. The memory adapter is a disposable demonstration, not persistent storage. Configure and verify the application-owned database and auth policies before real use.\n\nCommands: `pnpm install`, `pnpm dev`. Read `AGENTS.md` before extending the application.\n');
       console.log('  \x1b[32mProject scaffolded successfully!\x1b[0m\n');
       console.log('  Next steps:');
@@ -191,6 +192,7 @@ export function createInitCommand(runtimeDirectory?: string, workingDirectory?: 
 
     if (options.template === 'server-full') createFullServerEnvironment(targetDir);
     installInstructions(targetDir, bundle);
+    installSkills(targetDir, bundle);
     console.log('  \x1b[32mProject created successfully!\x1b[0m\n');
     console.log('  Next steps:');
     console.log(`    cd ${name}`);

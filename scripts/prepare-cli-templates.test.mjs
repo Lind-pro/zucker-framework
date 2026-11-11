@@ -208,3 +208,34 @@ test('asset writes never replace an existing consumer manifest', (context) => {
   assert.throws(() => writeTemplateAssets({ 'package.json': encode('{"name":"new"}') }, directory), { code: 'EEXIST' });
   assert.equal(readFileSync(join(directory, 'package.json'), 'utf8'), '{"name":"user-owned"}\n');
 });
+
+test('bundles the template assistant skills from docs/templates/skills', (context) => {
+  const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+  const output = temporaryDirectory(context);
+  prepareCliTemplates(root, output);
+  const bundle = JSON.parse(readFileSync(join(output, 'project-templates.json'), 'utf8'));
+  assert.equal(bundle.version, 1);
+  for (const path of ['brand-quickstart/SKILL.md', 'brand-quickstart/references/allowlist.json', 'page-builder/SKILL.md', 'page-builder/references/blocks.md']) {
+    assert.deepEqual(decode(bundle.skills[path]), readFileSync(join(root, 'docs/templates/skills', path)), path);
+  }
+  JSON.parse(decode(bundle.skills['brand-quickstart/references/allowlist.json']).toString('utf8'));
+});
+
+test('skills stay optional and reject non-text, oversize or linked files', (context) => {
+  const f = fixture(context);
+  f.prepare();
+  assert.equal(Object.hasOwn(readBundle(f), 'skills'), false);
+  validateProjectBundle({ ...readBundle(f), skills: undefined });
+  f.write('docs/templates/skills/demo/SKILL.md', '---\nname: demo\ndescription: "Synthetic."\n---\n');
+  f.prepare();
+  assert.deepEqual(Object.keys(readBundle(f).skills), ['demo/SKILL.md']);
+  f.write('docs/templates/skills/demo/run.sh', 'echo synthetic\n');
+  assert.throws(() => f.prepare(), /\.md or \.json/);
+  rmSync(join(f.root, 'docs/templates/skills/demo/run.sh'));
+  f.write('docs/templates/skills/demo/big.md', 'x'.repeat(32 * 1024 + 1));
+  assert.throws(() => f.prepare(), /32 KiB/);
+  rmSync(join(f.root, 'docs/templates/skills/demo/big.md'));
+  symlinkSync('SKILL.md', join(f.root, 'docs/templates/skills/demo/alias.md'));
+  assert.throws(() => f.prepare(), /symbolic links/);
+  assert.throws(() => validateProjectBundle({ ...readBundle(f), skills: { 'demo/notes.md': encode('x') } }), /SKILL\.md/);
+});

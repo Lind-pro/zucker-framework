@@ -27,7 +27,8 @@ unavailable instead of selecting another provider.
 ## Composition and consumer routes
 
 The composition root registers `ZuckerAIModule.forRootAsync` once with
-`aiModuleOptionsFromEnvironment(RUNTIME_ENVIRONMENT)` and imports `AIConnectionsModule`. Feature
+`aiModuleOptionsFromRuntime(AI_CONNECTION_RUNTIME)` (from `AIConnectionRuntimeModule`) and imports
+`AIConnectionsModule`; `aiModuleOptionsFromEnvironment(environment)` remains for a fixed snapshot. Feature
 modules import `AIConnectionsModule` when they need its exported, injectable `NativeAIClient`.
 The client uses the root `AIConfigService` and `AICallWrapper`, so retry/abort/observer ownership is
 unchanged. `AI_NATIVE_MODEL_FACTORY` is an explicit replacement seam for synthetic tests or a
@@ -53,10 +54,19 @@ native connection or consumer scenario can run.
 Profiles use the existing runtime-settings encrypted CAS store, actor audit and trusted mutation
 origin. API keys are secret fields with explicit keep/replace/clear operations, never response values.
 No native connection fields are included in the public website integrations endpoint. Generic system
-config remains separate. Saving performs local validation and records a candidate version only.
-Every provider sees the frozen startup snapshot until the Server restarts; disabling a saved
-connection takes effect on restart as well. A fresh config service then rejects disabled routes,
-including previously cached consumer aliases.
+config remains separate. Saving performs local validation (SDK construction only).
+
+The `ai-*` profiles are hot (WP 4.1b). `AI_CONNECTION_RUNTIME` is a `HotProvider`
+(`runtime-settings/hot-apply.ts`) over all six profiles; it rebuilds one snapshot (environment and
+media providers) on the first read after a save, in the saving process immediately and on other
+replicas within the 30 s profile cache. The terminal config source, `AI_CONNECTION_ENVIRONMENT` and
+`AI_MEDIA_PROVIDERS` all read it, and `AIConfigService`'s per-scenario cache is cleared whenever a
+lookup resolves to another revision (`bindAIConfigCacheToRuntime`), so it never serves a superseded key. Requests under `/ai`, `/v1/ai` and `/chat` are pinned to one revision
+for their whole duration; a call that already resolved its configuration (a streaming chat, a media
+task submission) finishes with it. Job workers read the newest revision. Disabling a saved connection
+therefore takes effect on the next call. If a new revision cannot be assembled (for example an invalid
+`AI_MEDIA_ADAPTERS` combination), the previous snapshot keeps serving and the Connections page
+reports `applyError` for that revision.
 
 There is no schema migration. Keep the dedicated `CONFIG_ENCRYPTION_KEY` with the saved profiles.
 Rollback must account for older code that does not read these profiles. These tests use synthetic

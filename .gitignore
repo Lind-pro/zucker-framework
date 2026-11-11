@@ -16,6 +16,7 @@ artifacts
 .DS_Store
 .claude/worktrees/
 .next/
+.next-*/
 # Next.js rewrites these imports for dev/build; generate them from the current environment.
 /templates/web/next-env.d.ts
 templates/server/src/generated/prisma/

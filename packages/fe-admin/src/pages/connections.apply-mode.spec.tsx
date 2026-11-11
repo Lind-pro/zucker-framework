@@ -79,6 +79,25 @@ describe('connections apply mode', () => {
     expect(screen.getByText(/Saved settings apply after a server restart\./)).toBeTruthy();
   });
 
+  it('payment profiles that apply hot explain that existing orders stay on their account and show the retained count', async () => {
+    const payment = { ...base, id: 'payment-stripe', name: 'Stripe', category: 'Payments', applyMode: 'hot', retainedRevisions: 4 };
+    const other = { ...base, id: 'hot-two', name: 'Hot two', applyMode: 'hot', retainedRevisions: 2 };
+    const server = createMockServer({ ...routes(),
+      'GET /management/connections': { checkedAt: '2026-11-09T00:00:00.000Z', connections: [summary('payment-stripe', 'Stripe'), summary('hot-two', 'Hot two')] },
+      'GET /management/connection-settings': { profiles: [payment, other] },
+      'GET /management/connection-settings/payment-stripe': payment, 'GET /management/connection-settings/hot-two': other });
+    renderAdmin({ httpAdapter: server.adapter as never, locales }, { path: '/connections', permissions: ['config:query', 'config:update'] });
+    fireEvent.click(within(await rowOf('Stripe')).getByRole('button', { name: 'Edit settings' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/existing orders, subscriptions and refunds stay on their own account/)).toBeTruthy();
+    expect(within(dialog).getByText('Encrypted revisions retained: 4')).toBeTruthy();
+    cleanup();
+    renderAdmin({ httpAdapter: server.adapter as never, locales }, { path: '/connections', permissions: ['config:query', 'config:update'] });
+    fireEvent.click(within(await rowOf('Hot two')).getByRole('button', { name: 'Edit settings' }));
+    const second = await screen.findByRole('dialog');
+    expect(within(second).queryByText(/stay on their own account/)).toBeNull();
+  });
+
   async function saveOne(name: string, saved: Record<string, unknown>) {
     const server = createMockServer({ ...routes(), [`PUT /management/connection-settings/${saved.id}`]: { status: 200, data: saved } });
     renderAdmin({ httpAdapter: server.adapter as never, locales }, { path: '/connections', permissions: ['config:query', 'config:update'] });
@@ -104,5 +123,32 @@ describe('connections apply mode', () => {
     expect(within(dialog).getByText(/Changes apply after a server restart/)).toBeTruthy();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Save encrypted' }));
     await waitFor(() => expect(screen.getByText('Saved encrypted; applies after a server restart')).toBeTruthy());
+  });
+  it('shows an apply error on the row when a saved revision could not be assembled', async () => {
+    const server = createMockServer({
+      ...routes(),
+      'GET /management/connections': {
+        checkedAt: '2026-11-09T00:00:00.000Z',
+        connections: [{ ...summary('hot-one', 'Hot one'), applyMode: 'hot', applyError: { revision: 5, reason: 'provider_assembly_failed' } }],
+      },
+    });
+    renderAdmin({ httpAdapter: server.adapter as never, locales }, { path: '/connections', permissions: ['config:query'] });
+    expect(within(await rowOf('Hot one')).getByText('Revision 5 could not be applied; the previous one keeps serving')).toBeTruthy();
+  });
+
+  it('asks before a storage location change and resends with the acknowledgement (D14)', async () => {
+    const first = { status: 409, data: { status: 409, code: 'DATA_LOCATION_CHANGE_UNACKNOWLEDGED', message: 'Resend with acknowledgeDataLocationChange: true' } };
+    const { server, dialog } = await saveOne('Hot one', { id: 'hot-one' });
+    let calls = 0;
+    server.set('PUT /management/connection-settings/hot-one', () => (++calls === 1 ? first : { status: 200, data: { ...profiles[0], storedRevision: 4 } }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save encrypted' }));
+    const confirm = await screen.findByRole('alertdialog');
+    expect(within(confirm).getByText(/Existing files are not moved/)).toBeTruthy();
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Change location and save' }));
+    expect(await screen.findByText('Saved encrypted and applied immediately')).toBeTruthy();
+    const puts = server.find('PUT', '/management/connection-settings/hot-one');
+    expect(puts).toHaveLength(2);
+    expect(puts[0]?.body).not.toHaveProperty('acknowledgeDataLocationChange');
+    expect(puts[1]?.body).toMatchObject({ expectedRevision: 3, values: { GOOGLE_CLIENT_ID: 'new-id' }, acknowledgeDataLocationChange: true });
   });
 });

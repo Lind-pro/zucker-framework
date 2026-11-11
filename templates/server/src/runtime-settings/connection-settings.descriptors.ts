@@ -6,6 +6,8 @@ import { MAIL_CONNECTION_PROFILES } from './profiles/mail.profiles';
 import { PAYMENT_CONNECTION_PROFILES } from './profiles/payment.profiles';
 import { PUBLIC_SITE_CONNECTION_PROFILES } from './profiles/public-site.profiles';
 import { STORAGE_CONNECTION_PROFILES } from './profiles/storage.profiles';
+import { validateConnectionField, validateConnectionProfile } from '@zucker-framework/config/connections';
+import { withHttpErrors, withHttpErrorsAsync } from './connection-errors';
 import { composeConnectionProfiles, type ConnectionApplyMode, type ConnectionField, type ConnectionProfile, type ConnectionProfileDefinition } from './registry';
 
 export type { ConnectionApplyMode, ConnectionField, ConnectionFieldType, ConnectionProfile, ConnectionProfileDefinition } from './registry';
@@ -39,19 +41,12 @@ function connectionDefinition(id: string): ConnectionProfileDefinition {
 }
 export function connectionProfile(id: string): ConnectionProfile { return connectionDefinition(id).profile; }
 export function connectionApplyMode(id: string): ConnectionApplyMode { return connectionDefinition(id).applyMode; }
+/** Field validation from `@zucker-framework/config/connections`, with Nest HTTP exceptions. */
 export function validateField(field: ConnectionField, value: unknown): string {
-  if (typeof value !== 'string' || !value.trim() || value.length > (field.type === 'secret' ? 16384 : 2048) || /[\u0000-\u001f\u007f]/.test(value)) throw new BadRequestException(`Invalid ${field.key}; use an explicit clear action to remove a value`);
-  if (field.type === 'boolean' && !['true', 'false'].includes(value) || field.type === 'select' && !field.options?.includes(value)) throw new BadRequestException(`Invalid ${field.key} choice`);
-  if (field.type === 'number' && (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)) || Number(value) < (field.min ?? 1) || Number(value) > (field.max ?? Number.MAX_SAFE_INTEGER))) throw new BadRequestException(`Invalid ${field.key} number`);
-  if (field.type === 'url') {
-    try { const url = new URL(value); if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error(); }
-    catch { throw new BadRequestException(`Invalid ${field.key} URL`); }
-  }
-  return field.type === 'secret' ? value : value.trim();
+  return withHttpErrors(() => validateConnectionField(field, value));
 }
 /** Construct local options only. No verification request, send, upload or payment is performed. */
 export async function validateConnection(profile: ConnectionProfile, env: NodeJS.ProcessEnv): Promise<void> {
-  // Validator messages may echo configuration; only this generic message leaves the server.
-  try { await connectionDefinition(profile.id).validate?.(env); }
-  catch { throw new BadRequestException('Connection configuration cannot be assembled locally; check required fields and installed provider support'); }
+  // Validator messages may echo configuration; only the generic message leaves the server.
+  await withHttpErrorsAsync(() => validateConnectionProfile(connectionDefinition(profile.id), env));
 }

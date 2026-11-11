@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Button } from '../components/button';
-import { Dialog } from '../components/dialog';
+import { ConfirmDialog, Dialog } from '../components/dialog';
 import { Notice, StatusBadge, toast, type Tone } from '../components/feedback';
 import { Field, Input, Select } from '../components/inputs';
 import { PageContainer } from '../components/layout';
@@ -43,6 +43,8 @@ export interface ConnectionProfile {
    * Older servers omit it and every profile then applies after a restart.
    */
   applyMode?: ConnectionApplyMode;
+  /** Encrypted saved revisions the server keeps (older servers omit it); the revisions themselves are never sent. */
+  retainedRevisions?: number;
   fields: ConnectionField[];
 }
 export type ConnectionApplyMode = 'hot' | 'restart';
@@ -66,7 +68,16 @@ interface Connection {
   appliedRevision?: number;
   pendingRestart?: boolean;
   applyMode?: ConnectionApplyMode;
+  /** A saved revision of a hot profile could not be assembled; the previous revision keeps serving. */
+  applyError?: { revision: number; reason: string };
 }
+
+/** 409 code of a storage location change that needs explicit acknowledgement (D14). */
+const DATA_LOCATION_CHANGE_CODE = 'DATA_LOCATION_CHANGE_UNACKNOWLEDGED';
+const errorCode = (error: unknown) => {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === 'string' ? code : undefined;
+};
 
 /** Hot profiles never wait for a restart, whatever `pendingRestart` says. */
 const isHot = (profile: { applyMode?: string } | undefined) => profile?.applyMode === 'hot';
@@ -100,6 +111,8 @@ function ConnectionEditor({
   const [saving, setSaving] = useState(false);
   const [conflict, setConflict] = useState(false);
   const [failed, setFailed] = useState(false);
+  // D14: the server refused a storage location change until it is acknowledged; nothing was saved.
+  const [locationChange, setLocationChange] = useState(false);
   const editable = writable && profile.canSave;
   const changed = Object.values(actions).some((action) => action !== 'keep');
   const path = `${config.endpoints.connectionSettings}/${enc(profile.id)}`;
@@ -119,7 +132,7 @@ function ConnectionEditor({
     setErrors(next);
     return !Object.keys(next).length;
   }
-  async function save() {
+  async function save(acknowledgeDataLocationChange = false) {
     if (!validate()) return;
     const plain: Record<string, string | null> = {};
     const secrets: Record<string, { action: 'clear' } | { action: 'replace'; value: string }> = {};
@@ -133,13 +146,21 @@ function ConnectionEditor({
     setSaving(true);
     setFailed(false);
     try {
-      const saved = await api.put<ConnectionProfile>(path, { expectedRevision: profile.storedRevision, values: plain, secrets });
+      const saved = await api.put<ConnectionProfile>(path, {
+        expectedRevision: profile.storedRevision,
+        values: plain,
+        secrets,
+        ...(acknowledgeDataLocationChange ? { acknowledgeDataLocationChange: true } : {}),
+      });
       toast.success(
         isHot(saved ?? profile) ? t('connections.savedApplied') : saved?.pendingRestart ? t('connections.savedPending') : t('connections.savedUnchanged'),
       );
       onSaved();
     } catch (error) {
-      if (errorStatus(error) === 409) {
+      if (errorStatus(error) === 409 && errorCode(error) === DATA_LOCATION_CHANGE_CODE && !acknowledgeDataLocationChange) {
+        // Keep every draft (secrets included): only the acknowledgement is missing.
+        setLocationChange(true);
+      } else if (errorStatus(error) === 409) {
         // Drop secret edits; keep non-secret drafts for review against the newer revision.
         const secretKeys = new Set(profile.fields.filter((field) => field.type === 'secret').map((field) => field.key));
         setActions((previous) => Object.fromEntries(Object.entries(previous).filter(([key]) => !secretKeys.has(key))));
@@ -189,10 +210,24 @@ function ConnectionEditor({
         </>
       }
     >
+      <ConfirmDialog
+        open={locationChange}
+        onOpenChange={setLocationChange}
+        destructive
+        title={t('connections.locationChangeTitle')}
+        description={t('connections.locationChangeDescription')}
+        confirmText={t('connections.locationChangeConfirm')}
+        onConfirm={() => save(true)}
+      />
       <div className="space-y-4">
         <Notice tone="info" title={t('connections.revisionNotice', { stored: profile.storedRevision, applied: profile.appliedRevision })}>
           {isHot(profile) ? t('connections.revisionNoticeDescriptionHot') : t('connections.revisionNoticeDescription')}
         </Notice>
+        {isHot(profile) && profile.id.startsWith('payment-') && (
+          <Notice tone="info" title={t('connections.paymentHotNotice')}>
+            {typeof profile.retainedRevisions === 'number' ? t('connections.retainedRevisions', { count: profile.retainedRevisions }) : null}
+          </Notice>
+        )}
         {!profile.canSave && (
           <Notice tone="warning" title={t('connections.noKey')}>
             {t('connections.noKeyDescription')}
@@ -419,6 +454,9 @@ export function ConnectionsPage() {
                   {t('connections.revisionValue', { applied: current.appliedRevision, stored: current.storedRevision ?? 0 })}
                   {modeBadge}
                   {current.pendingRestart && !isHot({ applyMode }) && <StatusBadge tone="warning">{t('connections.pendingRestart')}</StatusBadge>}
+                  {row.applyError && (
+                    <StatusBadge tone="danger">{t('connections.applyError', { revision: row.applyError.revision })}</StatusBadge>
+                  )}
                 </span>
               );
             },

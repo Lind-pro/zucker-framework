@@ -59,7 +59,7 @@ test.describe('Admin Login page', () => {
 
     // Should redirect to /login or show login page
     await page.waitForURL(/login/, { timeout: 10_000 });
-    await expect(page.locator('input[type="text"], input[placeholder*="用户名"]')).toBeVisible();
+    await expect(page.getByRole('textbox', { name: '用户名', exact: true })).toBeVisible();
     await expect(page.locator('input[type="password"], input[placeholder*="密码"]')).toBeVisible();
   });
 
@@ -71,16 +71,16 @@ test.describe('Admin Login page', () => {
     const submitBtn = page.locator('button[type="submit"]');
     await submitBtn.click();
 
-    // Ant Design Pro LoginForm shows validation messages
-    await expect(page.locator('text=请输入用户名')).toBeVisible({ timeout: 5_000 });
+    // The login form reports each missing field inline
+    await expect(page.getByText('请填写用户名')).toBeVisible({ timeout: 5_000 });
   });
 
   test('navigates to /dashboard after successful login', async ({ page }) => {
     await mockAuthApis(page, { loginSuccess: true });
     await page.goto('/login');
 
-    await page.fill('input[placeholder*="用户名"]', 'admin');
-    await page.fill('input[placeholder*="密码"]', 'Admin@123');
+    await page.getByRole('textbox', { name: '用户名', exact: true }).fill('admin');
+    await page.getByRole('textbox', { name: '密码', exact: true }).fill('Admin@123');
     await page.click('button[type="submit"]');
 
     await page.waitForURL(/dashboard/, { timeout: 10_000 });
@@ -91,8 +91,8 @@ test.describe('Admin Login page', () => {
     await mockAuthApis(page, { loginSuccess: false });
     await page.goto('/login');
 
-    await page.fill('input[placeholder*="用户名"]', 'admin');
-    await page.fill('input[placeholder*="密码"]', 'wrongpass');
+    await page.getByRole('textbox', { name: '用户名', exact: true }).fill('admin');
+    await page.getByRole('textbox', { name: '密码', exact: true }).fill('wrongpass');
     await page.click('button[type="submit"]');
 
     // Should stay on login page
@@ -103,8 +103,8 @@ test.describe('Admin Login page', () => {
     await mockAuthApis(page, { loginSuccess: true });
     await page.goto('/login?redirect=/roles');
 
-    await page.fill('input[placeholder*="用户名"]', 'admin');
-    await page.fill('input[placeholder*="密码"]', 'Admin@123');
+    await page.getByRole('textbox', { name: '用户名', exact: true }).fill('admin');
+    await page.getByRole('textbox', { name: '密码', exact: true }).fill('Admin@123');
     await page.click('button[type="submit"]');
 
     // Should redirect to /roles, not /dashboard
@@ -116,8 +116,8 @@ test.describe('Admin Login page', () => {
     // Attempt open redirect via //evil.com
     await page.goto('/login?redirect=//evil.com/steal');
 
-    await page.fill('input[placeholder*="用户名"]', 'admin');
-    await page.fill('input[placeholder*="密码"]', 'Admin@123');
+    await page.getByRole('textbox', { name: '用户名', exact: true }).fill('admin');
+    await page.getByRole('textbox', { name: '密码', exact: true }).fill('Admin@123');
     await page.click('button[type="submit"]');
 
     await page.waitForURL(/dashboard/, { timeout: 10_000 });

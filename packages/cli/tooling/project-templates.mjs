@@ -1,11 +1,12 @@
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { validateConsumerSkills } from './agent-instructions.mjs';
 
 const excludedDirectories = new Set(['node_modules', 'dist', 'out', '.next', '.turbo', '.cache', '.git', '.agents', '.claude', 'coverage', 'test-results', 'playwright-report', 'generated', 'uploads']);
 export function isTemplateAsset(path) {
   if (!path || path.includes('\\') || path.includes('\0') || path.startsWith('/') || /^[A-Za-z]:/.test(path)) return false;
   const parts = path.split('/');
-  if (parts.some(part => !part || part === '.' || part === '..' || excludedDirectories.has(part) || (part.startsWith('.env') && part !== '.env.example'))) return false;
+  if (parts.some(part => !part || part === '.' || part === '..' || excludedDirectories.has(part) || part.startsWith('.next-') || (part.startsWith('.env') && part !== '.env.example'))) return false;
   const name = parts.at(-1);
   return !((name.startsWith('.env') && name !== '.env.example') || ['.npmrc', '.DS_Store', 'next-env.d.ts', 'pnpm-lock.yaml', 'AGENTS.md', 'CLAUDE.md'].includes(name)
     || name.endsWith('.tsbuildinfo') || /\.(?:pem|key|p12|pfx)$/i.test(name));
@@ -90,6 +91,8 @@ export function validateProjectBundle(bundle) {
       if (!Object.hasOwn(files, path)) throw new Error(`Template ${name} is missing required asset: ${path}`);
     }
   }
+  // Optional so bundles prepared before skills existed stay valid (`version` stays 1).
+  if (bundle.skills !== undefined) validateConsumerSkills(bundle.skills);
   if (bundle.templates.workspace !== undefined) {
     validateTemplateAssets(bundle.templates.workspace, { manifest: false });
     for (const path of workspaceRequiredAssets) {

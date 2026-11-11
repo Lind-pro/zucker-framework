@@ -1,6 +1,14 @@
 import { EmailProvider, ResendEmailProvider, type MailProvider } from '@zucker-framework/notification';
 
+/**
+ * Durable delivery configuration (`DeliveryOptions`). `DeliveryModule` provides a live view of
+ * `DELIVERY_CONNECTION`; a fixed value (tests, tools) is served unchanged.
+ */
 export const DELIVERY_OPTIONS = Symbol('DELIVERY_OPTIONS');
+/** `HotProvider<DeliveryOptions>` over the hot `durable-email` profile. */
+export const DELIVERY_CONNECTION = Symbol('DELIVERY_CONNECTION');
+/** The runtime connection profile that configures durable delivery. */
+export const DELIVERY_CONNECTION_PROFILE = 'durable-email';
 /** Resend keeps idempotency keys for 24 hours; leave one hour of margin. */
 export const MAX_DELIVERY_REPLAY_WINDOW_MS = 23 * 60 * 60 * 1000;
 export interface DeliveryOptions { provider?: MailProvider; accountScope: string; leaseMs: number; heartbeatMs: number; replayWindowMs?: number }

@@ -374,3 +374,5 @@ export type { GoogleIdTokenVerifierOptions, GoogleIdTokenExpectation, GoogleIdTo
 export { OAuthProofService, OAuthProofError } from './oauth-proof';
 export type { OAuthProofOptions, OAuthProofContext, OAuthProofRecord, VerifiedOAuthIdentity } from './oauth-proof';
 export type { ThirdPartyBindingRequest, ThirdPartyBindingProofInput } from './services/third-party-account.service';
+
+export * from './connection-descriptor';

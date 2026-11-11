@@ -19,17 +19,28 @@ const USERS = [
   { id: 'u3', username: 'bob',   name: 'Bob',       status: 0, createTime: 1700002000000 },
 ];
 
+/** Access tokens are JWTs naming the account and session (sub + sid), as the session guard requires. */
+const b64 = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
+const ACCESS = `${b64({ alg: 'none' })}.${b64({ sub: 'u1', sid: 's1' })}.sig`;
+
 async function mockAll(page: import('@playwright/test').Page) {
   // Auth
   await page.route('**/api/authorize/login', (r) =>
     r.fulfill({ status: 200, contentType: 'application/json',
-      body: JSON.stringify({ userId: 'u1', token: 'tok.test', expires: 7200000 }) }),
+      body: JSON.stringify({ userId: 'u1', token: ACCESS, expires: 7200000 }) }),
+  );
+  // A page load (the /users navigation below) restores the session through one cookie refresh.
+  await page.route('**/api/authorize/refresh', (r) =>
+    r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ access_token: ACCESS }) }),
+  );
+  await page.route('**/api/menu/tree', (r) =>
+    r.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
   );
   await page.route('**/api/authorize/me', (r) =>
     r.fulfill({ status: 200, contentType: 'application/json',
       body: JSON.stringify({
         id: 'u1', username: 'admin', name: '超级管理员',
-        permissions: [{ id: 'user', name: '用户', actions: ['query','add','update','delete'] }],
+        permissions: [{ id: 'users', name: '用户', actions: ['query','add','update','delete'] }],
       }) }),
   );
 
@@ -45,7 +56,7 @@ async function mockAll(page: import('@playwright/test').Page) {
       r.fulfill({ status: 201, contentType: 'application/json',
         body: JSON.stringify({ id: 'u4', username: 'newuser', name: 'New User', status: 1 }) });
     } else {
-      r.continue();
+      r.fallback();
     }
   });
 
@@ -57,7 +68,7 @@ async function mockAll(page: import('@playwright/test').Page) {
     } else if (method === 'DELETE') {
       r.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
     } else {
-      r.continue();
+      r.fallback();
     }
   });
 }
@@ -66,8 +77,8 @@ async function mockAll(page: import('@playwright/test').Page) {
 async function goToUsers(page: import('@playwright/test').Page) {
   await mockAll(page);
   await page.goto('/login');
-  await page.fill('input[placeholder*="用户名"]', 'admin');
-  await page.fill('input[placeholder*="密码"]', 'Admin@123');
+  await page.getByRole('textbox', { name: '用户名', exact: true }).fill('admin');
+  await page.getByRole('textbox', { name: '密码', exact: true }).fill('Admin@123');
   await page.click('button[type="submit"]');
   await page.waitForURL(/dashboard/, { timeout: 10_000 });
   await page.goto('/users');
@@ -82,30 +93,30 @@ test.describe('User management page', () => {
 
     // ProTable renders rows
     await expect(page.locator('table')).toBeVisible({ timeout: 8_000 });
-    await expect(page.locator('text=admin')).toBeVisible();
-    await expect(page.locator('text=alice')).toBeVisible();
-    await expect(page.locator('text=bob')).toBeVisible();
+    for (const username of ['admin', 'alice', 'bob']) {
+      await expect(page.getByRole('cell', { name: username, exact: true })).toBeVisible();
+    }
   });
 
-  test('opens create dialog when "新增" button is clicked', async ({ page }) => {
+  test('opens create dialog when "新建用户" button is clicked', async ({ page }) => {
     await goToUsers(page);
 
-    const addBtn = page.locator('button', { hasText: '新增' });
+    const addBtn = page.getByRole('button', { name: '新建用户' });
     await expect(addBtn).toBeVisible({ timeout: 5_000 });
     await addBtn.click();
 
     // A modal/drawer should appear with a form
-    await expect(page.locator('[role="dialog"], .ant-modal')).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByRole('dialog')).toBeVisible({ timeout: 5_000 });
   });
 
   test('shows delete confirmation dialog', async ({ page }) => {
     await goToUsers(page);
 
     // Click the first delete button in the table
-    const deleteBtn = page.locator('button', { hasText: '删除' }).first();
+    const deleteBtn = page.getByRole('button', { name: '删除', exact: true }).first();
     await deleteBtn.click();
 
-    // Ant Design Popconfirm or Modal.confirm
-    await expect(page.locator('text=确定, text=确认')).toBeVisible({ timeout: 5_000 });
+    // Confirmation dialog before the record is deleted
+    await expect(page.getByText('确定删除这条记录？')).toBeVisible({ timeout: 5_000 });
   });
 });

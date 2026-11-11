@@ -39,15 +39,15 @@ export {
 export type { Order, OrderStatus, CreateOrderParams, PendingRefund } from './order.service';
 export { DatabaseOrderPersistence, ORDER_PERSISTENCE } from './order-persistence';
 export type { OrderPersistence } from './order-persistence';
-export { HostedCheckoutService } from './hosted-checkout/service';
+export { HostedCheckoutService, staticHostedCheckoutProviders } from './hosted-checkout/service';
 export { SubscriptionCycleService } from './subscription-lifecycle/service';
 export type { SubscriptionEntitlementBinding, SubscriptionCycleReceipt, SubscriptionCycleTransaction,
   SubscriptionCyclePersistence, SubscriptionCycleInput } from './subscription-lifecycle/types';
-export { HostedCheckoutError } from './hosted-checkout/types';
+export { HostedCheckoutError, HOSTED_CHECKOUT_MAX_WEBHOOK_CANDIDATES } from './hosted-checkout/types';
 export type { HostedCheckoutMode, HostedCheckoutState, HostedCheckoutPaymentKind, HostedCheckoutJsonValue, HostedCheckoutOffer, HostedCheckoutOrder,
   HostedCheckoutObservation, HostedCheckoutEvent, HostedCheckoutAdapter, HostedCheckoutTransaction,
   HostedCheckoutPersistence, HostedCheckoutSelection, HostedCheckoutOptions, HostedCheckoutPromotion,
-  HostedCheckoutPromotionQuote } from './hosted-checkout/types';
+  HostedCheckoutPromotionQuote, HostedCheckoutProviderResolver, HostedCheckoutCurrentProvider } from './hosted-checkout/types';
 export { checkoutPayable, snapshotPromotion } from './hosted-checkout/validation';
 export { createStripeHostedCheckoutAdapter, stripePromotionCouponId, STRIPE_PROMOTION_METADATA_KEY } from './hosted-checkout/stripe';
 export type { StripeHostedCheckoutOptions } from './hosted-checkout/stripe';
@@ -209,3 +209,5 @@ export type {
   SubscriptionChange,
   SubscriptionAssignmentOptions,
 } from './plans/subscription-assignment';
+
+export * from './connection-descriptor';
