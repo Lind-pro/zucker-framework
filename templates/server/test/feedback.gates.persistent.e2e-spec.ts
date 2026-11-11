@@ -17,12 +17,12 @@ import { HttpExceptionFilter } from '@zucker-framework/common';
 import request from 'supertest';
 import { ApplicationDatabase } from '../src/database';
 import { AccountModule } from '../src/accounts/account.module';
-import { AccountGuard } from '../src/accounts/account.guard';
+import { AccountGuard } from '@zucker-framework/back-office/accounts';
 import { ACCOUNT_MAILER, type AccountMailer } from '../src/accounts/account.service';
 import { RuntimeSettingsModule } from '../src/runtime-settings/runtime-settings.module';
 import { RUNTIME_SETTINGS_BASE_ENV } from '../src/runtime-settings/runtime-settings.tokens';
 import { PolicyModule } from '../src/policy/policy.module';
-import { PolicyService } from '../src/policy/policy.service';
+import { PolicyService } from '@zucker-framework/back-office/settings';
 import { FEEDBACK_POLICIES, FEEDBACK_POLICY, FeedbackModule, FeedbackService, feedbackDeletionContributor, type FeedbackNotifier } from '../src/feedback';
 import { createIsolatedSchema, type IsolatedSchema } from './helpers/phase3-schema';
 

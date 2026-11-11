@@ -17,7 +17,7 @@ import type { FileManager } from '@zucker-framework/storage';
 import request from 'supertest';
 import { ApplicationDatabase } from '../src/database';
 import { AccountModule } from '../src/accounts/account.module';
-import { AccountGuard } from '../src/accounts/account.guard';
+import { AccountGuard } from '@zucker-framework/back-office/accounts';
 import { ACCOUNT_MAILER, type AccountMailer } from '../src/accounts/account.service';
 import { OAuthModule } from '../src/oauth/oauth.module';
 import { OAUTH_CONNECTION, type OAuthConnection } from '../src/oauth/oauth.config';
@@ -25,7 +25,7 @@ import { FilesModule, HotFileManager, PrivateStorageModule, FILES_STORAGE, type 
 import { ConnectionsService } from '../src/management/connections.service';
 import { RuntimeSettingsModule } from '../src/runtime-settings/runtime-settings.module';
 import { ConnectionSettingsService, CONNECTION_SETTINGS_SCOPE } from '../src/runtime-settings/connection-settings.service';
-import { HotProvider, liveArrayView, liveObjectView } from '../src/runtime-settings/hot-apply';
+import { HotProvider, liveArrayView, liveObjectView } from '@zucker-framework/back-office/settings';
 import { RUNTIME_SETTINGS_BASE_ENV } from '../src/runtime-settings/runtime-settings.tokens';
 
 /**

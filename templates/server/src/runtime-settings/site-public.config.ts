@@ -53,3 +53,8 @@ export function appliedPublicSiteConfiguration(environment: Readonly<NodeJS.Proc
     } : { enabled: false },
   };
 }
+
+/** Settings host projection behind `GET /site/public/integrations` and `ConnectionSettingsService.publicIntegrations()`. */
+export function publicIntegrationsProjection(environment: Readonly<NodeJS.ProcessEnv>, revisions: ReadonlyMap<string, number>) {
+  return { ...appliedPublicSiteConfiguration(environment), revisions: { analytics: revisions.get('web-analytics') ?? 0, connections: revisions.get('web-connections') ?? 0 } };
+}

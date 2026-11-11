@@ -112,7 +112,8 @@ export class PersistentSessionService<T extends PersistentSession = PersistentSe
         revokedAt: null,
         expiresAt: { gt: new Date() },
       },
-      data: { refreshJti: nextRefreshJti },
+      // The rotation time bounds the refresh-token reuse grace window.
+      data: { refreshJti: nextRefreshJti, lastActiveAt: new Date() },
     });
     return result.count === 1;
   }

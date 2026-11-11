@@ -14,7 +14,7 @@ import { MailModule } from '../src/mail/mail.module';
 import { createPlanQuotaStore, resourceChargeLookup } from '../src/subscriptions/entitlement-quota';
 import { PLAN_PAYMENT_UNAPPLIED_OUTBOX_KIND, PLAN_TERM_CHANGED_OUTBOX_KIND, planFulfillmentHooks } from '../src/subscriptions/payment-writeback';
 import { planSeedsFromBillingCatalog, seedPlans } from '../src/subscriptions/plan-seeds';
-import { BillingExtensions } from '../src/billing/billing-extensions';
+import { BillingExtensions } from '@zucker-framework/back-office/billing';
 import { BillingCatalog, readBillingCatalog } from '../src/billing/catalog';
 import type { BillingSubscription } from '../src/billing/subscription-persistence';
 

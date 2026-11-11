@@ -19,7 +19,7 @@ import { FILE_MANAGER, LocalFileStorage, ZuckerStorageModule } from '@zucker-fra
 import request from 'supertest';
 import { ApplicationDatabase, ApplicationTransaction } from '../src/database';
 import { AccountModule } from '../src/accounts/account.module';
-import { AccountGuard } from '../src/accounts/account.guard';
+import { AccountGuard } from '@zucker-framework/back-office/accounts';
 import { ACCOUNT_MAILER, AccountService, type AccountMailer } from '../src/accounts/account.service';
 import { AccountAvatarModule } from '../src/accounts/avatar/avatar.module';
 import { FilesModule } from '../src/files/files.module';

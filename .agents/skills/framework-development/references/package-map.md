@@ -17,6 +17,7 @@ Use this map for routing; confirm actual exports and tests before using an API. 
 | Events, storage, notifications | @zucker-framework/event, @zucker-framework/storage, @zucker-framework/notification |
 | Logs, required audit interfaces, metrics and tracing | @zucker-framework/logging, @zucker-framework/monitoring, @zucker-framework/tracing |
 | Frontend HTTP/SSE, keepalive cookie refresh, storage, forms, auth and cookie sessions | @zucker-framework/fe-http-client, @zucker-framework/fe-storage, @zucker-framework/fe-form, @zucker-framework/fe-auth |
+| Back-office server hosts: accounts/sessions/OAuth, plans/subscriptions/quota, billing/refunds, management projections/logs, mail, connection settings/policies (`/accounts`, `/subscriptions`, `/billing`, `/management`, `/mail`, `/settings` subpaths) | @zucker-framework/back-office |
 | Back-office shell and management pages (Radix + Tailwind) | @zucker-framework/fe-admin |
 | Shared client types (incl. `fe-types/back-office` wire contract and `PortErrorReason`) and media safety | @zucker-framework/fe-types, @zucker-framework/media |
 | Circuit, reaction and scientific SVG renderers | python/zucker-framework-render; TypeScript render clients in @zucker-framework/media |

@@ -1,6 +1,13 @@
 # 通用后台（Back Office）设计
 
-状态：已确认方向，实施中。日期：2026-11-09。
+状态：已确认方向，实施中。日期：2026-11-09；2026-11-11 更新：服务端宿主已提取为 `@zucker-framework/back-office`（待 1.0.21 发布）。
+
+| 阶段 | 状态（2026-11-11） |
+| --- | --- |
+| credit / payment / admin / fe-types 契约（第 7 节 1–3） | 已发布（≤ 1.0.20） |
+| `fe-admin` 页面（第 7 节 4） | 已发布；1.0.21 增加套餐预设、账户类型/重置密码、登录页找回密码链接、账户搜索选择器、环境固定字段只读 |
+| 服务端宿主 `@zucker-framework/back-office`（`/accounts` `/subscriptions` `/billing` `/management` `/mail` `/settings`） | 已实现，模板改为组合这些宿主（模板 e2e 为回归测试）；待 1.0.21 发布 |
+| 既有产品接入 | 见 [既有产品接入](existing-product-adoption.md)；Copyright 按其迁移计划分阶段接入，CNIPA 未开始 |
 
 目标：新产品通过 `zucker create`（server + admin 模板）直接获得一套可用的后台——登录与会话、用户/角色/权限、套餐与权益、订阅、额度、支付与退款、邮件、日志与 AI 配置；CNIPA 与 Zucker Copyright 迁移到同一套实现并删除各自副本。产品只保留核心业务、自己的套餐内容/价格/功能清单、文案与业务页面。
 
@@ -149,7 +156,7 @@
 5. 启动菜单路径（供 `fe-admin` 对齐）：`/plans`、`/user-subscriptions`、`/quota/usage`、`/quota/reservations`、`/mail/templates`、`/mail/logs`；原支付订阅菜单更名为“支付订阅”。创建管理员时同时写入 8 节的权限行（`plans:*`、`subscriptions:*`、`quota:*`、`mail:*`）与各启动菜单的权限行，便于授权给非超级管理员角色；已安装的库由迁移末尾的幂等数据步骤补齐（见第 5 节）。`fe-admin` 只把路径匹配最长的菜单项标为当前项（`aria-current`），面包屑沿同一项展开。
 6. 会话恢复与限流：Cookie 刷新的机制在 `@zucker-framework/fe-http-client`（`createKeepaliveCookieRefresh` + `createRefreshExchange`：`fetch` keepalive、按页面标记的在途交换、对其他页面中断的交换在 10 秒内退避重试 401、单次超时）与 `@zucker-framework/fe-auth`（`createCookieSession`：每页一次恢复、身份变化保护、跨标签页 `storage` 同步、`navigator.locks` 串行）；`fe-admin` 只做组合。服务端轮换与重放拒绝不变。模板把 `/authorize/refresh` 与 `/authorize/me` 移出凭据预算（`session-refresh` 按当前有效刷新令牌的会话、`session-refresh-network` 按 IP、`session-read` 按用户），登录/注册/验证/重置密码仍为每 IP 每分钟 20 次（`src/rate-limits.ts`）；反向代理后必须设置 `TRUST_PROXY`（跳数或代理地址，拒绝 `true`）。服务端显示文本附带稳定的 `labelKey`（连接名称、分类、字段、说明、权益目录），`fe-admin` 先按键、再按原文翻译，模板提供 en-US 表。
 7. 热生效：SMTP 由共享的 `SmtpTransport`（连接配置 `account-email`，账户邮件与 `MailService` 共用）按需解析；`SUBSCRIPTION_OPTIONS` 为解析函数；`BILLING_OPTIONS` 可为值或解析函数（静态商品与订单的 `configRevision` 随之变化；渠道 SDK 实例的热替换属于 Phase 1.1）。订单记录 `configRevision`（`payment-*` 连接配置的已应用修订）。
-8. 退款：套餐订单不发放积分，模板的积分回收式退款流程拒绝其退款（请在渠道后台退款并在订阅管理中调整期限）；退款不会自动收回套餐期限，支付台账 `user_subscription_payments` 是将来自动收回的挂接点。
+8. 退款（2026-11-11 更新，`@zucker-framework/back-office/billing`）：套餐订单不发放积分，按实付金额退款（`/billing/refunds` 同一流程，`totalCredits=0`，不冻结也不回收积分）。某笔付款累计退款达到实付全额时，在退款结算事务内对该付款只执行一次 `BillingFulfillmentHooks.paymentRefunded`（引用 `order:<orderId>` / `cycle:<cycleId>`，与套餐回写的 `user_subscription_payments.reference` 一致），套餐宿主据此调用 `SubscriptionAssignmentService.revokePayment` 收回由该付款确定的期限；部分退款保留期限。订阅宿主（`@zucker-framework/back-office/subscriptions` 的 `createPlanFulfillmentHooks`）已登记该钩子，期限变化写 `billing.plan-term-changed`（`aggregateId` 为 `refund:<reference>`）；没有登记处理该钩子的套餐宿主时写出 `billing.plan-refund-unapplied` outbox 事件（期限未自动收回，需在订阅管理中调整），每笔全额退款另写 `billing.payment-refunded`。产品可通过 `BillingRefundHooks.admit/settled` 在派发前加入客户申请/审批，并跟随终态。
 
 ### 8.8 错误协议
 

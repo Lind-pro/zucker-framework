@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ApplicationMailTransport, MAIL_TRANSPORT_KINDS, mailTransportSettingsFromConnection, type MailTransportSettings } from '../src/mail/mail-transport';
 import { SmtpTransport, smtpSettingsFromConnection } from '../src/mail/smtp-transport';
 import { ACCOUNT_EMAIL_CONNECTION_PROFILE } from '../src/mail/mail.profiles';
-import { ACCOUNT_MAIL_TEMPLATES, defaultMailSubject, mailLocale, MAIL_TEMPLATE_KEYS } from '../src/mail/mail-templates';
+import { ACCOUNT_MAIL_TEMPLATES, defaultMailSubject, mailLocale, MAIL_TEMPLATE_KEYS } from '@zucker-framework/back-office/mail';
 import { connectionSdkAvailable } from '../src/runtime-settings/connection-sdk';
 
 /** Pure checks of transport selection, the account-email profile validation and the template catalogue. No network. */

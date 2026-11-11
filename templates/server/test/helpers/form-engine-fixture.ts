@@ -14,7 +14,7 @@ import { HttpExceptionFilter } from '@zucker-framework/common';
 import request from 'supertest';
 import { ApplicationDatabase } from '../../src/database';
 import { AccountModule } from '../../src/accounts/account.module';
-import { AccountGuard } from '../../src/accounts/account.guard';
+import { AccountGuard } from '@zucker-framework/back-office/accounts';
 import { ACCOUNT_MAILER } from '../../src/accounts/account.service';
 import { createAdministrator } from '../../src/accounts/create-administrator';
 export async function formEngineFixture(databaseUrl: string, origin = 'http://localhost:4330') {

@@ -6,7 +6,7 @@ import { PostgresTaskRepository, type DurableTaskAttemptContext } from '@zucker-
 import { createCreditLedger } from '../billing/ledger';
 import { ApplicationDatabase, ApplicationTransaction } from '../database';
 import { JobsService } from '../jobs/jobs.service';
-import { PolicyService } from '../policy/policy.service';
+import { PolicyService } from '@zucker-framework/back-office/settings';
 import { MAX_WELCOME_CREDITS, readAccountPolicy, type AccountPolicyValues } from './account.policy';
 
 export const WELCOME_CREDITS_JOB = 'credits.welcome';

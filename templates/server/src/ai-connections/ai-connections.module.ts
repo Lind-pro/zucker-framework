@@ -6,7 +6,7 @@ import {
   type NativeModelFactory,
 } from '@zucker-framework/ai';
 import { createNativeAIModel } from '@zucker-framework/ai/native';
-import { liveArrayView, liveObjectView } from '../runtime-settings/hot-apply';
+import { liveArrayView, liveObjectView } from '@zucker-framework/back-office/settings';
 import { AI_CONNECTION_RUNTIME, AIConnectionRuntimeModule, bindAIConfigCacheToRuntime, type AIConnectionRuntime } from './ai-connection-runtime';
 import { AI_MEDIA_PROVIDERS } from './ai-media-providers';
 import { aiTestFakeChatFactory, aiTestFakesEnabled } from './ai-test-fakes';

@@ -16,13 +16,13 @@ import { HttpExceptionFilter } from '@zucker-framework/common';
 import request from 'supertest';
 import { ApplicationDatabase } from '../src/database';
 import { AccountModule } from '../src/accounts/account.module';
-import { AccountGuard } from '../src/accounts/account.guard';
+import { AccountGuard } from '@zucker-framework/back-office/accounts';
 import { ACCOUNT_MAILER, type AccountMailer } from '../src/accounts/account.service';
 import { RuntimeSettingsModule } from '../src/runtime-settings/runtime-settings.module';
 import { RUNTIME_SETTINGS_BASE_ENV } from '../src/runtime-settings/runtime-settings.tokens';
 import { PolicyModule } from '../src/policy/policy.module';
-import { PolicyService, POLICY_SCOPE } from '../src/policy/policy.service';
-import { definePolicy } from '../src/policy/policy.registry';
+import { PolicyService, POLICY_SCOPE } from '@zucker-framework/back-office/settings';
+import { definePolicy } from '@zucker-framework/back-office/settings';
 
 /**
  * Smoke contract of the policy store (WP 0.1). The full precedence/concurrency/audit-rollback suite

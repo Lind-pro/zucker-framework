@@ -69,6 +69,21 @@ const connectionLabels: Readonly<Record<string, string>> = {
   // Sign-in
   'connections.field.GOOGLE_OAUTH_ENABLED': 'OAuth sign-in',
   'connections.field.GITHUB_OAUTH_ENABLED': 'Enabled',
+  // Fields localized in the template profiles (labelKey from the package descriptors)
+  'connections.field.FILES_S3_ACCESS_KEY_ID': 'Access key ID',
+  'connections.field.FILES_S3_BUCKET': 'Bucket',
+  'connections.field.FILES_S3_REGION': 'Region',
+  'connections.field.FILES_S3_SECRET_ACCESS_KEY': 'Secret access key',
+  'connections.field.GITHUB_CLIENT_ID': 'Client ID',
+  'connections.field.GITHUB_CLIENT_SECRET': 'Client secret',
+  'connections.field.GOOGLE_CLIENT_ID': 'Client ID',
+  'connections.field.GOOGLE_CLIENT_SECRET': 'Client secret',
+  'connections.field.GOOGLE_ONE_TAP_ENABLED': 'One Tap',
+  'connections.field.MAIL_PROVIDER': 'Provider',
+  'connections.field.MAIL_RESEND_API_KEY': 'Resend API key',
+  'connections.field.PAYPAL_CLIENT_ID': 'Client ID',
+  'connections.field.PAYPAL_CLIENT_SECRET': 'Client secret',
+  'connections.field.PAYPAL_WEBHOOK_ID': 'Webhook ID',
   // Email
   'connections.field.SMTP_HOST': 'SMTP host',
   'connections.field.SMTP_PORT': 'Port',
@@ -122,10 +137,14 @@ const textLabels: Readonly<Record<string, string>> = {
   'AI ProviderManager 注册表': 'AI ProviderManager registry',
   '仅校验本地配置与依赖；未连接外部服务。环境配置修改后需重启服务。':
     'Only local configuration and dependencies are checked. No external service is contacted. Restart after changing environment configuration.',
+  '仅校验本地配置与依赖；未连接外部服务。保存后的设置从下一次请求起生效（其他服务实例在 30 秒内生效），进行中的发送、上传或对话仍使用原设置完成；进程环境变量修改后仍需重启服务。':
+    'Only local configuration and dependencies are checked. No external service is contacted. Saved settings apply from the next request (within 30 seconds on other server instances); sends, uploads or conversations in progress finish on the previous settings. Changes to process environment variables still need a restart.',
   '此项是独立的旧 ProviderManager 注册表，展示本进程已注册提供者和配置源；不代表 Native AI 连接或业务场景已配置。未读取模型密钥或调用模型。':
     'This is the separate legacy ProviderManager registry for providers and configuration sources. It does not represent Native AI connections or business scenarios. No model keys are read and no model is called.',
   '仅检查启用字段与本地原生 SDK 装配；尚未远端验证或调用模型，也不表示已配置业务场景。':
     'Only enabled fields and local native SDK assembly are checked. No remote verification or model call is made, and business scenarios are not implied.',
+  '展示 Server 当前保存并通过公开配置接口提供给 Web 的设置；未确认浏览器脚本加载或第三方服务连通。保存后下一次请求生效。':
+    'Shows settings currently saved by Server and served to Web through public configuration. Browser script loading and third-party connectivity are not verified. Saved settings apply from the next request.',
   '展示 Server 已应用并通过公开配置接口提供给 Web 的设置；未确认浏览器脚本加载或第三方服务连通。保存后需重启 Server。':
     'Shows settings applied by Server and served to Web through public configuration. Browser script loading and third-party connectivity are not verified. Restart Server after saving.',
 };

@@ -18,12 +18,8 @@ import {
   DeleteAction,
   Resource,
 } from '@zucker-framework/auth';
-import {
-  AccessLogger,
-  AccessLogService,
-  OperationLogService,
-  type LogQuery,
-} from '@zucker-framework/logging';
+import { AccessLogger, AccessLogService, OperationLogService } from '@zucker-framework/logging';
+import { listLogRecords } from './log-records';
 
 export interface LogManagementOptions {
   path: string;
@@ -32,17 +28,8 @@ export interface LogManagementOptions {
   guards?: Type<CanActivate>[];
   auditModule: string;
 }
-interface HttpLogQuery {
-  module?: string;
-  action?: string;
-  userId?: string;
-  ip?: string;
-  status?: LogQuery['status'];
-  startDate?: string;
-  endDate?: string;
-  page?: string;
-  pageSize?: string;
-}
+/** Untrusted query string; validated by `parseLogRecordsQuery`. */
+type HttpLogQuery = Record<string, unknown>;
 
 function positiveInteger(value: string | number | undefined, fallback: number) {
   if (value === undefined) return fallback;
@@ -50,12 +37,6 @@ function positiveInteger(value: string | number | undefined, fallback: number) {
   if (!Number.isSafeInteger(number) || number < 1)
     throw new BadRequestException('Expected a positive integer');
   return number;
-}
-function date(value?: string) {
-  if (!value) return undefined;
-  const result = new Date(value);
-  if (!Number.isFinite(result.getTime())) throw new BadRequestException('Invalid date');
-  return result;
 }
 
 /** Persisted audit management; only route names, permission resources and audit labels come from the host. */
@@ -67,21 +48,11 @@ function createController(
   class LogController {
     constructor(@Inject(Service) readonly service: AccessLogService | OperationLogService) {}
 
+    /** List in the shared log record contract (see `log-records.ts`), as used by fe-admin. */
     @Get()
     @QueryAction()
     findAll(@Query() query: HttpLogQuery) {
-      if (query.status && !['SUCCESS', 'FAILED', 'PENDING'].includes(query.status))
-        throw new BadRequestException('Invalid operation status');
-      return this.service.findAll({
-        module: query.module,
-        action: query.action,
-        userId: query.userId,
-        ...(kind === 'access' ? { ip: query.ip } : { status: query.status }),
-        startDate: date(query.startDate),
-        endDate: date(query.endDate),
-        page: positiveInteger(query.page, 1),
-        pageSize: positiveInteger(query.pageSize, 20),
-      });
+      return listLogRecords(kind, this.service, query);
     }
 
     @Get('statistics/:module')

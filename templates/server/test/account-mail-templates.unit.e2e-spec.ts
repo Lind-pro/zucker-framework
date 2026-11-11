@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MailTemplateCatalog } from '@zucker-framework/notification';
 import type { DatabaseAdapter } from '@zucker-framework/core';
-import { ACCOUNT_MAIL_TEMPLATES, MAIL_TEMPLATE_KEYS, defaultMailSubject } from '../src/mail/mail-templates';
+import { ACCOUNT_MAIL_TEMPLATES, MAIL_TEMPLATE_KEYS, defaultMailSubject } from '@zucker-framework/back-office/mail';
 
 /**
  * Rendering of the account-security mails (magic link, deletion scheduled/completed, staff 2FA reset)

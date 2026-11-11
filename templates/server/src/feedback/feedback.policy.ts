@@ -1,4 +1,4 @@
-import { definePolicy, type PolicyDefinition } from '../policy/policy.registry';
+import { definePolicy, type PolicyDefinition } from '@zucker-framework/back-office/settings';
 
 export interface FeedbackPolicyValues {
   [key: string]: boolean | number;

@@ -15,7 +15,7 @@ import { HttpExceptionFilter } from '@zucker-framework/common';
 import request from 'supertest';
 import { ApplicationDatabase } from '../src/database';
 import { AccountModule } from '../src/accounts/account.module';
-import { AccountGuard } from '../src/accounts/account.guard';
+import { AccountGuard } from '@zucker-framework/back-office/accounts';
 import { ACCOUNT_MAILER, AccountService, type AccountMailer } from '../src/accounts/account.service';
 import { ACCOUNT_POLICIES } from '../src/accounts/account.policy';
 import { ACCOUNT_SECURITY_CLOCK } from '../src/accounts/security/account-security.clock';

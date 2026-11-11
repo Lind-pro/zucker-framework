@@ -35,6 +35,15 @@ Uploads use service-generated, dedicated `private-assets/<id>` keys, never calle
 
 Verification uses an explicitly atomic test repository double, failure/concurrency injection, and actual temporary local objects through `BufferedFileManagerStore`; temporary files are removed. Those checks establish package state/orchestration behavior, not a consumer's PostgreSQL constraints, durable recovery worker, private bucket policy or real provider behavior. Consumer integration must verify those separate contracts before deployment.
 
+## WebDAV connection descriptor (unreleased, 1.0.21)
+
+| Export | Contract |
+| --- | --- |
+| `WEBDAV_STORAGE_CONNECTION_DESCRIPTOR` | Connection-settings profile `webdav-storage`: `WEBDAV_BASE_URL` (url), `WEBDAV_USERNAME`, `WEBDAV_PASSWORD` (secret), `WEBDAV_BASE_PATH` (default `/`). Localize it with `localizeConnectionDescriptor` and register it as a profile of `@zucker-framework/back-office/settings`. |
+| `webDavOptionsFromConnection(env, { allowAnonymous? })` | Local check and parser of those values into `{ url, username?, password?, basePath }` (structurally `WebDavStorageOptions`): http(s) endpoint without embedded credentials, query or fragment; username and password set together (required unless `allowAnonymous`); absolute base path without dot segments. Makes no request; errors name the key, never the value. Use it as the profile's `validate`. |
+
+Changing the endpoint or base path of a storage that already holds objects moves where reads go; pair the profile with the settings host's data-location save guard (`createDataLocationGuard`) so such a change needs explicit acknowledgement.
+
 ## WebDAV streaming and directory APIs (unreleased)
 
 `WebDavStorage.uploadStream(readable, key, { contentType?, signal? })` streams through a bounded Node Transform to the WebDAV SDK without collecting the file. It counts bytes, awaits both the source pipeline and remote response, and aborts/destroys the streams on source failure, remote failure, setup failure or cancellation. Failed remote writes may leave a partial remote object: the provider does not promise atomic overwrite or delete a previous object on failure. Consumers retain recovery/commit policy.

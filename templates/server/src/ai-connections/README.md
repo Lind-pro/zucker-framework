@@ -57,7 +57,7 @@ No native connection fields are included in the public website integrations endp
 config remains separate. Saving performs local validation (SDK construction only).
 
 The `ai-*` profiles are hot (WP 4.1b). `AI_CONNECTION_RUNTIME` is a `HotProvider`
-(`runtime-settings/hot-apply.ts`) over all six profiles; it rebuilds one snapshot (environment and
+(`HotProvider` of `@zucker-framework/back-office/settings`) over all six profiles; it rebuilds one snapshot (environment and
 media providers) on the first read after a save, in the saving process immediately and on other
 replicas within the 30 s profile cache. The terminal config source, `AI_CONNECTION_ENVIRONMENT` and
 `AI_MEDIA_PROVIDERS` all read it, and `AIConfigService`'s per-scenario cache is cleared whenever a

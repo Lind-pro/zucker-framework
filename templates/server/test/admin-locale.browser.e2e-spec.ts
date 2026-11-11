@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { expect as browserExpect, type Browser, type Page } from '@playwright/test';
 import { connectionBrowserFixture } from './helpers/connection-browser-fixture';
 import { artifact, isolatedContext, launchBrowser, newPage, noHorizontalOverflow, record, startAdmin, type AdminServer } from './helpers/fe-admin-browser';
-import { loginAs, warmUp, type AdminLocale } from './helpers/admin-locale-browser';
+import { loginAs, presetLocale, warmUp, type AdminLocale } from './helpers/admin-locale-browser';
 
 const run = process.env.TEST_DATABASE_URL && process.env.RUN_ADMIN_LOCALE_BROWSER === '1' ? describe : describe.skip;
 const port = 4327;
@@ -34,7 +34,10 @@ run('Admin language switching through real authentication and generated descript
     if (!address || typeof address === 'string') throw new Error('API not listening');
     admin = await startAdmin(port, address.port);
     browser = await launchBrowser();
-    page = await newPage(await isolatedContext(browser, admin.origin));
+    // The template admin defaults to English (VITE_DEFAULT_LOCALE); this spec starts in Chinese.
+    const context = await isolatedContext(browser, admin.origin);
+    await presetLocale(context, 'zh-CN');
+    page = await newPage(context);
     page.on('pageerror', (error) => pageErrors.push(error.message));
     await warmUp(page);
     await loginAs(page, 'connectionadmin', f.password, 'zh-CN');

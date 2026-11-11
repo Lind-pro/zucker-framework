@@ -14,10 +14,10 @@ import { HttpExceptionFilter } from '@zucker-framework/common';
 import request from 'supertest';
 import { ApplicationDatabase } from '../src/database';
 import { AccountModule } from '../src/accounts/account.module';
-import { AccountGuard } from '../src/accounts/account.guard';
+import { AccountGuard } from '@zucker-framework/back-office/accounts';
 import { AccountService } from '../src/accounts/account.service';
 import { RUNTIME_ENVIRONMENT } from '../src/runtime-settings/runtime-settings.tokens';
-import { TransactionalMail } from '../src/mail/transactional-mail';
+import { TransactionalMail } from '@zucker-framework/back-office/mail';
 import { BillingReceiptMail } from '../src/mail/billing-receipt.runtime';
 
 /**

@@ -14,6 +14,7 @@ import {
   type FormValues,
 } from '../components/form';
 import { KeyValueList, PageContainer } from '../components/layout';
+import { UserPicker } from '../components/user-picker';
 import { DataTable, ResourceTable, type ResourceTableHandle } from '../components/data-table';
 import { useAdmin, useAdminApi, usePermissionCheck, useResource } from '../app/context';
 import { useAdminI18n } from '../i18n/context';
@@ -133,6 +134,8 @@ function AssignDialog({
   const { t } = useAdminI18n();
   const can = usePermissionCheck();
   const canListPlans = can(config.permissions.plans.query);
+  // A new assignment can search the account instead of pasting its id (needs users:query).
+  const canSearchUsers = !row && can(config.permissions.users.query);
   const plans = useResource(
     async (signal) => {
       const value = await api.get<unknown>(config.endpoints.plans, undefined, { signal });
@@ -206,7 +209,9 @@ function AssignDialog({
       }}
     >
       {(form) => (
-        <FormFields
+        <>
+          {canSearchUsers && <UserPicker onSelect={(user) => form.setValue('userId', user.id)} />}
+          <FormFields
           columns={2}
           form={form as unknown as FormState<FormValues>}
           fields={[
@@ -220,7 +225,8 @@ function AssignDialog({
               required: needsExplicitEnd(form.values, initial, Boolean(row)),
             },
           ]}
-        />
+          />
+        </>
       )}
     </FormDialog>
   );

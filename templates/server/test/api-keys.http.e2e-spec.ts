@@ -12,7 +12,7 @@ import { ZuckerRateLimiterModule } from '@zucker-framework/rate-limiter';
 import { HttpExceptionFilter } from '@zucker-framework/common';
 import request from 'supertest';
 import { AccountModule } from '../src/accounts/account.module';
-import { AccountGuard } from '../src/accounts/account.guard';
+import { AccountGuard } from '@zucker-framework/back-office/accounts';
 import { ACCOUNT_MAILER, type AccountMailer } from '../src/accounts/account.service';
 import { AccountApiKeysModule } from '../src/api-keys/api-keys.module';
 import { ApplicationDatabase } from '../src/database';

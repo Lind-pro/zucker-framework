@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import type { AIConfigService } from '@zucker-framework/ai';
 import { ConnectionSettingsService } from '../runtime-settings/connection-settings.service';
-import { HotProvider } from '../runtime-settings/hot-apply';
+import { HotProvider } from '@zucker-framework/back-office/settings';
 import { RUNTIME_ENVIRONMENT } from '../runtime-settings/runtime-settings.tokens';
 import { AI_CONNECTIONS, type AIConnectionEnvironment } from './ai-connections.config';
 import { aiMediaProvidersFromEnvironment, type AIMediaProviderEntry } from './ai-media-providers';

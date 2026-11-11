@@ -7,7 +7,7 @@ import type { HostedCheckoutAdapter, HostedCheckoutObservation, HostedCheckoutOr
 import { ApplicationDatabase } from '../src/database';
 import { BillingService, type BillingOptions } from '../src/billing/billing.service';
 import { PromotionsService } from '../src/promotions/promotions.service';
-import type { PolicyService } from '../src/policy/policy.service';
+import type { PolicyService } from '@zucker-framework/back-office/settings';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const run = databaseUrl ? describe : describe.skip;

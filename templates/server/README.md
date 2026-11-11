@@ -2,6 +2,8 @@
 
 通用 SaaS Server 消费者示例。账户机制复用 Framework 的 UserService、持久会话、刷新轮换、单次票据、权限和邮件 Provider；本模板持有用户 schema、公开注册政策、消息正文和环境配置。
 
+后台服务端由 `@zucker-framework/back-office` 的宿主组合而成（`/accounts`、`/subscriptions`、`/billing`、`/management`、`/mail`、`/settings`）：`src/accounts/account.config.ts`、`src/subscriptions/storage.ts`、`src/billing/billing.config.ts`、`src/management/management.config.ts`、`src/mail/mail.module.ts`、`src/runtime-settings/`、`src/policy/` 只保留本模板的配置、产品策略与数据（套餐目录、权益目录、邮件文案、连接配置项、菜单与权限）。宿主的选项与契约见该包 README；既有产品接入见 Framework 文档 `docs/existing-product-adoption.md`。
+
 ## 初始化与运行
 
 当前本地 CLI 新增 `--template server-full`，始终从随包资产生成本完整模板；仓外旧的 `--template server` 仍保留最小内存骨架。两种模式明确区分，推荐新持久应用使用 server-full。本轮账户接入及相关公共包修改尚未发布，源码 manifest 版本不能代替实际制品验证。
@@ -248,7 +250,7 @@ published artifact, a live-provider certification or a production deployment.
 - 功能目录在 `src/subscriptions/entitlement-catalog.ts`，是**产品自己的示例**：替换为本应用的功能、计数器与文案。套餐内容保存在 `subscription_plans`，价格保存在 `subscription_plan_prices`（月/年/一次性/终身 × 币种，金额为精确十进制文本）与 `subscription_plan_price_refs`（各渠道商品引用，全局唯一），每次写入按目录校验；`PUT` 可带 `expectedRevision` 防止并发覆盖。
 - 套餐即商品：结账 `offerId` 为 `plan:<planId>:<interval>:<currency>` 时价格取自当时的套餐并冻结快照到订单；月/年走渠道订阅（需渠道能证明计费周期），一次性/终身为单次支付；套餐订单不发放积分。`BILLING_CATALOG_JSON` 仅作套餐种子：被套餐认领（同 slug）的订阅商品不再单独出售，未认领的订阅商品仍是纯积分订阅。
 - `SubscriptionsService.chargeResource(userId, feature, { type, id }, work, { tx? })` 对计量功能按资源、按计数器只计一次：首次成功确认、失败释放、同一资源后续使用免费；另一请求正在使用同一资源时返回 409 `in_progress`；过期未清扫的预留在下次计费时转为 EXPIRED。`-1` 不限额度仍记录用量。计数器周期使用 `ENTITLEMENT_TIME_ZONE`（默认 UTC，仅在周期边界修改），预留有效期 `ENTITLEMENT_RESERVATION_TTL_MS`（默认 900000，须长于计量工作本身）。
-- 支付回写：`SubscriptionsModule` 向 `BillingService` 注册套餐商品来源与履约钩子（`usePlanOffers`/`useFulfillmentHooks`，billing 不引用套餐代码）；在订单/周期履约事务内按订单冻结的 `planId` 写入 `user_subscription_payments` 与用户订阅，并写 `billing.plan-term-changed` outbox 事件。24 小时内的未结清套餐订单或仍在计费的套餐渠道订阅使后台修改期限返回 409，并给出阻塞的订单/订阅；撤销（`EXPIRED`）与取消只被渠道订阅阻止，撤销之后才付款的旧订单只记账（`revoked`）不复活期限。下单前拒绝付款后不会改善期限的购买（409，`result.details.refusal`），同一套餐的一次性期限叠加；渠道价格（Stripe Price、PayPal 订阅计划）与套餐价格不一致时下单返回 409。已付款但未改变期限的套餐支付写入 `billing.plan-payment-unapplied` outbox 事件，需在渠道后台退款。终身订阅不能取消，只能以 `EXPIRED` 撤销。套餐订单的退款需在渠道后台处理，退款不会自动收回套餐期限。迁移 `20261109000000_back_office` 末尾的幂等数据步骤为升级库补齐后台权限行与新启动菜单。
+- 支付回写：`SubscriptionsModule` 向 `BillingService` 注册套餐商品来源与履约钩子（`usePlanOffers`/`useFulfillmentHooks`，billing 不引用套餐代码）；在订单/周期履约事务内按订单冻结的 `planId` 写入 `user_subscription_payments` 与用户订阅，并写 `billing.plan-term-changed` outbox 事件。24 小时内的未结清套餐订单或仍在计费的套餐渠道订阅使后台修改期限返回 409，并给出阻塞的订单/订阅；撤销（`EXPIRED`）与取消只被渠道订阅阻止，撤销之后才付款的旧订单只记账（`revoked`）不复活期限。下单前拒绝付款后不会改善期限的购买（409，`result.details.refusal`），同一套餐的一次性期限叠加；渠道价格（Stripe Price、PayPal 订阅计划）与套餐价格不一致时下单返回 409。已付款但未改变期限的套餐支付写入 `billing.plan-payment-unapplied` outbox 事件，需在渠道后台退款。终身订阅不能取消，只能以 `EXPIRED` 撤销。套餐订单可经 `/billing/refunds` 按实付金额退款：某笔付款被全额退款时自动收回或缩短由它确定的期限（`billing.plan-term-changed`），部分退款保留期限。迁移 `20261109000000_back_office` 末尾的幂等数据步骤为升级库补齐后台权限行与新启动菜单。
 - `pnpm account:admin` 首次初始化时把 `BILLING_CATALOG_JSON` 的订阅商品写成上架套餐（一个月付价格与该商品的渠道引用；无功能、无额度，待后台编辑）；之后不覆盖已存在的 slug。初始化同时补齐套餐、用户订阅、额度用量/预留、邮件模板/记录菜单与对应权限行。
 - 邮件：账户邮件与 `MailService` 共用一个 `SmtpTransport`（连接配置 `account-email`）；`MailService` 使用 `email_templates`（`htmlContentEn` 必填、`htmlContentZh` 可选）与 `email_logs`；未配置时不发送。AI 模型目录（`createAIModelAdminController`）未接入：本模板通过运行时连接配置管理 AI，没有 `aiModels` 表与 `AIModelCatalogService`。
 - 反向代理：设置 `TRUST_PROXY`（跳数或代理地址/CIDR），否则所有客户端共享代理地址的每 IP 限流；生产环境未设置时启动会告警。

@@ -13,7 +13,7 @@ import { HttpExceptionFilter } from '@zucker-framework/common';
 import request from 'supertest';
 import { ApplicationDatabase } from '../src/database';
 import { AccountModule } from '../src/accounts/account.module';
-import { AccountGuard } from '../src/accounts/account.guard';
+import { AccountGuard } from '@zucker-framework/back-office/accounts';
 import { ACCOUNT_MAILER, type AccountMailer } from '../src/accounts/account.service';
 import { AssignRoleError, assignRoleByEmail } from '../src/accounts/assign-role';
 import { createIsolatedSchema, dropIsolatedSchema } from './helpers/account-security-fixture';

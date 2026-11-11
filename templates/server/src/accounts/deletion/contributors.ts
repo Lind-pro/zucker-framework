@@ -2,10 +2,12 @@ import { Logger } from '@nestjs/common';
 import { PostgresCreditOperationCoordinator } from '@zucker-framework/credit';
 import { createCreditLedger } from '../../billing/ledger';
 import type { ApplicationDatabase, ApplicationTransaction } from '../../database';
-import { AccountDeletionPostponedError, type AccountDeletionContributor } from './account-deletion.types';
+import { AccountDeletionPostponedError, accountDeletionContributors, resolveAccountsOptions } from '@zucker-framework/back-office/accounts';
+import { templateAccountOptions } from '../account.config';
+import type { AccountDeletionContributor } from './index';
 
 /**
- * Built-in erase list for every table that holds a user's personal data at HEAD, by fixed parameterised
+ * Template erase steps for every table of this application that holds a user's personal data, by fixed parameterised
  * SQL so the deletion module needs no other feature module. Each statement is idempotent.
  *
  * Retained on purpose (accounting, D16/F21): `users` row (anonymised afterwards), billing_orders,
@@ -104,53 +106,6 @@ export function creditsContributor(database: ApplicationDatabase): AccountDeleti
   };
 }
 
-export const apiKeysContributor: AccountDeletionContributor = {
-  name: 'api-keys', order: 400,
-  async erase(tx, userId) {
-    await tx.query('DELETE FROM account_api_key_usage WHERE "userId" = $1', [userId]);
-    await tx.query('DELETE FROM account_api_keys WHERE "userId" = $1', [userId]);
-  },
-};
-
-/** Sessions, tickets (including the cancel-deletion ticket), OAuth intents/proofs/bindings, legacy tokens. */
-export const sessionsContributor: AccountDeletionContributor = {
-  name: 'sessions', order: 500,
-  async erase(tx, userId) {
-    await tx.query('DELETE FROM account_oauth_proofs WHERE "userId" = $1 OR "sessionId" IN (SELECT id FROM account_sessions WHERE "userId" = $1)', [userId]);
-    await tx.query('DELETE FROM account_oauth_intents WHERE "userId" = $1 OR "sessionId" IN (SELECT id FROM account_sessions WHERE "userId" = $1)', [userId]);
-    await tx.query('DELETE FROM account_sessions WHERE "userId" = $1', [userId]);
-    await tx.query('DELETE FROM account_tickets WHERE "userId" = $1', [userId]);
-    await tx.query('DELETE FROM third_party_binds WHERE "userId" = $1', [userId]);
-    await tx.query('DELETE FROM user_tokens WHERE "userId" = $1', [userId]);
-  },
-};
-
-/** Role, permission, data-permission, dimension and settings links; notification subscriptions. */
-export const authorizationContributor: AccountDeletionContributor = {
-  name: 'authorization', order: 600,
-  async erase(tx, userId) {
-    for (const table of ['user_roles', 'user_permissions', 'user_data_permissions', 'dimension_users', 'user_settings', 'notify_subscribers']) {
-      await tx.query(`DELETE FROM ${table} WHERE "userId" = $1`, [userId]);
-    }
-  },
-};
-
-export const signInHistoryContributor: AccountDeletionContributor = {
-  name: 'sign-in-history', order: 700,
-  async erase(tx, userId) {
-    await tx.query('DELETE FROM user_login_history WHERE "userId" = $1', [userId]);
-    await tx.query('DELETE FROM user_acquisition WHERE "userId" = $1', [userId]);
-  },
-};
-
-export const twoFactorContributor: AccountDeletionContributor = {
-  name: 'two-factor', order: 800,
-  async erase(tx, userId) {
-    await tx.query('DELETE FROM account_recovery_codes WHERE "userId" = $1', [userId]);
-    await tx.query('DELETE FROM account_two_factor WHERE "userId" = $1', [userId]);
-  },
-};
-
 /**
  * Mail and notification history addressed to the user, private delivery envelopes, and network
  * details in access/operation logs (rows of administrative audit stay, keyed by the anonymised id).
@@ -170,10 +125,13 @@ export const logsContributor: AccountDeletionContributor = {
   },
 };
 
-/** Built-ins that need only the database; `AccountDeletionModule` always registers them. */
+/**
+ * Built-ins that need only the database; `AccountDeletionModule` always registers them: this template's
+ * tables plus the account host's own steps (api-keys 400, sessions 500, authorization 600, sign-in-history 700, two-factor 800).
+ */
 export function builtInDeletionContributors(database: ApplicationDatabase): AccountDeletionContributor[] {
-  return [aiTasksContributor, chatsContributor, recordJobsContributor, filesContributor, creditsContributor(database), apiKeysContributor,
-    sessionsContributor, authorizationContributor, signInHistoryContributor, twoFactorContributor, logsContributor];
+  return [aiTasksContributor, chatsContributor, recordJobsContributor, filesContributor, creditsContributor(database), logsContributor,
+    ...accountDeletionContributors(resolveAccountsOptions(templateAccountOptions()))];
 }
 
 // ─── Service-backed contributors (registered by the integration through forRoot({ contributors })) ───

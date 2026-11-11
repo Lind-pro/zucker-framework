@@ -1,5 +1,5 @@
-import { definePolicy, type PolicyDefinition } from '../policy/policy.registry';
-import type { PolicyService } from '../policy/policy.service';
+import { definePolicy, type PolicyDefinition } from '@zucker-framework/back-office/settings';
+import type { PolicyService } from '@zucker-framework/back-office/settings';
 
 /** Effective values of the `account` policy (see `ACCOUNT_POLICY`). */
 export interface AccountPolicyValues {

@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { PolicyService } from '../policy/policy.service';
+import { PolicyService } from '@zucker-framework/back-office/settings';
 import { AI_CONNECTIONS, aiConnectionConfig, type AIConnectionDefinition } from '../ai-connections/ai-connections.config';
 import { AI_CONNECTION_ENVIRONMENT } from '../ai-connections/ai-connections.module';
 import { AI_MEDIA_PROVIDERS, type AIMediaProviderEntry } from '../ai-connections/ai-media-providers';

@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { expect as browserExpect, type Browser, type Locator, type Page } from '@playwright/test';
 import request from 'supertest';
-import { definePolicy } from '../src/policy/policy.registry';
+import { definePolicy } from '@zucker-framework/back-office/settings';
 import { connectionBrowserFixture } from './helpers/connection-browser-fixture';
 import {
   artifact,

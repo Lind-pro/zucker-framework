@@ -10,7 +10,7 @@ import { oauthSettings } from '../oauth/oauth.config';
 import { inspectAIConnections } from '../ai-connections/ai-connections.config';
 import { ConnectionSettingsService } from '../runtime-settings/connection-settings.service';
 import { connectionSdkAvailable } from '../runtime-settings/connection-sdk';
-import { hotConnectionStatus } from '../runtime-settings/hot-apply';
+import { hotConnectionStatus } from '@zucker-framework/back-office/settings';
 import {
   siteAnalyticsConfig,
   siteConnectionsConfig,

@@ -75,7 +75,7 @@ type UserView = Partial<Omit<UserEntity, 'password'>>;
  * Filterable user fields (allow-list). Credentials, login metadata and every column added later stay
  * unfilterable unless listed here.
  */
-export const USER_FILTER: AdminQueryFilterOptions = { eq: ['id', 'username', 'name', 'status'], like: ['username', 'email', 'name'] };
+export const USER_FILTER: AdminQueryFilterOptions = { eq: ['id', 'username', 'name', 'status', 'typeId'], like: ['username', 'email', 'name'] };
 
 interface QueryRequest {
   pageIndex?: number;

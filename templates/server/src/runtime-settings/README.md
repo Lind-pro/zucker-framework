@@ -1,24 +1,34 @@
 # Saved server connection profiles
 
-`RuntimeSettingsModule` is the application-owned bridge between the existing config store and the
-server's provider factories. It exports `ConnectionSettingsService` and `RUNTIME_ENVIRONMENT`.
-The token lives in the dependency-free `runtime-settings.tokens.ts`; factories inject it and pass
-the resulting environment to their existing options parser. It is resolved once at startup and
+The connection settings host is `@zucker-framework/back-office/settings` (`BackOfficeSettingsModule`):
+the `management/connection-settings` and `site/public/integrations` controllers, `ConnectionSettingsService`
+(encrypted store with revision archive, runtime environments, provider slots, environment pins, payment
+credential resolution by revision), `HotProvider`/live views/`hotConnectionStatus`, the D14
+data-location guard and the policy host. This directory only declares what is template-specific:
+`profiles/*.profiles.ts`, their composition and label keys (`connection-settings.descriptors.ts`), the
+public website projection (`site-public.config.ts`) and the composition (`runtime-settings.module.ts`,
+`RUNTIME_SETTINGS_HOST`). `ConnectionSettingsService` here is the host service bound to these profiles,
+so features and tests keep `new ConnectionSettingsService(database, environment)`; the module registers the
+host instance under this class. `RUNTIME_ENVIRONMENT` / `RUNTIME_SETTINGS_BASE_ENV` are the host tokens
+`SETTINGS_RUNTIME_ENVIRONMENT` / `SETTINGS_BASE_ENVIRONMENT`. The start-up snapshot is resolved once and
 frozen. Saving a profile never changes an active SDK, financial task or mail transport.
 
-The generic machinery (registry, field validation, encrypted store with revision archive, runtime
-environments and provider slots) lives in `@zucker-framework/config/connections`;
-`ConnectionSettingsService` is a thin Nest wrapper that maps its `ConnectionSettingsError` statuses to
-HTTP exceptions. Provider packages export plain-data descriptors (ids, keys, types, English labels);
+Provider packages export plain-data descriptors (ids, keys, types, English labels);
 `profiles/*.profiles.ts` add product labels and local validation with `localizeConnectionDescriptor`.
 Ids and environment keys are pinned by `test/runtime-settings.profiles.e2e-spec.ts`.
+
+The template pins no field to the environment. A product passes `connections.environmentPins`
+(`{ 'payment-stripe': true, 'private-files': ['FILES_STORAGE_PROVIDER'] }`) to the host: pinned fields are
+returned with `pinnedByEnvironment: true, readOnly: true`, a save touching them is rejected (400), they are
+never written to the database and their value always comes from the bootstrap environment; a fully
+pinned profile reports `canSave: false` with `saveUnavailableReason: 'environment_pinned'`.
 
 Profiles are declared with `defineConnectionProfile({ profile, applyMode, validate })` (`registry.ts`)
 in per-feature arrays (`profiles/*.profiles.ts`; new features export theirs from their own folder) and
 composed in `connection-settings.descriptors.ts`. `applyMode: 'restart'` profiles reach providers only
 through the startup snapshot. Every profile shipped with the template is `applyMode: 'hot'`: it is read
 on demand (`ConnectionSettingsService.liveEnvironment()` for the public-site profiles, a
-`RuntimeProviderSlot`/`HotProvider` in `hot-apply.ts` for provider clients) through a 30 s per-process
+`RuntimeProviderSlot`/`HotProvider` from `@zucker-framework/back-office/settings` for provider clients) through a 30 s per-process
 cache that the saving process invalidates when the save commits; other replicas pick the change up
 within the TTL. Sign-in, mail, delivery, storage and AI clients are rebuilt on the next request after a
 save; work that already started (a streaming chat, an upload, a send) finishes on the instance it began

@@ -22,7 +22,7 @@ import { AI_CONNECTION_RUNTIME, AIConnectionRuntimeModule, type AIConnectionRunt
 import request from 'supertest';
 import { ApplicationDatabase } from '../../src/database';
 import { AccountModule } from '../../src/accounts/account.module';
-import { AccountGuard } from '../../src/accounts/account.guard';
+import { AccountGuard } from '@zucker-framework/back-office/accounts';
 import { ACCOUNT_MAILER } from '../../src/accounts/account.service';
 import { createAdministrator } from '../../src/accounts/create-administrator';
 import { CreditsService } from '../../src/credits/credits.service';
@@ -38,7 +38,7 @@ import {
   CONNECTION_SETTINGS_SCOPE,
 } from '../../src/runtime-settings/connection-settings.service';
 import { PolicyModule } from '../../src/policy/policy.module';
-import type { PolicyDefinition } from '../../src/policy/policy.registry';
+import type { PolicyDefinition } from '@zucker-framework/back-office/settings';
 import {
   RUNTIME_ENVIRONMENT,
   RUNTIME_SETTINGS_BASE_ENV,

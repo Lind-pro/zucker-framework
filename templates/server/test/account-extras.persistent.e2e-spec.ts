@@ -18,7 +18,7 @@ import { DurableTaskRetryScheduledError } from '@zucker-framework/task';
 import request from 'supertest';
 import { ApplicationDatabase } from '../src/database';
 import { AccountModule } from '../src/accounts/account.module';
-import { AccountGuard } from '../src/accounts/account.guard';
+import { AccountGuard } from '@zucker-framework/back-office/accounts';
 import { AccountService } from '../src/accounts/account.service';
 import { AccountOnboarding, WELCOME_CREDITS_JOB } from '../src/accounts/account-onboarding';
 import { ACCOUNT_POLICIES } from '../src/accounts/account.policy';
@@ -28,12 +28,12 @@ import { OAUTH_PROVIDER_CLIENT, type OAuthProviderClient } from '../src/oauth/oa
 import { RuntimeSettingsModule } from '../src/runtime-settings/runtime-settings.module';
 import { RUNTIME_SETTINGS_BASE_ENV } from '../src/runtime-settings/runtime-settings.tokens';
 import { PolicyModule } from '../src/policy/policy.module';
-import { PolicyService } from '../src/policy/policy.service';
+import { PolicyService } from '@zucker-framework/back-office/settings';
 import { JobsService } from '../src/jobs/jobs.service';
 import { JobsHost } from '../src/jobs/jobs.host';
 import { BILLING_RECEIPT_JOB, BillingReceiptMail } from '../src/mail/billing-receipt.runtime';
-import { TransactionalMail } from '../src/mail/transactional-mail';
-import { ACCOUNT_MAIL_TEMPLATES } from '../src/mail/mail-templates';
+import { TransactionalMail } from '@zucker-framework/back-office/mail';
+import { ACCOUNT_MAIL_TEMPLATES } from '@zucker-framework/back-office/mail';
 import { CHECKOUT_FULFILLED_OUTBOX_KIND } from '../src/billing/checkout-persistence';
 
 /**

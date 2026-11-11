@@ -64,6 +64,25 @@ export {
   createOperationLogAdminController,
 } from './logging/log-management.controller';
 export type { LogManagementOptions } from './logging/log-management.controller';
+// One list contract for persisted audit records (admin factories, back-office management, fe-admin pages).
+export {
+  ACCESS_LOG_RECORD_FIELDS,
+  OPERATION_LOG_RECORD_FIELDS,
+  OPERATION_LOG_STATUSES,
+  LOG_RECORD_MAX_PAGE,
+  LOG_RECORD_MAX_PAGE_SIZE,
+  listLogRecords,
+  parseLogRecordsQuery,
+  projectLogRecord,
+} from './logging/log-records';
+export type {
+  AccessLogRecordField,
+  LogRecordKind,
+  LogRecordsPage,
+  LogRecordsQuery,
+  LogRecordSource,
+  OperationLogRecordField,
+} from './logging/log-records';
 export { createReadOnlyAdminController, createReadOnlyRecordReader } from './read-only.controller';
 export type {
   ReadOnlyAdminOptions,

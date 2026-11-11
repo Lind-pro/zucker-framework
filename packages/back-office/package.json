@@ -1,0 +1,138 @@
+{
+  "name": "@zucker-framework/back-office",
+  "version": "1.0.20",
+  "description": "Zucker Back Office \u2014 server hosts for accounts, subscriptions, billing, management, mail and settings",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    },
+    "./accounts": {
+      "import": {
+        "types": "./dist/accounts.d.mts",
+        "default": "./dist/accounts.mjs"
+      },
+      "require": {
+        "types": "./dist/accounts.d.ts",
+        "default": "./dist/accounts.js"
+      }
+    },
+    "./subscriptions": {
+      "import": {
+        "types": "./dist/subscriptions.d.mts",
+        "default": "./dist/subscriptions.mjs"
+      },
+      "require": {
+        "types": "./dist/subscriptions.d.ts",
+        "default": "./dist/subscriptions.js"
+      }
+    },
+    "./billing": {
+      "import": {
+        "types": "./dist/billing.d.mts",
+        "default": "./dist/billing.mjs"
+      },
+      "require": {
+        "types": "./dist/billing.d.ts",
+        "default": "./dist/billing.js"
+      }
+    },
+    "./management": {
+      "import": {
+        "types": "./dist/management.d.mts",
+        "default": "./dist/management.mjs"
+      },
+      "require": {
+        "types": "./dist/management.d.ts",
+        "default": "./dist/management.js"
+      }
+    },
+    "./mail": {
+      "import": {
+        "types": "./dist/mail.d.mts",
+        "default": "./dist/mail.mjs"
+      },
+      "require": {
+        "types": "./dist/mail.d.ts",
+        "default": "./dist/mail.js"
+      }
+    },
+    "./settings": {
+      "import": {
+        "types": "./dist/settings.d.mts",
+        "default": "./dist/settings.mjs"
+      },
+      "require": {
+        "types": "./dist/settings.d.ts",
+        "default": "./dist/settings.js"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "NOTICE",
+    "THIRD_PARTY_NOTICES"
+  ],
+  "scripts": {
+    "build": "rm -rf dist && tsup",
+    "clean": "rm -rf dist",
+    "lint": "eslint src/",
+    "test": "vitest run --root ../.. packages/back-office/src",
+    "prepack": "node ../../scripts/prepare-package-legal.mjs"
+  },
+  "dependencies": {
+    "@zucker-framework/admin": "workspace:*",
+    "@zucker-framework/auth": "workspace:*",
+    "@zucker-framework/config": "workspace:*",
+    "@zucker-framework/core": "workspace:*",
+    "@zucker-framework/credit": "workspace:*",
+    "@zucker-framework/crud": "workspace:*",
+    "@zucker-framework/fe-types": "workspace:*",
+    "@zucker-framework/logging": "workspace:*",
+    "@zucker-framework/notification": "workspace:*",
+    "@zucker-framework/payment": "workspace:*",
+    "@zucker-framework/rate-limiter": "workspace:*"
+  },
+  "peerDependencies": {
+    "@nestjs/common": "^12.0.0",
+    "@nestjs/core": "^12.0.0",
+    "@nestjs/event-emitter": "^12.0.0",
+    "@nestjs/jwt": "^12.0.1"
+  },
+  "peerDependenciesMeta": {
+    "@nestjs/event-emitter": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@nestjs/common": "^12.0.1",
+    "@nestjs/core": "^12.0.1",
+    "@nestjs/event-emitter": "^12.0.0",
+    "@nestjs/jwt": "^12.0.1",
+    "@types/node": "^20.19.43",
+    "@types/pg": "8.23.1",
+    "pg": "8.23.0"
+  },
+  "license": "Apache-2.0",
+  "author": "Lind",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Lind-pro/zucker-framework.git",
+    "directory": "packages/back-office"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
+}

@@ -65,6 +65,17 @@ const MODULE_REGISTRY: Record<string, {
     moduleImport: "import { ZuckerFormModule } from '@zucker-framework/form';",
     moduleSetup: 'ZuckerFormModule.forRoot()',
   },
+  'back-office': {
+    pkg: '@zucker-framework/back-office',
+    peerDeps: ['@nestjs/jwt'],
+    // Hosts reuse the root's DATABASE_ADAPTER, ZuckerAuthModule and ZuckerRateLimiterModule ('api-default').
+    moduleImport: `import { BackOfficeAccountsModule } from '@zucker-framework/back-office/accounts';
+  import { BackOfficeMailModule, MAIL_ACCOUNT_MAILER } from '@zucker-framework/back-office/mail';`,
+    moduleSetup: `BackOfficeMailModule.forRoot({ settings: MailSettings /* your MailSettingsSource */ }),
+  BackOfficeAccountsModule.forRoot({ mailer: { useExisting: MAIL_ACCOUNT_MAILER }, origins: () => (process.env.ACCOUNT_ORIGINS ?? '').split(',') })
+  // Register AccountGuard (from /accounts) and PermissionsGuard as APP_GUARD. Other hosts: /subscriptions,
+  // /billing, /management, /settings; see the @zucker-framework/back-office README`,
+  },
   monitoring: {
     pkg: '@zucker-framework/monitoring',
     moduleImport: "import { ZuckerMonitoringModule } from '@zucker-framework/monitoring';",

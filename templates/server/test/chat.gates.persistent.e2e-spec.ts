@@ -21,7 +21,7 @@ import { FakeChatModel } from '@zucker-framework/ai/testing';
 import request from 'supertest';
 import { ApplicationDatabase } from '../src/database';
 import { AccountModule } from '../src/accounts/account.module';
-import { AccountGuard } from '../src/accounts/account.guard';
+import { AccountGuard } from '@zucker-framework/back-office/accounts';
 import { ACCOUNT_MAILER, type AccountMailer } from '../src/accounts/account.service';
 import { JOBS_OPTIONS } from '../src/jobs/jobs.config';
 import { RuntimeSettingsModule } from '../src/runtime-settings/runtime-settings.module';

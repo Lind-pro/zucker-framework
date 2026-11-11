@@ -1,6 +1,6 @@
 # Persistent refunds in the server template
 
-`BillingRefundsService` consumes the public `RefundAdapter` protocol and the existing PostgreSQL
+`BillingRefundsService` (now in `@zucker-framework/back-office/billing`; this template configures it) consumes the public `RefundAdapter` protocol and the existing PostgreSQL
 credit ledger. Adapter credentials, paid money, local payment identity, original credit policy and
 source lots are derived on the server. An administrator can select only a local order/cycle, exact
 amount and optional reason. The required permission is `billing:refund`; mutations also require a
@@ -111,3 +111,11 @@ interpreting an applied zero as proof that no cash was returned. `checkTarget` o
 redelivery resumes the same evidence. External targets without a local refund request are not added
 to the request-only background due scan; operators use the retained event and explicit target check.
 The customer order projection independently includes durable successful journal facts.
+
+## Plan orders
+
+A plan purchase grants entitlement, not credits. It is refunded by paid amount through the same flow
+(`totalCredits` 0: nothing is held or recovered). When the refunds of one payment reach its full paid
+amount, the host calls the registered `paymentRefunded` fulfillment hooks once, in the settlement
+transaction; the plan host revokes the term that payment defined (a partial refund keeps it). Without
+such a hook the full refund of a plan sale writes a `billing.plan-refund-unapplied` outbox event.

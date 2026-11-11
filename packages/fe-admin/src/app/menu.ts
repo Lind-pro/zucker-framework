@@ -1,7 +1,7 @@
 import type { Translate } from '../i18n/context';
 import type { AdminMessageKey } from '../i18n/zh-CN';
 import { zhCN } from '../i18n/zh-CN';
-import type { AdminPageDefinition } from './config';
+import type { AdminPageDefinition, LocalizedLabel } from './config';
 
 /** Menu record as returned by `GET /menu/tree` and `GET /menu/all`. */
 export interface BackendMenuItem {
@@ -19,9 +19,17 @@ export interface BackendMenuItem {
 
 export type PermissionCheck = (permission?: string | readonly string[]) => boolean;
 
-/** Exact path match, or a nested path below a registered page (e.g. a detail route). */
+/**
+ * Exact path match, or a nested path below a registered page (e.g. a detail route). A `:param`
+ * segment of a page path (`/reports/:id`) matches any one non-empty segment.
+ */
 export function matchesPath(pathname: string, path: string): boolean {
-  return pathname === path || pathname.startsWith(`${path}/`);
+  if (pathname === path || pathname.startsWith(`${path}/`)) return true;
+  if (!path.includes('/:')) return false;
+  const pattern = path.split('/');
+  const actual = pathname.split('/');
+  return actual.length >= pattern.length
+    && pattern.every((segment, index) => (segment.startsWith(':') ? actual[index] !== '' : segment === actual[index]));
 }
 
 /** The registered page for a location (longest matching path wins). */
@@ -77,12 +85,17 @@ export function menuLabel(
   return item.name;
 }
 
+/** Product text in a locale: the exact tag, then zh-CN, then the first translation. */
+export function localizedText(value: LocalizedLabel | undefined, locale: string): string {
+  if (typeof value === 'string') return value;
+  if (!value) return '';
+  return value[locale] ?? value['zh-CN'] ?? Object.values(value)[0] ?? '';
+}
+
 /** Title of a page definition in a locale. */
 export function pageTitle(page: Pick<AdminPageDefinition, 'title' | 'titleKey'>, locale: string, t: Translate): string {
   if (page.titleKey) return t(page.titleKey);
-  if (typeof page.title === 'string') return page.title;
-  if (!page.title) return '';
-  return page.title[locale] ?? page.title['zh-CN'] ?? Object.values(page.title)[0] ?? '';
+  return localizedText(page.title, locale);
 }
 
 /**

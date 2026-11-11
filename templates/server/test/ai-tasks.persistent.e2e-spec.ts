@@ -19,7 +19,7 @@ import { NativeAIClient } from '@zucker-framework/ai';
 import request from 'supertest';
 import { ApplicationDatabase } from '../src/database';
 import { AccountModule } from '../src/accounts/account.module';
-import { AccountGuard } from '../src/accounts/account.guard';
+import { AccountGuard } from '@zucker-framework/back-office/accounts';
 import { ACCOUNT_MAILER, type AccountMailer } from '../src/accounts/account.service';
 import { AccountApiKeysModule } from '../src/api-keys/api-keys.module';
 import { ACCOUNT_KEY_SCOPES } from '../src/api-keys/api-keys.service';

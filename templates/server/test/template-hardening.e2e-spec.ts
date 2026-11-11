@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { MODULE_METADATA } from '@nestjs/common/constants';
 import { AlertController, HealthController, PrometheusExporter, ZuckerMonitoringModule } from '@zucker-framework/monitoring';
 import { RATE_LIMIT_KEY } from '@zucker-framework/rate-limiter';
-import { nextSubscriptionReconcileAt, SUBSCRIPTION_RECONCILE_PARKED_AT, TERMINAL_SUBSCRIPTION_STATUSES } from '../src/billing/subscription-schedule';
+import { nextSubscriptionReconcileAt, SUBSCRIPTION_RECONCILE_PARKED_AT, TERMINAL_SUBSCRIPTION_STATUSES } from '@zucker-framework/back-office/billing';
 import { assertSecretsFollowEndpoint } from '../src/runtime-settings/connection-settings.service';
 import { connectionProfile } from '../src/runtime-settings/connection-settings.descriptors';
 import { APP_RATE_LIMITERS, BILLING_WEBHOOK_LIMITER, LOGIN_ACCOUNT_LIMITER, LOGIN_LIMITER, loginAccountKey } from '../src/rate-limits';

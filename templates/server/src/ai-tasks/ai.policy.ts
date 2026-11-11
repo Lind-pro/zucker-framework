@@ -1,4 +1,4 @@
-import { definePolicy, type PolicyValue } from '../policy/policy.registry';
+import { definePolicy, type PolicyValue } from '@zucker-framework/back-office/settings';
 
 /**
  * AI product policies (hot-applied, admin-editable through `/management/policies/:id`, WP 2.5 pages).

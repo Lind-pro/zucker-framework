@@ -6,17 +6,16 @@
  * non-empty value except `false` is a configuration error, and the switch is refused when
  * `NODE_ENV=production`, so a production server can never take a fake payment.
  *
- * This file has no dependencies so it can be imported by provider and module composition.
+ * This file imports only constants, so it can be imported by provider and module composition.
  */
 export const BILLING_TEST_FAKE_PROVIDER_ENV = 'BILLING_TEST_FAKE_PROVIDER';
 /** Optional absolute base of the hosted page; default `${WEB_URL}/api/billing/test-checkout` (the web proxy). */
 export const BILLING_TEST_FAKE_CHECKOUT_URL_ENV = 'BILLING_TEST_FAKE_CHECKOUT_URL';
 
-export const FAKE_PAYMENT_PROVIDER_ID = 'fake';
-export const FAKE_PAYMENT_ACCOUNT_SCOPE = 'fake-test';
-/** Fixed and public on purpose: the fake signs its own webhooks so tests can replay and forge them. */
-export const FAKE_WEBHOOK_SECRET = 'zucker-fake-payment-webhook-secret-test-only';
-export const FAKE_SIGNATURE_HEADER = 'x-fake-signature';
+// The fake provider itself (constants, ledger, adapters, hosted page) lives in the billing host.
+export {
+  FAKE_PAYMENT_PROVIDER_ID, FAKE_PAYMENT_ACCOUNT_SCOPE, FAKE_WEBHOOK_SECRET, FAKE_SIGNATURE_HEADER,
+} from '@zucker-framework/back-office/billing';
 
 type Env = Readonly<Record<string, string | undefined>>;
 

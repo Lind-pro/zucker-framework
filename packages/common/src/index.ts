@@ -1,4 +1,4 @@
-export { TransformInterceptor, type ApiResponse } from './interceptors/transform.interceptor';
+export { RAW_RESPONSE_METADATA, RawResponse, TransformInterceptor, type ApiResponse } from './interceptors/transform.interceptor';
 export {
   HttpExceptionFilter,
   HTTP_EXCEPTION_FILTER_OPTIONS,

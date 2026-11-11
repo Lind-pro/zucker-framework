@@ -19,7 +19,7 @@ import { ApplicationDatabase } from '../../src/database';
 import { BillingModule } from '../../src/billing/billing.module';
 import { BILLING_OPTIONS, type BillingOptions } from '../../src/billing/billing.service';
 import { AccountModule } from '../../src/accounts/account.module';
-import { AccountGuard } from '../../src/accounts/account.guard';
+import { AccountGuard } from '@zucker-framework/back-office/accounts';
 import { ACCOUNT_MAILER } from '../../src/accounts/account.service';
 import { createAdministrator } from '../../src/accounts/create-administrator';
 import { ContentModule } from '../../src/content/content.module';

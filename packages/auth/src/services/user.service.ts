@@ -1,5 +1,5 @@
 import { Injectable, Inject, Logger, Optional } from '@nestjs/common';
-import { type DatabaseAdapter, ValidationException, BusinessException, NotFoundException } from '@zucker-framework/core';
+import { type DatabaseAdapter, ValidationException, BusinessException, NotFoundException, TransactionHolder } from '@zucker-framework/core';
 import type { PasswordEncoder } from '../password/password-encoder.interface';
 import { PasswordValidator } from '../password/password-validator';
 import { UsernameValidator } from '../password/username-validator';
@@ -39,6 +39,25 @@ export interface UserEntity {
 export interface UserRoleBindingOptions {
   /** Consumer-owned fields, such as the existing relation's primary key. */
   bindingData?: (userId: string, roleId: string) => Record<string, unknown>;
+}
+
+/** Options for {@link UserService.addUser}. Omitted, `addUser` keeps its password-required contract. */
+export interface AddUserOptions {
+  /**
+   * Create an account without a password credential (OAuth, magic link, e-mail code, provisioning).
+   * `password` is stored as `null`; password validation and hashing are skipped. Username validation
+   * and the duplicate-username check still apply. Passing a `password` together with this flag is
+   * rejected, so a caller cannot silently create an account with an unvalidated credential.
+   */
+  passwordless?: boolean;
+  /**
+   * Adapter of a transaction the caller owns (the `tx` given to `DatabaseAdapter.$transaction`).
+   * The duplicate-username lookup and the insert run on it, so they commit or roll back with the
+   * caller's other writes. The `UserCreatedEvent` is published after that transaction commits
+   * (via `TransactionHolder.afterCommit`) and is not published when it rolls back; an adapter that
+   * does not register a transaction context publishes right after the insert.
+   */
+  transaction?: DatabaseAdapter;
 }
 
 import { DATABASE_ADAPTER } from '@zucker-framework/crud';
@@ -184,35 +203,47 @@ export class UserService {
   /**
    * Add a new user.
    *
-   * - Validates username and password
+   * - Validates username and, unless `options.passwordless`, the password
    * - Checks for duplicate username
-   * - Generates salt and encodes password
-   * - Publishes UserCreatedEvent
+   * - Encodes the password (passwordless accounts store `password: null`)
+   * - Publishes UserCreatedEvent (after the caller's commit with `options.transaction`)
    */
   async addUser(
     data: Partial<UserEntity> & { username: string; password?: string },
+    options: AddUserOptions = {},
   ): Promise<UserEntity> {
+    const passwordless = options.passwordless === true;
+    const db = options.transaction ?? this.db;
+
     // Validate username
     const usernameResult = this.usernameValidator.validate(data.username);
     if (!usernameResult.valid) {
       throw new ValidationException({ username: [usernameResult.errors.join(', ')] }, 'Invalid username');
     }
 
-    // Validate password
-    const rawPassword = data.password ?? '';
-    const passwordResult = this.passwordValidator.validate(rawPassword);
-    if (!passwordResult.valid) {
-      throw new ValidationException({ password: [passwordResult.errors.join(', ')] }, 'Invalid password');
+    if (passwordless) {
+      // Explicit opt-in only: an absent password never implies a passwordless account.
+      if (data.password !== undefined && data.password !== null) {
+        throw new ValidationException({ password: ['A passwordless account cannot be created with a password'] }, 'Invalid password');
+      }
+    } else {
+      const rawPassword = data.password ?? '';
+      const passwordResult = this.passwordValidator.validate(rawPassword);
+      if (!passwordResult.valid) {
+        throw new ValidationException({ password: [passwordResult.errors.join(', ')] }, 'Invalid password');
+      }
     }
 
-    // Check duplicate username
-    const existing = await this.findByUsername(data.username);
+    // Check duplicate username (inside the caller's transaction when given)
+    const existing = options.transaction
+      ? ((await db.model('users').findMany({ where: { username: data.username } })) as UserEntity[])[0]
+      : await this.findByUsername(data.username);
     if (existing) {
       throw new BusinessException('error.user_already_exists', 'USER_ALREADY_EXISTS', 409);
     }
 
-    // Encode password
-    const encodedPassword = await this.passwordEncoder.encode(rawPassword);
+    // Encode only after the cheap checks pass.
+    const encodedPassword = passwordless ? null : await this.passwordEncoder.encode(data.password ?? '');
 
     // 构建用户数据：不传 salt（Prisma schema 无此字段，salt 已嵌入编码后的密码）
     // createTime 使用 Date 对象（兼容 Prisma DateTime 类型）
@@ -224,15 +255,17 @@ export class UserService {
       createTime: data.createTime ? new Date(data.createTime) : new Date(),
     };
 
-    const created = (await this.db.model('users').create({
+    const created = (await db.model('users').create({
       data: userEntity,
     })) as UserEntity;
 
-    // Publish UserCreatedEvent
-    await this.publishEvent(
+    const publish = () => this.publishEvent(
       AUTH_EVENT_TOPICS.USER_CREATED,
       createUserCreatedEvent(created.id, created.username, data.creatorId),
     );
+    // Without a caller transaction the insert is already committed: keep the immediate event.
+    if (options.transaction) await TransactionHolder.afterCommit(publish);
+    else await publish();
 
     return created;
   }

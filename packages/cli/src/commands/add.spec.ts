@@ -9,7 +9,7 @@ let root: string;
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'zucker-add-'));
   writeFileSync(join(root, 'release-catalog.json'), JSON.stringify({
-    versions: { '@zucker-framework/auth': '1.0.18', '@zucker-framework/cache': '1.0.18' },
+    versions: { '@zucker-framework/auth': '1.0.18', '@zucker-framework/cache': '1.0.18', '@zucker-framework/back-office': '1.0.18' },
     server: { dependencies: { '@nestjs/passport': '^12.0.0', '@nestjs/jwt': '^12.0.1' } },
   }));
   writeFileSync(join(root, 'pnpm-lock.yaml'), '');
@@ -41,4 +41,13 @@ it.each(['constructor', '__proto__', 'toString', 'hasOwnProperty'])('rejects the
   await run([name], installer);
   expect(installer).not.toHaveBeenCalled();
   expect(process.exitCode).toBe(1);
+});
+
+it('adds the back-office hosts with their Nest peer and composition hint', async () => {
+  const installer = vi.fn<InstallRunner>(() => 0);
+  await run(['back-office'], installer);
+  expect(installer).toHaveBeenCalledWith('pnpm', ['add', '@zucker-framework/back-office@1.0.18', '@nestjs/jwt@^12.0.1'], root);
+  const output = vi.mocked(console.log).mock.calls.flat().join('\n');
+  expect(output).toContain('BackOfficeAccountsModule.forRoot');
+  expect(output).toContain('MAIL_ACCOUNT_MAILER');
 });

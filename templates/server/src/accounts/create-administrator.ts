@@ -1,9 +1,10 @@
 import type { DatabaseAdapter } from '@zucker-framework/core';
-import { UsernameValidator, UserService } from '@zucker-framework/auth';
-
+import { createAdministrator as createOwner, seedStarterData as seed, type StarterDataSeed } from '@zucker-framework/back-office/accounts';
 import type { SubscriptionPlanWrite } from '@zucker-framework/payment';
 import { seedPlans } from '../subscriptions/plan-seeds';
 import { starterAdminMenus } from './starter-admin-menus';
+
+export type { StarterDataSeed } from '@zucker-framework/back-office/accounts';
 
 /**
  * Back-office permission codes (RFC §8) that are checked with `@Permissions(code)` rather than
@@ -24,84 +25,18 @@ export const BACK_OFFICE_PERMISSIONS: readonly string[] = [
   'insights:query',
 ];
 
-/**
- * Starter data contributed by features (plans and credit packs, CMS pages, ...). Each seed runs in the
- * administrator-setup transaction and must be idempotent: create only what is missing, never change
- * rows an operator may already have edited. The integration WP appends feature seeds to
- * `STARTER_DATA_SEEDS`; features export their seed from their own folder.
- */
-export interface StarterDataSeed {
-  /** Short stable name, used only in error messages. */
-  readonly name: string;
-  run(tx: DatabaseAdapter): Promise<void>;
-}
+/** Feature starter data (plans and credit packs, CMS pages, ...); the integration WP appends feature seeds here. */
 export const STARTER_DATA_SEEDS: readonly StarterDataSeed[] = [];
 
 /** Runs the starter seeds in order on the caller's transaction. A failing seed aborts the whole setup. */
-export async function seedStarterData(tx: DatabaseAdapter, seeds: readonly StarterDataSeed[] = STARTER_DATA_SEEDS): Promise<void> {
-  for (const seed of seeds) {
-    try { await seed.run(tx); }
-    catch (error) { throw new Error(`Starter data seed ${seed.name} failed`, { cause: error }); }
-  }
+export function seedStarterData(tx: DatabaseAdapter, seeds: readonly StarterDataSeed[] = STARTER_DATA_SEEDS): Promise<void> {
+  return seed(tx, seeds);
 }
 
-/** Explicit owner setup only. This function is never reachable from public account HTTP routes. */
-export async function createAdministrator(
-  db: DatabaseAdapter,
-  input: { username: string; email: string; password: string },
+/** Explicit owner setup only (`pnpm account:admin`); never reachable from public account HTTP routes. */
+export async function createAdministrator(db: DatabaseAdapter, input: { username: string; email: string; password: string },
   /** Initial plans (see planSeedsFromBillingCatalog); existing slugs are never changed. */
-  options: { plans?: readonly SubscriptionPlanWrite[]; seeds?: readonly StarterDataSeed[] } = {},
-): Promise<string> {
-  const email = input.email.trim().toLowerCase();
-  if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
-    throw new Error('Invalid administrator email');
-  return db.$transaction(async (tx) => {
-    const users = new UserService(tx);
-    // Reserved public account names may be used only by this explicit owner command.
-    users.setUsernameValidator(new UsernameValidator({ reservedNames: [] }));
-    if (await users.findByUsername(input.username))
-      throw new Error(
-        'Account already exists; existing accounts are never promoted or overwritten',
-      );
-    const user = await users.addUser({
-      username: input.username,
-      password: input.password,
-      email,
-      name: input.username,
-      typeId: 'administrator',
-      status: true,
-      emailVerified: true,
-    });
-    const role = ((await tx.model('roles').findUnique({ where: { name: 'superadmin' } })) ??
-      (await tx
-        .model('roles')
-        .create({ data: { name: 'superadmin', description: 'Administrator' } }))) as { id: string };
-    await tx.model('userRoles').create({ data: { userId: user.id, roleId: role.id } });
-    for (const [sortOrder, menu] of starterAdminMenus.entries()) {
-      const { key, name, path, parent, permission } = menu;
-      const id = `starter:${key}`;
-      if (!(await tx.model('menus').findUnique({ where: { id } }))) {
-        await tx
-          .model('menus')
-          .create({
-            data: {
-              id,
-              name,
-              ...(path ? { path } : {}),
-              ...(parent ? { parentId: `starter:${parent}` } : {}),
-              permissions: permission ? [permission] : [],
-              sortOrder,
-              status: true,
-            },
-          });
-      }
-    }
-    const codes = new Set([...BACK_OFFICE_PERMISSIONS, ...starterAdminMenus.flatMap(menu => menu.permission ? [menu.permission] : [])]);
-    for (const code of codes)
-      if (!(await tx.model('permissions').findUnique({ where: { id: code } })))
-        await tx.model('permissions').create({ data: { id: code, name: code, description: 'Seeded with the starter back office' } });
-    await seedPlans(tx, options.plans ?? []);
-    await seedStarterData(tx, options.seeds ?? STARTER_DATA_SEEDS);
-    return user.id;
-  });
+  options: { plans?: readonly SubscriptionPlanWrite[]; seeds?: readonly StarterDataSeed[] } = {}): Promise<string> {
+  return createOwner(db, input, { menus: starterAdminMenus, permissions: BACK_OFFICE_PERMISSIONS,
+    seeds: [{ name: 'plans', run: async tx => { await seedPlans(tx, options.plans ?? []); } }, ...(options.seeds ?? STARTER_DATA_SEEDS)] });
 }

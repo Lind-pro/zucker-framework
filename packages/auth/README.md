@@ -10,6 +10,17 @@ password change events are redacted. Empty/omitted update passwords keep the
 existing credential. Creation still applies the configured username/password
 validators and defaults to the existing password encoder unless explicitly set.
 
+`addUser(data, { passwordless: true })` creates an account without a password
+credential (OAuth, magic link, e-mail code): `password` is stored as `null`, the
+password validator and encoder are skipped, and username validation and the
+duplicate-username check still apply. Passing a password together with the flag
+is rejected; without the flag a valid password is still required. Pass
+`{ transaction: tx }` (the adapter given to `DatabaseAdapter.$transaction`) to run
+the duplicate check and insert in the caller's transaction; the `UserCreatedEvent`
+is then published after that transaction commits and not at all on rollback.
+Prefer this over writing `users` rows directly, so creation keeps one validation
+and lifecycle-event path.
+
 `setUserRoles(userId, roleIds, { bindingData })` replaces deduplicated bindings in
 one `DatabaseAdapter.$transaction` and emits authorization invalidation after
 success. The optional mapping supplies consumer-owned relation fields such as
@@ -37,6 +48,8 @@ Extend `JwtStrategyBase<Claims>` for custom asynchronous identity validation; it
 ## Refresh pairs without a new session table
 
 `RefreshTokenService<Identity>` owns pair issuance and rotation through explicit `verify`, `loadIdentity`, `issue` and `RefreshTokenStore` ports. Configure positive integer `accessTtlSeconds` and `refreshTtlSeconds`; the issuer receives both lifetimes and must enforce them. The verifier must validate signature, allowed algorithm, expiration and refresh token type, then return `{ subject, jti }`. Identity/permissions reload on every refresh. Product eligibility, wire fields, JWT claims, error/status mapping and authenticated logout routing stay in the consumer.
+
+**Refresh-token reuse detection (1.0.21, security behaviour change).** When a correctly signed refresh token that was already rotated is presented again, `RefreshTokenService` asks the store to revoke the subject (`RefreshTokenStore.reused(subject, jti, graceMs)`, optional). `PersistentSessionRefreshTokenStore` implements it: the session is revoked (`revokedReason: 'refresh_reuse'`), so the current successor refresh token and every access token bound to the session (when the consumer checks session revocation, as the back-office accounts host does) stop working. Rotation stamps `lastActiveAt`; a reuse within `reuseDetection.graceMs` (default 10 000 ms) of the last rotation or session activity is only rejected, so a client retrying a lost refresh response stays signed in — the grace window never grants access. A request that loses a concurrent rotation of the *current* token is rejected without revocation (double submit). `reuseDetection: false` restores the previous plain rejection. `CacheRefreshTokenStore` does not implement `reused` and keeps the plain rejection.
 
 `CacheRefreshTokenStore` preserves existing string JTI values and accepts a `key(subject)` function. Its cache port uses **milliseconds** (adapt second-based cache facades explicitly). All login, rotation and revocation writes must use the same store/lock. `RefreshTokenLock.runExclusive` must serialize across the cache's entire sharing scope; `InProcessRefreshTokenLock` is only suitable for process-local memory and must be shared across service instances. For Redis/multi-process deployments supply a truly atomic store/CAS or a distributed lock with equivalent failure guarantees; do not combine a local mutex with shared storage, or a silently degraded cache. No default persistence replacement is installed.
 

@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, HttpExcepti
 import { randomUUID } from 'node:crypto';
 import { DATABASE_ADAPTER } from '@zucker-framework/core';
 import { ApplicationDatabase, type ApplicationTransaction } from '../database';
-import { PolicyService } from '../policy/policy.service';
+import { PolicyService } from '@zucker-framework/back-office/settings';
 import { FEEDBACK_POLICY } from './feedback.policy';
 import { FEEDBACK_NOTIFIER, type FeedbackNotifier } from './feedback.tokens';
 import {

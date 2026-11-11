@@ -157,8 +157,29 @@ export interface SubscriptionPaymentResult {
   /** Present when the term changed. Publish it after the caller's transaction commits (for example via an outbox). */
   change: SubscriptionChange | null;
 }
+/**
+ * What a full refund of one payment did to the term (see {@link SubscriptionAssignmentService.revokePayment}):
+ * - `revoked`: the term was defined by this payment and has ended;
+ * - `shortened`: the term was defined by this payment and falls back to what earlier payments paid for;
+ * - `not_current`: the term is defined by other evidence (a later payment, another plan or an
+ *   administrator), so it is unchanged;
+ * - `inactive`: there is no live term;
+ * - `not_found`: no payment evidence with this reference for this user.
+ */
+export type SubscriptionRefundOutcome = 'revoked' | 'shortened' | 'not_current' | 'inactive' | 'not_found';
+export interface SubscriptionRefundInput {
+  userId: string;
+  /** The payment ledger reference of the refunded payment (as recorded by `recordPayment`). */
+  reference: string;
+}
+export interface SubscriptionRefundResult {
+  outcome: SubscriptionRefundOutcome;
+  subscription: UserSubscriptionRecord | null;
+  /** Present when the term changed. Publish it after the caller's transaction commits. */
+  change: SubscriptionChange | null;
+}
 export interface SubscriptionChange {
-  kind: 'assigned' | 'canceled' | 'paid';
+  kind: 'assigned' | 'canceled' | 'paid' | 'refunded';
   userId: string;
   before: UserSubscriptionRecord | null;
   after: UserSubscriptionRecord;
@@ -376,6 +397,43 @@ export class SubscriptionAssignmentService<Tx> {
       } else write = this.paidTerm(plan.id, input, start, end);
       const after = await this.store.save(tx, input.userId, write);
       return { outcome: 'applied', subscription: after, change: { kind: 'paid', userId: input.userId, before, after } };
+    });
+  }
+
+  /**
+   * Refund write-back: a payment refunded IN FULL takes back the term it paid for. Call it from the
+   * refund settlement transaction through a store bound to that transaction (a partial refund keeps
+   * the term and must not call this). Only a live term whose `paymentReference` is this payment changes:
+   * - LIFETIME: the term is revoked (status EXPIRED);
+   * - ONE_TIME: the paid duration is removed from the (possibly stacked) end date;
+   * - MONTHLY/YEARLY: the term falls back to the start of the refunded period (earlier periods stay paid);
+   * when the resulting end is not in the future the term is revoked (status EXPIRED, end now).
+   * Evidence stays recorded, so the refunded reference can never be applied again. Not idempotent by
+   * itself: the caller runs it once per refunded payment.
+   */
+  async revokePayment(input: SubscriptionRefundInput): Promise<SubscriptionRefundResult> {
+    this.identifier(input?.userId, 'userId');
+    this.identifier(input?.reference, 'reference');
+    return this.store.transaction(input.userId, async (tx) => {
+      const evidence = await this.store.findPaymentEvidence(tx, input.reference);
+      const before = await this.store.find(tx, input.userId);
+      const unchanged = (outcome: SubscriptionRefundOutcome): SubscriptionRefundResult => ({ outcome, subscription: before, change: null });
+      if (!evidence || evidence.userId !== input.userId) return unchanged('not_found');
+      const now = this.clock();
+      if (!before || before.status === 'EXPIRED' || !this.isActive(before, now)) return unchanged('inactive');
+      if (before.paymentReference !== input.reference || before.planId !== evidence.planId) return unchanged('not_current');
+      let endDate: Date | null;
+      if (evidence.billingCycle === 'LIFETIME' || before.billingCycle === 'LIFETIME' || before.endDate === null) endDate = null;
+      else if (evidence.billingCycle === 'ONE_TIME' && evidence.periodEnd)
+        endDate = new Date(before.endDate.getTime() - (evidence.periodEnd.getTime() - evidence.periodStart.getTime()));
+      else endDate = evidence.periodStart < before.endDate ? evidence.periodStart : before.endDate;
+      const write: UserSubscriptionWrite = endDate && endDate > now
+        ? { ...this.write(before), endDate }
+        : { ...this.write(before), status: 'EXPIRED', endDate: before.billingCycle === 'LIFETIME' || before.endDate === null ? null : now,
+          cancelAtPeriodEnd: false, canceledAt: now };
+      const after = await this.store.save(tx, input.userId, write);
+      return { outcome: write.status === 'EXPIRED' ? 'revoked' : 'shortened', subscription: after,
+        change: { kind: 'refunded', userId: input.userId, before, after } };
     });
   }
 

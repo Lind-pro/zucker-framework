@@ -15,14 +15,14 @@ import { HttpExceptionFilter } from '@zucker-framework/common';
 import request from 'supertest';
 import { ApplicationDatabase } from '../src/database';
 import { AccountModule } from '../src/accounts/account.module';
-import { AccountGuard } from '../src/accounts/account.guard';
+import { AccountGuard } from '@zucker-framework/back-office/accounts';
 import { AccountOnboarding, sanitizeSignupIp, sanitizeUtmSource } from '../src/accounts/account-onboarding';
 import { ACCOUNT_POLICIES } from '../src/accounts/account.policy';
 import { AssignRoleError, assignRoleByEmail, parseAssignRoleArguments } from '../src/accounts/assign-role';
 import { RuntimeSettingsModule } from '../src/runtime-settings/runtime-settings.module';
 import { RUNTIME_SETTINGS_BASE_ENV } from '../src/runtime-settings/runtime-settings.tokens';
 import { PolicyModule } from '../src/policy/policy.module';
-import { PolicyService } from '../src/policy/policy.service';
+import { PolicyService } from '@zucker-framework/back-office/settings';
 
 /**
  * WP 1.2 implementer proof: account policy over HTTP with real PostgreSQL and NO mail transport

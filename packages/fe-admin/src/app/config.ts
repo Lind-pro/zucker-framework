@@ -1,5 +1,6 @@
 import type { ComponentType, ReactNode } from 'react';
 import type { RequestConfig } from '@zucker-framework/fe-http-client';
+import type { PlanPrice, SubscriptionPlanWriteBody } from '@zucker-framework/fe-types/back-office';
 import type { AdminMessageKey, AdminMessages } from '../i18n/zh-CN';
 
 /**
@@ -197,6 +198,50 @@ export interface AdminPageDefinition {
   hideInQuickLinks?: boolean;
 }
 
+/** Product-supplied text: plain, or by locale tag (`{ 'zh-CN': '…', 'en-US': '…' }`). */
+export type LocalizedLabel = string | Readonly<Record<string, string>>;
+
+/**
+ * Starting values of a plan preset, in the wire shape of `POST /management/plans`. Every field is
+ * optional; omitted ones start empty (a preset plan is unlisted unless `status: true` is given).
+ * Amounts are decimal strings (a number is converted with `String`).
+ */
+export interface PlanPresetValues extends Omit<SubscriptionPlanWriteBody, 'prices' | 'expectedRevision'> {
+  prices?: ReadonlyArray<
+    Pick<PlanPrice, 'interval' | 'currency'> & { amount: string | number } & Partial<Pick<PlanPrice, 'termDays' | 'providerRefs' | 'credits' | 'creditExpiry'>>
+  >;
+}
+
+/** A draft the plan editor can start from (see `AdminAppConfig.plans.presets`). */
+export interface PlanPreset {
+  /** Stable identifier, unique among the presets. */
+  key: string;
+  /** Button text. */
+  label: LocalizedLabel;
+  /** Optional explanation shown above the editor. */
+  description?: LocalizedLabel;
+  plan: PlanPresetValues;
+}
+
+/** An account type offered by the users page (`typeId`). */
+export interface UserTypeOption {
+  value: string;
+  label: LocalizedLabel;
+}
+
+/**
+ * Administrator password reset for another account. The users page sends `{ password }` with
+ * `method` (default `POST`) to `path`, where `:id` is the user id. The action is shown only with
+ * `users.authorize`.
+ */
+export interface UserPasswordResetConfig {
+  /** For example `/users/:id` with `method: 'PUT'` (`@zucker-framework/admin` users controller). */
+  path: string;
+  method?: 'POST' | 'PUT' | 'PATCH';
+  /** Client-side minimum length; the server's password policy stays authoritative. */
+  minLength?: number;
+}
+
 /** See `AdminAppConfig.serverLabels`. */
 export type ServerLabels =
   | Readonly<Record<string, Readonly<Record<string, string>>>>
@@ -250,6 +295,12 @@ export interface AdminAppConfig {
     refreshLockName?: string;
     /** Per-attempt cookie refresh timeout in ms (default 15000); a timeout fails the restore. */
     refreshTimeoutMs?: number;
+    /**
+     * Re-read `GET /authorize/me` (user and permissions) when the window regains focus or the browser
+     * comes back online, at most once per 30 s, so revoked or granted permissions apply without a
+     * reload. Default off. Failures are ignored (the next API call reports an expired session).
+     */
+    reloadOnFocus?: boolean;
   };
   /**
    * Override the cookie refresh transport (default `createKeepaliveCookieRefresh(apiBase + endpoints.refresh)`
@@ -266,6 +317,31 @@ export interface AdminAppConfig {
      * password for recent authentication).
      */
     twoFactorResetPath?: string;
+    /**
+     * Account types (`typeId`) an operator can choose. When set, the users page shows a type column,
+     * a required type select on create (initially `createDefaults.typeId` when it is one of the
+     * options) and on edit (changing it is enabled with `users.authorize`, which the server requires).
+     * Omit to keep the type out of the page (creation still sends `createDefaults`).
+     */
+    typeOptions?: readonly UserTypeOption[];
+    /** Optional password reset action; hidden when not configured. */
+    passwordReset?: UserPasswordResetConfig;
+  };
+  login?: {
+    /**
+     * "Forgot password?" link under the sign-in form, to the page where an account requests a reset
+     * (for example the site's `/en/forgot-password`, served by the account host's
+     * `POST /authorize/forgot-password`). Set it only when the server offers password reset; omitted,
+     * no link is shown. A site-relative path or an http(s) URL.
+     */
+    forgotPasswordHref?: string;
+  };
+  plans?: {
+    /**
+     * Drafts the plan editor can start from (shown next to "Create plan" with `plans.add`). A preset
+     * only fills the editor; nothing is written until the operator saves.
+     */
+    presets?: readonly PlanPreset[];
   };
   mail?: {
     /** Locale → template content column, matching the server's MailTemplateCatalog contentFields. */
@@ -303,6 +379,13 @@ export interface ResolvedAdminConfig {
   usersCreateDefaults: Record<string, unknown>;
   /** `users.twoFactorResetPath`, or null when the server offers no reset (action hidden). */
   usersTwoFactorResetPath: string | null;
+  /** `users.typeOptions` (empty: the type is not shown). */
+  usersTypeOptions: readonly UserTypeOption[];
+  /** `users.passwordReset` with a defaulted method, or null (action hidden). */
+  usersPasswordReset: Required<Pick<UserPasswordResetConfig, 'path' | 'method'>> & Pick<UserPasswordResetConfig, 'minLength'> | null;
+  planPresets: readonly PlanPreset[];
+  /** `login.forgotPasswordHref`, or null (no link). */
+  loginForgotPasswordHref: string | null;
   mailContentFields: Record<string, string>;
   mailPreviewLocales: readonly string[];
   aiProviders: readonly string[];
@@ -317,6 +400,46 @@ export function resolvePermissions(overrides: AdminPermissionOverrides = {}): Ad
   return result as unknown as AdminPermissionCodes;
 }
 
+const RESET_METHODS = new Set(['POST', 'PUT', 'PATCH']);
+
+function resolvePasswordReset(input: UserPasswordResetConfig | undefined): ResolvedAdminConfig['usersPasswordReset'] {
+  if (!input) return null;
+  const method = input.method ?? 'POST';
+  if (typeof input.path !== 'string' || !input.path.includes(':id'))
+    throw new TypeError('[fe-admin] users.passwordReset.path must contain :id');
+  if (!RESET_METHODS.has(method)) throw new TypeError('[fe-admin] users.passwordReset.method must be POST, PUT or PATCH');
+  if (input.minLength !== undefined && (!Number.isSafeInteger(input.minLength) || input.minLength < 1))
+    throw new TypeError('[fe-admin] users.passwordReset.minLength must be a positive integer');
+  return { path: input.path, method, ...(input.minLength ? { minLength: input.minLength } : {}) };
+}
+
+function resolveLinkHref(value: string | undefined, name: string): string | null {
+  if (value === undefined) return null;
+  const href = typeof value === 'string' ? value.trim() : '';
+  const relative = href.startsWith('/') && !href.startsWith('//') && !href.startsWith('/\\');
+  let absolute = false;
+  if (!relative) {
+    try {
+      absolute = ['http:', 'https:'].includes(new URL(href).protocol);
+    } catch {
+      absolute = false;
+    }
+  }
+  if (!relative && !absolute) throw new TypeError(`[fe-admin] ${name} must be a site-relative path or an http(s) URL`);
+  return href;
+}
+
+function uniqueKeys<T>(items: readonly T[] | undefined, key: (item: T) => unknown, name: string): readonly T[] {
+  const seen = new Set<string>();
+  for (const item of items ?? []) {
+    const value = key(item);
+    if (typeof value !== 'string' || !value) throw new TypeError(`[fe-admin] ${name} need a non-empty string identifier`);
+    if (seen.has(value)) throw new TypeError(`[fe-admin] ${name} contain a duplicate identifier: ${value}`);
+    seen.add(value);
+  }
+  return [...(items ?? [])];
+}
+
 export function resolveConfig(config: AdminAppConfig): ResolvedAdminConfig {
   const contentFields = config.mail?.contentFields ?? { zh: 'htmlContentZh', en: 'htmlContentEn' };
   return {
@@ -329,6 +452,10 @@ export function resolveConfig(config: AdminAppConfig): ResolvedAdminConfig {
     permissions: resolvePermissions(config.permissions),
     usersCreateDefaults: { ...config.users?.createDefaults },
     usersTwoFactorResetPath: config.users?.twoFactorResetPath?.includes(':id') ? config.users.twoFactorResetPath : null,
+    usersTypeOptions: uniqueKeys(config.users?.typeOptions, (option) => option.value, 'users.typeOptions'),
+    usersPasswordReset: resolvePasswordReset(config.users?.passwordReset),
+    planPresets: uniqueKeys(config.plans?.presets, (preset) => preset.key, 'plans.presets'),
+    loginForgotPasswordHref: resolveLinkHref(config.login?.forgotPasswordHref, 'login.forgotPasswordHref'),
     mailContentFields: contentFields,
     mailPreviewLocales: config.mail?.previewLocales ?? Object.keys(contentFields),
     aiProviders: config.ai?.providers ?? [],

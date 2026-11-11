@@ -11,7 +11,7 @@ import { AccountModule } from './accounts/account.module';
 import { AccountAvatarModule } from './accounts/avatar/avatar.module';
 import { AccountApiKeysModule } from './api-keys/api-keys.module';
 import { OAuthModule } from './oauth/oauth.module';
-import { AccountGuard } from './accounts/account.guard';
+import { AccountGuard } from '@zucker-framework/back-office/accounts';
 import { BillingModule } from './billing/billing.module';
 import { BillingRuntimeModule } from './billing/billing-runtime';
 import { ContentModule } from './content/content.module';

@@ -21,7 +21,7 @@ import { BillingModule } from '../src/billing/billing.module';
 import { OAuthModule } from '../src/oauth/oauth.module';
 import { DeliveryModule } from '../src/delivery/delivery.module';
 import { AccountModule } from '../src/accounts/account.module';
-import { AccountGuard } from '../src/accounts/account.guard';
+import { AccountGuard } from '@zucker-framework/back-office/accounts';
 import { ACCOUNT_MAILER, type AccountMailer } from '../src/accounts/account.service';
 import { RuntimeSettingsModule } from '../src/runtime-settings/runtime-settings.module';
 import { CONNECTION_PROFILE_DEFINITIONS } from '../src/runtime-settings/connection-settings.descriptors';

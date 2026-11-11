@@ -206,6 +206,9 @@ export type {
   PlanPurchaseRefusal,
   SubscriptionPaymentOutcome,
   SubscriptionPaymentResult,
+  SubscriptionRefundOutcome,
+  SubscriptionRefundInput,
+  SubscriptionRefundResult,
   SubscriptionChange,
   SubscriptionAssignmentOptions,
 } from './plans/subscription-assignment';

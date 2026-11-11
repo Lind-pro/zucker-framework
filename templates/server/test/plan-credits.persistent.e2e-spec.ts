@@ -10,7 +10,7 @@ import {
 } from '@zucker-framework/payment';
 import { ApplicationDatabase } from '../src/database';
 import { BillingCatalog, readBillingCatalog } from '../src/billing/catalog';
-import { BillingExtensions } from '../src/billing/billing-extensions';
+import { BillingExtensions } from '@zucker-framework/back-office/billing';
 import { createCheckoutPersistence } from '../src/billing/checkout-persistence';
 import { createSubscriptionCyclePersistence } from '../src/billing/subscription-persistence';
 import { createCreditLedger } from '../src/billing/ledger';

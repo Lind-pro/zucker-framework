@@ -20,7 +20,7 @@ import { FILE_MANAGER, S3Storage, type FileManager } from '@zucker-framework/sto
 import request from 'supertest';
 import { ApplicationDatabase } from '../src/database';
 import { AccountModule } from '../src/accounts/account.module';
-import { AccountGuard } from '../src/accounts/account.guard';
+import { AccountGuard } from '@zucker-framework/back-office/accounts';
 import { AccountService } from '../src/accounts/account.service';
 import { OAuthModule } from '../src/oauth/oauth.module';
 import { OAUTH_SETTINGS, type OAuthSettings } from '../src/oauth/oauth.config';
@@ -34,7 +34,7 @@ import { aiModuleOptionsFromRuntime } from '../src/ai-connections/runtime-ai-con
 import { ConnectionsService } from '../src/management/connections.service';
 import { RuntimeSettingsModule } from '../src/runtime-settings/runtime-settings.module';
 import { ConnectionSettingsService } from '../src/runtime-settings/connection-settings.service';
-import { HotProvider } from '../src/runtime-settings/hot-apply';
+import { HotProvider } from '@zucker-framework/back-office/settings';
 import { RUNTIME_SETTINGS_BASE_ENV } from '../src/runtime-settings/runtime-settings.tokens';
 
 /** Loopback SMTP catcher (no AUTH) recording raw DATA. */

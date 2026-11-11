@@ -31,6 +31,7 @@
     "@zucker-framework/ai": "workspace:*",
     "@zucker-framework/ai-tasks": "workspace:*",
     "@zucker-framework/auth": "workspace:*",
+    "@zucker-framework/back-office": "workspace:*",
     "@zucker-framework/cache": "workspace:*",
     "@zucker-framework/common": "workspace:*",
     "@zucker-framework/config": "workspace:*",

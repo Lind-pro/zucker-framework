@@ -19,6 +19,8 @@ import { Checkbox, Field, Input, Select, Switch, Textarea } from '../components/
 import { PageContainer } from '../components/layout';
 import { DataTable } from '../components/data-table';
 import { useAdmin, useAdminApi, usePermissionCheck, useResource } from '../app/context';
+import type { PlanPreset, PlanPresetValues } from '../app/config';
+import { localizedText } from '../app/menu';
 import { useAdminI18n, type Translate } from '../i18n/context';
 import type { MessageParams } from '../i18n/format';
 import type { AdminMessageKey } from '../i18n/zh-CN';
@@ -126,6 +128,33 @@ export function planToDraft(plan: SubscriptionPlan): PlanDraft {
       ? JSON.stringify(Object.fromEntries(TRANSLATION_KEYS.map((key) => [key, plan[key] ?? {}])), null, 2)
       : '',
   };
+}
+
+/**
+ * Editor draft of a configured preset (`plans.presets`): the preset's values over an empty, unlisted
+ * plan. Values the catalog does not declare stay in the draft, so the editor flags them before saving.
+ */
+export function presetToDraft(values: PlanPresetValues): PlanDraft {
+  return planToDraft({
+    id: '',
+    revision: 0,
+    createdAt: '',
+    updatedAt: '',
+    slug: '',
+    name: '',
+    description: null,
+    status: false,
+    order: 0,
+    features: {},
+    quotas: {},
+    ...values,
+    prices: (values.prices ?? []).map((price) => ({
+      termDays: null,
+      providerRefs: {},
+      ...price,
+      amount: String(price.amount),
+    })),
+  });
 }
 
 /**
@@ -418,21 +447,27 @@ function PriceRow({
 /** Catalog-driven editor for plan features and quotas plus the plan's prices. */
 export function PlanEditor({
   plan,
+  preset,
   catalog,
   onClose,
   onSaved,
 }: {
   plan: SubscriptionPlan | null;
+  /** New plan only: start from this preset's values instead of an empty draft. */
+  preset?: PlanPreset;
   catalog: EntitlementCatalog;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const { config } = useAdmin();
   const api = useAdminApi();
+  const { locale } = useAdminI18n();
   const t = usePlanText();
   const formId = useId();
   const providers = config.paymentProviders;
-  const [draft, setDraft] = useState<PlanDraft>(() => (plan ? planToDraft(plan) : emptyPlanDraft()));
+  const [draft, setDraft] = useState<PlanDraft>(() =>
+    plan ? planToDraft(plan) : preset ? presetToDraft(preset.plan) : emptyPlanDraft(),
+  );
   const [errors, setErrors] = useState<PlanValidationErrors>({});
   const [saving, setSaving] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
@@ -529,6 +564,11 @@ export function PlanEditor({
         }}
       >
         {failure && <Notice tone="danger" title={failure} />}
+        {!plan && preset && (
+          <Notice tone="info" title={t('plans.presetNotice', { name: localizedText(preset.label, locale) })}>
+            {preset.description ? localizedText(preset.description, locale) : undefined}
+          </Notice>
+        )}
         <fieldset className="grid gap-4 sm:grid-cols-2">
           {text('name', t('plans.name'), { required: true })}
           {text('slug', t('plans.slug'), { required: true, placeholder: 'pro' })}
@@ -716,13 +756,14 @@ export function PlanEditor({
 export function PlansPage() {
   const { config } = useAdmin();
   const api = useAdminApi();
-  const { t } = useAdminI18n();
+  const { t, locale } = useAdminI18n();
   const planText = usePlanText();
   const can = usePermissionCheck();
   const codes = config.permissions.plans;
   const catalog = useEntitlementCatalog();
   const plans = useResource(async (signal) => parsePlans(await api.get(config.endpoints.plans, undefined, { signal })), []);
-  const [editing, setEditing] = useState<SubscriptionPlan | 'new' | null>(null);
+  // A preset opens the create editor with a filled draft; nothing is written until Save.
+  const [editing, setEditing] = useState<SubscriptionPlan | 'new' | { preset: PlanPreset } | null>(null);
   const label = (kind: 'feature' | 'counter', key: string) =>
     (kind === 'feature' ? catalog.data?.features : catalog.data?.counters)?.find((item) => item.key === key)?.label ?? key;
   const rows = [...(plans.data ?? [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
@@ -732,9 +773,16 @@ export function PlansPage() {
       description={t('plans.description')}
       actions={
         can(codes.add) && (
-          <Button variant="primary" icon={<Plus />} disabled={!catalog.data} onClick={() => setEditing('new')}>
-            {t('plans.create')}
-          </Button>
+          <>
+            {config.planPresets.map((preset) => (
+              <Button key={preset.key} disabled={!catalog.data} onClick={() => setEditing({ preset })}>
+                {localizedText(preset.label, locale)}
+              </Button>
+            ))}
+            <Button variant="primary" icon={<Plus />} disabled={!catalog.data} onClick={() => setEditing('new')}>
+              {t('plans.create')}
+            </Button>
+          </>
         )
       }
     >
@@ -839,8 +887,9 @@ export function PlansPage() {
       />
       {editing && catalog.data && (
         <PlanEditor
-          key={editing === 'new' ? 'new' : editing.id}
-          plan={editing === 'new' ? null : editing}
+          key={editing === 'new' ? 'new' : 'preset' in editing ? `preset:${editing.preset.key}` : editing.id}
+          plan={editing === 'new' || 'preset' in editing ? null : editing}
+          preset={editing !== 'new' && 'preset' in editing ? editing.preset : undefined}
           catalog={catalog.data}
           onClose={() => setEditing(null)}
           onSaved={() => {

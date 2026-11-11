@@ -14,7 +14,7 @@ import type { HostedCheckoutAdapter, HostedCheckoutObservation, HostedCheckoutOr
 import request from 'supertest';
 import { ApplicationDatabase } from '../src/database';
 import { AccountModule } from '../src/accounts/account.module';
-import { AccountGuard } from '../src/accounts/account.guard';
+import { AccountGuard } from '@zucker-framework/back-office/accounts';
 import { ACCOUNT_MAILER, type AccountMailer } from '../src/accounts/account.service';
 import { BillingModule } from '../src/billing/billing.module';
 import { BILLING_OPTIONS, type BillingOptions } from '../src/billing/billing.service';

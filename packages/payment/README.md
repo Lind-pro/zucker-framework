@@ -478,3 +478,11 @@ subscription, not by an unsettled checkout. Validity comes from the injected `ac
 from credit). `changed` runs after `assign`/`cancel` commit; `recordPayment` runs inside the caller's
 payment transaction and returns its `change` for the caller to publish after commit (for example
 through its outbox).
+`revokePayment({ userId, reference })` is the refund write-back: call it once, in the refund settlement
+transaction, when a payment was refunded in full (a partial refund keeps the term). Only a live term
+whose `paymentReference` is that payment changes: LIFETIME is revoked (`EXPIRED`), a stacked
+`ONE_TIME` term loses the paid duration, a recurring term falls back to the start of the refunded
+period; an end that is not in the future revokes the term (`EXPIRED`, end now). Outcomes: `revoked`,
+`shortened`, `not_current` (another payment, plan or administrator defines the term), `inactive`,
+`not_found`. The evidence stays recorded, so the refunded reference is never applied again; the
+returned `change` (`kind: 'refunded'`) is published by the caller after commit.

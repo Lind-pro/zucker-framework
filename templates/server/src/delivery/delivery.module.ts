@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConnectionSettingsService } from '../runtime-settings/connection-settings.service';
-import { HotProvider, liveObjectView } from '../runtime-settings/hot-apply';
+import { HotProvider, liveObjectView } from '@zucker-framework/back-office/settings';
 import { RUNTIME_ENVIRONMENT } from '../runtime-settings/runtime-settings.tokens';
 import { DeliveryController } from './delivery.controller';
 import { DeliveryService } from './delivery.service';

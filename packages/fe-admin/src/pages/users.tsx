@@ -3,12 +3,14 @@ import { useEffect, useRef, useState } from 'react';
 import { Button } from '../components/button';
 import { Dialog } from '../components/dialog';
 import { ErrorState, LoadingState, Notice, StatusBadge, toast } from '../components/feedback';
-import { FormDialog, type FieldSpec } from '../components/form';
+import { FormDialog, type FieldSpec, type FormValues } from '../components/form';
 import { Checkbox, Input } from '../components/inputs';
 import type { UserRoleExpiries, UserRolesWriteBody } from '@zucker-framework/fe-types/back-office';
 import { PageContainer } from '../components/layout';
 import { Pagination, ResourceTable, type ResourceTableHandle } from '../components/data-table';
 import { useAdmin, useAdminApi, usePermissionCheck } from '../app/context';
+import type { ResolvedAdminConfig } from '../app/config';
+import { localizedText } from '../app/menu';
 import { useAdminI18n } from '../i18n/context';
 import { errorBody, formatDateTime } from '../lib/format';
 import { BatchDeleteButton, DeleteAction, crudLoader, enc } from './shared';
@@ -19,6 +21,8 @@ export interface UserRecord {
   email?: string | null;
   name?: string | null;
   status?: boolean;
+  /** Account type; shown when `users.typeOptions` is configured. */
+  typeId?: string | null;
   createTime?: string;
 }
 
@@ -34,12 +38,33 @@ export function UsersPage() {
   const [editing, setEditing] = useState<UserRecord | 'new' | null>(null);
   const [roleUser, setRoleUser] = useState<UserRecord | null>(null);
   const [twoFactorUser, setTwoFactorUser] = useState<UserRecord | null>(null);
+  const [passwordUser, setPasswordUser] = useState<UserRecord | null>(null);
   const resetPath = config.usersTwoFactorResetPath;
+  const passwordReset = config.usersPasswordReset;
+  const typeOptions = config.usersTypeOptions;
+  const typeLabel = (value: string | null | undefined) => {
+    const option = typeOptions.find((candidate) => candidate.value === value);
+    return option ? localizedText(option.label, locale) : (value ?? '');
+  };
   const reload = () => table.current?.reload();
+  const defaultType = (() => {
+    const preferred = config.usersCreateDefaults.typeId;
+    return typeof preferred === 'string' && typeOptions.some((option) => option.value === preferred) ? preferred : (typeOptions[0]?.value ?? '');
+  })();
+  const typeField = (record: UserRecord | null): FieldSpec[] => {
+    if (!typeOptions.length) return [];
+    const options = typeOptions.map((option) => ({ value: option.value, label: localizedText(option.label, locale) }));
+    // A stored type outside the configured options stays selectable, so an unrelated edit keeps it.
+    if (record?.typeId && !typeOptions.some((option) => option.value === record.typeId))
+      options.push({ value: record.typeId, label: record.typeId });
+    // The server requires users:authorize to change the type of an existing account.
+    return [{ name: 'typeId', label: t('users.type'), type: 'select', required: true, options, disabled: Boolean(record) && !can(codes.authorize) }];
+  };
   const fields = (record: UserRecord | null): FieldSpec[] => [
     { name: 'username', label: t('users.username'), required: true, disabled: Boolean(record), autoComplete: 'off', maxLength: 64 },
     { name: 'email', label: t('users.email'), type: 'email', required: true, maxLength: 254 },
     { name: 'name', label: t('users.name'), maxLength: 100 },
+    ...typeField(record),
     ...(record
       ? [{ name: 'status', label: t('common.enabled'), type: 'switch' } as FieldSpec]
       : [{ name: 'password', label: t('users.password'), type: 'password', required: true, autoComplete: 'new-password' } as FieldSpec]),
@@ -51,12 +76,34 @@ export function UsersPage() {
         ref={table}
         label={t('page.users')}
         load={crudLoader(api, path, (filters) =>
-          Object.fromEntries(Object.entries(filters).map(([key, value]) => [`${key}$like`, value])),
+          Object.fromEntries(
+            Object.entries(filters).map(([key, value]) =>
+              // Text filters match by substring; status and type match exactly (USER_FILTER of @zucker-framework/admin).
+              key === 'status' ? [key, value === 'true'] : key === 'typeId' ? [key, value] : [`${key}$like`, value],
+            ),
+          ),
         )}
         rowKey={(row) => row.id}
         filters={[
           { name: 'username', label: t('users.searchUsername') },
           { name: 'email', label: t('users.searchEmail') },
+          {
+            name: 'status',
+            label: t('users.status'),
+            type: 'select',
+            options: [
+              { value: 'true', label: t('common.enabled') },
+              { value: 'false', label: t('common.disabled') },
+            ],
+          },
+          ...(typeOptions.length
+            ? [{
+                name: 'typeId',
+                label: t('users.type'),
+                type: 'select' as const,
+                options: typeOptions.map((option) => ({ value: option.value, label: localizedText(option.label, locale) })),
+              }]
+            : []),
         ]}
         selection={can(codes.delete) ? { selected, onChange: setSelected } : undefined}
         toolbar={
@@ -83,6 +130,9 @@ export function UsersPage() {
           { key: 'username', title: t('users.username'), field: 'username' },
           { key: 'email', title: t('users.email'), field: 'email' },
           { key: 'name', title: t('users.name'), field: 'name' },
+          ...(typeOptions.length
+            ? [{ key: 'typeId', title: t('users.type'), render: (row: UserRecord) => typeLabel(row.typeId), hideOnMobile: true }]
+            : []),
           {
             key: 'status',
             title: t('users.status'),
@@ -107,6 +157,11 @@ export function UsersPage() {
                 {t('common.edit')}
               </Button>
             )}
+            {passwordReset && can(codes.authorize) && (
+              <Button size="sm" variant="ghost" onClick={() => setPasswordUser(row)}>
+                {t('users.resetPassword')}
+              </Button>
+            )}
             {resetPath && can(codes.update) && (
               <Button size="sm" variant="ghost" onClick={() => setTwoFactorUser(row)}>
                 {t('users.resetTwoFactor')}
@@ -123,14 +178,20 @@ export function UsersPage() {
           </>
         )}
       />
-      <FormDialog
+      <FormDialog<FormValues>
         open={editing !== null}
         onOpenChange={(open) => !open && setEditing(null)}
         title={record ? t('users.edit') : t('users.create')}
         initialValues={
           record
-            ? { username: record.username, email: record.email ?? '', name: record.name ?? '', status: record.status !== false }
-            : { username: '', email: '', name: '', password: '' }
+            ? {
+                username: record.username,
+                email: record.email ?? '',
+                name: record.name ?? '',
+                status: record.status !== false,
+                ...(typeOptions.length ? { typeId: record.typeId ?? '' } : {}),
+              }
+            : { username: '', email: '', name: '', password: '', ...(typeOptions.length ? { typeId: defaultType } : {}) }
         }
         fields={fields(record)}
         onSubmit={async (values) => {
@@ -139,11 +200,14 @@ export function UsersPage() {
               email: String(values.email).trim(),
               name: String(values.name ?? '').trim(),
               status: values.status === true,
+              // Sent only when changed: an unchanged type needs no users:authorize.
+              ...(typeOptions.length && values.typeId !== (record.typeId ?? '') ? { typeId: values.typeId } : {}),
             });
           // Creation follows the consumer's registration policy (createDefaults, e.g. a user type).
           else
             await api.post(path, {
               ...config.usersCreateDefaults,
+              ...(typeOptions.length ? { typeId: values.typeId } : {}),
               username: String(values.username).trim(),
               email: String(values.email).trim(),
               name: String(values.name ?? '').trim(),
@@ -153,6 +217,18 @@ export function UsersPage() {
           reload();
         }}
       />
+      {passwordUser && passwordReset && (
+        <PasswordResetDialog
+          key={passwordUser.id}
+          user={passwordUser}
+          reset={passwordReset}
+          onClose={() => setPasswordUser(null)}
+          onDone={() => {
+            setPasswordUser(null);
+            reload();
+          }}
+        />
+      )}
       {twoFactorUser && resetPath && (
         <TwoFactorResetDialog
           key={twoFactorUser.id}
@@ -173,6 +249,55 @@ export function UsersPage() {
         />
       )}
     </PageContainer>
+  );
+}
+
+/**
+ * Administrator password reset (`users.passwordReset`): sends `{ password }` to the configured
+ * endpoint. The new password lives only in this dialog's draft and is dropped when it closes; a
+ * failure keeps it for retry.
+ */
+export function PasswordResetDialog({
+  user,
+  reset,
+  onClose,
+  onDone,
+}: {
+  user: UserRecord;
+  reset: NonNullable<ResolvedAdminConfig['usersPasswordReset']>;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const api = useAdminApi();
+  const { t } = useAdminI18n();
+  const minLength = reset.minLength;
+  return (
+    <FormDialog
+      open
+      onOpenChange={(open) => !open && onClose()}
+      title={t('users.resetPasswordTitle', { name: user.username })}
+      description={t('users.resetPasswordDescription')}
+      submitText={t('users.resetPassword')}
+      failureMessage={t('users.resetPasswordFailed')}
+      initialValues={{ password: '', confirm: '' }}
+      fields={[
+        { name: 'password', label: t('users.newPassword'), type: 'password', required: true, autoComplete: 'new-password' },
+        { name: 'confirm', label: t('users.confirmPassword'), type: 'password', required: true, autoComplete: 'new-password' },
+      ]}
+      validate={(values) => ({
+        ...(minLength && String(values.password).length < minLength ? { password: t('users.passwordTooShort', { min: minLength }) } : {}),
+        ...(values.confirm && values.confirm !== values.password ? { confirm: t('users.passwordMismatch') } : {}),
+      })}
+      onSubmit={async (values) => {
+        const path = reset.path.replace(':id', enc(user.id));
+        const body = { password: String(values.password) };
+        if (reset.method === 'PUT') await api.put(path, body);
+        else if (reset.method === 'PATCH') await api.patch(path, body);
+        else await api.post(path, body);
+        toast.success(t('users.resetPasswordDone'));
+        onDone();
+      }}
+    />
   );
 }
 

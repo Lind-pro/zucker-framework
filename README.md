@@ -108,6 +108,7 @@ pnpm dev:web      # 启动 Web 前台 (端口 4202)
 | 包 | 说明 |
 |----|------|
 | `@zucker-framework/admin` | 自动 REST API 生成、CrudControllerFactory |
+| `@zucker-framework/back-office` | 后台服务端宿主：账户 `/accounts`、订阅与配额 `/subscriptions`、计费与退款 `/billing`、管理与日志 `/management`、邮件 `/mail`、连接设置与策略 `/settings`（与 `fe-admin` 配套） |
 | `@zucker-framework/monitoring` | 指标采集、告警、UsageTracker |
 | `@zucker-framework/provider` | Provider 注册表、健康检查 |
 | `@zucker-framework/rule-engine` | 业务规则引擎 |

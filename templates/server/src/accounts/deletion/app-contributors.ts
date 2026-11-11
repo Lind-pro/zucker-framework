@@ -5,8 +5,8 @@ import { FilesService } from '../../files/files.service';
 import { feedbackDeletionContributor } from '../../feedback/feedback.deletion';
 import { inboxDeletionContributor } from '../../inbox/inbox-deletion';
 import { referralDeletionContributor } from '../../referrals/referral-deletion';
-import type { AccountDeletionContributorProvider } from './account-deletion.module';
-import type { AccountDeletionContributor } from './account-deletion.types';
+import type { AccountDeletionContributorProvider } from '@zucker-framework/back-office/accounts';
+import type { AccountDeletionContributor } from './index';
 import { aiTaskCancellationContributor, privateFileCleanupContributor } from './contributors';
 
 /**

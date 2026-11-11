@@ -20,6 +20,18 @@
 | fe-storage / 1.0.2 | `setCookie/getCookie/removeCookie/CookieOptions`：SSR安全，显式scope/expiry，不持有产品key和寿命 | [storage](../packages/fe-storage/README.md) |
 | ext-kit / 1.0.2 | cleanup/download completion/checkpoint、session/offscreen lease、scroll watchdog、popup恢复；licensing request/normalize/timeout政策端口（配置破坏性变化）；正式资产必须与声明一起交付 | [ext-kit](../packages/ext-kit/README.md) |
 
+### 1.0.21 后台服务端宿主（未发布，fixed group patch）
+
+| 包 | 新契约 | 详细说明 |
+| --- | --- | --- |
+| back-office（新包） | `BackOffice{Accounts,Subscriptions,Billing,Management,Mail,Settings}Module.forRoot(options)`，子路径 `/accounts` `/subscriptions` `/billing` `/management` `/mail` `/settings`；模型/表名、字段映射与功能开关均为选项 | [back-office](../packages/back-office/README.md)、[既有产品接入](./existing-product-adoption.md) |
+| auth | `UserService.addUser(data, { passwordless, transaction })` | [auth](../packages/auth/README.md) |
+| payment | `SubscriptionAssignmentService.revokePayment({ userId, reference })`（全额退款撤销/缩短该笔付款定义的期限） | [payment](../packages/payment/README.md) |
+| admin | 日志列表契约 `parseLogRecordsQuery/listLogRecords/projectLogRecord`；`USER_FILTER.eq` 增加 `typeId` | [admin](../packages/admin/README.md) |
+| fe-admin | `plans.presets`、`users.typeOptions/passwordReset`、`login.forgotPasswordHref`、`UserPicker`、环境固定的连接字段只读 | [fe-admin](../packages/fe-admin/README.md) |
+| storage | `WEBDAV_STORAGE_CONNECTION_DESCRIPTOR`、`webDavOptionsFromConnection` | [storage](../packages/storage/README.md) |
+| common | `RawResponse()`；TransformInterceptor 对原始/流式/SSE/非 JSON 响应直通 | 见下文 common |
+
 `rate-limiter@1.0.2` 的 `ZuckerRateLimiterModule.forRoot({globalGuard:false,limiters})` 与 `RateLimiterService.consume(name,key)` 已正式可用，无需等上述发布。内存/Redis、配额、HTTP错误映射与根模块唯一注册由消费者明确选择。
 
 源码单测/合成HTTP不证明持久存储、Redis版本迁移、真实provider或发布制品兼容；这些边界须单独验收。结构型端口不能用于将既有持久化降级为内存。
@@ -126,7 +138,10 @@ const UpdateGroup = 'update';
 NestJS 通用中间件、拦截器、过滤器、管道。
 
 ```typescript
-class TransformInterceptor    // 响应自动包装为 ApiResponse 格式
+class TransformInterceptor    // 响应自动包装为 ApiResponse 格式；以下直通不包装：StreamableFile、@Sse()、
+                              // @RawResponse()、@Header('Content-Type', 非 JSON)（如 Prometheus /metrics）、响应已设非 JSON Content-Type
+function RawResponse(): ClassDecorator & MethodDecorator   // 1.0.21：控制器/处理器返回值原样作为响应体
+const RAW_RESPONSE_METADATA: symbol                        // Symbol.for('zucker:common:raw-response')
 class HttpExceptionFilter     // 全局异常过滤器
 class RequestLoggerMiddleware // 请求日志中间件
 class TrimStringPipe          // 字符串自动 trim
@@ -742,6 +757,45 @@ interface LifecycleHook { ... }
 class HookManager;
 class ZuckerProviderModule;
 ```
+
+---
+
+## @zucker-framework/back-office
+
+后台服务端宿主，与 `@zucker-framework/fe-admin` 配套。每个子路径一个 Nest 模块，`forRoot` 时校验选项（`TypeError('[back-office/<host>] …')`）；宿主不读 `process.env`，全局模块（`DATABASE_ADAPTER`、`ZuckerAuthModule`、日志、限流）由消费者根模块配置一次。
+
+```typescript
+// 根入口：共享约定
+function backOfficeToken(host: string, name: string): symbol;   // Symbol.for('zucker:back-office:<host>:<name>')
+function resolveModelNames(host, defaults, overrides): ModelNames; // 拒绝未知键与非标识符
+
+// /accounts
+BackOfficeAccountsModule.forRoot({ models, tables, tokens, passwordEncoder, verification: { mode: 'ticket' | 'code' },
+  mailer /* class | instance | { useExisting: token } */, policy, signupHooks, cookie, origins, locales,
+  signInMethods, features: { register, magicLink, twoFactor, deletion, avatar, apiKeys, oauth } });
+class AccountService; class AccountGuard; class AccountSessionCookie; class AccountSessionAdminHooks;
+function createAdministrator(db, admin, options); function syncMenus(db, catalog, options); function syncPermissions(db, codes, options);
+const ACCOUNT_RATE_LIMITS; function composeRateLimiters(...sets);
+
+// /subscriptions
+BackOfficeSubscriptionsModule.forRoot({ catalog, models, fields, locks, billingLink, quota, features, settings, billing, viewer });
+class SubscriptionsService;   // plans, assignments, reservations, chargeResource(...)
+function createPlanFulfillmentHooks(db, storage, options);   // checkoutFulfilled / cycleFulfilled / paymentRefunded
+function revokePlanTerm(db, storage, tx, { ownerId, reference, fulfillmentData });
+
+// /billing
+BackOfficeBillingModule.forRoot({ runtime | service, models, tables, credits /* null = plans-only */, ports: { checkout, refunds, policy },
+  features: { orders, subscriptions, refunds, recovery, paymentCredentials, creditPacks, testCheckout } });
+class BillingService; class BillingRefundsService;   // 全额退款一次性调用 paymentRefunded 钩子
+
+// /management, /mail, /settings
+BackOfficeManagementModule.forRoot({ path, models, tables, features, ports: { refunds, credits, creditLedger, connections } });
+BackOfficeMailModule.forRoot({ settings, site, templates, links, models, features: { admin, accountMailer, receipts, seedTemplates } });
+const MAIL_ACCOUNT_MAILER;    // BackOfficeAccountMailer（accounts 的 mailer 端口）
+BackOfficeSettingsModule.forRoot({ connections: { profiles, environmentPins, saveGuards }, policies: { definitions } });
+```
+
+完整选项、令牌与路由见 [back-office README](../packages/back-office/README.md)；既有数据库接入（别名、expand/contract、旧令牌）见 [既有产品接入](./existing-product-adoption.md)。
 
 ---
 

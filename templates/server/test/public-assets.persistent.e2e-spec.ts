@@ -16,7 +16,7 @@ import { ZuckerStorageModule } from '@zucker-framework/storage';
 import request from 'supertest';
 import { ApplicationDatabase } from '../src/database';
 import { AccountModule } from '../src/accounts/account.module';
-import { AccountGuard } from '../src/accounts/account.guard';
+import { AccountGuard } from '@zucker-framework/back-office/accounts';
 import { ACCOUNT_MAILER, type AccountMailer } from '../src/accounts/account.service';
 import { FilesModule } from '../src/files/files.module';
 import { FILES_OPTIONS } from '../src/files/files.config';

@@ -13,7 +13,7 @@ import { ZuckerRateLimiterModule } from '@zucker-framework/rate-limiter';
 import { HttpExceptionFilter } from '@zucker-framework/common';
 import request from 'supertest';
 import { AccountController } from '../src/accounts/account.controller';
-import { AccountGuard } from '../src/accounts/account.guard';
+import { AccountGuard } from '@zucker-framework/back-office/accounts';
 import { ACCOUNT_MAILER, AccountService, type AccountMailer } from '../src/accounts/account.service';
 import { ApplicationDatabase } from '../src/database';
 import { createAdministrator } from '../src/accounts/create-administrator';

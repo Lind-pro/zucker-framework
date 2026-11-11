@@ -15,7 +15,7 @@ import type { SiteDocument } from '@zucker-framework/fe-site/content';
 import request from 'supertest';
 import { ApplicationDatabase } from '../src/database';
 import { AccountModule } from '../src/accounts/account.module';
-import { AccountGuard } from '../src/accounts/account.guard';
+import { AccountGuard } from '@zucker-framework/back-office/accounts';
 import { ACCOUNT_MAILER, type AccountMailer } from '../src/accounts/account.service';
 import { ContentModule } from '../src/content/content.module';
 import { CONTENT_OPTIONS } from '../src/content/content.options';

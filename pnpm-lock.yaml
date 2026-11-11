@@ -262,6 +262,64 @@ importers:
         specifier: workspace:*
         version: link:../cache
 
+  packages/back-office:
+    dependencies:
+      '@zucker-framework/admin':
+        specifier: workspace:*
+        version: link:../admin
+      '@zucker-framework/auth':
+        specifier: workspace:*
+        version: link:../auth
+      '@zucker-framework/config':
+        specifier: workspace:*
+        version: link:../config
+      '@zucker-framework/core':
+        specifier: workspace:*
+        version: link:../core
+      '@zucker-framework/credit':
+        specifier: workspace:*
+        version: link:../credit
+      '@zucker-framework/crud':
+        specifier: workspace:*
+        version: link:../crud
+      '@zucker-framework/fe-types':
+        specifier: workspace:*
+        version: link:../fe-types
+      '@zucker-framework/logging':
+        specifier: workspace:*
+        version: link:../logging
+      '@zucker-framework/notification':
+        specifier: workspace:*
+        version: link:../notification
+      '@zucker-framework/payment':
+        specifier: workspace:*
+        version: link:../payment
+      '@zucker-framework/rate-limiter':
+        specifier: workspace:*
+        version: link:../rate-limiter
+    devDependencies:
+      '@nestjs/common':
+        specifier: ^12.0.1
+        version: 12.0.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1)
+      '@nestjs/core':
+        specifier: ^12.0.1
+        version: 12.0.1(@nestjs/common@12.0.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(@nestjs/platform-express@12.0.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/event-emitter':
+        specifier: ^12.0.0
+        version: 12.0.0(@nestjs/common@12.0.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(@nestjs/core@12.0.1)
+      '@nestjs/jwt':
+        specifier: ^12.0.1
+        version: 12.0.1(@nestjs/common@12.0.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))
+      '@types/node':
+        specifier: 20.19.43
+        version: 20.19.43
+      '@types/pg':
+        specifier: 8.23.1
+        version: 8.23.1
+      pg:
+        specifier: 8.23.0
+        version: 8.23.0
+
   packages/buffer:
     dependencies:
       '@zucker-framework/core':
@@ -1318,6 +1376,9 @@ importers:
       '@zucker-framework/auth':
         specifier: workspace:*
         version: link:../../packages/auth
+      '@zucker-framework/back-office':
+        specifier: workspace:*
+        version: link:../../packages/back-office
       '@zucker-framework/cache':
         specifier: workspace:*
         version: link:../../packages/cache

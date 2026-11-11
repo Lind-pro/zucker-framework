@@ -20,7 +20,7 @@ import type { HostedCheckoutAdapter, HostedCheckoutObservation, HostedCheckoutOr
 import request from 'supertest';
 import { ApplicationDatabase } from '../src/database';
 import { AccountModule } from '../src/accounts/account.module';
-import { AccountGuard } from '../src/accounts/account.guard';
+import { AccountGuard } from '@zucker-framework/back-office/accounts';
 import { ACCOUNT_MAILER, type AccountMailer } from '../src/accounts/account.service';
 import { createAdministrator } from '../src/accounts/create-administrator';
 import { BILLING_OPTIONS, BillingService, type BillingOptions } from '../src/billing/billing.service';
@@ -29,7 +29,7 @@ import { SubscriptionsModule } from '../src/subscriptions/subscriptions.module';
 import { RuntimeSettingsModule } from '../src/runtime-settings/runtime-settings.module';
 import { RUNTIME_SETTINGS_BASE_ENV } from '../src/runtime-settings/runtime-settings.tokens';
 import { PolicyModule } from '../src/policy/policy.module';
-import { PolicyService } from '../src/policy/policy.service';
+import { PolicyService } from '@zucker-framework/back-office/settings';
 import { applicationCorsOptions } from '../src/http-options';
 
 /**

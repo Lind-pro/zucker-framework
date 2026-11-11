@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import type { ConnectionSettingsServiceOptions } from '@zucker-framework/back-office/settings';
 import { AI_CONNECTIONS } from '../ai-connections/ai-connections.config';
 import { AI_CONNECTION_PROFILES } from './profiles/ai.profiles';
 import { IDENTITY_CONNECTION_PROFILES } from './profiles/identity.profiles';
@@ -6,9 +7,8 @@ import { MAIL_CONNECTION_PROFILES } from './profiles/mail.profiles';
 import { PAYMENT_CONNECTION_PROFILES } from './profiles/payment.profiles';
 import { PUBLIC_SITE_CONNECTION_PROFILES } from './profiles/public-site.profiles';
 import { STORAGE_CONNECTION_PROFILES } from './profiles/storage.profiles';
-import { validateConnectionField, validateConnectionProfile } from '@zucker-framework/config/connections';
-import { withHttpErrors, withHttpErrorsAsync } from './connection-errors';
 import { composeConnectionProfiles, type ConnectionApplyMode, type ConnectionField, type ConnectionProfile, type ConnectionProfileDefinition } from './registry';
+import { publicIntegrationsProjection } from './site-public.config';
 
 export type { ConnectionApplyMode, ConnectionField, ConnectionFieldType, ConnectionProfile, ConnectionProfileDefinition } from './registry';
 /**
@@ -41,12 +41,14 @@ function connectionDefinition(id: string): ConnectionProfileDefinition {
 }
 export function connectionProfile(id: string): ConnectionProfile { return connectionDefinition(id).profile; }
 export function connectionApplyMode(id: string): ConnectionApplyMode { return connectionDefinition(id).applyMode; }
-/** Field validation from `@zucker-framework/config/connections`, with Nest HTTP exceptions. */
-export function validateField(field: ConnectionField, value: unknown): string {
-  return withHttpErrors(() => validateConnectionField(field, value));
-}
-/** Construct local options only. No verification request, send, upload or payment is performed. */
-export async function validateConnection(profile: ConnectionProfile, env: NodeJS.ProcessEnv): Promise<void> {
-  // Validator messages may echo configuration; only the generic message leaves the server.
-  await withHttpErrorsAsync(() => validateConnectionProfile(connectionDefinition(profile.id), env));
-}
+
+/**
+ * Settings host configuration of the template (`@zucker-framework/back-office/settings`): profiles, label
+ * keys and the public website projection. No field is environment-pinned in the template; a product
+ * pins fields with `environmentPins` (read-only in the admin, never written to the database).
+ */
+export const TEMPLATE_CONNECTION_SETTINGS = Object.freeze({
+  profiles: CONNECTION_PROFILE_DEFINITIONS,
+  labelKeys: connectionLabelKeys,
+  publicIntegrations: publicIntegrationsProjection,
+}) satisfies ConnectionSettingsServiceOptions;

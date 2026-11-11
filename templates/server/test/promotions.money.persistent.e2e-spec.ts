@@ -14,7 +14,7 @@ import { computePromotion, type PromotionRow } from '../src/promotions/promotion
 import { createPlanCatalogStore } from '../src/subscriptions/plan-catalog.store';
 import { planFulfillmentHooks } from '../src/subscriptions/payment-writeback';
 import { APP_ENTITLEMENT_CATALOG } from '../src/subscriptions/entitlement-catalog';
-import type { PolicyService } from '../src/policy/policy.service';
+import type { PolicyService } from '@zucker-framework/back-office/settings';
 
 /**
  * Money safety of promotions (WP 3.4). The browser can only name an offer and, when policy allows,

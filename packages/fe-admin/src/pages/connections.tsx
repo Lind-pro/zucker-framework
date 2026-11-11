@@ -24,6 +24,10 @@ export interface ConnectionField {
   configured: boolean;
   source: 'saved' | 'environment' | 'default' | 'cleared' | 'unset';
   value?: string | null;
+  /** The server refuses changes to this field (e.g. it is pinned by the server environment). */
+  readOnly?: boolean;
+  /** The value comes from the server environment and cannot be saved here. */
+  pinnedByEnvironment?: boolean;
 }
 export interface ConnectionProfile {
   id: string;
@@ -37,7 +41,10 @@ export interface ConnectionProfile {
   appliedRevision: number;
   pendingRestart: boolean;
   canSave: boolean;
+  /** `encryption_key_required`, `environment_pinned` (every field pinned) or another server reason. */
   saveUnavailableReason: string | null;
+  /** Keys of the fields pinned by the server environment (older servers omit it). */
+  pinnedFields?: string[];
   /**
    * `hot`: a save applies without a restart; `restart`: it applies on the next server start.
    * Older servers omit it and every profile then applies after a restart.
@@ -81,6 +88,9 @@ const errorCode = (error: unknown) => {
 
 /** Hot profiles never wait for a restart, whatever `pendingRestart` says. */
 const isHot = (profile: { applyMode?: string } | undefined) => profile?.applyMode === 'hot';
+/** A field the operator cannot change here (pinned by the server environment or marked read-only). */
+const isLocked = (profile: ConnectionProfile, field: ConnectionField) =>
+  field.readOnly === true || field.pinnedByEnvironment === true || (profile.pinnedFields?.includes(field.key) ?? false);
 
 type Action = 'keep' | 'replace' | 'clear';
 const KNOWN_STATES = ['configured', 'disabled', 'missing', 'invalid', 'missing-sdk', 'managed-elsewhere', 'not-registered'];
@@ -138,7 +148,7 @@ function ConnectionEditor({
     const secrets: Record<string, { action: 'clear' } | { action: 'replace'; value: string }> = {};
     for (const field of profile.fields) {
       const action = actions[field.key];
-      if (!action || action === 'keep') continue;
+      if (!action || action === 'keep' || isLocked(profile, field)) continue;
       if (field.type === 'secret')
         secrets[field.key] = action === 'clear' ? { action: 'clear' } : { action: 'replace', value: values[field.key] ?? '' };
       else plain[field.key] = action === 'clear' ? null : (values[field.key] ?? '');
@@ -228,10 +238,16 @@ function ConnectionEditor({
             {typeof profile.retainedRevisions === 'number' ? t('connections.retainedRevisions', { count: profile.retainedRevisions }) : null}
           </Notice>
         )}
-        {!profile.canSave && (
-          <Notice tone="warning" title={t('connections.noKey')}>
-            {t('connections.noKeyDescription')}
+        {!profile.canSave && profile.saveUnavailableReason === 'environment_pinned' ? (
+          <Notice tone="info" title={t('connections.allPinned')}>
+            {t('connections.allPinnedDescription')}
           </Notice>
+        ) : (
+          !profile.canSave && (
+            <Notice tone="warning" title={t('connections.noKey')}>
+              {t('connections.noKeyDescription')}
+            </Notice>
+          )
         )}
         {!writable && <Notice tone="info" title={t('connections.readOnly')} />}
         {conflict && (
@@ -248,11 +264,13 @@ function ConnectionEditor({
           {profile.fields.map((field) => {
             const action = actions[field.key] ?? 'keep';
             const label = serverLabel(field.label, field.labelKey);
+            const locked = isLocked(profile, field);
             return (
               <li key={field.key} className="space-y-2 py-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-sm font-medium">{label}</span>
                   <StatusBadge>{sourceLabel(field.source)}</StatusBadge>
+                  {locked && <StatusBadge tone="info">{t('connections.pinned')}</StatusBadge>}
                 </div>
                 <p className="text-sm text-muted-foreground break-words [overflow-wrap:anywhere]">
                   {field.type === 'secret'
@@ -262,7 +280,8 @@ function ConnectionEditor({
                     : (field.value ?? t('common.notSet'))}
                   {field.description && <span className="mt-1 block">{serverLabel(field.description, field.labelKey && `${field.labelKey}.description`)}</span>}
                 </p>
-                {editable && (
+                {locked && editable && <p className="text-xs text-muted-foreground">{t('connections.pinnedDescription')}</p>}
+                {editable && !locked && (
                   <div className="grid gap-3 sm:grid-cols-2">
                     <Field label={t('connections.action', { label })}>
                       {({ id }) => (

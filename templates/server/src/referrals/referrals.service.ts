@@ -2,7 +2,7 @@ import { BadRequestException, Inject, Injectable, Logger, NotFoundException, Opt
 import { randomInt } from 'node:crypto';
 import { DATABASE_ADAPTER } from '@zucker-framework/core';
 import { ApplicationDatabase, type ApplicationTransaction } from '../database';
-import { PolicyService } from '../policy/policy.service';
+import { PolicyService } from '@zucker-framework/back-office/settings';
 import { ConnectionSettingsService } from '../runtime-settings/connection-settings.service';
 import { readReferralPolicy, type ReferralPolicyValues } from './referral.policy';
 import { REFERRAL_OPTIONS, type ReferralOptions } from './referral.tokens';

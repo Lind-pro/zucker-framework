@@ -8,6 +8,15 @@
 
 `boundedMemoryStorage({ maxBytes, createLimitError, decodeFilename })` is structurally compatible with Multer's `StorageEngine` without a Multer runtime dependency. Default total **file bytes per request** is 200 MiB. It preserves UTF-8 multipart Chinese filenames, bounds aggregate retained file buffers, drains rejected streams, reports abort/early-close/limit/errors once, and deletes buffers on `_removeFile`. Text fields, file count, per-file limits and request/body timeouts must still be configured on the host multipart parser. `createLimitError` owns user-facing language; default is HTTP 413. `_removeFile` does not reset the request's cumulative budget. `decodeMultipartFilename` is also exported for parser integration.
 
+## Response envelope and raw responses (unreleased, 1.0.21)
+
+`TransformInterceptor` wraps controller return values as `{ status, code, message, result, timestamp }`.
+It passes the value through unchanged for `StreamableFile`, `@Sse()` handlers, controllers or handlers
+marked `@RawResponse()`, handlers declaring a non-JSON `@Header('Content-Type', …)` (for example the
+Prometheus exporters of `@zucker-framework/monitoring`) and responses whose handler already set a
+non-JSON `Content-Type` (`@Res({ passthrough: true })`). `@Res()` handlers write their own response as
+before. JSON media types (`application/json`, `application/*+json`) keep the envelope.
+
 ## HTTP error policy
 
 `HttpExceptionFilter` accepts optional `HttpExceptionFilterOptions`. `formatResponse(normalized, context)` customizes the response envelope after Framework status/message/retry-header normalization. Context includes the original exception, request and classification (`http`, `business`, `validation`, `unknown`). `onServerError(context)` can report 5xx errors; a reporting exception cannot replace the HTTP response. Unknown errors use a fixed default log message and response: raw exception messages/stacks and thrown objects may contain ORM values, credential hashes, tokens or private content. An explicit reporter receives the original context and owns any redaction before external logging. Configure product disclosure/messages as a policy object rather than wrapping Nest request/response objects.

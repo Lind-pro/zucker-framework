@@ -9,6 +9,7 @@
       "@zucker-framework/ai-access",
       "@zucker-framework/ai-tasks",
       "@zucker-framework/auth",
+      "@zucker-framework/back-office",
       "@zucker-framework/buffer",
       "@zucker-framework/cache",
       "@zucker-framework/cli",

@@ -1,10 +1,9 @@
 import { Inject, Module, RequestMethod, type MiddlewareConsumer, type NestModule, type OnModuleDestroy } from '@nestjs/common';
 import { AccountModule } from '../accounts/account.module';
 import { ConnectionSettingsService } from '../runtime-settings/connection-settings.service';
-import { HotProvider, liveObjectView } from '../runtime-settings/hot-apply';
+import { HotProvider, liveObjectView } from '@zucker-framework/back-office/settings';
 import { RUNTIME_ENVIRONMENT } from '../runtime-settings/runtime-settings.tokens';
-import { OAuthController } from './oauth.controller';
-import { OAuthService } from './oauth.service';
+import { OAuthController, OAuthService } from '@zucker-framework/back-office/accounts';
 import { OAUTH_CONNECTION, OAUTH_CONNECTION_PROFILES, OAUTH_SETTINGS, oauthSettings, type OAuthConnection, type OAuthSettings } from './oauth.config';
 import { ConfiguredOAuthProviderClient, OAUTH_PROVIDER_CLIENT, type OAuthProviderClient } from './oauth-provider';
 

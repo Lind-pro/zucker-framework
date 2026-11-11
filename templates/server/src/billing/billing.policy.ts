@@ -1,4 +1,4 @@
-import { definePolicy } from '../policy/policy.registry';
+import { definePolicy } from '@zucker-framework/back-office/settings';
 
 const PROVIDER = /^[a-z][a-z0-9_-]{0,31}$/;
 

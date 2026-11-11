@@ -98,7 +98,7 @@ function projectBundleFixture() {
     templates: {
       admin: template('admin', ['index.html', 'vite.config.ts', 'tsconfig.json', 'src/main.tsx']),
       web: template('web', ['next.config.ts', 'tsconfig.json', 'src/app/[locale]/layout.tsx', 'src/app/[locale]/(home)/page.tsx']),
-      'server-full': template('server-full', ['README.md', '.env.example', '.gitignore', 'nest-cli.json', 'tsconfig.json', 'eslint.config.cjs', 'prisma.config.ts', 'prisma/schema.prisma', 'prisma/migrations/migration_lock.toml', 'prisma/migrations/20261024000000_initial/migration.sql', 'prisma/migrations/20261024000100_credential_version/migration.sql', 'src/main.ts', 'src/app.module.ts', 'src/database.ts', 'src/accounts/account.module.ts', 'src/accounts/account.controller.ts', 'src/accounts/account.guard.ts', 'src/accounts/account.service.ts', 'src/accounts/account-mailer.ts', 'src/accounts/create-administrator.ts', 'src/scripts/create-admin.ts']),
+      'server-full': template('server-full', ['README.md', '.env.example', '.gitignore', 'nest-cli.json', 'tsconfig.json', 'eslint.config.cjs', 'prisma.config.ts', 'prisma/schema.prisma', 'prisma/migrations/migration_lock.toml', 'prisma/migrations/20261024000000_initial/migration.sql', 'prisma/migrations/20261024000100_credential_version/migration.sql', 'src/main.ts', 'src/app.module.ts', 'src/database.ts', 'src/accounts/account.module.ts', 'src/accounts/account.controller.ts', 'src/accounts/account.config.ts', 'src/accounts/account.service.ts', 'src/accounts/create-administrator.ts', 'src/scripts/create-admin.ts']),
     },
   };
 }

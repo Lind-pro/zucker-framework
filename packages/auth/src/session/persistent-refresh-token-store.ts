@@ -24,6 +24,15 @@ export class PersistentSessionRefreshTokenStore implements RefreshTokenStore {
     return this.sessions.rotateRefreshJti(sessionId, current, next);
   }
 
+  /** Rotation stamps `lastActiveAt`; a reuse older than the grace window revokes the session. */
+  async reused(sessionId: string, jti: string, graceMs: number): Promise<boolean> {
+    const session = await this.sessions.getSessionById(sessionId);
+    if (!session || session.revokedAt || session.expiresAt.getTime() <= Date.now() || session.refreshJti === jti) return false;
+    if (Date.now() - new Date(session.lastActiveAt).getTime() < graceMs) return false;
+    await this.sessions.revokeSession(sessionId, 'refresh_reuse');
+    return true;
+  }
+
   async revoke(sessionId: string, _ttlMs: number): Promise<void> {
     const session = await this.sessions.getSessionById(sessionId);
     if (session) await this.sessions.revokeSession(sessionId, 'logout');

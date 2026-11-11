@@ -126,3 +126,64 @@ describe('UserService credential and binding contracts', () => {
   });
 
 });
+
+describe('UserService.addUser passwordless and transactional creation', () => {
+  function setup() {
+    const db = new InMemoryAdapter();
+    const encoder = new ScryptEncoder();
+    const bus = { publish: vi.fn().mockResolvedValue(undefined) };
+    const service = new UserService(db, encoder, bus);
+    return { db, encoder, bus, service };
+  }
+
+  it('creates a passwordless account with a null credential and publishes the created event', async () => {
+    const f = setup();
+    const encode = vi.spyOn(f.encoder, 'encode');
+    const user = await f.service.addUser({ username: 'member_one', name: 'Member', typeId: 'member' }, { passwordless: true });
+    expect(user.password).toBeNull();
+    expect((await f.service.findById(user.id))?.password).toBeNull();
+    expect(encode).not.toHaveBeenCalled();
+    expect(f.bus.publish).toHaveBeenCalledWith(AUTH_EVENT_TOPICS.USER_CREATED, expect.objectContaining({ userId: user.id }));
+    expect(await f.service.findByUsernameAndPassword('member_one', '')).toBeNull();
+  });
+
+  it('still requires a valid password by default', async () => {
+    const f = setup();
+    await expect(f.service.addUser({ username: 'member_two', name: 'Member', typeId: 'member' })).rejects.toBeInstanceOf(ValidationException);
+    expect(await f.service.findByUsername('member_two')).toBeNull();
+    expect(f.bus.publish).not.toHaveBeenCalled();
+  });
+
+  it('rejects a password combined with passwordless and keeps username validation and uniqueness', async () => {
+    const f = setup();
+    await expect(f.service.addUser({ username: 'member_three', name: 'M', typeId: 'member', password: 'SyntheticOnly9Password' }, { passwordless: true }))
+      .rejects.toBeInstanceOf(ValidationException);
+    await expect(f.service.addUser({ username: '', name: 'M', typeId: 'member' }, { passwordless: true })).rejects.toBeInstanceOf(ValidationException);
+    await f.service.addUser({ username: 'member_three', name: 'M', typeId: 'member' }, { passwordless: true });
+    await expect(f.service.addUser({ username: 'member_three', name: 'M', typeId: 'member' }, { passwordless: true }))
+      .rejects.toMatchObject({ status: 409 });
+  });
+
+  it('writes on the caller transaction and publishes only after it commits', async () => {
+    const f = setup();
+    const created = await f.db.$transaction(async tx => {
+      const model = vi.spyOn(tx, 'model');
+      const user = await f.service.addUser({ username: 'member_four', name: 'M', typeId: 'member' }, { passwordless: true, transaction: tx });
+      expect(model).toHaveBeenCalledWith('users');
+      expect(f.bus.publish).not.toHaveBeenCalled();
+      return user;
+    });
+    expect(f.bus.publish).toHaveBeenCalledTimes(1);
+    expect(f.bus.publish).toHaveBeenCalledWith(AUTH_EVENT_TOPICS.USER_CREATED, expect.objectContaining({ userId: created.id }));
+  });
+
+  it('does not publish the created event when the caller transaction rolls back', async () => {
+    const f = setup();
+    const failure = new Error('synthetic later failure');
+    await expect(f.db.$transaction(async tx => {
+      await f.service.addUser({ username: 'member_five', name: 'M', typeId: 'member' }, { passwordless: true, transaction: tx });
+      throw failure;
+    })).rejects.toBe(failure);
+    expect(f.bus.publish).not.toHaveBeenCalled();
+  });
+});

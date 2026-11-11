@@ -208,6 +208,13 @@ export function LoginPage() {
             <Button type="submit" variant="primary" className="h-10 w-full" loading={submitting}>
               {submitting ? t('shell.loggingIn') : t('shell.login')}
             </Button>
+            {config.loginForgotPasswordHref && (
+              <p className="text-center text-sm">
+                <a className="text-primary underline-offset-4 hover:underline" href={config.loginForgotPasswordHref}>
+                  {t('shell.forgotPassword')}
+                </a>
+              </p>
+            )}
           </form>
         )}
       </div>

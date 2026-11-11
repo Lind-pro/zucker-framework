@@ -24,7 +24,12 @@ export const { App } = createAdminApp({
   messages: { 'page.plans': '会员套餐' },                    // copy overrides (any locale)
   serverLabels: { 'en-US': { 'connections.identity-google': 'Google sign-in' } }, // server display text by labelKey
   paymentProviders: ['stripe', 'paypal', 'creem'],           // provider refs shown in the plan price editor
-  users: { createDefaults: { typeId: 'member' } },           // consumer registration policy
+  users: {
+    createDefaults: { typeId: 'member' },                    // consumer registration policy
+    typeOptions: [{ value: 'member', label: { 'zh-CN': '普通用户', 'en-US': 'Member' } }, { value: 'admin', label: '管理员' }],
+    passwordReset: { path: '/users/:id', method: 'PUT' },    // optional; hidden when omitted
+  },
+  plans: { presets: [{ key: 'pro', label: 'Pro draft', plan: { slug: 'pro', name: 'Pro', prices: [{ interval: 'month', currency: 'USD', amount: '19.90' }] } }] },
   mail: { contentFields: { en: 'htmlContentEn', zh: 'htmlContentZh' } },
   permissions: { plans: { update: 'billing:plans' } },       // only if the server uses other codes
   pages: { aiModels: false },                                // disable or override built-in pages
@@ -145,14 +150,61 @@ Page notes:
   provider (`paymentProviders`, Stripe references must be `price_…`). Saving sends the plan's
   `revision` as `expectedRevision`; a concurrent edit is rejected with 409 and the draft is kept.
   Wire types come from `@zucker-framework/fe-types/back-office`.
-- **userSubscriptions** — the modify dialog sends `startDate`/`endDate` only when changed (an
+- **plans presets** — `plans.presets` adds one button per preset next to "Create plan" (with
+  `plans:add`). A preset only fills the create editor (`presetToDraft`: the preset's values over an
+  empty, unlisted plan, amounts as decimal strings) and names the preset above the form; nothing is
+  written until the operator saves, and Cancel discards it. Keys outside the entitlement catalog are
+  flagged by the editor like any other draft. Preset keys must be unique (checked by `resolveConfig`).
+- **users** — `users.typeOptions` adds a type column, a required type select on create (initially
+  `createDefaults.typeId` when it is an option) and on edit; an existing account's type can be changed
+  only with `users:authorize` (as the server requires) and is sent only when changed. A stored type
+  outside the options stays selectable. The list filters by username/email (substring), status and,
+  with `typeOptions`, type (exact; `USER_FILTER` of `@zucker-framework/admin`, `typeId` from 1.0.21).
+- **users password reset** — shown only when `users.passwordReset` is configured, and only with
+  `users:authorize`. The dialog asks for the new password twice (optional `minLength`) and sends
+  `{ "password": "<new>" }` with `method` (default `POST`) to `path` (`:id` = user id); any non-2xx
+  keeps the input and shows an error. Server contract: the route must require `users:authorize`,
+  apply the account password policy, store only a hash and end the account's existing sessions.
+  With `@zucker-framework/admin` use `{ path: '/users/:id', method: 'PUT' }`: `PUT /users/:id`
+  accepts `password` only with `users:authorize`, hashes it through `UserService`, and calls
+  `AdminUserHooks.sensitiveFieldsChanged({ fields: ['password'] })`, where the application revokes
+  sessions (the server template's `AdminUserSessionHooks` bumps `credentialVersion` and revokes the
+  refresh sessions). A product endpoint such as `POST /users/:id/reset-password` works the same way.
+- **userSubscriptions** — a new assignment offers `UserPicker` (with `users:query`): type two or more
+  characters of a username (or an email address) and pick a result to fill the account ID; pasting the
+  ID still works. The modify dialog sends `startDate`/`endDate` only when changed (an
   untouched paid term keeps its exact times), never sends an end for `LIFETIME`, and requires one for a
   new `ONE_TIME` term. Lifetime terms are revoked (status `EXPIRED`) instead of cancelled. The list
   filters on stored `status` and on derived validity (`active=active|inactive`). A 409
   `pending_payment` names the blocking order or provider subscription.
+- **connections** — fields the server reports as `readOnly` or `pinnedByEnvironment` (or lists in
+  the profile's `pinnedFields`) are shown with their value and source but offer no action and are never
+  sent; a fully pinned profile (`saveUnavailableReason: 'environment_pinned'`) explains that its values
+  come from the deployment environment.
 - **quotaReservations** — `changed: false` from release/confirm is reported as "already settled".
 - **aiModels** — provider ids are product vocabulary: set `ai.providers`; without it the page shows a
   warning and offers no create.
+
+`login.forgotPasswordHref` shows a "Forgot password?" link under the sign-in form (a site-relative
+path or an http(s) URL, checked by `resolveConfig`). Set it only when the server offers password reset
+(for example the site's forgot-password page backed by `POST /authorize/forgot-password`).
+
+`session.reloadOnFocus: true` re-reads `/authorize/me` when the window regains focus or comes back
+online (at most every 30 s), so permission changes apply without a reload.
+
+## Product pages (`extraPages`)
+
+`extraPages` are routes of the shell's **data router** (`createBrowserRouter`; tests pass a memory
+router through `createAdminApp(config, { createRouter })`). A product page component can use the kit
+(`PageContainer`, `ResourceTable` + `crudLoader`/`pageLoader`, `FormDialog`, `useAdminApi`,
+`useResource`, `usePermissionCheck`, `useAdminI18n` …) together with the react-router 8 hooks,
+including those that need a data router: `useParams`, `useSearchParams`, `useNavigate`, `Link`,
+`useBlocker` (unsaved-change prompts), `useNavigation`, `useRevalidator`. Paths may contain
+parameters (`/reports/:id`); the menu, breadcrumb and permission gate match them, and the most
+specific page wins. Route `loader`/`action` functions are intentionally not part of
+`AdminPageDefinition`: they would run before the session is restored and before the permission
+gate, so data is loaded inside the page with the session-bound `useAdminApi()` (aborted on sign-out
+or account switch). See `src/app/extra-pages.spec.tsx`.
 
 Endpoints are overridable through `endpoints`. Idempotent commands (credit grants, refunds) use
 `operationAttempt()` keys that survive refresh and store only a hash of the request body, and re-read
@@ -165,7 +217,8 @@ Endpoints are overridable through `endpoints`. Idempotent commands (credit grant
 abort of superseded requests), `FilterBar`, `FormDialog` + `FormFields` (built-in validation, draft
 kept on failure, focus on first invalid field), `Dialog`, `Drawer`, `ConfirmDialog`/`ConfirmButton`,
 `StatusBadge`, `Notice`, `EmptyState`/`ErrorState`/`LoadingState`, `toast`, `KeyValueList`,
-`JsonView`, `Tabs`, inputs (`Input`, `Textarea`, `Select`, `Checkbox`, `Switch`, `Field`). Hooks:
+`JsonView`, `Tabs`, inputs (`Input`, `Textarea`, `Select`, `Checkbox`, `Switch`, `Field`), `UserPicker`
+(account search over `POST {endpoints.users}/_query`). Hooks:
 `useAdmin`, `useAdminApi`, `usePermissionCheck`, `useResource`, `useEntitlementCatalog`,
 `useAdminI18n`. Dialogs become full-screen sheets below 768px; controls meet 44px touch targets.
 
@@ -200,5 +253,7 @@ text without a translation is shown as received. Pages and product code can use
 `src/app/session-restore.spec.tsx` (restore under StrictMode and navigation, hanging refresh,
 cross-tab sign-out/switch, request abort on sign-out; the exchange itself is tested in fe-http-client
 `cookie-refresh-exchange.spec.ts`), `src/pages/credits.spec.tsx`, `src/pages/connections.spec.tsx` (server labels),
-`src/components/data-table.spec.tsx`, `src/pages/plans.spec.tsx`, `src/pages/subscriptions.spec.tsx`,
+`src/components/data-table.spec.tsx`, `src/pages/plans.spec.tsx`, `src/pages/plans.presets.spec.tsx`,
+`src/pages/users.options.spec.tsx` (type options, password reset, status filter),
+`src/app/extra-pages.spec.tsx` (product pages in the data router), `src/pages/subscriptions.spec.tsx`,
 `src/lib/operation-attempt.spec.ts`; run with the root `vitest` (`npx vitest run packages/fe-admin`).

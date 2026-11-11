@@ -267,13 +267,16 @@ run('encrypted AI connections PostgreSQL, HTTP and actual Nest composition', () 
     ).body;
     expect(JSON.stringify([stored, audit, responses, publicView])).not.toContain(secret);
     expect(JSON.stringify(publicView)).not.toContain('ai-openai');
-    // This fixture composes ZuckerAIModule from the start-up snapshot (`aiModuleOptionsFromEnvironment`);
-    // the application composition (`aiModuleOptionsFromRuntime`) is covered by hot-apply-connections.
+    // The fixture composes ZuckerAIModule like the application (`aiModuleOptionsFromRuntime`): AI profiles
+    // are hot, so the next call uses the saved connection without a restart (through the synthetic factory).
     await expect(
       f.app
         .get(NativeAIClient)
-        .chat('connection.openai', { messages: [{ role: 'user', content: 'Synthetic input' }] }),
-    ).rejects.toMatchObject({ reason: 'disabled' });
+        .chat('connection.openai', { messages: [{ role: 'user', content: 'Synthetic input' }] }, { maxAttempts: 1 }),
+    ).resolves.toMatchObject({
+      content: 'Synthetic completion',
+      config: { modelRecordId: 'ai-openai', providerId: 'openai' },
+    });
     expect(fetch).not.toHaveBeenCalled();
   });
   it('reconstructs saved connections on restart and injects NativeAIClient through the shared retry/usage wrapper', async () => {
@@ -336,13 +339,18 @@ run('encrypted AI connections PostgreSQL, HTTP and actual Nest composition', () 
       streams.mockRestore();
     }
   });
-  it('keeps applied settings stable until restart and then rejects a disabled connection despite prior cached resolution', async () => {
-    await put('ai-openai', { expectedRevision: 1, values: { AI_OPENAI_ENABLED: 'false' } }).expect(
-      200,
-    );
+  it('applies a disabled connection without a restart and keeps rejecting it after restart despite prior cached resolution', async () => {
+    // Resolved (and cached) before the save.
     expect((await f.app.get(AIConfigService).getScenarioConfig('connection.openai')).apiKey).toBe(
       secret,
     );
+    await put('ai-openai', { expectedRevision: 1, values: { AI_OPENAI_ENABLED: 'false' } }).expect(
+      200,
+    );
+    // Hot profile: the saved revision applies to the next resolution, without a restart.
+    await expect(
+      f.app.get(AIConfigService).getScenarioConfig('connection.openai'),
+    ).rejects.toMatchObject({ reason: 'disabled' });
     await f.restart();
     const count = seenConfigs.length,
       configs = f.app.get(AIConfigService),

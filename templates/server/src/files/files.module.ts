@@ -11,7 +11,7 @@ import { AccountModule } from '../accounts/account.module';
 import type { ApplicationDatabase } from '../database';
 import { ConnectionSettingsController } from '../runtime-settings/connection-settings.controller';
 import { ConnectionSettingsService } from '../runtime-settings/connection-settings.service';
-import { HotProvider } from '../runtime-settings/hot-apply';
+import { HotProvider } from '@zucker-framework/back-office/settings';
 import { RUNTIME_ENVIRONMENT } from '../runtime-settings/runtime-settings.tokens';
 import { FilesController } from './files.controller';
 import { FilesService } from './files.service';

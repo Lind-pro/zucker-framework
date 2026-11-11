@@ -150,7 +150,7 @@ export { ThirdPartyAccountService } from './services/third-party-account.service
 export type { ThirdPartyProfile } from './services/third-party-account.service';
 export { DepartmentDimensionProvider } from './services/department-dimension.provider';
 export { UserService, PASSWORD_ENCODER } from './services/user.service';
-export type { UserEntity, UserRoleBindingOptions } from './services/user.service';
+export type { UserEntity, UserRoleBindingOptions, AddUserOptions } from './services/user.service';
 export {
   RoleService,
   ROLE_EVENT_TOPICS,

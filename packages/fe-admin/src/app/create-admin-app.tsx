@@ -120,6 +120,27 @@ function useLocaleState(config: AdminAppConfig): AdminI18nValue | null {
   }, [locale, config]);
 }
 
+const RELOAD_ON_FOCUS_INTERVAL_MS = 30_000;
+
+/** `session.reloadOnFocus`: refresh user and permissions on focus/online, throttled. */
+function useReloadOnFocus(session: AdminSession, enabled: boolean) {
+  useEffect(() => {
+    if (!enabled) return;
+    let last = Date.now();
+    const reload = () => {
+      if (Date.now() - last < RELOAD_ON_FOCUS_INTERVAL_MS || !session.store.getState().token) return;
+      last = Date.now();
+      session.reloadMe().catch(() => undefined);
+    };
+    window.addEventListener('focus', reload);
+    window.addEventListener('online', reload);
+    return () => {
+      window.removeEventListener('focus', reload);
+      window.removeEventListener('online', reload);
+    };
+  }, [session, enabled]);
+}
+
 /**
  * Create the back-office application: login, session restore, menu from `GET /menu/tree`,
  * permission-gated routes for the built-in pages plus product pages, and toasts.
@@ -152,6 +173,7 @@ export function createAdminApp(config: AdminAppConfig = {}, options: CreateAdmin
     useEffect(() => {
       document.title = resolved.brandName ?? i18n.t('common.appTitle');
     }, [i18n]);
+    useReloadOnFocus(session, config.session?.reloadOnFocus === true);
     const value = useMemo<AdminContextValue>(
       () => ({ config: resolved, session, pages, sessionStatus: status, retryRestore: retry }),
       // retry is stable in behavior; status drives updates

@@ -1,20 +1,31 @@
 import { Global, Module } from '@nestjs/common';
-import { DATABASE_ADAPTER } from '@zucker-framework/crud';
-import { ApplicationDatabase } from '../database';
-import { ConnectionSettingsController } from './connection-settings.controller';
-import { SiteIntegrationsController } from './site-integrations.controller';
+import { BackOfficeSettingsModule, SETTINGS_CONNECTIONS } from '@zucker-framework/back-office/settings';
+import { TEMPLATE_CONNECTION_SETTINGS } from './connection-settings.descriptors';
 import { ConnectionSettingsService } from './connection-settings.service';
-import { RUNTIME_ENVIRONMENT, RUNTIME_SETTINGS_BASE_ENV } from './runtime-settings.tokens';
+
+/** Browser origins allowed to save connection profiles and policies (exact `Origin` match). */
+export const settingsTrustedOrigins = (): string[] => (process.env.ACCOUNT_ORIGINS ?? 'http://localhost:4201,http://localhost:4202').split(',');
+
+/**
+ * Connection settings host (`@zucker-framework/back-office/settings`) with the template's profiles:
+ * `management/connection-settings` and `site/public/integrations`. Authentication and permission guards
+ * are global in the template; the routes keep the `api-default` rate limiter keyed by user.
+ */
+export const RUNTIME_SETTINGS_HOST = BackOfficeSettingsModule.forRoot({
+  environment: () => ({ ...process.env }),
+  trustedOrigins: settingsTrustedOrigins, rateLimit: { limiter: 'api-default' }, guards: [],
+  connections: TEMPLATE_CONNECTION_SETTINGS,
+});
+
+/**
+ * Exports `ConnectionSettingsService`, `RUNTIME_ENVIRONMENT` and `RUNTIME_SETTINGS_BASE_ENV` (globally,
+ * through the settings host). The base environment is also read by other bootstrap readers (e.g.
+ * `POLICY_*` pins); never return it over HTTP.
+ */
 @Global()
 @Module({
-  controllers: [ConnectionSettingsController, SiteIntegrationsController],
-  providers: [
-    { provide: RUNTIME_SETTINGS_BASE_ENV, useFactory: () => Object.freeze({ ...process.env }) },
-    { provide: ConnectionSettingsService, inject: [DATABASE_ADAPTER, RUNTIME_SETTINGS_BASE_ENV],
-      useFactory: (database: ApplicationDatabase, env: NodeJS.ProcessEnv) => new ConnectionSettingsService(database, env) },
-    { provide: RUNTIME_ENVIRONMENT, inject: [ConnectionSettingsService], useFactory: (settings: ConnectionSettingsService) => settings.environment() },
-  ],
-  // The base environment is exported for other bootstrap readers (e.g. `POLICY_*` pins); never return it over HTTP.
-  exports: [ConnectionSettingsService, RUNTIME_ENVIRONMENT, RUNTIME_SETTINGS_BASE_ENV],
+  imports: [RUNTIME_SETTINGS_HOST],
+  providers: [{ provide: ConnectionSettingsService, useExisting: SETTINGS_CONNECTIONS }],
+  exports: [ConnectionSettingsService],
 })
 export class RuntimeSettingsModule {}

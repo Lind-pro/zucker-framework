@@ -1,2 +1,2 @@
 /** Composed `PolicyDefinition[]` given to `PolicyModule.forRoot`. */
-export const POLICY_DEFINITIONS = Symbol('POLICY_DEFINITIONS');
+export { SETTINGS_POLICY_DEFINITIONS as POLICY_DEFINITIONS } from '@zucker-framework/back-office/settings';

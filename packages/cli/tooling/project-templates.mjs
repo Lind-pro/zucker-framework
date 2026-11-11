@@ -67,8 +67,8 @@ const requiredAssets = {
     'prisma/migrations/20261024000100_credential_version/migration.sql',
     'src/main.ts', 'src/app.module.ts', 'src/database.ts',
     'src/accounts/account.module.ts', 'src/accounts/account.controller.ts',
-    'src/accounts/account.guard.ts', 'src/accounts/account.service.ts',
-    'src/accounts/account-mailer.ts', 'src/accounts/create-administrator.ts',
+    'src/accounts/account.config.ts', 'src/accounts/account.service.ts',
+    'src/accounts/create-administrator.ts',
     'src/scripts/create-admin.ts',
   ],
 };

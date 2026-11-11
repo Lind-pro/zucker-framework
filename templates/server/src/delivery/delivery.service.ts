@@ -8,7 +8,7 @@ import {
 import type { NotificationDeliveryHandler, NotificationSqlClient } from '@zucker-framework/notification';
 import { createTaskFingerprint } from '@zucker-framework/task';
 import { ApplicationDatabase, type ApplicationTransaction } from '../database';
-import { HotProvider, hotProviderOf } from '../runtime-settings/hot-apply';
+import { HotProvider, hotProviderOf } from '@zucker-framework/back-office/settings';
 import { DELIVERY_CONNECTION_PROFILE, DELIVERY_OPTIONS, MAX_DELIVERY_REPLAY_WINDOW_MS, type DeliveryOptions } from './delivery.config';
 
 interface Message {

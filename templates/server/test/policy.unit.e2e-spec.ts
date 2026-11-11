@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { PolicyService } from '../src/policy/policy.service';
+import { PolicyService } from '@zucker-framework/back-office/settings';
 import { composePolicies, definePolicy, parsePolicyEnvironmentValue, policyEnvironmentKey, policyFieldValue, PolicyValueError,
-  type PolicyField, type PolicyDefinition } from '../src/policy/policy.registry';
+  type PolicyField, type PolicyDefinition } from '@zucker-framework/back-office/settings';
 import { PolicyModule } from '../src/policy/policy.module';
 import { composeRateLimiters } from '../src/rate-limits';
 import { composeConnectionProfiles, defineConnectionProfile } from '../src/runtime-settings/registry';

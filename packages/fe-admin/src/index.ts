@@ -12,8 +12,13 @@ export {
   type AdminPageKey,
   type AdminPermissionCodes,
   type AdminPermissionOverrides,
+  type LocalizedLabel,
+  type PlanPreset,
+  type PlanPresetValues,
   type ResolvedAdminConfig,
   type ServerLabels,
+  type UserPasswordResetConfig,
+  type UserTypeOption,
 } from './app/config';
 export {
   useAdmin,
@@ -39,7 +44,7 @@ export {
   type RequestOptions,
   type RestoreResult,
 } from './app/session';
-export { findPage, matchesPath, menuLabel, menuTrail, pageTitle, visibleMenu, type BackendMenuItem, type PermissionCheck } from './app/menu';
+export { findPage, localizedText, matchesPath, menuLabel, menuTrail, pageTitle, visibleMenu, type BackendMenuItem, type PermissionCheck } from './app/menu';
 export { AdminLayout, DisabledFeaturePage, ForbiddenPage, LanguageSwitcher, NotFoundPage, PageGate } from './app/layout';
 export { LoginPage } from './app/login';
 
@@ -54,6 +59,7 @@ export { cn } from './lib/cn';
 export { Button, buttonClass, type ButtonProps, type ButtonSize, type ButtonVariant } from './components/button';
 export { Checkbox, Field, Input, Select, Switch, Textarea, type FieldProps, type SelectOption } from './components/inputs';
 export { AdminToaster, EmptyState, ErrorState, LoadingState, Notice, StatusBadge, toast, type Tone } from './components/feedback';
+export { UserPicker, type PickedUser } from './components/user-picker';
 export { JsonView, KeyValueList, PageContainer, Panel, type KeyValueItem } from './components/layout';
 export { ConfirmButton, ConfirmDialog, Dialog, Drawer, type ConfirmDialogProps, type DialogProps } from './components/dialog';
 export {
@@ -127,6 +133,7 @@ export {
   emptyPlanDraft,
   emptyPriceDraft,
   planToDraft,
+  presetToDraft,
   priceText,
   validatePlanDraft,
   type PlanDraft,

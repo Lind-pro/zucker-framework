@@ -19,6 +19,14 @@ export interface RefreshTokenStore {
   rotate(subject: string, current: string, next: string, ttlMs: number, allowMissing: boolean): Promise<boolean>;
   /** Keep a denial tombstone, not a missing key that legacy recovery can resurrect. */
   revoke(subject: string, ttlMs: number): Promise<void>;
+  /**
+   * Reuse detection (optional): a correctly signed refresh token that is no longer current was
+   * presented. Revoke the subject (and with it the current successor token and the access tokens a
+   * consumer binds to it) unless its last rotation is younger than `graceMs` (a lost response retried
+   * by the client); an already revoked, expired or missing subject is left alone. Returns true when it
+   * revoked. Stores without it keep the plain rejection.
+   */
+  reused?(subject: string, jti: string, graceMs: number): Promise<boolean>;
 }
 
 export interface RefreshTokenOptions<Identity> {
@@ -35,6 +43,14 @@ export interface RefreshTokenOptions<Identity> {
   /** Explicit legacy compatibility. Eviction/restart can re-admit old JWTs with this policy. */
   cacheMissPolicy?: 'reject' | 'recover';
   createJti?: () => string;
+  /**
+   * Refresh-token reuse detection (stores implementing `reused`). Default `{ graceMs: 10_000 }`:
+   * presenting an already rotated token revokes the subject unless it was rotated within the grace
+   * window. The grace window never grants access; it only spares a client retrying a lost response
+   * from being signed out. A request that loses a concurrent rotation race is rejected without
+   * revocation. `false` restores the plain rejection.
+   */
+  reuseDetection?: false | { graceMs?: number };
 }
 
 /** Pair lifecycle independent of wire format, account policy, ORM and transport. */
@@ -44,6 +60,10 @@ export class RefreshTokenService<Identity> {
       if (!Number.isSafeInteger(ttl) || ttl <= 0 || !Number.isSafeInteger(ttl * 1000)) {
         throw new RangeError('Token lifetimes must be positive safe integer seconds');
       }
+    }
+    const grace = options.reuseDetection === false ? undefined : options.reuseDetection?.graceMs;
+    if (grace !== undefined && (!Number.isSafeInteger(grace) || grace < 0)) {
+      throw new RangeError('reuseDetection.graceMs must be a non-negative integer of milliseconds');
     }
   }
 
@@ -63,6 +83,11 @@ export class RefreshTokenService<Identity> {
     this.requireValue(claims.jti);
     const allowMissing = this.options.cacheMissPolicy === 'recover';
     if (!await this.options.store.canRotate(claims.subject, claims.jti, allowMissing)) {
+      // Already rotated before this request started: a reused (possibly stolen) token.
+      const { store, reuseDetection } = this.options;
+      if (reuseDetection !== false && store.reused) {
+        await store.reused(claims.subject, claims.jti, reuseDetection?.graceMs ?? 10_000);
+      }
       throw new RefreshTokenError('replayed');
     }
     const identity = await this.options.loadIdentity(claims.subject);
@@ -72,6 +97,7 @@ export class RefreshTokenService<Identity> {
     // Prepare before CAS: signer/loader failure leaves the previous token usable.
     // A losing concurrent request must never return its prepared pair.
     const pair = await this.issue(identity, { subject: claims.subject, jti: next });
+    // Losing a concurrent rotation of the same token is a double submit, not reuse: reject only.
     if (!await this.options.store.rotate(claims.subject, claims.jti, next, this.ttlMs,
       allowMissing)) throw new RefreshTokenError('replayed');
     return pair;

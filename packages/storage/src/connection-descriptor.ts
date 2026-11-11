@@ -30,3 +30,44 @@ export const PRIVATE_FILES_CONNECTION_DESCRIPTOR: StorageConnectionDescriptor = 
       { key: 'FILES_S3_FORCE_PATH_STYLE', label: 'Use path-style addressing (empty: chosen by endpoint)', labelKey: 'connections.field.FILES_S3_FORCE_PATH_STYLE', type: 'boolean' },
     ]) }),
 });
+
+/**
+ * WebDAV object storage (Nextcloud, ownCloud, a dedicated WebDAV server): endpoint, credentials and the
+ * base path files are written under. The endpoint is an endpoint field for the "credentials follow the
+ * endpoint" rule (`*_BASE_URL`), so changing it requires re-entering the password in the same save.
+ * Local fallback directories are filesystem paths of the host and deliberately not part of the profile.
+ */
+export const WEBDAV_STORAGE_CONNECTION_DESCRIPTOR: StorageConnectionDescriptor = Object.freeze({
+  profile: Object.freeze({ id: 'webdav-storage', name: 'WebDAV file storage', labelKey: 'connections.webdav-storage', category: 'Storage', categoryKey: 'connections.category.storage',
+    fields: Object.freeze<StorageConnectionDescriptorField[]>([
+      { key: 'WEBDAV_BASE_URL', label: 'WebDAV endpoint', labelKey: 'connections.field.WEBDAV_BASE_URL', type: 'url' },
+      { key: 'WEBDAV_USERNAME', label: 'Username', labelKey: 'connections.field.WEBDAV_USERNAME', type: 'text' },
+      { key: 'WEBDAV_PASSWORD', label: 'Password', labelKey: 'connections.field.WEBDAV_PASSWORD', type: 'secret' },
+      { key: 'WEBDAV_BASE_PATH', label: 'Base path', labelKey: 'connections.field.WEBDAV_BASE_PATH', type: 'text', defaultValue: '/',
+        description: 'Absolute path under the endpoint, for example /uploads.' },
+    ]) }),
+});
+
+/** Options parsed from a WebDAV profile environment (structurally `WebDavStorageOptions`). */
+export interface WebDavConnectionOptions { readonly url: string; readonly username?: string; readonly password?: string; readonly basePath: string }
+
+/**
+ * Local assembly check and parser for `WEBDAV_STORAGE_CONNECTION_DESCRIPTOR` values: an http(s) endpoint
+ * without embedded credentials, query or fragment; username and password both set (anonymous access is
+ * a consumer decision, `allowAnonymous`); an absolute base path without `..` segments. No request is made.
+ * Throws an `Error` whose message names the offending key only, never a value.
+ */
+export function webDavOptionsFromConnection(environment: Readonly<Record<string, string | undefined>>, options: { allowAnonymous?: boolean } = {}): WebDavConnectionOptions {
+  const value = (key: string) => { const raw = environment[key]?.trim(); return raw ? raw : undefined; };
+  const endpoint = value('WEBDAV_BASE_URL');
+  let url: URL;
+  try { url = new URL(endpoint ?? ''); } catch { throw new Error('WEBDAV_BASE_URL is required and must be an http(s) URL'); }
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error('WEBDAV_BASE_URL must be an http(s) URL without credentials, query or fragment');
+  const username = value('WEBDAV_USERNAME'), password = environment.WEBDAV_PASSWORD || undefined;
+  if (!!username !== !!password) throw new Error('WEBDAV_USERNAME and WEBDAV_PASSWORD must be set together');
+  if (!username && !options.allowAnonymous) throw new Error('WEBDAV_USERNAME and WEBDAV_PASSWORD are required');
+  const basePath = value('WEBDAV_BASE_PATH') ?? '/';
+  if (!basePath.startsWith('/') || basePath.split('/').some(segment => segment === '..' || segment === '.') || /[\u0000-\u001f\u007f\\]/.test(basePath))
+    throw new Error('WEBDAV_BASE_PATH must be an absolute path without dot segments');
+  return Object.freeze({ url: endpoint!, ...(username ? { username, password } : {}), basePath });
+}

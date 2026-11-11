@@ -17,7 +17,7 @@ import type { HostedCheckoutAdapter, HostedCheckoutObservation, HostedCheckoutOr
 import request from 'supertest';
 import { ApplicationDatabase } from '../src/database';
 import { AccountModule } from '../src/accounts/account.module';
-import { AccountGuard } from '../src/accounts/account.guard';
+import { AccountGuard } from '@zucker-framework/back-office/accounts';
 import { ACCOUNT_MAILER, type AccountMailer } from '../src/accounts/account.service';
 import { BILLING_OPTIONS, BillingService, type BillingOptions } from '../src/billing/billing.service';
 import { BillingController } from '../src/billing/billing.controller';
@@ -333,7 +333,7 @@ run('refund cash, receipt and exact credit-hold PostgreSQL HTTP contract', () =>
       const result = await original(async tx => {
         const query = tx.query.bind(tx);
         tx.query = async <T = Record<string, unknown>>(sql: string, values?: readonly unknown[]) => {
-          const result = await query<T>(sql, values); if (sql.includes('INSERT INTO billing_refund_events')) proof = true; return result;
+          const result = await query<T>(sql, values); if (/INSERT INTO "?billing_refund_events"?/.test(sql)) proof = true; return result;
         };
         return work(tx);
       });
