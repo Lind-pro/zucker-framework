@@ -8,6 +8,8 @@ export interface BillingPolicyValues {
   defaultProvider: string;
   /** When false, checkout accepts only `defaultProvider` (if it is enabled) and the pricing page hides the choice. */
   allowProviderChoice: boolean;
+  /** When true (and promotions are installed), buyers may enter a promotion alias at checkout. */
+  allowCustomerPromoCodes: boolean;
 }
 
 /**
@@ -23,6 +25,8 @@ export const BILLING_POLICY = definePolicy<BillingPolicyValues>({
       description: 'Provider id (stripe, paypal, creem, …) preselected at checkout; empty uses the first available.' },
     { key: 'allowProviderChoice', type: 'boolean', default: true, public: true, label: 'Let buyers choose the provider',
       description: 'When off, checkout uses only the default provider (if it is enabled).' },
+    { key: 'allowCustomerPromoCodes', type: 'boolean', default: false, public: true, label: 'Let buyers enter promo codes',
+      description: 'Shows a promo code field at checkout. Codes are managed under Promotions; automatic promotions apply either way.' },
   ],
   validate(values) {
     if (values.defaultProvider !== '' && !PROVIDER.test(values.defaultProvider)) throw new Error('defaultProvider must be a provider id or empty');

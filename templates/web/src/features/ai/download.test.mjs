@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-const { parseOutputTicket, outputFileName, MAX_OUTPUT_BYTES } = await import('./download.ts');
+const { parseOutputTicket, outputFileName, MAX_OUTPUT_BYTES, STREAMED_DOWNLOAD_THRESHOLD_BYTES, outputDownloadStrategy, streamedDownloadUrl } = await import('./download.ts');
 
 const origin = 'https://app.example.invalid';
 const now = Date.parse('2026-11-10T00:00:00Z');
@@ -54,4 +54,20 @@ test('output file names are safe and typed by content type', () => {
 
 test('size cap constant is a positive byte count', () => {
   assert.ok(Number.isInteger(MAX_OUTPUT_BYTES) && MAX_OUTPUT_BYTES > 0);
+});
+
+test('download strategy: small outputs use a Blob, large or unknown sizes stream by navigation', () => {
+  const MiB = 1024 * 1024;
+  assert.equal(STREAMED_DOWNLOAD_THRESHOLD_BYTES, 32 * MiB);
+  for (const bytes of [0, 1, 32 * MiB]) assert.equal(outputDownloadStrategy(bytes), 'blob', String(bytes));
+  // Above the threshold, including sizes beyond the old 512 MiB browser refusal.
+  for (const bytes of [32 * MiB + 1, 600 * MiB, 2 * 1024 * MiB]) assert.equal(outputDownloadStrategy(bytes), 'navigate', String(bytes));
+  for (const bytes of [undefined, null, Number.NaN, Infinity, -1, '10']) assert.equal(outputDownloadStrategy(bytes), 'navigate', String(bytes));
+});
+
+test('streamed download URL keeps only the validated path and an encoded token', () => {
+  assert.equal(streamedDownloadUrl({ url: '/api/files/ab-12/download?token=a+b/c=&next=x#f', expiresAt: future }, origin, now),
+    '/api/files/ab-12/download?token=a%20b%2Fc%3D');
+  assert.equal(streamedDownloadUrl({ url: 'https://evil.example/api/files/x/download?token=t', expiresAt: future }, origin, now), null);
+  assert.equal(streamedDownloadUrl({ url: '/api/files/x/download?token=t', expiresAt: '2026-11-09T00:00:00Z' }, origin, now), null);
 });

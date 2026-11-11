@@ -1,0 +1,47 @@
+// ─── Account security (WP 3.3b) ──────────────────────────────────────────────
+// TOTP two-factor enrolment, single-use recovery codes and scheduled account deletion. Users are
+// referenced by scalar id (no cross-file relation). CHECK constraints live in the migration SQL.
+
+/// One TOTP enrolment per account. `secretCiphertext` is the base32 secret encrypted with
+/// `CONFIG_ENCRYPTION_KEY` (SecretCipher, AES-256-GCM); the plaintext is returned once at enrolment and
+/// never stored or logged. `status` is `pending` until the first code is confirmed, then `active`.
+/// `lastUsedStep` is the last accepted TOTP time step (cross-instance replay guard).
+model accountTwoFactor {
+  userId           String    @id
+  secretCiphertext String
+  status           String    @default("pending")
+  confirmedAt      DateTime? @db.Timestamptz(3)
+  lastUsedStep     Int?
+  createdAt        DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime  @default(now()) @updatedAt @db.Timestamptz(3)
+
+  @@map("account_two_factor")
+}
+
+/// Single-use recovery codes: only the SHA-256 of the normalised code is stored; `usedAt` is set once.
+model accountRecoveryCodes {
+  id       String    @id @default(cuid())
+  userId   String
+  codeHash String    @db.Char(64)
+  usedAt   DateTime? @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@unique([userId, codeHash])
+  @@map("account_recovery_codes")
+}
+
+/// Self-service deletion request. `scheduled` until `executeAfter` (grace period), then the
+/// `account.delete` job erases personal data and anonymises `users` (the row and financial records stay)
+/// and marks it `completed`; `cancelled` when the owner restores the account during the grace period.
+model accountDeletions {
+  userId       String    @id
+  status       String    @default("scheduled")
+  requestedAt  DateTime  @db.Timestamptz(3)
+  executeAfter DateTime  @db.Timestamptz(3)
+  cancelledAt  DateTime? @db.Timestamptz(3)
+  completedAt  DateTime? @db.Timestamptz(3)
+  reason       String?   @db.VarChar(500)
+
+  @@index([status, executeAfter])
+  @@map("account_deletions")
+}

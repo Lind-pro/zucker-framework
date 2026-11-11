@@ -308,6 +308,12 @@ export interface ZuckerAuthModuleOptions {
   tokenBlacklistTtlMs?: number;
   /** Max staleness of the cached role hierarchy (ms). Default 60 000. */
   roleHierarchyCacheTtlMs?: number;
+  /**
+   * Opt-in expiring role assignments. `{ expiry: true }` requires a nullable `expiresAt`
+   * column on `userRoles`; expired links grant nothing (permissions, role dimensions, menus)
+   * and cached permissions never outlive the earliest expiry. Default off: queries unchanged.
+   */
+  roleAssignments?: import('../services/role-assignments').RoleAssignmentOptions;
 }
 
 // ============================================================

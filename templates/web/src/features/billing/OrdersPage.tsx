@@ -45,7 +45,7 @@ function OrderList({ page }: { page: number }) {
             <time className="block text-xs text-[var(--color-muted)]" dateTime={order.createdAt}>{Number.isFinite(Date.parse(order.createdAt))
               ? new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(order.createdAt)) : t('notAvailable')}</time>
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-4 sm:flex-col sm:items-end"><p className="text-xl font-semibold tabular-nums">{moneyLabel(order.money)}</p><OrderStatus order={order} />
+          <div className="flex flex-wrap items-center justify-between gap-4 sm:flex-col sm:items-end"><p className="text-xl font-semibold tabular-nums">{moneyLabel(order.amountDue ?? order.money)}</p><OrderStatus order={order} />
             <Link href={{ pathname: '/billing/return', query: { order: order.id } }} className="text-sm font-medium text-primary-400 underline-offset-4 hover:underline focus-visible:outline-2">{t('viewOrder')}</Link>
             {order.mode === 'subscription' && order.state === 'paid' && <Link href={`/billing/subscriptions/${encodeURIComponent(order.id)}`} className="text-sm font-medium text-primary-400 underline-offset-4 hover:underline focus-visible:outline-2">{t('viewSubscription')}</Link>}</div>
         </article>

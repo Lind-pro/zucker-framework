@@ -1,5 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { DatabaseAdapter } from '@zucker-framework/core';
+import {
+  activeUserRoleSelect,
+  activeUserRoleWhere,
+  resolveRoleAssignmentOptions,
+  type ResolvedRoleAssignmentOptions,
+  type RoleAssignmentOptions,
+} from './role-assignments';
 
 export interface MenuNode {
   id: string;
@@ -19,6 +26,13 @@ export class MenuService {
   private readonly logger = new Logger(MenuService.name);
 
   constructor(private readonly db: DatabaseAdapter) {}
+
+  private roleAssignments: ResolvedRoleAssignmentOptions = resolveRoleAssignmentOptions(undefined);
+
+  /** Enable opt-in role expiry for user-role reads (see `role-assignments.ts`). */
+  configureRoleAssignments(options: RoleAssignmentOptions | ResolvedRoleAssignmentOptions | undefined): void {
+    this.roleAssignments = resolveRoleAssignmentOptions(options);
+  }
 
   /** 获取完整菜单树 */
   async getMenuTree(): Promise<MenuNode[]> {
@@ -46,8 +60,8 @@ export class MenuService {
 
     // 获取用户角色关联的菜单
     const userRoles = await this.db.model('userRoles').findMany({
-      where: { userId },
-      select: { roleId: true },
+      where: activeUserRoleWhere(userId, this.roleAssignments, new Date()),
+      select: activeUserRoleSelect(this.roleAssignments),
     });
     const roleIds = (userRoles as Array<{ roleId: string }>).map(
       (ur) => ur.roleId,

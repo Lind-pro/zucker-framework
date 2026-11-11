@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { panelClass, secondaryButtonClass } from '@/features/billing/components';
 import { aiApi } from './api';
 import type { AICopy } from './copy';
-import { outputFileName, redeemOutputTicket, saveBlob } from './download';
+import { downloadOutputTicket, outputFileName, redeemOutputTicket } from './download';
 import { isTerminalStatus } from './polling';
 import type { AITaskOutput, AITaskView } from './types';
 
@@ -169,7 +169,11 @@ function OutputTile({ task, output, text, autoPreview }: { task: AITaskView; out
     setBusy('download');
     setFailed(false);
     try {
-      saveBlob(await load(), outputFileName(task.kind, task.id, output.index, output.contentType));
+      // Small outputs are buffered and saved; large or unknown-size ones stream via a ticketed GET.
+      await downloadOutputTicket(
+        await aiApi.outputTicket(task.id, output.index),
+        outputFileName(task.kind, task.id, output.index, output.contentType),
+      );
     } catch {
       setFailed(true);
     } finally {

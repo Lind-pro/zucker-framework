@@ -1,7 +1,7 @@
 import type { CreemCheckoutAdapter } from '../providers/creem';
 import type { CreemCheckoutObservation } from '../providers/creem-types';
 import { toMinorUnits } from '../contract/money';
-import type { HostedCheckoutAdapter, HostedCheckoutObservation } from './types';
+import { HostedCheckoutError, type HostedCheckoutAdapter, type HostedCheckoutObservation } from './types';
 import { record, snapshotProviderMetadata } from './validation';
 
 export interface CreemHostedCheckoutOptions {
@@ -27,7 +27,12 @@ export function createCreemHostedCheckoutAdapter(options: CreemHostedCheckoutOpt
   return {
     id: 'creem', accountScope: options.accountScope, modes: ['payment', 'subscription'], supportsMetadata: true,
     // Creem's API uses cents for every currency; this is deliberately not Stripe's exponent table.
-    validate(offer) { toMinorUnits(offer.money.amount, 'USD'); },
+    validate(offer) {
+      // Creem's checkout response type exposes no subtotal/discount evidence, so a frozen promotion
+      // could not be verified; refuse it before an order exists instead of ignoring it.
+      if (offer.promotion) throw new HostedCheckoutError('unsupported', 'Creem checkout does not support promotions');
+      toMinorUnits(offer.money.amount, 'USD');
+    },
     async create(order) {
       const metadata = snapshotProviderMetadata(order.providerMetadata ?? undefined);
       return observe(await options.adapter.createCheckout({ productId: order.offer.catalogReference,

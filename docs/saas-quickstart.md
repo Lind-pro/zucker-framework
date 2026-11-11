@@ -108,6 +108,14 @@ PayPal 订阅还要求显式 `subscriptionGrantBasis: {"paypal":"payment"}`，�
 
 先使用测试渠道验证：选择商品 → 创建订单 → 测试付款 → 服务端确认／回调 → 权益回读；再分别验证续费、取消和退款。访问回跳 URL 的 `success` 参数不会自动发放权益。字段定义与完整接口以[商品目录实现](../templates/server/src/billing/catalog.ts)和 Server README 为准。
 
+### 本地无真实渠道时验证收款（仅测试）
+
+非生产环境可设 `BILLING_TEST_FAKE_PROVIDER=true`（`NODE_ENV=production` 时启动即拒绝），Server 增加内存中的 `fake` 渠道和 `/api/billing/test-checkout/:id` 测试付款页（付款、取消、重发回调）。通过后台 API 给积分包或套餐价格加 `providerRefs: {"fake": "..."}` 即可在价格页购买；优惠码需在「产品策略 → billing」开启 `allowCustomerPromoCodes` 并在「交易与额度 → 优惠码」创建别名。状态只在单进程内存中，重启即丢失。
+
+### 账户与增长功能（Phase 3）
+
+两步验证（需 `CONFIG_ENCRYPTION_KEY`，账户 → 安全）、邮件登录链接（默认关闭）、账户注销（7 天宽限期）、站内通知、意见反馈、优惠码、推荐奖励（默认关闭）和运营洞察已随模板提供；后台菜单与权限由管理员初始化命令或升级迁移写入。接口与策略见 [Server README](../templates/server/README.md#account-growth-and-security-phase-3)。
+
 ## 6. 写第一条自己的业务
 
 从现有 `src/jobs/jobs.handlers.ts` 的中立 `record` 示例开始：

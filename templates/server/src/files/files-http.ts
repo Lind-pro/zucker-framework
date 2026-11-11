@@ -1,6 +1,7 @@
 import type { Readable } from 'node:stream';
-import { HttpException, ServiceUnavailableException, StreamableFile } from '@nestjs/common';
+import { HttpException, Logger, ServiceUnavailableException, StreamableFile } from '@nestjs/common';
 import { FileAssetError, StorageTransferError, type FileAsset } from '@zucker-framework/storage';
+const streamLogger = new Logger('PrivateFileStream');
 export interface DownloadResponse { setHeader(name: string, value: string): void }
 export async function fileResult<T>(work: () => Promise<T>): Promise<T> {
   try { return await work(); }
@@ -26,5 +27,15 @@ export function fileAttachment(result: { asset: FileAsset; body: Buffer } | { as
   const options = { type: asset.mimeType, length: 'body' in result ? result.body.length : result.size,
     disposition: `attachment; filename="download"; filename*=UTF-8''${name}` };
   // Large server-generated files stream (verified as they flow); everything else is a verified buffer.
-  return 'body' in result ? new StreamableFile(result.body, options) : new StreamableFile(result.stream, options);
+  if ('body' in result) return new StreamableFile(result.body, options);
+  // A verification failure while streaming destroys the connection (never a clean, short 200 and never
+  // an error text inside the attachment); the client sees an aborted download.
+  return new StreamableFile(result.stream, options)
+    .setErrorHandler((_error, response) => {
+      // Express hands the Node ServerResponse; the Nest type omits destroy().
+      const socket = response as typeof response & { destroy?: () => void };
+      if (socket.destroyed) return;
+      if (socket.destroy) socket.destroy(); else socket.end();
+    })
+    .setErrorLogger(() => { streamLogger.warn('private_file_stream_aborted'); });
 }

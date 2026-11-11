@@ -11,6 +11,11 @@ export interface SubscriptionEntitlementBinding {
   subscriptionId: string;
   catalogReference: string;
   money: Money;
+  /**
+   * Exact amount of the initial payment when it differs from `money`: a first-invoice promotion
+   * frozen at order creation (`offer.promotion.payable`). Every later cycle must pay `money`.
+   */
+  initialMoney?: Money;
   policyVersion: string;
   /** Explicit consumer policy: never invent provider periods for receipt-only channels. */
   grantBasis: 'period' | 'payment';

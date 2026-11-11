@@ -6,6 +6,9 @@ import {
   createStripeRefundAdapter, createPayPalRefundAdapter, createCreemRefundAdapter,
   type HostedCheckoutAdapter, type SubscriptionAdapter, type RefundAdapter,
 } from '@zucker-framework/payment';
+// Direct file imports (not './test-fakes'): its index pulls the controller, which imports billing.
+import { billingTestFakesEnabled } from './test-fakes/switch';
+import { createBillingTestFakes } from './test-fakes/fake-payment-provider';
 
 function required(env: NodeJS.ProcessEnv, key: string): string {
   const value = env[key]?.trim();
@@ -51,6 +54,13 @@ export function configuredBillingProviders(env: NodeJS.ProcessEnv): { checkouts:
     providers.push(createCreemHostedCheckoutAdapter({ adapter, accountScope }));
     subscriptions.push(createCreemSubscriptionAdapter({ transport: adapter, accountScope }));
     refunds.push(createCreemRefundAdapter({ transport: adapter, accountScope }));
+  }
+  // TEST-ONLY in-memory provider `fake` (BILLING_TEST_FAKE_PROVIDER=true; refused when NODE_ENV=production).
+  if (billingTestFakesEnabled(env)) {
+    const fakes = createBillingTestFakes(env);
+    providers.push(fakes.checkout);
+    subscriptions.push(fakes.subscription);
+    refunds.push(fakes.refund);
   }
   return { checkouts: providers, subscriptions, refunds };
 }

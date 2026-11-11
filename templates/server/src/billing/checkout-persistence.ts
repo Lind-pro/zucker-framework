@@ -1,7 +1,7 @@
 import type { ModelOperations } from '@zucker-framework/core';
 import { PostgresCreditOperationCoordinator } from '@zucker-framework/credit';
 import { DatabaseOrderPersistence, HostedCheckoutError } from '@zucker-framework/payment';
-import type { HostedCheckoutOrder, HostedCheckoutPersistence } from '@zucker-framework/payment';
+import type { HostedCheckoutObservation, HostedCheckoutOrder, HostedCheckoutPersistence } from '@zucker-framework/payment';
 import { ApplicationDatabase, ApplicationTransaction } from '../database';
 import { checkoutCreditOperation, createCreditLedger, creditExpiresAt, paidPeriodEnd, validateCreditFulfillmentPolicy } from './ledger';
 import { bindCheckoutSubscription } from './subscription-persistence';
@@ -13,6 +13,28 @@ export const CHECKOUT_FULFILLED_OUTBOX_KIND = 'billing.credit-fulfilled';
 
 function inconsistent(): never {
   throw new HostedCheckoutError('conflict', 'Billing fulfillment evidence is inconsistent; automatic granting stopped');
+}
+
+/**
+ * Marks the order's promotion use redeemed (or records it when its reservation is gone) with the
+ * fulfillment. The amounts are the frozen ones the service already verified against the provider,
+ * so the order's frozen promotion wins over whatever its reservation named. A second redemption of
+ * the same order, or one owned by another account, stops automatic granting.
+ */
+async function redeemPromotion(tx: ApplicationTransaction, order: HostedCheckoutOrder, observation?: Readonly<HostedCheckoutObservation>): Promise<void> {
+  const promotion = order.offer.promotion;
+  if (!promotion) return;
+  const reference = observation?.discountReferences?.[0] ?? promotion.providerCode;
+  const { rows } = await tx.query<{ orderId: string }>(`INSERT INTO promotion_redemptions
+      ("orderId","promotionId","ownerId","providerId","status","reference","discountAmount","payableAmount","currency","expiresAt","redeemedAt")
+    VALUES ($1,$2,$3,$4,'redeemed',$5,$6,$7,$8,$9,$9)
+    ON CONFLICT ("orderId") DO UPDATE SET "promotionId"=EXCLUDED."promotionId", "providerId"=EXCLUDED."providerId",
+      "status"='redeemed', "reference"=EXCLUDED."reference", "discountAmount"=EXCLUDED."discountAmount",
+      "payableAmount"=EXCLUDED."payableAmount", "currency"=EXCLUDED."currency", "redeemedAt"=EXCLUDED."redeemedAt"
+    WHERE promotion_redemptions."ownerId"=EXCLUDED."ownerId" AND promotion_redemptions."status"='reserved'
+    RETURNING "orderId"`, [order.id, promotion.id, order.ownerId, order.providerId, reference.slice(0, 255),
+    promotion.discount.amount, promotion.payable.amount, promotion.payable.currency, order.fulfilledAt]);
+  if (rows.length !== 1) inconsistent();
 }
 
 /** The same account → order lock order is used by every checkout CAS. */
@@ -62,13 +84,14 @@ export function createCheckoutPersistence(database: ApplicationDatabase, options
       const orders = new TransactionCheckoutOrders(tx);
       return work({
         orders,
-        fulfill: async supplied => {
+        fulfill: async (supplied, observation) => {
           // Read the immutable policy from this transaction's persisted order, not today's catalog.
           const order = await orders.findUnique({ where: { id: supplied.id } });
           if (!order || order.ownerId !== supplied.ownerId || order.revision !== supplied.revision
             || order.state !== 'paid' || !order.fulfilledAt || !order.checkoutId || !order.paymentId || !order.paymentKind
             || order.fulfilledAt.getTime() !== supplied.fulfilledAt?.getTime()) inconsistent();
           await coordinator.lockAccount(tx, order.ownerId);
+          await redeemPromotion(tx, order, observation);
           if (order.offer.mode === 'subscription') {
             await bindCheckoutSubscription(tx, order);
             return;

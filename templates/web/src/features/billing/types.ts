@@ -3,6 +3,8 @@ import type { SiteReferral } from '@zucker-framework/fe-site';
 export interface BillingMoney { amount: string; currency: string }
 export interface CheckoutOrder {
   id: string; offerId: string; providerId: string; title: string; mode: 'payment' | 'subscription'; money: BillingMoney;
+  /** Frozen amount due for this checkout after a promotion (subscriptions: the first invoice); absent from older servers. */
+  amountDue?: BillingMoney; discount?: BillingMoney | null;
   state: 'unknown' | 'pending' | 'requires_capture' | 'paid' | 'unpaid';
   creationState: 'prepared' | 'submitting' | 'created'; captureState: 'idle' | 'submitting' | 'confirmed';
   checkoutUrl: string | null; fulfilledAt: string | null; createdAt: string; subscriptionId: string | null;
@@ -10,7 +12,9 @@ export interface CheckoutOrder {
     suppressedCredits: number; recoveredCredits: number; needsAttention: boolean } | null;
 }
 export interface CheckoutOrderPage { data: CheckoutOrder[]; total: number; page: number; pageSize: number }
-export interface CheckoutSelection { offerId: string; providerId: string; referral?: SiteReferral }
+export interface CheckoutSelection { offerId: string; providerId: string; referral?: SiteReferral; promoCode?: string }
+/** Same shape the server accepts; anything else is not sent. */
+export const PROMO_CODE = /^[A-Za-z0-9_-]{3,32}$/;
 
 export function orderStatus(order: CheckoutOrder) {
   if (order.refund?.state === 'full') return 'refunded' as const;
@@ -68,6 +72,7 @@ export function safeCheckoutUrl(value: string | null): string | null {
 }
 export function billingErrorKey(error: unknown, fallback: string): string {
   const status = error && typeof error === 'object' && 'status' in error ? error.status : undefined;
+  if (error && typeof error === 'object' && 'code' in error && error.code === 'PROMO_INVALID') return 'promoInvalid';
   if (status === 403) return 'accessDenied';
   if (status === 404) return 'orderNotFound';
   if (status === 429) return 'tooManyRequests';

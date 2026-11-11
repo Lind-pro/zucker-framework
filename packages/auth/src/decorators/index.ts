@@ -20,8 +20,18 @@ export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);
 // @Permissions(...permissions) - 字符串权限检查
 // ============================================================
 
-export const Permissions = (...permissions: string[]) =>
-  SetMetadata(PERMISSIONS_KEY, permissions);
+/**
+ * Permission codes are variadic strings. `@Permissions(['a', 'b'])` used to
+ * store `[['a', 'b']]`, which no user can ever hold, so the endpoint failed at
+ * request time. The argument check runs when the decorator is evaluated (the
+ * controller module is loaded), so the misuse surfaces at start-up and in every
+ * test import instead of as a 403/500 in production. `@Permissions()` with no
+ * argument stays valid: "any authenticated user".
+ */
+export const Permissions = (...permissions: string[]) => {
+  assertPermissionCodes('@Permissions', permissions);
+  return SetMetadata(PERMISSIONS_KEY, [...permissions]);
+};
 
 export const RequirePermissions = Permissions;
 
@@ -290,7 +300,52 @@ export function RequiresRoles(
   });
 }
 
+function describePermissionArgument(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => (typeof item === 'string' ? `'${item}'` : String(item))).join(', ')}]`;
+  }
+  if (typeof value === 'string') return `'${value}'`;
+  if (value === null) return 'null';
+  if (typeof value === 'object') return 'an object';
+  return String(value);
+}
+
+/**
+ * Definition-time check shared by `@Permissions` and `@Authorize({ permissions })`.
+ * Throws `TypeError` naming the wrong form and the supported one.
+ */
+function assertPermissionCodes(decorator: '@Permissions' | '@Authorize', permissions: readonly unknown[]): void {
+  const nested = permissions.find((value) => Array.isArray(value));
+  if (nested !== undefined) {
+    const codes = (nested as unknown[]).filter((item): item is string => typeof item === 'string');
+    const suggestion = codes.map((code) => `'${code}'`).join(', ');
+    if (decorator === '@Permissions') {
+      throw new TypeError(
+        `@Permissions(${describePermissionArgument(nested)}) is not supported; write @Permissions(${suggestion})`,
+      );
+    }
+    throw new TypeError(
+      `@Authorize({ permissions: [${describePermissionArgument(nested)}] }) is not supported; write @Authorize({ permissions: [${suggestion}] })`,
+    );
+  }
+  for (const value of permissions) {
+    if (typeof value !== 'string' || value.trim().length === 0) {
+      throw new TypeError(
+        `${decorator} permission codes must be non-empty strings; received ${describePermissionArgument(value)}`,
+      );
+    }
+  }
+}
+
 function normalizeAuthorizeOptions(options: AuthorizeOptions): ResolvedAuthorizeOptions {
+  if (options.permissions !== undefined) {
+    if (!Array.isArray(options.permissions)) {
+      throw new TypeError(
+        `@Authorize({ permissions }) expects an array of permission codes; received ${describePermissionArgument(options.permissions)}`,
+      );
+    }
+    assertPermissionCodes('@Authorize', options.permissions);
+  }
   const resources = [
     ...(options.resources ?? []).map((resource) => cloneAuthorizeResource(resource)),
     ...(options.resource

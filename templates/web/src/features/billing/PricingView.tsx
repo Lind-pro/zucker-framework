@@ -27,7 +27,7 @@ import {
   type PricingPlan,
   type PricingPlanPrice,
 } from './pricing';
-import { billingErrorKey, providerLabel, safeCheckoutUrl } from './types';
+import { billingErrorKey, PROMO_CODE, providerLabel, safeCheckoutUrl } from './types';
 import { FormMessage, buttonClass, panelClass, secondaryButtonClass } from './components';
 
 const REFERRAL_PROVIDERS: ReferralProvider[] = ['affonso', 'promotekit'];
@@ -38,21 +38,36 @@ function pathFor(locale: string, path: string): string {
 }
 
 /**
+ * Identity of the current session, or null when signed out. An empty client store is not proof of a
+ * guest (a new tab may hold only the HttpOnly refresh cookie): the read goes through the shell client,
+ * whose 401 handling performs the shared cookie refresh once and retries. Only a rejected refresh
+ * ends in 401 here; other failures (network, 5xx) are thrown so the form can explain them.
+ */
+async function sessionIdentity(): Promise<{ id: string } | null> {
+  try {
+    return await shellClient.get<{ id: string }>('/authorize/me', undefined, { _hideError: true });
+  } catch (failure) {
+    if (failure && typeof failure === 'object' && 'status' in failure && failure.status === 401) return null;
+    throw failure;
+  }
+}
+
+/**
  * Starts (or resumes) checkout for one offer. Guests go to login and come back to the pricing page.
  * The idempotency key comes from checkoutAttempt, so a retry of the same selection resumes the same
  * order. The Server filters the referral by provider.
  */
-async function startCheckout(locale: string, offerId: string, providerId: string, returnPath: string): Promise<void> {
-  if (!useAuthStore.getState().token) {
+async function startCheckout(locale: string, offerId: string, providerId: string, returnPath: string, promoCode?: string): Promise<void> {
+  const identity = await sessionIdentity();
+  if (!identity) {
     window.location.assign(pathFor(locale, `/login?redirect=${encodeURIComponent(returnPath)}`));
     return;
   }
-  const identity = await billingApi.identity();
   if (typeof identity.id !== 'string' || !identity.id) throw new Error('Authenticated identity is unavailable');
   const referral = REFERRAL_PROVIDERS.map((vendor) => readBrowserReferral(vendor, { enabledProviders: REFERRAL_PROVIDERS })).find(Boolean);
-  const attempt = checkoutAttempt(identity.id, { offerId, providerId, ...(referral ? { referral } : {}) });
+  const attempt = checkoutAttempt(identity.id, { offerId, providerId, ...(referral ? { referral } : {}), ...(promoCode ? { promoCode } : {}) });
   const order = await billingApi.create(
-    { offerId, providerId, ...(attempt.referral ? { referral: attempt.referral } : {}) },
+    { offerId, providerId, ...(attempt.referral ? { referral: attempt.referral } : {}), ...(attempt.promoCode ? { promoCode: attempt.promoCode } : {}) },
     attempt.key,
   );
   rememberCheckoutOrder(attempt, order.id);
@@ -88,8 +103,10 @@ function CheckoutForm({
   const [pick, setPick] = useState<{ base: string | null; value: string }>({ base: offered.selected, value: offered.selected ?? '' });
   const providerId = pick.base === offered.selected ? pick.value : (offered.selected ?? '');
   const [busy, setBusy] = useState(false),
-    [error, setError] = useState('');
+    [error, setError] = useState(''),
+    [promoCode, setPromoCode] = useState('');
   const inFlight = useRef(false);
+  const promo = policy.promoCodes === 'alias' ? promoCode.trim() : '';
   const provider = offered.providers.includes(providerId) ? providerId : offered.selected;
   if (!offerId || !provider)
     return (
@@ -103,13 +120,18 @@ function CheckoutForm({
       onSubmit={async (event) => {
         event.preventDefault();
         if (inFlight.current || disabled) return;
+        if (promo && !PROMO_CODE.test(promo)) {
+          setError(copy.promoCodeFormat);
+          return;
+        }
         inFlight.current = true;
         setBusy(true);
         setError('');
         try {
-          await startCheckout(locale, offerId, provider, returnPath);
+          await startCheckout(locale, offerId, provider, returnPath, promo || undefined);
         } catch (failure) {
-          setError(billingErrorKey(failure, 'checkoutFailed') === 'tooManyRequests' ? copy.tooManyRequests : copy.checkoutFailed);
+          const key = billingErrorKey(failure, 'checkoutFailed');
+          setError(key === 'tooManyRequests' ? copy.tooManyRequests : key === 'promoInvalid' ? copy.promoInvalid : copy.checkoutFailed);
         } finally {
           inFlight.current = false;
           setBusy(false);
@@ -137,6 +159,27 @@ function CheckoutForm({
               </option>
             ))}
           </select>
+        </div>
+      )}
+      {policy.promoCodes === 'alias' && (
+        <div>
+          <label htmlFor={`promo-${id}`} className="mb-1.5 block text-xs font-medium text-[var(--color-muted)]">
+            {copy.promoCode} <span className="font-normal">({copy.promoCodeOptional})</span>
+          </label>
+          <input
+            id={`promo-${id}`}
+            value={promoCode}
+            disabled={busy}
+            maxLength={32}
+            autoComplete="off"
+            autoCapitalize="characters"
+            spellCheck={false}
+            className={`${inputClass} uppercase`}
+            onChange={(event) => {
+              setPromoCode(event.target.value);
+              setError('');
+            }}
+          />
         </div>
       )}
       <FormMessage message={error} error />

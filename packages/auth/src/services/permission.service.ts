@@ -1,6 +1,14 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import type { DatabaseAdapter } from '@zucker-framework/core';
 import type { RoleHierarchyService } from './role-hierarchy.service';
+import {
+  activeUserRoleSelect,
+  activeUserRoleWhere,
+  earliestRoleExpiry,
+  resolveRoleAssignmentOptions,
+  type ResolvedRoleAssignmentOptions,
+  type RoleAssignmentOptions,
+} from './role-assignments';
 
 /** TTL-bounded cache for user permissions to avoid redundant DB queries within a short window */
 const PERMISSION_CACHE_TTL_MS = 5_000;
@@ -35,8 +43,23 @@ export class PermissionService {
   protected readonly logger = new Logger(PermissionService.name);
   private roleHierarchyService?: RoleHierarchyService;
   private readonly permissionCache = new Map<string, CachedPermissions>();
+  private roleAssignments: ResolvedRoleAssignmentOptions = resolveRoleAssignmentOptions(undefined);
+  private clock: () => number = () => Date.now();
 
   constructor(private readonly db: DatabaseAdapter) {}
+
+  /**
+   * Enable opt-in role expiry (see `role-assignments.ts`). `clock` is for tests only.
+   * Clears the cache so entries loaded under the previous policy are not reused.
+   */
+  configureRoleAssignments(
+    options: RoleAssignmentOptions | ResolvedRoleAssignmentOptions | undefined,
+    clock?: () => number,
+  ): void {
+    this.roleAssignments = resolveRoleAssignmentOptions(options);
+    if (clock) this.clock = clock;
+    this.permissionCache.clear();
+  }
 
   /** 注入角色层级服务（在模块初始化后调用） */
   setRoleHierarchyService(service: RoleHierarchyService): void {
@@ -61,7 +84,7 @@ export class PermissionService {
    * when multiple guards check permissions in the same request.
    */
   async findUserPermissions(userId: string): Promise<string[]> {
-    const now = Date.now();
+    const now = this.clock();
     const cached = this.permissionCache.get(userId);
     if (cached) {
       if (cached.expiresAt > now) {
@@ -71,16 +94,18 @@ export class PermissionService {
       this.permissionCache.delete(userId);
     }
 
-    const permissions = await this._loadUserPermissions(userId);
+    const { permissions, roleExpiresAt } = await this._loadUserPermissions(userId, now);
 
     // Evict oldest if cache is full
     if (this.permissionCache.size >= PERMISSION_CACHE_MAX_SIZE) {
       const firstKey = this.permissionCache.keys().next().value!;
       this.permissionCache.delete(firstKey);
     }
+    // With role expiry on, an entry never outlives the earliest role link it was built from:
+    // a role that expires at T grants nothing at or after T, even from the cache.
     this.permissionCache.set(userId, {
       permissions,
-      expiresAt: now + PERMISSION_CACHE_TTL_MS,
+      expiresAt: Math.min(now + PERMISSION_CACHE_TTL_MS, roleExpiresAt ?? Number.POSITIVE_INFINITY),
     });
 
     return permissions;
@@ -89,21 +114,27 @@ export class PermissionService {
   /**
    * Internal: load user permissions from database.
    */
-  private async _loadUserPermissions(userId: string): Promise<string[]> {
+  private async _loadUserPermissions(
+    userId: string,
+    nowMs: number,
+  ): Promise<{ permissions: string[]; roleExpiresAt?: number }> {
     const finalPermissions = new Set<string>();
 
     const [userRoles, directUserPermissions] = await Promise.all([
-      this.db
-        .model('userRoles')
-        .findMany({ where: { userId }, select: { roleId: true } }),
+      this.db.model('userRoles').findMany({
+        where: activeUserRoleWhere(userId, this.roleAssignments, new Date(nowMs)),
+        select: activeUserRoleSelect(this.roleAssignments),
+      }),
       this.db
         .model('userPermissions')
         .findMany({ where: { userId }, select: { permissionId: true } }),
     ]);
 
-    const roleIds = (userRoles as Array<{ roleId: string }>).map(
-      (ur) => ur.roleId,
-    );
+    const roleLinks = userRoles as Array<{ roleId: string; expiresAt?: Date | string | null }>;
+    const roleIds = roleLinks.map((ur) => ur.roleId);
+    const roleExpiresAt = this.roleAssignments.expiry
+      ? earliestRoleExpiry(roleLinks, nowMs)
+      : undefined;
 
     // 角色层级展开：收集所有角色（包括父角色）
     // 批量获取所有角色的父角色，避免逐个查询
@@ -170,7 +201,7 @@ export class PermissionService {
       }
     }
 
-    return Array.from(finalPermissions);
+    return { permissions: Array.from(finalPermissions), roleExpiresAt };
   }
 
   /**
@@ -268,9 +299,10 @@ export class PermissionService {
     }
 
     if (dimensionType === 'role') {
-      const userRoles = (await this.db
-        .model('userRoles')
-        .findMany({ where: { userId }, select: { roleId: true } })) as Array<{ roleId: string }>;
+      const userRoles = (await this.db.model('userRoles').findMany({
+        where: activeUserRoleWhere(userId, this.roleAssignments, new Date(this.clock())),
+        select: activeUserRoleSelect(this.roleAssignments),
+      })) as Array<{ roleId: string }>;
 
       const roleIds = userRoles.map((ur) => ur.roleId);
 

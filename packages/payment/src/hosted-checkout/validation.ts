@@ -1,5 +1,6 @@
 import type { Money } from '../contract/payment-contract';
-import { HostedCheckoutError, type HostedCheckoutOffer } from './types';
+import { toMinorUnits } from '../contract/money';
+import { HostedCheckoutError, type HostedCheckoutOffer, type HostedCheckoutPromotion } from './types';
 
 export function nonempty(value: string, label: string): string {
   if (typeof value !== 'string' || !value.trim()) throw new HostedCheckoutError('invalid_input', `${label} is required`);
@@ -56,7 +57,9 @@ export function snapshotFulfillmentData(value: unknown): HostedCheckoutOffer['fu
 
 const reservedMetadataKeys = new Set(['reference', 'referenceid', 'reference_id', 'client_reference_id',
   'requestid', 'request_id', 'order', 'orderid', 'order_id', 'offer', 'offerid', 'offer_id',
-  'offerversion', 'offer_version', 'ownerid', 'owner_id', 'userid', 'user_id', '__proto__', 'prototype', 'constructor']);
+  'offerversion', 'offer_version', 'ownerid', 'owner_id', 'userid', 'user_id', '__proto__', 'prototype', 'constructor',
+  // Written by the Stripe adapter for a promoted session (frozen provider code).
+  'zucker_promotion_code']);
 
 /** Stripe-compatible bounds; the consumer still owns which public fields are allowed at all. */
 export function snapshotProviderMetadata(value: unknown): Readonly<Record<string, string>> | undefined {
@@ -82,4 +85,45 @@ export function record(value: unknown): Record<string, unknown> | undefined {
 }
 export function text(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
+function minor(money: Money, label: string): number {
+  canonicalMoney(money);
+  try { return toMinorUnits(money.amount, money.currency); }
+  catch { throw new HostedCheckoutError('invalid_input', `${label} is not an exact amount for its currency`); }
+}
+
+/**
+ * Exact-key snapshot of a server-frozen promotion. Enforces `0 < payable < money`, one currency and
+ * `discount = money − payable` exactly: a zero total is refused (no money never grants).
+ */
+export function snapshotPromotion(offer: Pick<HostedCheckoutOffer, 'money'> & { promotion?: unknown }): HostedCheckoutPromotion | undefined {
+  const value = offer.promotion;
+  if (value === undefined) return undefined;
+  const invalid = (message = 'Promotion must be { id, providerCode, payable, discount }') => {
+    throw new HostedCheckoutError('invalid_input', message);
+  };
+  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.getPrototypeOf(value) !== Object.prototype) return invalid();
+  const raw = value as Record<string, unknown>;
+  if (Object.keys(raw).sort().join() !== 'discount,id,payable,providerCode') return invalid();
+  const id = raw.id, providerCode = raw.providerCode;
+  if (typeof id !== 'string' || !id.trim() || id.length > 128) return invalid('Promotion identity is invalid');
+  if (typeof providerCode !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(providerCode)) return invalid('Promotion provider code is invalid');
+  const money = (input: unknown): Money => {
+    const item = input as Record<string, unknown> | null;
+    if (!item || typeof item !== 'object' || Array.isArray(item) || Object.keys(item).sort().join() !== 'amount,currency'
+      || typeof item.amount !== 'string' || typeof item.currency !== 'string') return invalid('Promotion money is invalid');
+    return { amount: item.amount, currency: item.currency };
+  };
+  const payable = money(raw.payable), discount = money(raw.discount);
+  if (payable.currency !== offer.money.currency || discount.currency !== offer.money.currency) return invalid('Promotion currency differs from the offer');
+  const total = minor(offer.money, 'Offer'), pay = minor(payable, 'Payable amount'), off = minor(discount, 'Discount');
+  if (pay <= 0) throw new HostedCheckoutError('unsupported', 'A promotion may not reduce the total to zero');
+  if (off <= 0 || pay + off !== total) return invalid('Promotion discount must be positive and equal the offer minus the payable amount');
+  return { id, providerCode, payable, discount };
+}
+
+/** Exact money the initial checkout must collect: the frozen discounted amount, else the offer. */
+export function checkoutPayable(offer: Pick<HostedCheckoutOffer, 'money' | 'promotion'>): Money {
+  return offer.promotion?.payable ?? offer.money;
 }

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { BadRequestException } from '@nestjs/common';
 import { PostgresCreditOperationCoordinator } from '@zucker-framework/credit';
-import { HostedCheckoutError, RefundProtocolError, currencyExponent } from '@zucker-framework/payment';
+import { HostedCheckoutError, RefundProtocolError, checkoutPayable, currencyExponent } from '@zucker-framework/payment';
 import type { HostedCheckoutObservation, HostedCheckoutOrder, RefundAdapter, RefundObservation, RefundPaymentObservation,
   RefundPaymentReference, RefundWebhookEvent, SubscriptionCycleReceipt, SubscriptionPaidPeriod, SubscriptionPaidReceipt, WebhookRequest } from '@zucker-framework/payment';
 import { ApplicationDatabase, type ApplicationTransaction } from '../../database';
@@ -75,7 +75,7 @@ export class BillingRefundsService {
       if (initialCycle[0]) return this.localPayment('cycle', initialCycle[0].id);
       const fulfilled = await this.database.model('billingFulfillments').findUnique({ where: { orderId: order.id } });
       return { ownerId: order.ownerId, orderId: order.id, providerId: order.providerId, accountScope: order.accountScope, title: order.offer.description,
-        reference: { paymentId: order.paymentId, paymentKind: order.paymentKind, paidMoney: order.offer.money }, totalCredits: validateCreditFulfillmentPolicy(order.offer.fulfillmentData).credits,
+        reference: { paymentId: order.paymentId, paymentKind: order.paymentKind, paidMoney: checkoutPayable(order.offer) }, totalCredits: validateCreditFulfillmentPolicy(order.offer.fulfillmentData).credits,
         grantRecorded: !!fulfilled, ...(order.offer.mode === 'payment' ? { grantSource: 'purchase' as const, grantSourceId: order.id } : {}) };
     }
     if (type !== 'cycle') throw new BadRequestException('Unsupported refund target');

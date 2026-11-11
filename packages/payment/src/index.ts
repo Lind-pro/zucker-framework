@@ -46,8 +46,10 @@ export type { SubscriptionEntitlementBinding, SubscriptionCycleReceipt, Subscrip
 export { HostedCheckoutError } from './hosted-checkout/types';
 export type { HostedCheckoutMode, HostedCheckoutState, HostedCheckoutPaymentKind, HostedCheckoutJsonValue, HostedCheckoutOffer, HostedCheckoutOrder,
   HostedCheckoutObservation, HostedCheckoutEvent, HostedCheckoutAdapter, HostedCheckoutTransaction,
-  HostedCheckoutPersistence, HostedCheckoutSelection, HostedCheckoutOptions } from './hosted-checkout/types';
-export { createStripeHostedCheckoutAdapter } from './hosted-checkout/stripe';
+  HostedCheckoutPersistence, HostedCheckoutSelection, HostedCheckoutOptions, HostedCheckoutPromotion,
+  HostedCheckoutPromotionQuote } from './hosted-checkout/types';
+export { checkoutPayable, snapshotPromotion } from './hosted-checkout/validation';
+export { createStripeHostedCheckoutAdapter, stripePromotionCouponId, STRIPE_PROMOTION_METADATA_KEY } from './hosted-checkout/stripe';
 export type { StripeHostedCheckoutOptions } from './hosted-checkout/stripe';
 export { createPayPalHostedCheckoutAdapter } from './hosted-checkout/paypal';
 export type { PayPalHostedCheckoutOptions } from './hosted-checkout/paypal';

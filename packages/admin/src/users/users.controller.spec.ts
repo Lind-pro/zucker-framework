@@ -189,3 +189,34 @@ describe('UsersController update edge cases (N17)', () => {
     expect(await h.db.model('users').findMany({ where: { name: 'Ghost' } })).toEqual([]);
   });
 });
+
+describe('UsersController role expiries (WP 3.3a)', () => {
+  async function withExpiry(expiry: boolean) {
+    const h = await harness();
+    const users = new UsersController(h.userService, h.permissions, new DimensionUserService(h.db), h.db, {}, undefined, { expiry });
+    await h.db.model('roles').create({ data: { id: 'ordinary', name: 'ordinary' } });
+    await h.db.model('roles').create({ data: { id: 'other', name: 'other' } });
+    return { ...h, users };
+  }
+
+  it('rejects expiries with 400 when expiry is off and omits them from GET', async () => {
+    const h = await withExpiry(false);
+    await expect(h.users.setUserRoles('target', { roleIds: ['ordinary'], expiries: { ordinary: null } }, as('authorizer')))
+      .rejects.toMatchObject({ status: 400 });
+    await h.users.setUserRoles('target', { roleIds: ['ordinary'] }, as('authorizer'));
+    const links = await h.db.model('userRoles').findMany({ where: { userId: 'target' } });
+    expect(links.every((link) => !('expiresAt' in (link as object)))).toBe(true);
+    expect(await h.users.getUserRoles('target')).not.toHaveProperty('expiries');
+  });
+
+  it('writes and returns expiries when expiry is on, validating keys and dates', async () => {
+    const h = await withExpiry(true);
+    const at = '2027-01-31T23:59:59.000Z';
+    await expect(h.users.setUserRoles('target', { roleIds: ['ordinary', 'other'], expiries: { ordinary: at } }, as('authorizer')))
+      .resolves.toEqual({ roleIds: ['ordinary', 'other'], expiries: { ordinary: at, other: null } });
+    expect((await h.users.getUserRoles('target')).expiries).toEqual({ ordinary: at, other: null });
+    for (const expiries of [{ missing: at }, { ordinary: '2027-01-31' }, { ordinary: 5 }, ['x'], null])
+      await expect(h.users.setUserRoles('target', { roleIds: ['ordinary'], expiries }, as('authorizer')))
+        .rejects.toMatchObject({ status: 400 });
+  });
+});

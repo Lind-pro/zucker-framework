@@ -39,6 +39,10 @@ const en = {
   noPlansInView: 'No plan is offered for this interval and currency.',
   myOrders: 'My orders',
   seeAllPlans: 'Compare all plans',
+  promoCode: 'Promo code',
+  promoCodeOptional: 'Optional',
+  promoCodeFormat: 'Use 3–32 letters, digits, - or _.',
+  promoInvalid: 'This promo code cannot be used for this purchase.',
 };
 const zh: typeof en = {
   title: '价格',
@@ -78,6 +82,10 @@ const zh: typeof en = {
   noPlansInView: '该周期和币种下暂无套餐。',
   myOrders: '我的订单',
   seeAllPlans: '比较全部套餐',
+  promoCode: '优惠码',
+  promoCodeOptional: '可选',
+  promoCodeFormat: '请输入 3–32 位字母、数字、- 或 _。',
+  promoInvalid: '该优惠码不适用于本次购买。',
 };
 export type PricingCopy = typeof en;
 export function pricingCopy(locale: string): PricingCopy {

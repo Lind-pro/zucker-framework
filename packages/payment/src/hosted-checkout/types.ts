@@ -16,6 +16,34 @@ export interface HostedCheckoutOffer {
   description: string;
   /** Private, frozen consumer policy for same-transaction fulfillment. Never sent to providers. */
   fulfillmentData?: { [key: string]: HostedCheckoutJsonValue };
+  /**
+   * A discount computed by the consumer server when the order is created and frozen with it.
+   * Absent: the buyer pays exactly `money`. Present: the buyer pays exactly `promotion.payable`
+   * (subscriptions: the first invoice only; later cycles pay `money`).
+   */
+  promotion?: HostedCheckoutPromotion;
+}
+
+/**
+ * Server-frozen promotion. `money` stays the list price (the provider subtotal); the discount is
+ * never taken from the browser or from the provider's report: provider evidence must match it.
+ */
+export interface HostedCheckoutPromotion {
+  /** Consumer promotion identity (redemption and audit records). */
+  id: string;
+  /** Provider-side code the adapter applies (for Stripe a promotion code ID). Never browser input. */
+  providerCode: string;
+  /** Exact amount the buyer pays; positive (a zero total is refused) and below `money`. */
+  payable: Money;
+  /** Exactly `money − payable`, in the offer currency. */
+  discount: Money;
+}
+
+/** What the provider's own promotion object would discount on this offer (checked before an order exists). */
+export interface HostedCheckoutPromotionQuote {
+  discount: Money;
+  /** How long the provider applies it to a subscription. Subscriptions accept only `once`. */
+  duration: 'once' | 'repeating' | 'forever';
 }
 
 /** One catalog item, quantity one, with an exact initial amount. Renewals are separate. */
@@ -62,6 +90,12 @@ export interface HostedCheckoutObservation {
   paymentId?: string;
   paymentKind?: HostedCheckoutPaymentKind;
   subscriptionId?: string;
+  /** Provider total before discounts. Required evidence for an order frozen with a promotion. */
+  subtotalMoney?: Money;
+  /** Provider-reported total discount. Required evidence for an order frozen with a promotion. */
+  discountMoney?: Money;
+  /** Provider identities of the applied discounts (Stripe promotion code IDs); absent when unknown. */
+  discountReferences?: string[];
 }
 
 export interface HostedCheckoutEvent {
@@ -77,6 +111,11 @@ export interface HostedCheckoutAdapter {
   readonly modes: readonly HostedCheckoutMode[];
   /** Absent/false means arbitrary provider metadata is unsupported. */
   readonly supportsMetadata?: boolean;
+  /**
+   * Modes in which this adapter applies `offer.promotion.providerCode` and reports subtotal and
+   * discount evidence. Absent: offers with a promotion are refused before an order exists.
+   */
+  readonly promotions?: { readonly modes: readonly HostedCheckoutMode[] };
   /** Validate protocol/currency limitations before the durable dispatch claim. No I/O. */
   validate(offer: HostedCheckoutOffer): void;
   /**
@@ -88,6 +127,12 @@ export interface HostedCheckoutAdapter {
    * released, and paid money is always verified).
    */
   quote?(offer: Readonly<HostedCheckoutOffer>): Promise<{ money: Money; mode?: HostedCheckoutMode } | null>;
+  /**
+   * Optional read-only lookup of the provider promotion behind `offer.promotion.providerCode`, run
+   * before an order exists. Its discount must equal the frozen discount (else `conflict`), and a
+   * subscription offer requires this lookup and a `once` duration (first invoice only).
+   */
+  quotePromotion?(offer: Readonly<HostedCheckoutOffer>): Promise<HostedCheckoutPromotionQuote | null>;
   create(order: Readonly<HostedCheckoutOrder>): Promise<HostedCheckoutObservation>;
   retrieve(checkoutId: string): Promise<HostedCheckoutObservation>;
   capture?(checkoutId: string, idempotencyKey: string): Promise<HostedCheckoutObservation>;
@@ -97,8 +142,11 @@ export interface HostedCheckoutAdapter {
 
 export interface HostedCheckoutTransaction {
   orders: OrderPersistence<HostedCheckoutOrder>;
-  /** Only same-transaction entitlement/ledger/outbox writes. Never call an external service here. */
-  fulfill(order: Readonly<HostedCheckoutOrder>): Promise<void>;
+  /**
+   * Only same-transaction entitlement/ledger/outbox writes. Never call an external service here.
+   * `observation` is the verified provider evidence that made the order paid (redemption records).
+   */
+  fulfill(order: Readonly<HostedCheckoutOrder>, observation?: Readonly<HostedCheckoutObservation>): Promise<void>;
 }
 
 export interface HostedCheckoutPersistence {
@@ -116,6 +164,12 @@ export interface HostedCheckoutSelection {
   providerId: string;
   /** Only a server-side allowlisted mapping, never an unchecked browser metadata object. */
   providerMetadata?: Record<string, string>;
+  /**
+   * Opaque consumer promotion code (for example an alias the buyer typed), passed only to
+   * `resolveOffer`. It is never a price and never sent to a provider; the consumer turns it into
+   * `offer.promotion` or refuses it.
+   */
+  promotionCode?: string;
 }
 
 export interface HostedCheckoutOptions {

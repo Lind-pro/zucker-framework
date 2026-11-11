@@ -14,6 +14,7 @@ import { readSiteSettings } from "@/features/content/server";
 import { SiteTheme } from "@/features/site/SiteTheme";
 import { resolveSiteTheme } from "@zucker-framework/fe-site/content";
 import { LocaleSuggestion } from "@/components/LocaleSuggestion";
+import { ReferralCapture } from "@/features/referrals/ReferralCapture";
 import { LOCALE_TAGS, isLocale } from "@/lib/site/locales";
 import { parseAdminUrl, siteOrigin } from "@/lib/site/url";
 import "../globals.css";
@@ -81,6 +82,8 @@ export default async function LocaleLayout({
         <NextIntlClientProvider messages={messages}>
           <SiteTheme appearance={site.appearance}><div className="min-h-screen flex flex-col">
           <LocaleSuggestion />
+          {/* First-touch ?ref= capture on any landing page (renders nothing). */}
+          <ReferralCapture />
           <Header site={site} adminUrl={adminUrl} />
           <main className="flex-1">{children}</main>
           <Footer site={site} locale={locale} />

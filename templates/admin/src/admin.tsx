@@ -28,6 +28,8 @@ export const admin = createAdminApp({
   users: {
     // New accounts follow this application's public registration policy.
     createDefaults: { typeId: 'member' },
+    // Staff "reset two-step verification" action (users:update or superadmin; the server audits and notifies).
+    twoFactorResetPath: '/management/users/:id/two-factor/reset',
   },
   mail: {
     // Matches the server template's email_templates columns (English is the required default).

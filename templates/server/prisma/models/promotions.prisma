@@ -1,0 +1,62 @@
+// ─── Promotions (WP 3.4) ─────────────────────────────────────────────────────
+// Promo codes managed in the back office. The discount is defined here and computed by the server
+// when an order is created; it is frozen on the order (`offer.promotion`) and the provider must
+// report exactly that subtotal and discount. `providerCode` is the provider-side object that makes
+// the provider charge it (for Stripe a promotion code ID) and never comes from the browser.
+
+model promotions {
+  id             String    @id @default(cuid())
+  /// Code buyers type, stored upper-case ([A-Z0-9_-]{3,32}). NULL: applied automatically to
+  /// matching one-time offers.
+  alias          String?   @unique
+  providerId     String
+  providerCode   String
+  /// '*', 'plan:<planId>', 'pack:<packId>' or 'offer:<static offer id>'.
+  target         String
+  /// Only offers in this currency; required for an amount discount.
+  currency       String?
+  /// 'percent' (percentOff, 1–99) or 'amount' (amountOff, exact decimal in `currency`).
+  discountType   String
+  percentOff     Int?
+  amountOff      String?
+  /// Reservations plus redemptions may never exceed this; NULL is unlimited.
+  maxRedemptions Int?
+  /// 'active' | 'disabled'
+  status         String    @default("active")
+  startsAt       DateTime? @db.Timestamptz(3)
+  endsAt         DateTime? @db.Timestamptz(3)
+  note           String?
+  /// Incremented by every write; management edits are compare-and-swap on it.
+  revision       Int       @default(0)
+  createdAt      DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime  @default(now()) @updatedAt @db.Timestamptz(3)
+
+  @@index([status, providerId])
+  @@map("promotions")
+}
+
+/// One use of a promotion by one order. Created as a reservation when the order is created (under
+/// a lock on the promotion row, so limits hold under concurrency) and marked redeemed in the
+/// order's fulfillment transaction.
+model promotionRedemptions {
+  orderId        String    @id
+  promotionId    String
+  ownerId        String
+  providerId     String
+  /// 'reserved' | 'redeemed'
+  status         String
+  /// Provider discount reference from the verified payment (redeemed rows).
+  reference      String?
+  /// Exact decimals in `currency`, as frozen on the order.
+  discountAmount String
+  payableAmount  String
+  currency       String
+  /// A reservation stops counting after this time unless it was redeemed.
+  expiresAt      DateTime  @db.Timestamptz(3)
+  redeemedAt     DateTime? @db.Timestamptz(3)
+  createdAt      DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@index([promotionId, status])
+  @@index([ownerId])
+  @@map("promotion_redemptions")
+}

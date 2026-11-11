@@ -37,7 +37,10 @@ export const recordDefinitions = {
       ['id'],
       ['ownerId'],
       ['title'],
+      // `money` is the amount charged (after a promotion); list price and discount beside it.
       ['money', 'money'],
+      ['discount', 'money'],
+      ['listMoney', 'money'],
       ['providerId'],
       ['state', 'status'],
       ['refund', 'refund'],

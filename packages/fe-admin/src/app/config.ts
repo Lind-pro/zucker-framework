@@ -259,6 +259,13 @@ export interface AdminAppConfig {
   users?: {
     /** Extra fields sent when creating a user (consumer registration policy, e.g. a type id). */
     createDefaults?: Record<string, unknown>;
+    /**
+     * Server endpoint that resets another account's two-factor authentication (lost device), with
+     * `:id` for the user id, e.g. `/management/users/:id/two-factor/reset`. The users page shows the
+     * action (under `users.update`) only when this is set. Body `{password?}` (the operator's own
+     * password for recent authentication).
+     */
+    twoFactorResetPath?: string;
   };
   mail?: {
     /** Locale → template content column, matching the server's MailTemplateCatalog contentFields. */
@@ -294,6 +301,8 @@ export interface ResolvedAdminConfig {
   endpoints: AdminEndpoints;
   permissions: AdminPermissionCodes;
   usersCreateDefaults: Record<string, unknown>;
+  /** `users.twoFactorResetPath`, or null when the server offers no reset (action hidden). */
+  usersTwoFactorResetPath: string | null;
   mailContentFields: Record<string, string>;
   mailPreviewLocales: readonly string[];
   aiProviders: readonly string[];
@@ -319,6 +328,7 @@ export function resolveConfig(config: AdminAppConfig): ResolvedAdminConfig {
     endpoints: { ...defaultAdminEndpoints, ...config.endpoints },
     permissions: resolvePermissions(config.permissions),
     usersCreateDefaults: { ...config.users?.createDefaults },
+    usersTwoFactorResetPath: config.users?.twoFactorResetPath?.includes(':id') ? config.users.twoFactorResetPath : null,
     mailContentFields: contentFields,
     mailPreviewLocales: config.mail?.previewLocales ?? Object.keys(contentFields),
     aiProviders: config.ai?.providers ?? [],

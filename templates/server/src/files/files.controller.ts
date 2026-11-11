@@ -47,7 +47,7 @@ export class FilesController {
   @Get(':id') @Header('Cache-Control', 'private, no-store')
   inspect(@Req() req: FileRequest, @Param('id') id: string) { return fileResult(async () => publicFileAsset(await this.files.inspect(req.user.id, id))); }
   @Get(':id/content')
-  read(@Req() req: FileRequest, @Param('id') id: string, @Res({ passthrough: true }) response: DownloadResponse) { return fileResult(async () => fileAttachment(await this.files.read(req.user.id, id), response)); }
+  read(@Req() req: FileRequest, @Param('id') id: string, @Res({ passthrough: true }) response: DownloadResponse) { return fileResult(async () => fileAttachment(await this.files.open(req.user.id, id), response)); }
   @Delete(':id') @HttpCode(200) @Header('Cache-Control', 'private, no-store')
   delete(@Req() req: FileRequest, @Param('id') id: string) { this.origin(req); return fileResult(async () => publicFileAsset(await this.files.delete(req.user.id, id))); }
   @Post(':id/recover') @HttpCode(200) @Header('Cache-Control', 'private, no-store')

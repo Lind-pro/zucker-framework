@@ -130,6 +130,13 @@ export type { ScannedPermission } from './services/permission-scanner.service';
 export { DimensionService } from './services/dimension.service';
 export { RoleHierarchyService } from './services/role-hierarchy.service';
 export {
+  ROLE_ASSIGNMENT_OPTIONS,
+  resolveRoleAssignmentOptions,
+  activeUserRoleWhere,
+  type RoleAssignmentOptions,
+  type ResolvedRoleAssignmentOptions,
+} from './services/role-assignments';
+export {
   TokenService,
   TOKEN_CACHE,
   SESSION_TRACKED_CLAIM,
@@ -230,6 +237,18 @@ export type {
   TwoFactorValidatorProvider,
 } from './two-factor/two-factor.interface';
 export { TotpValidator, type TwoFactorStateStore } from './two-factor/totp-validator';
+export {
+  generateTotpSecret,
+  generateTotpCode,
+  totpProvisioningUri,
+  generateRecoveryCodes,
+  normalizeRecoveryCode,
+  hashRecoveryCode,
+  RECOVERY_CODE_ALPHABET,
+  RECOVERY_CODE_LENGTH,
+  type TotpCodeOptions,
+  type TotpProvisioningUriOptions,
+} from './two-factor/totp-helpers';
 export { TwoFactorService, TWO_FACTOR_PROVIDERS } from './two-factor/two-factor.service';
 
 // Password

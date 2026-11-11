@@ -6,7 +6,20 @@
 
 ## 进行中
 
-（无）
+### 2026-11-10 · TOTP 失败锁定按进程计数
+- **现状**：`TotpValidator` 的失败计数（`totp:<userId>`，含恢复码失败）默认是进程内存储；多副本时每个副本各自计数。
+- **缓解**：`two-factor` 限流（每账户 900 秒 10 次）在 `RATE_LIMIT_REDIS_URL` 配置后跨副本共享；同一验证码跨副本重放由数据库 `lastUsedStep` 条件更新拒绝。
+- **后续**：为 attempt store 提供共享（Redis/数据库）实现。
+
+### 2026-11-10 · 升级说明（Phase 3）
+- **D19（BREAKING）**：`@Permissions(['a'])` 数组写法在类加载时抛 `TypeError`，改为 `@Permissions('a')`。
+- **索引迁移** `20261111090000_insights_indexes` 在 `billing_orders`、`users`、`credit_lots`、`credit_consumptions`、`ai_tasks`、`chat_messages`、`billing_outbox`、`async_jobs` 上普通 `CREATE INDEX`（迁移在事务内，不能 CONCURRENTLY）；大表请在低峰执行。
+- **Stripe 优惠**：每个带优惠的会话创建一次性 `once` 固定金额优惠券（`zf_promo_<orderId>`），不再引用 Stripe 推广码；后台配置的 `providerCode` 仅作标签。
+
+### RESOLVED 2026-11-10 · Prisma schema 与计费退款迁移漂移
+- **症状**：`prisma migrate diff --to-schema prisma` 提议删除 `billing_refund_*` 外键、重建订阅外键（ON UPDATE CASCADE vs NO ACTION）并重命名 8 个退款索引。
+- **根因**：退款迁移手写 DDL（内联外键、自定义索引名），schema 未声明关系与索引名。
+- **修复**：schema 补全关系（`onDelete: Restrict, onUpdate: NoAction`）和 `map:` 索引名，数据库不变；`schema-drift.persistent` 现要求全库 diff 为空（WP 3.Z）。
 
 
 

@@ -94,7 +94,9 @@ test('parsePricingCatalog: credits, expiry, termDays, badge, current, checkout d
   assert.equal(out.plans[0].current, false);
   assert.equal(out.plans[0].featured, true);
   assert.deepEqual(out.plans[0].highlights, ['a', 'b']);
-  assert.deepEqual(out.checkout, { defaultProvider: null, allowProviderChoice: true });
+  assert.deepEqual(out.checkout, { defaultProvider: null, allowProviderChoice: true, promoCodes: 'none' });
+  assert.equal(pricing.parsePricingCatalog({ plans: [], checkout: { promoCodes: 'alias' } }).checkout.promoCodes, 'alias');
+  assert.equal(pricing.parsePricingCatalog({ plans: [], checkout: { promoCodes: 'anything' } }).checkout.promoCodes, 'none');
   assert.equal(pricing.parsePricingCatalog({ plans: [], checkout: { allowProviderChoice: false, defaultProvider: '' } }).checkout.allowProviderChoice, false);
   assert.equal(pricing.parsePricingCatalog({ plans: [], checkout: { defaultProvider: '' } }).checkout.defaultProvider, null);
 });

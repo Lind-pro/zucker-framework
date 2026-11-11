@@ -1,4 +1,4 @@
-import { Lock, User } from 'lucide-react';
+import { KeyRound, Lock, User } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { Navigate, useNavigate, useSearchParams } from 'react-router';
 import { isSafeRelativeRedirect } from '@zucker-framework/fe-auth';
@@ -8,6 +8,20 @@ import { Field, Input } from '../components/inputs';
 import { useAdminI18n } from '../i18n/context';
 import { useAdmin } from './context';
 import { LanguageSwitcher } from './layout';
+import { AdminTwoFactorRequiredError } from './session';
+
+/** Second-step state after `{ twoFactorRequired, challenge }`; the challenge stays in memory only. */
+interface TwoFactorStep {
+  challenge: string;
+  mode: 'code' | 'recovery';
+}
+
+/** Trimmed, space-free factor; `null` when it cannot be valid (a 6–8 digit code, or a recovery code). */
+export function twoFactorInput(mode: TwoFactorStep['mode'], value: string): string | null {
+  const compact = value.replace(/\s+/g, '');
+  if (mode === 'code') return /^\d{6,8}$/.test(compact) ? compact : null;
+  return /^[A-Za-z0-9-]{10,32}$/.test(compact) ? compact : null;
+}
 
 /** Sign in through the account module (`POST /authorize/login`, then `GET /authorize/me`). */
 /**
@@ -31,6 +45,9 @@ export function LoginPage() {
   const [errors, setErrors] = useState<{ username?: string; password?: string }>({});
   const [failed, setFailed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [step, setStep] = useState<TwoFactorStep | null>(null);
+  const [factor, setFactor] = useState('');
+  const [factorError, setFactorError] = useState<string | undefined>();
   const requested = params.get('redirect') ?? '';
   const destination = isAdminRedirect(requested) ? requested : config.homePath;
   if (isAuthenticated && token && !submitting) return <Navigate to={destination} replace />;
@@ -48,12 +65,48 @@ export function LoginPage() {
       await session.login(username.trim(), password);
       toast.success(t('shell.loginSucceeded'));
       navigate(destination, { replace: true });
-    } catch {
-      setFailed(true);
+    } catch (error) {
       setPassword('');
+      if (error instanceof AdminTwoFactorRequiredError) {
+        setStep({ challenge: error.challenge, mode: 'code' });
+        setFactor('');
+        setFactorError(undefined);
+      } else {
+        setFailed(true);
+      }
     } finally {
       setSubmitting(false);
     }
+  }
+  async function verify(event: FormEvent) {
+    event.preventDefault();
+    if (!step) return;
+    const label = step.mode === 'code' ? t('shell.twoFactorCode') : t('shell.recoveryCode');
+    const value = twoFactorInput(step.mode, factor);
+    if (!value) {
+      setFactorError(t('common.required', { label }));
+      return;
+    }
+    setFactorError(undefined);
+    setSubmitting(true);
+    setFailed(false);
+    try {
+      await session.loginTwoFactor(step.challenge, step.mode === 'code' ? { code: value } : { recoveryCode: value });
+      toast.success(t('shell.loginSucceeded'));
+      navigate(destination, { replace: true });
+    } catch {
+      // A wrong code keeps the challenge (the server does not consume it); an expired one needs "back".
+      setFailed(true);
+      setFactor('');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+  function backToPassword() {
+    setStep(null);
+    setFactor('');
+    setFactorError(undefined);
+    setFailed(false);
   }
   return (
     <main className="flex min-h-dvh items-center justify-center bg-background px-4 py-10 text-foreground">
@@ -64,50 +117,99 @@ export function LoginPage() {
         <div className="space-y-1 text-center">
           {config.logo && <div className="mb-3 flex justify-center">{config.logo}</div>}
           <h1 className="text-xl font-semibold">{config.brandName ?? t('shell.loginTitle')}</h1>
-          <p className="text-sm text-muted-foreground">{t('shell.loginSubtitle')}</p>
+          <p className="text-sm text-muted-foreground">
+            {step ? t(step.mode === 'code' ? 'shell.twoFactorSubtitle' : 'shell.recoverySubtitle') : t('shell.loginSubtitle')}
+          </p>
         </div>
-        {failed && <Notice tone="danger" title={t('shell.loginFailed')} />}
-        <form noValidate onSubmit={(event) => void submit(event)} className="space-y-4" aria-label={t('shell.login')}>
-          <Field label={t('shell.username')} error={errors.username} required>
-            {({ id, describedBy, invalid }) => (
-              <div className="relative">
-                <User className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-                <Input
-                  id={id}
-                  name="username"
-                  autoComplete="username"
-                  autoFocus
-                  className="h-10 pl-9"
-                  aria-describedby={describedBy}
-                  aria-invalid={invalid || undefined}
-                  value={username}
-                  onChange={(event) => setUsername(event.target.value)}
-                />
-              </div>
-            )}
-          </Field>
-          <Field label={t('shell.password')} error={errors.password} required>
-            {({ id, describedBy, invalid }) => (
-              <div className="relative">
-                <Lock className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-                <Input
-                  id={id}
-                  name="password"
-                  type="password"
-                  autoComplete="current-password"
-                  className="h-10 pl-9"
-                  aria-describedby={describedBy}
-                  aria-invalid={invalid || undefined}
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                />
-              </div>
-            )}
-          </Field>
-          <Button type="submit" variant="primary" className="h-10 w-full" loading={submitting}>
-            {submitting ? t('shell.loggingIn') : t('shell.login')}
-          </Button>
-        </form>
+        {failed && <Notice tone="danger" title={t(step ? 'shell.twoFactorFailed' : 'shell.loginFailed')} />}
+        {step ? (
+          <form noValidate onSubmit={(event) => void verify(event)} className="space-y-4" aria-label={t('shell.twoFactorTitle')}>
+            <Field label={step.mode === 'code' ? t('shell.twoFactorCode') : t('shell.recoveryCode')} error={factorError} required>
+              {({ id, describedBy, invalid }) => (
+                <div className="relative">
+                  <KeyRound className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+                  <Input
+                    key={step.mode}
+                    id={id}
+                    name={step.mode === 'code' ? 'code' : 'recoveryCode'}
+                    autoComplete="one-time-code"
+                    inputMode={step.mode === 'code' ? 'numeric' : 'text'}
+                    autoFocus
+                    className="h-10 pl-9"
+                    aria-describedby={describedBy}
+                    aria-invalid={invalid || undefined}
+                    value={factor}
+                    onChange={(event) => setFactor(event.target.value)}
+                  />
+                </div>
+              )}
+            </Field>
+            <Button type="submit" variant="primary" className="h-10 w-full" loading={submitting}>
+              {submitting ? t('shell.loggingIn') : t('shell.twoFactorVerify')}
+            </Button>
+            <div className="flex flex-wrap justify-between gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={submitting}
+                onClick={() => {
+                  setStep({ ...step, mode: step.mode === 'code' ? 'recovery' : 'code' });
+                  setFactor('');
+                  setFactorError(undefined);
+                  setFailed(false);
+                }}
+              >
+                {step.mode === 'code' ? t('shell.useRecoveryCode') : t('shell.useAuthenticatorCode')}
+              </Button>
+              <Button type="button" variant="ghost" size="sm" disabled={submitting} onClick={backToPassword}>
+                {t('shell.twoFactorBack')}
+              </Button>
+            </div>
+          </form>
+        ) : (
+          <form noValidate onSubmit={(event) => void submit(event)} className="space-y-4" aria-label={t('shell.login')}>
+            <Field label={t('shell.username')} error={errors.username} required>
+              {({ id, describedBy, invalid }) => (
+                <div className="relative">
+                  <User className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+                  <Input
+                    id={id}
+                    name="username"
+                    autoComplete="username"
+                    autoFocus
+                    className="h-10 pl-9"
+                    aria-describedby={describedBy}
+                    aria-invalid={invalid || undefined}
+                    value={username}
+                    onChange={(event) => setUsername(event.target.value)}
+                  />
+                </div>
+              )}
+            </Field>
+            <Field label={t('shell.password')} error={errors.password} required>
+              {({ id, describedBy, invalid }) => (
+                <div className="relative">
+                  <Lock className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+                  <Input
+                    id={id}
+                    name="password"
+                    type="password"
+                    autoComplete="current-password"
+                    className="h-10 pl-9"
+                    aria-describedby={describedBy}
+                    aria-invalid={invalid || undefined}
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                  />
+                </div>
+              )}
+            </Field>
+            <Button type="submit" variant="primary" className="h-10 w-full" loading={submitting}>
+              {submitting ? t('shell.loggingIn') : t('shell.login')}
+            </Button>
+          </form>
+        )}
       </div>
     </main>
   );

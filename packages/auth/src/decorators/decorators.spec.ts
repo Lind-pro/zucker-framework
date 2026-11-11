@@ -242,3 +242,42 @@ describe('Auth Decorators — metadata reading', () => {
     expect(meta.logical).toBe('AND');
   });
 });
+
+describe('@Permissions / @Authorize fail fast (D19)', () => {
+  it.each([
+    [[['a', 'b']], "@Permissions(['a', 'b']) is not supported; write @Permissions('a', 'b')"],
+    [[''], 'non-empty strings'],
+    [['  '], 'non-empty strings'],
+    [[1], 'non-empty strings'],
+    [['a', ['b']], "write @Permissions('b')"],
+  ])('rejects %j at decoration time', (args, message) => {
+    expect(() => (Permissions as (...a: unknown[]) => unknown)(...args)).toThrow(TypeError);
+    expect(() => (Permissions as (...a: unknown[]) => unknown)(...args)).toThrow(message);
+  });
+
+  it('throws when the controller class is defined', () => {
+    expect(() => {
+      class C {
+        @(Permissions as (...a: unknown[]) => MethodDecorator)(['x'])
+        method() {}
+      }
+      return C;
+    }).toThrow("@Permissions(['x']) is not supported");
+  });
+
+  it('keeps @Permissions() valid', () => {
+    class C {
+      @Permissions()
+      method() {}
+    }
+    expect(getMethodMeta(PERMISSIONS_KEY, C.prototype, 'method')).toEqual([]);
+  });
+
+  it.each([
+    [{ permissions: [['a']] }, "@Authorize({ permissions: [['a']] }) is not supported; write @Authorize({ permissions: ['a'] })"],
+    [{ permissions: [''] }, 'non-empty strings'],
+    [{ permissions: 'a' }, 'expects an array'],
+  ])('Authorize rejects %j', (options, message) => {
+    expect(() => Authorize(options as never)).toThrow(message);
+  });
+});

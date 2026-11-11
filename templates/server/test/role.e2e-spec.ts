@@ -26,6 +26,7 @@ import {
   HttpCode,
   HttpStatus,
   NotFoundException,
+  Inject,
 } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { APP_GUARD } from '@nestjs/core';
@@ -77,7 +78,8 @@ interface QueryDto {
 @Controller('roles')
 class RoleController {
   constructor(
-    private readonly db: { model: (name: string) => {
+    // Object-literal parameter types carry no DI metadata: name the token explicitly.
+    @Inject('DATABASE_ADAPTER') private readonly db: { model: (name: string) => {
       findMany: (args?: object) => Promise<Record<string, unknown>[]>;
       findUnique: (args: object) => Promise<Record<string, unknown> | null>;
       create: (args: object) => Promise<Record<string, unknown>>;
@@ -88,7 +90,7 @@ class RoleController {
   ) {}
 
   @Post('_query')
-  @Permissions([])          // login required
+  @Permissions()          // login required
   @HttpCode(HttpStatus.OK)
   async query(@Body() body: QueryDto) {
     const { pageIndex = 0, pageSize = 20 } = body;
@@ -99,7 +101,7 @@ class RoleController {
   }
 
   @Post()
-  @Permissions(['roles:add'])
+  @Permissions('roles:add')
   async create(@Body() body: CreateRoleDto) {
     const { permissionIds = [], ...roleData } = body;
     const id = `role-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -116,7 +118,7 @@ class RoleController {
   }
 
   @Get(':id')
-  @Permissions([])          // login required
+  @Permissions()          // login required
   async findOne(@Param('id') id: string) {
     const role = await this.db.model('roles').findUnique({ where: { id } });
     if (!role) throw new NotFoundException(`Role "${id}" not found`);
@@ -126,7 +128,7 @@ class RoleController {
   }
 
   @Put(':id')
-  @Permissions(['roles:update'])
+  @Permissions('roles:update')
   async update(@Param('id') id: string, @Body() body: UpdateRoleDto) {
     const role = await this.db.model('roles').findUnique({ where: { id } });
     if (!role) throw new NotFoundException(`Role "${id}" not found`);
@@ -149,7 +151,7 @@ class RoleController {
   }
 
   @Delete(':id')
-  @Permissions(['roles:delete'])
+  @Permissions('roles:delete')
   async remove(@Param('id') id: string) {
     const role = await this.db.model('roles').findUnique({ where: { id } });
     if (!role) throw new NotFoundException(`Role "${id}" not found`);

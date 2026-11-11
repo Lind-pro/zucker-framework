@@ -8,7 +8,7 @@
  * - PUT  /users/:id     — 更新用户
  * - DELETE /users/:id   — 删除用户
  * - GET  /users/:id/roles       — 查询用户角色列表
- * - PUT  /users/:id/roles       — 设置用户角色（全量替换）
+ * - PUT  /users/:id/roles       — 设置用户角色（全量替换；roleAssignments.expiry 开启时可带 expiries）
  * - GET  /users/:id/permissions  — 查询用户权限（含角色继承）
  * - PUT  /users/:id/permissions  — 直接分配权限给用户
  * - GET  /users/:id/dimensions   — 查询用户维度绑定
@@ -39,6 +39,8 @@ import {
   UserService,
   PermissionService,
   DimensionUserService,
+  ROLE_ASSIGNMENT_OPTIONS,
+  type ResolvedRoleAssignmentOptions,
 } from '@zucker-framework/auth';
 import { DATABASE_ADAPTER } from '@zucker-framework/crud';
 import { type DatabaseAdapter, ValidationException } from '@zucker-framework/core';
@@ -57,6 +59,12 @@ import {
 } from './users.options';
 
 type AdminRequest = { user?: { id?: string } } | undefined;
+
+/** Role id → ISO expiry (`null` = never expires). */
+export type RoleExpiries = Record<string, string | null>;
+
+/** Full ISO 8601 date-time with an explicit offset: a bare date would be read as UTC midnight. */
+const ISO_DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/;
 
 /** Forms send `''` for an empty optional field that is stored as `null`; that is not a change. */
 const sameStoredValue = (next: unknown, stored: unknown): boolean =>
@@ -99,9 +107,14 @@ export class UsersController {
     @Inject(DATABASE_ADAPTER) private readonly db: DatabaseAdapter,
     @Optional() @Inject(ADMIN_USERS_OPTIONS) options?: UsersAdminOptions,
     @Optional() @Inject(ADMIN_USER_HOOKS) private readonly hooks?: AdminUserHooks,
+    @Optional() @Inject(ROLE_ASSIGNMENT_OPTIONS) roleAssignments?: ResolvedRoleAssignmentOptions,
   ) {
     this.options = options ?? {};
+    // Only when the auth module was configured with roleAssignments.expiry: the column may not exist.
+    this.roleExpiry = roleAssignments?.expiry === true;
   }
+
+  private readonly roleExpiry: boolean;
 
   private readonly options: UsersAdminOptions;
 
@@ -231,21 +244,33 @@ export class UsersController {
    * GET /users/:id/roles — 查询用户角色列表
    */
   @Get(':id/roles')
-  async getUserRoles(@Param('id') id: string): Promise<{ roleIds: string[]; roles: unknown[] }> {
+  async getUserRoles(
+    @Param('id') id: string,
+  ): Promise<{ roleIds: string[]; roles: unknown[]; expiries?: RoleExpiries }> {
     await this.ensureUserExists(id);
+    // Lists every link, expired ones included, so an operator can see and renew them.
     const links = (await this.db.model('userRoles').findMany({
       where: { userId: id },
-    })) as Array<{ roleId: string }>;
+    })) as Array<{ roleId: string; expiresAt?: Date | string | null }>;
     const roleIds = links.map((l) => l.roleId);
     const roles = roleIds.length > 0
       ? await Promise.all(roleIds.map((rid) => this.db.model('roles').findUnique({ where: { id: rid } })))
       : [];
-    return { roleIds, roles: roles.filter(Boolean) };
+    if (!this.roleExpiry) return { roleIds, roles: roles.filter(Boolean) };
+    const expiries: RoleExpiries = {};
+    for (const link of links) {
+      const at = link.expiresAt == null ? null : new Date(link.expiresAt);
+      expiries[link.roleId] = at && Number.isFinite(at.getTime()) ? at.toISOString() : null;
+    }
+    return { roleIds, roles: roles.filter(Boolean), expiries };
   }
 
   /**
    * PUT /users/:id/roles — 设置用户角色（全量替换）
-   * Body: { roleIds: string[] }
+   * Body: { roleIds: string[], expiries?: { [roleId]: ISO date-time | null } }
+   *
+   * `expiries` is accepted only when the auth module runs with `roleAssignments.expiry`;
+   * otherwise it is rejected with 400. Roles without an entry never expire.
    */
   @Put(':id/roles')
   @Permissions('users:authorize')
@@ -253,13 +278,14 @@ export class UsersController {
     @Param('id') id: string,
     @Body() body: unknown,
     @Req() request?: AdminRequest,
-  ): Promise<{ roleIds: string[] }> {
+  ): Promise<{ roleIds: string[]; expiries?: RoleExpiries }> {
     if (!body || typeof body !== 'object' || Array.isArray(body)
-      || Object.keys(body).some(key => key !== 'roleIds')
+      || Object.keys(body).some(key => key !== 'roleIds' && key !== 'expiries')
       || !('roleIds' in body) || !Array.isArray(body.roleIds)
       || body.roleIds.some(roleId => typeof roleId !== 'string' || !roleId.trim()))
       throw new ValidationException({ roleIds: ['Must be an array of non-empty role identifiers'] }, 'Invalid roles');
     const roleIds = [...new Set(body.roleIds as string[])];
+    const expiries = 'expiries' in body ? this.roleExpiriesBody(body.expiries, roleIds) : undefined;
     await this.requireNotOutranked(request, id);
     await this.db.$transaction(async (tx) => {
       // A same-value parent update locks this user before reading/replacing child rows.
@@ -277,11 +303,39 @@ export class UsersController {
       await this.requireMayGrant(request, await privilegedRoleCodes(tx, roleIds));
       await tx.model('userRoles').deleteMany({ where: { userId: id } });
       for (const roleId of roleIds) {
-        await tx.model('userRoles').create({ data: { userId: id, roleId } });
+        // Without expiry support the column is never named (other consumers' tables lack it).
+        const data = this.roleExpiry
+          ? { userId: id, roleId, expiresAt: expiries?.[roleId] ? new Date(expiries[roleId]!) : null }
+          : { userId: id, roleId };
+        await tx.model('userRoles').create({ data });
       }
     });
     this.permissionService.invalidatePermissionCache(id);
-    return { roleIds };
+    if (!this.roleExpiry) return { roleIds };
+    return { roleIds, expiries: Object.fromEntries(roleIds.map(roleId => [roleId, expiries?.[roleId] ?? null])) };
+  }
+
+  /** Validate `expiries`: only with expiry support, keys among `roleIds`, values ISO date-time or null. */
+  private roleExpiriesBody(value: unknown, roleIds: readonly string[]): RoleExpiries {
+    if (!this.roleExpiry)
+      throw new ValidationException({ expiries: ['Role expiry is not enabled on this server'] }, 'Invalid roles');
+    if (!value || typeof value !== 'object' || Array.isArray(value))
+      throw new ValidationException({ expiries: ['Must be an object of role id to ISO date-time or null'] }, 'Invalid roles');
+    const known = new Set(roleIds);
+    const result: RoleExpiries = {};
+    for (const [roleId, raw] of Object.entries(value as Record<string, unknown>)) {
+      if (!known.has(roleId))
+        throw new ValidationException({ expiries: [`Role is not in roleIds: ${roleId}`] }, 'Invalid roles');
+      if (raw === null) {
+        result[roleId] = null;
+        continue;
+      }
+      const at = typeof raw === 'string' && ISO_DATE_TIME.test(raw) ? new Date(raw) : null;
+      if (!at || !Number.isFinite(at.getTime()))
+        throw new ValidationException({ expiries: [`Invalid ISO date-time for role ${roleId}`] }, 'Invalid roles');
+      result[roleId] = at.toISOString();
+    }
+    return result;
   }
 
   // ─── 用户-权限关联 ─────────

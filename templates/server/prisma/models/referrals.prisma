@@ -1,0 +1,46 @@
+// ─── Referral programme (WP 3.5a) ────────────────────────────────────────────
+// Users are referenced by scalar id (no cross-file relation fields). Rewards are granted by a
+// background scanner from committed `billing_orders` rows, never inside a fulfillment transaction.
+// CHECK constraints (code alphabet, no self-referral, status values, non-negative amounts) live in
+// the migration SQL.
+
+/// One shareable code per user, created lazily on the first `GET /referrals/me`.
+model referralCodes {
+  userId     String    @id
+  /// 8 characters from an unambiguous upper-case alphabet (no I, O, 0, 1).
+  code       String    @unique @db.VarChar(16)
+  /// Set by an operator; a disabled code cannot be claimed and pending rewards through it are skipped.
+  disabledAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@map("referral_codes")
+}
+
+/// Who referred whom. One binding per referee (primary key), immutable once written.
+model referralBindings {
+  refereeId  String   @id
+  referrerId String
+  code       String   @db.VarChar(16)
+  boundAt    DateTime @default(now())
+
+  @@index([referrerId, boundAt])
+  @@index([boundAt])
+  @@map("referral_bindings")
+}
+
+/// The single reward decision per referee (and per qualifying order). Amounts are frozen from the
+/// policy at grant time. `skipped` rows are final and record why (refund, cap, disabled code, ...).
+model referralRewards {
+  refereeId       String   @id
+  referrerId      String
+  orderId         String   @unique
+  referrerCredits Int      @default(0)
+  refereeCredits  Int      @default(0)
+  status          String   @db.VarChar(16)
+  skipReason      String?  @db.VarChar(64)
+  createdAt       DateTime @default(now())
+
+  @@index([referrerId, status])
+  @@index([createdAt])
+  @@map("referral_rewards")
+}

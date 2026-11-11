@@ -1,5 +1,9 @@
 import type { AdminPageDefinition } from '@zucker-framework/fe-admin';
 import { aiPages } from './ai';
+import { feedbackPages } from './feedback';
+import { insightPages } from './insights';
+import { promotionPages } from './promotions';
+import { referralPages } from './referrals';
 
 /**
  * Registration point for feature-owned back-office pages.
@@ -11,4 +15,8 @@ import { aiPages } from './ai';
  */
 export const extraPages: readonly AdminPageDefinition[] = [
   ...aiPages,
+  ...promotionPages,
+  ...referralPages,
+  ...feedbackPages,
+  ...insightPages,
 ];

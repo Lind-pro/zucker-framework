@@ -51,6 +51,14 @@ import { RetentionModule } from './maintenance/retention';
 import { ZuckerAdminModule } from '@zucker-framework/admin';
 import { AdminUserSessionHooks } from './accounts/admin-user-hooks';
 import { ZuckerFormModule } from '@zucker-framework/form';
+import { AccountDeletionModule } from './accounts/deletion';
+import { APP_DELETION_CONTRIBUTORS } from './accounts/deletion/app-contributors';
+import { FeedbackModule, FEEDBACK_POLICIES, FEEDBACK_RATE_LIMITERS } from './feedback';
+import { InboxModule, InboxService, INBOX_RATE_LIMITERS, inboxFeedbackNotifier, inboxReferralNotifier } from './inbox';
+import { ReferralsModule, REFERRAL_POLICIES, REFERRAL_RATE_LIMITERS } from './referrals';
+import { PromotionsModule } from './promotions';
+import { InsightsModule } from './insights';
+import { ACCOUNT_SECURITY_RATE_LIMITERS } from './accounts/security/account-security.limits';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL is required for the Server template. Configure its isolated database before starting.');
@@ -75,8 +83,9 @@ if (!jwtSecret || jwtSecret.length < 32) throw new Error('JWT_SECRET must be an 
     ZuckerCrudModule.forRootAsync({ useFactory: () => new ApplicationDatabase(databaseUrl) }),
     RuntimeSettingsModule,
     // Hot-applied product policies; features append their exported definitions to `policies`.
-    PolicyModule.forRoot({ policies: [...ACCOUNT_POLICIES, ...BILLING_POLICIES, ...AI_POLICIES] }),
-    ZuckerAuthModule.forRoot({ jwtSecret, registerControllers: false }),
+    PolicyModule.forRoot({ policies: [...ACCOUNT_POLICIES, ...BILLING_POLICIES, ...AI_POLICIES, ...FEEDBACK_POLICIES, ...REFERRAL_POLICIES] }),
+    // Role links with `expiresAt` in the past grant nothing (users.expiresAt column, account:role --expires).
+    ZuckerAuthModule.forRoot({ jwtSecret, registerControllers: false, roleAssignments: { expiry: true } }),
     AccountModule,
     AccountAvatarModule,
     AccountApiKeysModule,
@@ -100,7 +109,8 @@ if (!jwtSecret || jwtSecret.length < 32) throw new Error('JWT_SECRET must be an 
       // charged once per limiter even if the guard runs twice, but the global copy is not needed.
       globalGuard: false,
       // Feature fragments are appended here: composeRateLimiters(APP_RATE_LIMITERS, FEATURE_RATE_LIMITERS, ...).
-      limiters: { ...composeRateLimiters(APP_RATE_LIMITERS, PUBLIC_ASSET_RATE_LIMITERS, AI_TASK_RATE_LIMITERS, CHAT_RATE_LIMITERS) },
+      limiters: { ...composeRateLimiters(APP_RATE_LIMITERS, PUBLIC_ASSET_RATE_LIMITERS, AI_TASK_RATE_LIMITERS, CHAT_RATE_LIMITERS,
+        FEEDBACK_RATE_LIMITERS, INBOX_RATE_LIMITERS, REFERRAL_RATE_LIMITERS, ACCOUNT_SECURITY_RATE_LIMITERS) },
       // Shared budgets across replicas/restarts; requires the optional `ioredis` package. Memory otherwise.
       ...(process.env.RATE_LIMIT_REDIS_URL?.trim() ? { redis: { url: process.env.RATE_LIMIT_REDIS_URL.trim() } } : {}),
     }),
@@ -116,6 +126,16 @@ if (!jwtSecret || jwtSecret.length < 32) throw new Error('JWT_SECRET must be an 
     // Metered media generation (/ai/*, /v1/ai/*) and streaming chat (/chat*) on the shared Jobs host.
     AITasksModule,
     ChatModule,
+
+    // ============ Account growth (Phase 3) ============
+    // In-app notifications; feedback replies and referral rewards post into the inbox in their own transaction.
+    InboxModule,
+    FeedbackModule.forRoot({ imports: [InboxModule], notifier: { inject: [InboxService], useFactory: inboxFeedbackNotifier } }),
+    ReferralsModule.forRoot({ imports: [InboxModule], notifier: { inject: [InboxService], useFactory: inboxReferralNotifier } }),
+    PromotionsModule,
+    InsightsModule,
+    // Built-in erase list + feature contributors (order documented in app-contributors.ts).
+    AccountDeletionModule.forRoot({ imports: [AITasksModule, FilesModule], contributors: APP_DELETION_CONTRIBUTORS }),
 
     // ============ Layer 4: 高级能力 ============
     ZuckerProviderModule,

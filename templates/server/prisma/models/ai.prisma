@@ -29,6 +29,7 @@ model AITask {
   @@unique([providerId, providerTaskId], map: "ai_tasks_provider_task_key")
   @@index([ownerId, createdAt(sort: Desc), id(sort: Desc)], map: "ai_tasks_owner_created_idx")
   @@index([holdState], map: "ai_tasks_hold_state_idx")
+  @@index([createdAt], map: "ai_tasks_created_idx")
   @@map("ai_tasks")
 }
 
@@ -90,5 +91,6 @@ model chatMessages {
 
   @@unique([chatId, seq], map: "chat_messages_chat_seq_key")
   @@index([status, updatedAt], map: "chat_messages_status_updated_idx")
+  @@index([createdAt], map: "chat_messages_created_idx")
   @@map("chat_messages")
 }

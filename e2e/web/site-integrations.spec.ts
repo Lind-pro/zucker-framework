@@ -30,6 +30,14 @@ test.beforeAll(async () => {
       response.end(JSON.stringify({ name: 'Synthetic website', theme: 'default', appearance: 'dark', description: '',
         navigation: [], footerLinks: [], siteUrl: 'http://localhost:4202' })); return;
     }
+    if (url.pathname === '/api/content/public/entry' && url.searchParams.get('kind') === 'page' && url.searchParams.get('slug') === 'home') {
+      // The home page is CMS-rendered (Phase 3): one hero whose primary action is the sign-up link this spec follows.
+      const locale = url.searchParams.get('locale') ?? 'en';
+      response.end(JSON.stringify({ status: 200, result: { id: 'home', kind: 'page', locale, slug: 'home', title: 'Home', description: '', authorName: 'Synthetic',
+        publishedAt: '2026-10-01T00:00:00.000Z', updatedAt: '2026-10-02T00:00:00.000Z', categories: [], source: 'database',
+        document: { version: 2, title: 'Home', description: '', authorName: 'Synthetic', markdown: '', seo: { title: '', description: '', noIndex: false },
+          blocks: [{ id: 'hero', type: 'hero', enabled: true, heading: 'Synthetic home', text: '', action: { label: 'Get Started', href: '/register' } }] } } })); return;
+    }
     response.statusCode = 404; response.end('{}');
   });
   await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });

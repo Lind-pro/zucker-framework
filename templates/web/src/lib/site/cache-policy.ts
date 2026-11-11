@@ -15,6 +15,8 @@ export const PRIVATE_PREFIXES = [
   '/forgot-password',
   '/reset-password',
   '/verify-email',
+  // Carries a single-use sign-in ticket in the fragment; the page itself must never be shared-cached.
+  '/magic-link',
 ] as const;
 
 /** Robots exclusions: private pages plus public pages that are not worth crawling. */

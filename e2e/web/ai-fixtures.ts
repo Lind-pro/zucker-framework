@@ -46,6 +46,8 @@ export async function installApi(page: Page, context: BrowserContext, baseURL: s
 
   handlers.set('GET /api/authorize/me', handlers.get('GET /api/authorize/me') ?? (() => ({ result: { id: 'user-a', username: 'synthetic', permissions: [] } })));
   handlers.set('GET /api/credits/balance', handlers.get('GET /api/credits/balance') ?? (() => ({ result: { available: 100 } })));
+  // Header inbox bell (signed-in shell) polls the unread count.
+  handlers.set('GET /api/inbox/unread-count', handlers.get('GET /api/inbox/unread-count') ?? (() => ({ result: { unreadCount: 0 } })));
   handlers.set('GET /api/files', handlers.get('GET /api/files') ?? (() => ({ result: { data: [], total: 0, page: 1, pageSize: 20 } })));
 
   await context.addCookies([{ name: 'zucker-session', value: 'synthetic-session', url: origin, httpOnly: true, sameSite: 'Lax' }]);

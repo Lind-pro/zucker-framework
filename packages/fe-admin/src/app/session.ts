@@ -91,6 +91,29 @@ function bindApi(client: HttpClient, scopeSignal: () => AbortSignal | undefined)
 
 export type RestoreResult = CookieSessionRestoreResult;
 
+/**
+ * `POST /authorize/login` accepted the password but the account has two-factor sign-in:
+ * no session was opened. Finish with `session.loginTwoFactor(error.challenge, …)`.
+ * The challenge is a short-lived one-time ticket; keep it in memory only.
+ */
+export class AdminTwoFactorRequiredError extends Error {
+  readonly twoFactorRequired = true;
+  constructor(readonly challenge: string) {
+    super('Two-factor verification required');
+    this.name = 'AdminTwoFactorRequiredError';
+  }
+}
+
+/** Second factor for {@link AdminSession.loginTwoFactor}: an authenticator code or a recovery code. */
+export type AdminTwoFactorFactor = { code: string } | { recoveryCode: string };
+
+function twoFactorChallenge(result: unknown): string | null {
+  const value = result as { twoFactorRequired?: unknown; challenge?: unknown } | null;
+  return value?.twoFactorRequired === true && typeof value.challenge === 'string' && value.challenge
+    ? value.challenge
+    : null;
+}
+
 export interface AdminSession {
   store: AdminAuthStore;
   client: HttpClient;
@@ -102,7 +125,10 @@ export interface AdminSession {
   /** Whether a persisted session summary exists but its access token must be restored by cookie refresh. */
   needsRestore: () => boolean;
   restore: () => Promise<RestoreResult>;
+  /** Throws {@link AdminTwoFactorRequiredError} when the account needs a second factor. */
   login: (username: string, password: string) => Promise<AdminUser>;
+  /** Complete a two-factor sign-in (`POST <login>/two-factor`). */
+  loginTwoFactor: (challenge: string, factor: AdminTwoFactorFactor) => Promise<AdminUser>;
   logout: () => Promise<void>;
   /** Re-read the signed-in user and permissions. */
   reloadMe: () => Promise<void>;
@@ -207,6 +233,19 @@ export function createAdminSession(config: AdminAppConfig, resolved: ResolvedAdm
       // Let a pending restore settle first so its result cannot replace this sign-in.
       await cookieSession.settled();
       const result = await publicClient.post<{ token?: unknown }>(endpoints.login, { username, password });
+      // Servers without two-factor sign-in never return the flag: behaviour unchanged for them.
+      const challenge = twoFactorChallenge(result);
+      if (challenge) throw new AdminTwoFactorRequiredError(challenge);
+      if (typeof result?.token !== 'string' || !result.token) throw new Error('Missing access token');
+      await cookieSession.adoptToken(result.token);
+      return store.getState().user as AdminUser;
+    },
+    async loginTwoFactor(challenge, factor) {
+      await cookieSession.settled();
+      const body = 'recoveryCode' in factor
+        ? { challenge, recoveryCode: factor.recoveryCode }
+        : { challenge, code: factor.code };
+      const result = await publicClient.post<{ token?: unknown }>(`${endpoints.login}/two-factor`, body);
       if (typeof result?.token !== 'string' || !result.token) throw new Error('Missing access token');
       await cookieSession.adoptToken(result.token);
       return store.getState().user as AdminUser;

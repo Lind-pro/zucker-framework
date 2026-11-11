@@ -44,6 +44,8 @@ model users {
   apiKeyUsage accountApiKeyUsage[]
   subscription userSubscriptions?
   subscriptionPayments userSubscriptionPayments[]
+
+  @@index([createTime])
 }
 
 model accountSessions {
@@ -255,12 +257,16 @@ model userRoles {
   id        String   @id @default(cuid())
   userId    String
   roleId    String
+  /// Optional end of the assignment (WP 3.3b); NULL never expires. Honoured when
+  /// `ZuckerAuthModule.forRoot({ roleAssignments: { expiry: true } })` is on.
+  expiresAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
 
   @@unique([userId, roleId])
   @@index([roleId])
   @@index([userId])
+  @@index([expiresAt])
   @@map("user_roles")
 }
 
@@ -939,10 +945,12 @@ model billingOrders {
   owner         users    @relation(fields: [ownerId], references: [id], onDelete: Restrict)
   fulfillment   billingFulfillments?
   subscriptionBinding billingSubscriptions?
+  refundPayments billingRefundPayments[]
 
   @@unique([providerId, accountScope, checkoutId])
   @@unique([providerId, accountScope, paymentKind, paymentId])
   @@index([ownerId, createdAt])
+  @@index([fulfilledAt])
   @@map("billing_orders")
 }
 
@@ -978,7 +986,8 @@ model billingSubscriptions {
   revision               Int      @default(0)
   createdAt              DateTime @default(now())
   updatedAt              DateTime @default(now()) @updatedAt
-  initialOrder           billingOrders @relation(fields: [initialOrderId], references: [id], onDelete: Restrict)
+  // ON UPDATE NO ACTION matches the migration (ids are immutable); Prisma's default would be CASCADE.
+  initialOrder           billingOrders @relation(fields: [initialOrderId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   cycles                 billingSubscriptionCycles[]
 
   @@unique([providerId, accountScope, providerSubscriptionId])
@@ -1008,11 +1017,13 @@ model billingSubscriptionCycles {
   policy         Json
   initial        Boolean
   fulfilledAt    DateTime
-  binding        billingSubscriptions @relation(fields: [bindingId], references: [id], onDelete: Restrict)
+  binding        billingSubscriptions @relation(fields: [bindingId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  refundPayments billingRefundPayments[]
 
   @@unique([providerId, accountScope, paymentKind, paymentId])
   @@index([bindingId, paidAt])
   @@index([ownerId, paidAt])
+  @@index([paidAt])
   @@map("billing_subscription_cycles")
 }
 
@@ -1043,6 +1054,7 @@ model billingOutbox {
 
   @@unique([kind, aggregateId])
   @@index([status, availableAt])
+  @@index([kind, createdAt, id])
   @@map("billing_outbox")
 }
 
@@ -1062,6 +1074,7 @@ model creditLots {
 
   @@index([userId, isExpired, createdAt])
   @@index([source, sourceId])
+  @@index([createdAt])
   @@map("credit_lots")
 }
 
@@ -1076,6 +1089,7 @@ model creditHolds {
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   settledAt DateTime? @db.Timestamptz(3)
   allocations creditHoldAllocations[]
+  refundRequests billingRefundRequests[]
   @@index([accountId, createdAt])
   @@index([resourceType, resourceId])
   @@map("credit_holds")
@@ -1107,6 +1121,7 @@ model creditConsumptions {
   allocations   creditAllocations[]
 
   @@index([userId, createdAt])
+  @@index([createdAt])
   @@map("credit_consumptions")
 }
 
@@ -1321,6 +1336,7 @@ model AsyncJob {
   @@index([orderId])
   @@index([providerRequestId])
   @@index([kind, status, updatedAt])
+  @@index([completedAt, id])
   @@map("async_jobs")
 }
 
@@ -1549,11 +1565,18 @@ model billingRefundPayments {
   observedAt DateTime
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
+  // Foreign keys and index names exactly as created by migration 20261024001100_refunds.
+  order billingOrders @relation(fields: [orderId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  cycle billingSubscriptionCycles? @relation(fields: [cycleId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  aliases billingRefundAliases[]
+  requests billingRefundRequests[]
+  receipts billingRefundReceipts[]
+  events billingRefundEvents[]
   @@unique([providerId, accountScope, paymentKind, paymentId])
   @@unique([providerId, accountScope, sourceKind, sourceId])
-  @@index([ownerId, createdAt])
-  @@index([orderId])
-  @@index([cycleId])
+  @@index([ownerId, createdAt], map: "billing_refund_payments_owner_idx")
+  @@index([orderId], map: "billing_refund_payments_order_idx")
+  @@index([cycleId], map: "billing_refund_payments_cycle_idx")
   @@map("billing_refund_payments")
 }
 model billingRefundAliases {
@@ -1562,8 +1585,9 @@ model billingRefundAliases {
   paymentKind String
   paymentId String
   targetId String
+  target billingRefundPayments @relation(fields: [targetId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   @@id([providerId, accountScope, paymentKind, paymentId])
-  @@index([targetId])
+  @@index([targetId], map: "billing_refund_aliases_target_idx")
   @@map("billing_refund_aliases")
 }
 model billingRefundRequests {
@@ -1595,9 +1619,11 @@ model billingRefundRequests {
   revision Int @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
+  target billingRefundPayments @relation(fields: [targetId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  hold creditHolds? @relation(fields: [holdId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   @@unique([actorId, clientKey])
-  @@index([targetId, createdAt])
-  @@index([state, updatedAt])
+  @@index([targetId, createdAt], map: "billing_refund_requests_target_idx")
+  @@index([state, updatedAt], map: "billing_refund_requests_due_idx")
   @@map("billing_refund_requests")
 }
 model billingRefundReceipts {
@@ -1615,8 +1641,9 @@ model billingRefundReceipts {
   occurredAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
+  target billingRefundPayments @relation(fields: [targetId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   @@id([providerId, accountScope, refundId])
-  @@index([targetId, state])
+  @@index([targetId, state], map: "billing_refund_receipts_target_idx")
   @@map("billing_refund_receipts")
 }
 model billingRefundEvents {
@@ -1632,8 +1659,9 @@ model billingRefundEvents {
   status String @default("pending")
   createdAt DateTime @default(now())
   processedAt DateTime?
+  target billingRefundPayments? @relation(fields: [targetId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   @@id([providerId, accountScope, eventId])
-  @@index([providerId, accountScope, sourceKind, sourceId, status])
+  @@index([providerId, accountScope, sourceKind, sourceId, status], map: "billing_refund_events_source_idx")
   @@map("billing_refund_events")
 }
 

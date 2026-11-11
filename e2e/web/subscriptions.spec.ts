@@ -175,16 +175,19 @@ test('billing portal uses the server-bound response and rejects unsafe URLs', as
   await expect(page.getByRole('heading', { name: 'Bound customer portal' })).toBeVisible(); expect(bodies).toEqual([{}, {}]);
 });
 
-test('pricing states the selected subscription channel credit policy without sending that policy back', async ({ page, context, baseURL }) => {
+test('pricing states the subscription credit grant and sends only the selected offer and provider', async ({ page, context, baseURL }) => {
   await session(context, baseURL); const selections: unknown[] = [];
-  await context.route('**/api/billing/catalog', route => envelope(route, [{ id: 'recurring', title: 'Recurring credits', mode: 'subscription', money: subscription.money,
-    credits: 100, expiresInDays: null, providers: [{ id: 'stripe', requiresCapture: false, referralProviders: [], grantBasis: 'period' }, { id: 'paypal', requiresCapture: false, referralProviders: [], grantBasis: 'payment' }] }]));
+  const offerId = 'plan:recurring:month:USD';
+  await context.route('**/api/billing/plans**', route => envelope(route, { checkout: { defaultProvider: 'stripe', allowProviderChoice: true, promoCodes: 'none' }, packs: [],
+    plans: [{ id: 'recurring', slug: 'recurring', name: 'Recurring credits', description: null, order: 0, features: {}, quotas: {}, featured: false, badge: null, highlights: [], current: false,
+      prices: [{ interval: 'month', currency: 'USD', amount: subscription.money.amount, termDays: null, offerId, purchasable: true, providers: ['stripe', 'paypal'], credits: 100, creditExpiry: 'period' }] }] }));
   await context.route('**/api/billing/orders', route => { selections.push(route.request().postDataJSON()); return envelope(route, { id, checkoutUrl: 'https://billing.example.test/subscription-checkout' }); });
-  await page.goto('/en/pricing'); await expect(page.getByText('100 credits are added for each verified paid service period.', { exact: true })).toBeVisible();
+  await page.goto('/en/pricing'); const card = page.locator('[data-plan="recurring"]');
+  await expect(card.getByText('100 credits', { exact: true })).toBeVisible();
+  await expect(card.getByText('Credits expire at the end of each period', { exact: true })).toBeVisible();
   await page.getByLabel('Payment method').selectOption('paypal');
-  await expect(page.getByText(/100 credits are added for each completed subscription payment/)).toBeVisible();
-  await page.getByRole('button', { name: 'Continue to checkout' }).click(); await expect(page.getByRole('heading', { name: 'Bound customer portal' })).toBeVisible();
-  expect(selections).toEqual([{ offerId: 'recurring', providerId: 'paypal' }]);
+  await card.getByRole('button', { name: 'Subscribe' }).click(); await expect(page.getByRole('heading', { name: 'Bound customer portal' })).toBeVisible();
+  expect(selections).toEqual([{ offerId, providerId: 'paypal' }]);
 });
 
 test('English desktop and Chinese narrow screens keep subscription controls and receipts readable', async ({ page, context, baseURL }) => {

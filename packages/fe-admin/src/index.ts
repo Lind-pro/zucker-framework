@@ -28,8 +28,10 @@ export {
   type SessionStatus,
 } from './app/context';
 export {
+  AdminTwoFactorRequiredError,
   createAdminSession,
   permissionsFromMe,
+  type AdminTwoFactorFactor,
   type AdminApi,
   type AdminAuthStore,
   type AdminSession,

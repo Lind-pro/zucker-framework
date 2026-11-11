@@ -13,7 +13,9 @@ function persist(attempt: CheckoutAttempt): void {
 
 /** Retain one checkout identity per account/selection until paid or verified unpaid completion. */
 export function checkoutAttempt(scope: string, selection: CheckoutSelection): CheckoutAttempt {
-  const storageKey = prefix + JSON.stringify([scope, selection.offerId, selection.providerId]);
+  // A different promo code is a different purchase (a new order with its own frozen price).
+  const promoCode = selection.promoCode ? selection.promoCode.toUpperCase() : '';
+  const storageKey = prefix + JSON.stringify([scope, selection.offerId, selection.providerId, ...(promoCode ? [promoCode] : [])]);
   const retained = memory.get(storageKey);
   if (retained) return structuredClone(retained);
   try {
@@ -22,14 +24,15 @@ export function checkoutAttempt(scope: string, selection: CheckoutSelection): Ch
       && saved.offerId === selection.offerId && saved.providerId === selection.providerId) {
       const referral = validateReferral(saved.referral, { enabledProviders: ['affonso', 'promotekit'] });
       const attempt: CheckoutAttempt = { storageKey, key: saved.key, offerId: selection.offerId, providerId: selection.providerId,
-        ...(referral ? { referral } : {}), ...(typeof saved.orderId === 'string' ? { orderId: saved.orderId } : {}) };
+        ...(referral ? { referral } : {}), ...(promoCode ? { promoCode } : {}),
+        ...(typeof saved.orderId === 'string' ? { orderId: saved.orderId } : {}) };
       persist(attempt); return structuredClone(attempt);
     }
   } catch { /* Malformed or inaccessible session storage never supplies a purchase identity. */ }
   const bytes = new Uint8Array(16);
   globalThis.crypto.getRandomValues(bytes);
   const key = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
-  const attempt: CheckoutAttempt = { ...structuredClone(selection), storageKey, key };
+  const attempt: CheckoutAttempt = { ...structuredClone(selection), ...(promoCode ? { promoCode } : {}), storageKey, key };
   persist(attempt); return structuredClone(attempt);
 }
 export function rememberCheckoutOrder(attempt: CheckoutAttempt, orderId: string): void {

@@ -266,6 +266,21 @@ function pagination(query: Record<string, unknown>) {
   return { page, pageSize };
 }
 
+type StoredMoney = { amount: string; currency: string };
+function storedMoney(value: { amount?: unknown; currency?: unknown } | undefined): StoredMoney | null {
+  return typeof value?.amount === 'string' && typeof value.currency === 'string' ? { amount: value.amount, currency: value.currency } : null;
+}
+/**
+ * `money` = amount actually charged (promotion payable, else the list price); `listMoney` and `discount`
+ * are present for orders (discount null without a promotion). Subscriptions keep the recurring list price.
+ */
+function orderAmounts(resource: string, list: StoredMoney,
+  promotion: { payable?: { amount?: unknown; currency?: unknown }; discount?: { amount?: unknown; currency?: unknown } } | null | undefined) {
+  if (resource !== 'orders') return { money: { ...list } };
+  const payable = promotion ? storedMoney(promotion.payable) : null, discount = promotion ? storedMoney(promotion.discount) : null;
+  if (promotion && (!payable || !discount || payable.currency !== list.currency)) throw new Error('Stored offer is invalid');
+  return { money: payable ?? { ...list }, listMoney: { ...list }, discount };
+}
 function refundSummaryOrder(row: Record<string, unknown>): RefundSummaryOrder {
   const { id, ownerId, providerId, accountScope, paymentId, paymentKind } = row;
   if (
@@ -387,6 +402,7 @@ export class ManagementService {
           description?: unknown;
           mode?: unknown;
           money?: { amount?: unknown; currency?: unknown };
+          promotion?: { payable?: { amount?: unknown; currency?: unknown }; discount?: { amount?: unknown; currency?: unknown } } | null;
         };
         if (
           !['payment', 'subscription'].includes(String(snapshot.mode)) ||
@@ -409,7 +425,8 @@ export class ManagementService {
             : {}),
           mode: snapshot.mode,
           title: typeof snapshot.description === 'string' ? snapshot.description : null,
-          money: { amount: snapshot.money.amount, currency: snapshot.money.currency },
+          // Orders show what was charged (the frozen payable after a promotion), the list price and the discount.
+          ...orderAmounts(resource, snapshot.money as { amount: string; currency: string }, snapshot.promotion),
         };
       }),
     );

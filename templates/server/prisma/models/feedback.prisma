@@ -1,0 +1,29 @@
+// ─── Feedback (WP 3.1) ───────────────────────────────────────────────────────
+// User-submitted feedback with a staff reply. `reply` is shown to the owner; `staffNote` and
+// `handledBy` are back-office only and never part of the owner projection. `revision` is the
+// compare-and-swap counter for management updates. Owners and staff are referenced by scalar id.
+// CHECK constraints (type, status, lengths, revision) live in the migration SQL.
+
+model feedback {
+  id         String    @id
+  ownerId    String
+  requestKey String
+  type       String
+  message    String
+  pagePath   String?
+  locale     String?
+  userAgent  String?
+  status     String    @default("open")
+  reply      String?
+  staffNote  String?
+  handledBy  String?
+  repliedAt  DateTime? @db.Timestamptz(3)
+  revision   Int       @default(0)
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@unique([ownerId, requestKey], map: "feedback_owner_request_key")
+  @@index([ownerId, createdAt(sort: Desc), id(sort: Desc)], map: "feedback_owner_created_idx")
+  @@index([status, createdAt(sort: Desc), id(sort: Desc)], map: "feedback_status_created_idx")
+  @@map("feedback")
+}

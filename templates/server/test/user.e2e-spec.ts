@@ -74,7 +74,7 @@ class UserController {
   constructor(private readonly userService: UserService) {}
 
   @Post('_query')
-  @Permissions([])          // login required, no specific permission needed for list
+  @Permissions()          // login required, no specific permission needed for list
   @HttpCode(HttpStatus.OK)
   async query(@Body() body: QueryDto) {
     const { pageIndex = 0, pageSize = 20 } = body;
@@ -85,13 +85,13 @@ class UserController {
   }
 
   @Post()
-  @Permissions(['users:add'])
+  @Permissions('users:add')
   async create(@Body() body: CreateUserDto) {
     return this.userService.addUser(body);
   }
 
   @Get(':id')
-  @Permissions([])          // login required
+  @Permissions()          // login required
   async findOne(@Param('id') id: string) {
     const user = await this.userService.findById(id);
     if (!user) throw new NotFoundException(`User "${id}" not found`);
@@ -100,15 +100,14 @@ class UserController {
   }
 
   @Put(':id')
-  @Permissions(['users:update'])
+  @Permissions('users:update')
   async update(@Param('id') id: string, @Body() body: UpdateUserDto) {
-    const user = await this.userService.findById(id);
-    if (!user) throw new NotFoundException(`User "${id}" not found`);
-    return this.userService.saveUser({ ...user, ...body });
+    // updateUser applies only the changed fields (the stored hash is never re-submitted as a password).
+    return this.userService.updateUser(id, body);
   }
 
   @Delete(':id')
-  @Permissions(['users:delete'])
+  @Permissions('users:delete')
   async remove(@Param('id') id: string) {
     const deleted = await this.userService.deleteUser(id, ['userRoles', 'userPermissions', 'dimensionUsers']);
     if (!deleted) throw new NotFoundException(`User "${id}" not found`);

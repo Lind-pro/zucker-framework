@@ -18,6 +18,12 @@ const identity = { id: 'synthetic-user', username: 'synthetic', name: 'Synthetic
 const envelope = (route: Route, result: unknown, status = 200, message = 'success', headers: Record<string, string> = {}) => route.fulfill({
   status, contentType: 'application/json', headers, body: JSON.stringify({ status, message, result }),
 });
+const twoFactorOff = { available: true, status: 'off', confirmedAt: null, recoveryCodesRemaining: 0, enrolmentAllowed: true };
+const publicConfig = { policies: { account: { values: { twoFactorEnabled: true, magicLinkEnabled: false, deletionEnabled: true, deletionGraceDays: 7 } } } };
+/** Password and sessions live on /account/security, which also reads the 2FA status and the public policy. */
+async function mockSecurityReads(page: Page) {
+  await page.route('**/api/site/public/config', route => envelope(route, publicConfig));
+}
 async function addSession(page: Page) {
   await page.goto('/en/login');
   await page.context().addCookies([{ name: 'zucker-session', value: 'synthetic-only-cookie', url: new URL(page.url()).origin, httpOnly: true, sameSite: 'Lax' }]);
@@ -101,11 +107,16 @@ test.describe('Web account sessions', () => {
       if (route.request().headers().authorization !== 'Bearer fresh-access') return envelope(route, null, 401, 'Expired access');
       if (path.endsWith('/me')) return envelope(route, identity);
       if (path.endsWith('/sessions')) return envelope(route, []);
+      if (path.endsWith('/two-factor/status')) return envelope(route, twoFactorOff);
       return envelope(route, null, 404);
     });
-    await addSession(page); await page.goto('/en/account');
-    await expect(page.getByLabel('Display name')).toHaveValue('Synthetic member');
+    await mockSecurityReads(page);
+    await addSession(page); await page.goto('/en/account/security');
+    await expect(page.getByRole('heading', { name: 'Security', level: 1 })).toBeVisible();
     await expect(page.getByText('No active sessions were returned.')).toBeVisible(); expect(refreshes).toBe(1);
+    // The profile page maps /me permissions into the stored session (superadmin stays a bare code).
+    await page.goto('/en/account');
+    await expect(page.getByLabel('Display name')).toHaveValue('Synthetic member'); expect(refreshes).toBe(1);
     const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('auth-storage') || '{}').state);
     expect(stored.token).toBe('fresh-access'); expect(stored.refreshToken).toBeNull();
     expect(stored.permissions).toContain('superadmin'); expect(stored.permissions).not.toContain('superadmin:*');
@@ -122,10 +133,12 @@ test.describe('Web account sessions', () => {
       if (path.endsWith('/sessions/owned-session') && route.request().method() === 'DELETE') {
         mutations.push(path); return envelope(route, { success: true }, 200, 'success', { 'set-cookie': 'zucker-session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax' });
       }
+      if (path.endsWith('/two-factor/status')) return envelope(route, twoFactorOff);
       return envelope(route, null, 404);
     });
-    await addSession(page); await page.goto('/en/account');
-    await expect(page.getByLabel('Display name')).toHaveValue('Synthetic member');
+    await mockSecurityReads(page);
+    await addSession(page); await page.goto('/en/account/security');
+    await expect(page.getByRole('region', { name: 'Change password', exact: true })).toBeVisible();
     const sessions = page.getByRole('region', { name: 'Signed-in sessions' });
     await expect(sessions.getByRole('alert')).toBeVisible(); failSessions = false;
     await sessions.getByRole('button', { name: 'Retry' }).click();
@@ -145,6 +158,7 @@ test('profile and password forms use the account contracts without refreshing on
     if (path.endsWith('/oauth/providers')) return envelope(route, { providers: [] });
     if (path.endsWith('/oauth/connections')) return envelope(route, { connections: [] });
     if (path.includes('/authorize/avatar') && route.request().method() === 'GET') return envelope(route, null, 404);
+    if (path.endsWith('/two-factor/status')) return envelope(route, twoFactorOff);
     writes.push({ path, body: route.request().postDataJSON() });
     if (path.endsWith('/profile')) return envelope(route, { success: true });
     if (path.endsWith('/password')) {
@@ -161,13 +175,16 @@ test('profile and password forms use the account contracts without refreshing on
   await page.getByRole('button', { name: 'Save profile' }).click();
   await expect(page.getByText('Profile saved.')).toBeVisible();
   expect(writes[0]).toEqual({ path: '/api/authorize/profile', body: { name: 'Updated synthetic member', locale: 'en' } });
+  // The password form moved to the security page.
+  await mockSecurityReads(page);
+  await page.goto('/en/account/security');
   const form = page.getByRole('region', { name: 'Change password', exact: true });
   await form.getByLabel('Current password', { exact: true }).fill('Incorrect123');
   await form.getByLabel('New password', { exact: true }).fill('Synthetic456');
   await form.getByLabel('Confirm Password', { exact: true }).fill('Synthetic456');
   await form.getByRole('button', { name: 'Change password', exact: true }).click();
   await expect(form.getByRole('alert')).toContainText('Could not change the password');
-  expect(refreshes).toBe(0); await expect(page).toHaveURL(/\/account$/);
+  expect(refreshes).toBe(0); await expect(page).toHaveURL(/\/account\/security$/);
   rejectPassword = false;
   await form.getByLabel('Current password', { exact: true }).fill('Synthetic123');
   await form.getByRole('button', { name: 'Change password', exact: true }).click();

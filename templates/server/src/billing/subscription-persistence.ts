@@ -51,7 +51,8 @@ function entitlementBinding(row: BillingSubscription): SubscriptionEntitlementBi
     || !row.initialPaymentKind || policy.grantBasis !== row.grantBasis) conflict();
   return { id: row.id, ownerId: row.ownerId, providerId: row.providerId, accountScope: row.accountScope,
     subscriptionId: row.providerSubscriptionId, catalogReference: row.catalogReference,
-    money: row.offer.money, policyVersion: row.offer.version, policy: { ...frozenPolicy }, grantBasis: row.grantBasis,
+    money: row.offer.money, ...(row.offer.promotion ? { initialMoney: row.offer.promotion.payable } : {}),
+    policyVersion: row.offer.version, policy: { ...frozenPolicy }, grantBasis: row.grantBasis,
     initialOrderId: row.initialOrderId, initialPaymentId: row.initialPaymentId, initialPaymentKind: row.initialPaymentKind };
 }
 

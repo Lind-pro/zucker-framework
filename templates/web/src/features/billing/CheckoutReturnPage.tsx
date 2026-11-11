@@ -86,7 +86,7 @@ function OrderView({ orderId, stripeHint, paypalHint, creemHint }: { orderId: st
       <p role="status" className="text-sm leading-relaxed text-[var(--color-muted)]">{t(`statusDescription.${status}`)}</p>
       <OrderFacts order={order} />
       {canCapture && !loading && <div className="space-y-4 border-t border-[var(--color-border)] pt-6">
-        <p className="text-sm">{t('captureExplanation', { amount: moneyLabel(order.money) })}</p>
+        <p className="text-sm">{t('captureExplanation', { amount: moneyLabel(order.amountDue ?? order.money) })}</p>
         <button className={buttonClass} disabled={Boolean(busy)} onClick={async () => {
           if (inFlight.current) return;
           inFlight.current = true; setCaptureAttempted(true); setBusy('capture'); setError('');
@@ -95,7 +95,7 @@ function OrderView({ orderId, stripeHint, paypalHint, creemHint }: { orderId: st
             if (mounted.current) setError(t(billingErrorKey(failure, 'captureUnknown')));
             try { accept(await billingApi.order(order.id)); } catch { /* Keep the unknown attempt visible; do not submit another capture. */ }
           } finally { inFlight.current = false; if (mounted.current) setBusy(null); }
-        }}>{busy === 'capture' ? t('confirmingPayment') : t('payWithPayPal', { amount: moneyLabel(order.money) })}</button>
+        }}>{busy === 'capture' ? t('confirmingPayment') : t('payWithPayPal', { amount: moneyLabel(order.amountDue ?? order.money) })}</button>
       </div>}
       <div className="flex flex-wrap gap-3">{status === 'paid' || status === 'refunded' ? <Link href="/account" className={secondaryButtonClass}>{t('backToAccount')}</Link>
         : <button className={secondaryButtonClass} disabled={loading || Boolean(busy)} onClick={() => void check()}>{busy === 'confirm' ? t('checkingPayment') : t('checkStatus')}</button>}

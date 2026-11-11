@@ -1,0 +1,34 @@
+// ─── In-app notifications (WP 3.2) ───────────────────────────────────────────
+// Recipient-scoped inbox rows. Text is never stored: the web app renders `type` + `params` from its
+// own copy table. `eventKey` makes every emit idempotent per recipient (scanner replays, webhook
+// replays and concurrent emitters insert at most one row). CHECK constraints (type/eventKey shape,
+// params size, href shape, read consistency) live in the migration SQL.
+
+model inboxNotifications {
+  id         String    @id
+  userId     String
+  eventKey   String    @db.VarChar(200)
+  type       String    @db.VarChar(64)
+  params     Json      @default("{}")
+  href       String?   @db.VarChar(512)
+  isRead     Boolean   @default(false)
+  readAt     DateTime? @db.Timestamptz(3)
+  isArchived Boolean   @default(false)
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@unique([userId, eventKey], map: "inbox_notifications_user_event_key")
+  @@index([userId, isArchived, isRead, createdAt(sort: Desc)], map: "inbox_notifications_recipient_idx")
+  @@index([isRead, createdAt], map: "inbox_notifications_retention_idx")
+  @@map("inbox_notifications")
+}
+
+/// Committed-event scan position per source (`createdAt`/`completedAt`, id) of the last consumed row.
+/// The scanner locks its row `FOR UPDATE SKIP LOCKED`, so replicas never scan the same source at once.
+model inboxCursors {
+  source    String   @id @db.VarChar(64)
+  cursorAt  DateTime @db.Timestamptz(3)
+  cursorId  String   @db.VarChar(200)
+  updatedAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@map("inbox_cursors")
+}

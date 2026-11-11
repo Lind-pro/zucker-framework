@@ -3,6 +3,7 @@ import { Coins, LogOut, Shield } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
 import { AccountLink } from '@/components/AccountLink';
+import { InboxBell } from '@/features/inbox/InboxBell';
 import { consoleNav } from '@/lib/site/console-nav';
 import { CREDITS_CHANGED_EVENT } from '@/lib/site/credit-events';
 import { isLocale, DEFAULT_LOCALE } from '@/lib/site/locales';
@@ -99,6 +100,7 @@ export function SessionMenu({ adminUrl, compact = false }: { adminUrl: string | 
 
   return (
     <div ref={root} className="relative flex items-center gap-3" data-testid="session-signed-in">
+      <InboxBell />
       <AccountLink
         href="/account/credits"
         className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-2.5 py-1.5 text-sm tabular-nums"

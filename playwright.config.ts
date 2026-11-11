@@ -17,6 +17,12 @@ import { defineConfig, devices } from '@playwright/test';
  * E2E_STUB_API_PORT). The web server is only port-checked at start, so nothing is rendered before the
  * stub listens. Synthetic secret; override any value through the environment.
  */
+/**
+ * Dev-server ports (defaults match the templates). Override when those ports are taken on the host,
+ * for example E2E_ADMIN_PORT=4501 E2E_WEB_DEV_PORT=4502; an occupied default port is otherwise reused.
+ */
+const ADMIN_PORT = Number(process.env['E2E_ADMIN_PORT'] ?? 4201);
+const WEB_DEV_PORT = Number(process.env['E2E_WEB_DEV_PORT'] ?? 4202);
 const LAUNCH_WEB_PORT = Number(process.env['E2E_LAUNCH_WEB_PORT'] ?? 4391);
 process.env['E2E_WEB_URL'] ??= `http://127.0.0.1:${LAUNCH_WEB_PORT}`;
 process.env['E2E_STUB_API_PORT'] ??= '4393';
@@ -42,7 +48,7 @@ export default defineConfig({
       testMatch: 'e2e/admin/**/*.spec.ts',
       use: {
         ...devices['Desktop Chrome'],
-        baseURL: 'http://localhost:4201',
+        baseURL: `http://localhost:${ADMIN_PORT}`,
       },
     },
     {
@@ -51,7 +57,7 @@ export default defineConfig({
       testIgnore: 'e2e/web/launch-marketing.spec.ts',
       use: {
         ...devices['Desktop Chrome'],
-        baseURL: 'http://localhost:4202',
+        baseURL: `http://localhost:${WEB_DEV_PORT}`,
       },
     },
     {
@@ -64,14 +70,14 @@ export default defineConfig({
 
   webServer: [
     {
-      command: 'pnpm --filter @zucker-framework/template-admin dev',
-      url: 'http://localhost:4201',
+      command: `pnpm --filter @zucker-framework/template-admin exec vite --port ${ADMIN_PORT} --strictPort`,
+      url: `http://localhost:${ADMIN_PORT}`,
       reuseExistingServer: !process.env['CI'],
       timeout: 60_000,
     },
     {
-      command: 'pnpm --filter @zucker-framework/template-web dev',
-      url: 'http://localhost:4202',
+      command: `pnpm --filter @zucker-framework/template-web exec next dev -p ${WEB_DEV_PORT}`,
+      url: `http://localhost:${WEB_DEV_PORT}`,
       reuseExistingServer: !process.env['CI'],
       timeout: 60_000,
     },

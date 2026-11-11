@@ -61,6 +61,26 @@ vi.mock('@aws-sdk/client-s3', () => {
         super('CopyObject', input);
       }
     },
+    CreateMultipartUploadCommand: class extends MockCommand {
+      constructor(input: Record<string, unknown>) {
+        super('CreateMultipartUpload', input);
+      }
+    },
+    UploadPartCommand: class extends MockCommand {
+      constructor(input: Record<string, unknown>) {
+        super('UploadPart', input);
+      }
+    },
+    CompleteMultipartUploadCommand: class extends MockCommand {
+      constructor(input: Record<string, unknown>) {
+        super('CompleteMultipartUpload', input);
+      }
+    },
+    AbortMultipartUploadCommand: class extends MockCommand {
+      constructor(input: Record<string, unknown>) {
+        super('AbortMultipartUpload', input);
+      }
+    },
   };
 });
 
@@ -357,6 +377,127 @@ describe('S3Storage', () => {
 
     const result = await storage.uploadStream(mockStream as any, 'stream.txt');
     expect(result.size).toBe(10);
+  });
+
+  describe('multipart uploadStream', () => {
+    const MiB = 1024 * 1024;
+    const partSize = 5 * MiB;
+    type Command = { _type: string; input: Record<string, unknown> };
+
+    /** Fake S3: records commands and, per part, how far the producer had read ahead of what was sent. */
+    function fakeS3(failOn?: (command: Command, call: number) => boolean) {
+      const commands: Command[] = [];
+      let produced = 0;
+      let peakUnsent = 0;
+      let accepted = 0;
+      mockSend.mockImplementation(async (command: Command) => {
+        commands.push(command);
+        if (failOn?.(command, commands.length)) throw new Error(`fake ${command._type} failure`);
+        if (command._type === 'CreateMultipartUpload') return { UploadId: 'upload-1' };
+        if (command._type === 'UploadPart') {
+          const body = command.input.Body as Buffer;
+          peakUnsent = Math.max(peakUnsent, produced - accepted);
+          accepted += body.length;
+          return { ETag: `"etag-${String(command.input.PartNumber)}"`, ChecksumCRC32: `crc-${String(command.input.PartNumber)}` };
+        }
+        if (command._type === 'PutObject') accepted += (command.input.Body as Buffer).length;
+        return {};
+      });
+      const stream = (total: number, chunk = MiB, failAfter?: number) => Readable.from((async function* () {
+        for (let offset = 0; offset < total; offset += chunk) {
+          if (failAfter !== undefined && offset >= failAfter) throw new Error('source failed');
+          const piece = Buffer.alloc(Math.min(chunk, total - offset), offset / chunk);
+          produced += piece.length;
+          yield piece;
+        }
+      })(), { highWaterMark: 1 });
+      return { commands, stream, peakUnsent: () => peakUnsent, types: () => commands.map((command) => command._type) };
+    }
+
+    beforeEach(() => {
+      storage = new S3Storage({ ...defaultOptions, partSize });
+    });
+
+    it('rejects part sizes outside the S3 limits', () => {
+      for (const value of [5 * MiB - 1, 1.5 * MiB, 6 * 1024 * MiB, Number.NaN]) {
+        expect(() => new S3Storage({ ...defaultOptions, partSize: value })).toThrow(/partSize/);
+      }
+      expect(() => new S3Storage({ ...defaultOptions, partSize: 5 * MiB })).not.toThrow();
+    });
+
+    it('sends a stream that ends within the first part as one PutObject', async () => {
+      const fake = fakeS3();
+      const result = await storage.uploadStream(fake.stream(partSize), 'one-part.bin', { contentType: 'video/mp4' });
+      expect(fake.types()).toEqual(['PutObject']);
+      expect((fake.commands[0].input.Body as Buffer).length).toBe(partSize);
+      expect(fake.commands[0].input.ContentType).toBe('video/mp4');
+      expect(result.size).toBe(partSize);
+    });
+
+    it('stores an empty stream as an empty object', async () => {
+      const fake = fakeS3();
+      const result = await storage.uploadStream(Readable.from([]), 'empty.bin');
+      expect(fake.types()).toEqual(['PutObject']);
+      expect((fake.commands[0].input.Body as Buffer).length).toBe(0);
+      expect(result.size).toBe(0);
+    });
+
+    it('uploads 60 MiB in numbered parts holding at most one part in memory', async () => {
+      const fake = fakeS3();
+      const total = 60 * MiB + 123;
+      const result = await storage.uploadStream(fake.stream(total), 'big.bin', { contentType: 'video/mp4', metadata: { a: 'b' } });
+      const parts = fake.commands.filter((command) => command._type === 'UploadPart');
+      expect(fake.types()[0]).toBe('CreateMultipartUpload');
+      expect(fake.commands[0].input).toMatchObject({ Bucket: 'test-bucket', Key: 'big.bin', ContentType: 'video/mp4', Metadata: { a: 'b' } });
+      expect(parts.map((command) => command.input.PartNumber)).toEqual(Array.from({ length: 13 }, (_, index) => index + 1));
+      expect(parts.slice(0, -1).every((command) => (command.input.Body as Buffer).length === partSize)).toBe(true);
+      expect((parts.at(-1)!.input.Body as Buffer).length).toBe(total - 12 * partSize);
+      expect(parts.every((command) => command.input.UploadId === 'upload-1' && command.input.Key === 'big.bin')).toBe(true);
+      const complete = fake.commands.at(-1)!;
+      expect(complete._type).toBe('CompleteMultipartUpload');
+      expect(complete.input.MultipartUpload).toEqual({ Parts: parts.map((command) => ({
+        PartNumber: command.input.PartNumber, ETag: `"etag-${String(command.input.PartNumber)}"`, ChecksumCRC32: `crc-${String(command.input.PartNumber)}` })) });
+      expect(result.size).toBe(total);
+      // Bytes produced but not yet sent stay within one part plus the source's 1-chunk read-ahead
+      // (and the chunk being split), never the whole stream.
+      expect(fake.peakUnsent()).toBeLessThanOrEqual(partSize + 3 * MiB);
+    });
+
+    it('aborts the multipart upload and destroys the source when the stream fails mid-way', async () => {
+      const fake = fakeS3();
+      const source = fake.stream(20 * MiB, MiB, 12 * MiB);
+      await expect(storage.uploadStream(source, 'broken.bin')).rejects.toThrow('source failed');
+      expect(fake.types()).toEqual(['CreateMultipartUpload', 'UploadPart', 'UploadPart', 'AbortMultipartUpload']);
+      expect(fake.commands.at(-1)!.input).toEqual({ Bucket: 'test-bucket', Key: 'broken.bin', UploadId: 'upload-1' });
+      expect(source.destroyed).toBe(true);
+    });
+
+    it('aborts when an UploadPart or Complete request fails, and keeps the original error', async () => {
+      const failingPart = fakeS3((command) => command._type === 'UploadPart' && command.input.PartNumber === 2);
+      await expect(storage.uploadStream(failingPart.stream(16 * MiB), 'part-fail.bin')).rejects.toThrow('fake UploadPart failure');
+      expect(failingPart.types().at(-1)).toBe('AbortMultipartUpload');
+
+      mockSend.mockReset();
+      const failingComplete = fakeS3((command) => command._type === 'CompleteMultipartUpload');
+      await expect(storage.uploadStream(failingComplete.stream(11 * MiB), 'complete-fail.bin')).rejects.toThrow('fake CompleteMultipartUpload failure');
+      expect(failingComplete.types()).toEqual(['CreateMultipartUpload', 'UploadPart', 'UploadPart', 'UploadPart', 'CompleteMultipartUpload', 'AbortMultipartUpload']);
+
+      mockSend.mockReset();
+      const failingAbort = fakeS3((command) => command._type === 'CompleteMultipartUpload' || command._type === 'AbortMultipartUpload');
+      await expect(storage.uploadStream(failingAbort.stream(11 * MiB), 'abort-fail.bin')).rejects.toThrow('fake CompleteMultipartUpload failure');
+    });
+
+    it('does not start a multipart upload when the single PutObject fails', async () => {
+      const fake = fakeS3((command) => command._type === 'PutObject');
+      await expect(storage.uploadStream(fake.stream(MiB), 'small.bin')).rejects.toThrow('fake PutObject failure');
+      expect(fake.types()).toEqual(['PutObject']);
+    });
+
+    it('refuses public ACLs before reading the stream when object ACLs are disabled', async () => {
+      const guarded = new S3Storage({ ...defaultOptions, objectAclMode: 'none', partSize });
+      await expect(guarded.uploadStream(Readable.from([Buffer.from('x')]), 'acl.bin', { acl: 'public-read' })).rejects.toThrow(/ACL/);
+      expect(mockSend).not.toHaveBeenCalled();
+    });
   });
 
   // ---- onModuleDestroy ----

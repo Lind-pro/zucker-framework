@@ -4,7 +4,7 @@ import { PostgresTaskRepository, type DurableTaskAttemptContext } from '@zucker-
 import { CHECKOUT_FULFILLED_OUTBOX_KIND } from '../billing/checkout-persistence';
 import { ApplicationDatabase } from '../database';
 import { JobsService } from '../jobs/jobs.service';
-import { MAIL_TEMPLATE_KEYS } from './mail-templates';
+import { MAIL_TEMPLATE_KEYS, mailLocale } from './mail-templates';
 import { TransactionalMail } from './transactional-mail';
 
 export const BILLING_RECEIPT_JOB = 'mail.billing-receipt';
@@ -14,8 +14,11 @@ const SCAN_LIMIT = 50;
 
 interface ReceiptOrder {
   id: string; ownerId: string; fulfilledAt: Date | null;
-  offer: { description?: unknown; money?: { amount?: unknown; currency?: unknown } } | null;
+  offer: { description?: unknown; money?: ReceiptMoney; promotion?: { payable?: ReceiptMoney; discount?: ReceiptMoney } | null } | null;
 }
+interface ReceiptMoney { amount?: unknown; currency?: unknown }
+const moneyText = (money: ReceiptMoney | undefined) => typeof money?.amount === 'string' && typeof money.currency === 'string'
+  ? `${money.amount} ${money.currency}` : '';
 interface ReceiptOwner { email: string | null; emailVerified: boolean; status: boolean; locale: string | null; name: string | null }
 type ReceiptOutcome = { orderId: string; sent: boolean; reason?: 'already-sent' | 'mail-disabled' | 'no-recipient' | 'not-fulfilled' };
 
@@ -89,13 +92,18 @@ export class BillingReceiptMail implements OnModuleInit {
     const { order, owner } = loaded;
     if (!owner?.status || !owner.emailVerified || !owner.email) return { orderId, sent: false, reason: 'no-recipient' };
     if (!this.mail.isEnabled()) return { orderId, sent: false, reason: 'mail-disabled' };
-    const money = order.offer?.money;
+    // The receipt states what was charged: the frozen payable after a promotion, never the list price.
+    const promotion = order.offer?.promotion ?? null;
+    const money = promotion?.payable ?? order.offer?.money;
+    const discount = promotion ? moneyText(promotion.discount) : '';
     const result = await this.mail.send(MAIL_TEMPLATE_KEYS.receipt, {
       to: owner.email, locale: owner.locale, userId: order.ownerId,
       data: {
         name: owner.name ?? '', orderId: order.id,
         description: typeof order.offer?.description === 'string' ? order.offer.description.slice(0, 200) : '',
         amount: typeof money?.amount === 'string' ? money.amount : '', currency: typeof money?.currency === 'string' ? money.currency : '',
+        // "-5.00 USD (list price 20.00 USD)" for a discounted order, "—" otherwise.
+        discount: discount ? `-${discount} (${mailLocale(owner.locale) === 'zh' ? '原价' : 'list price'} ${moneyText(order.offer?.money)})` : '—',
         credits: loaded.credits, paidAt: `${order.fulfilledAt!.toISOString().slice(0, 16).replace('T', ' ')} UTC`,
         link: this.mail.link(owner.locale, '/billing/orders'),
       },

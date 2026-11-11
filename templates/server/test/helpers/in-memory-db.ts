@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 /**
  * In-memory DatabaseAdapter for e2e tests.
  *
@@ -61,7 +62,8 @@ class InMemoryModelOperations implements ModelOperations {
   }
 
   async create({ data }: { data: Row }): Promise<Row> {
-    const row = { ...data };
+    // Like the database default (uuid primary key): callers rely on the created row carrying an id.
+    const row = { id: randomUUID(), ...data };
     this.store.push(row);
     return row;
   }

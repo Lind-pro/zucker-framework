@@ -115,7 +115,11 @@ export async function startStubApi(port: number): Promise<{ server: Server; stat
     }
     if (p === '/api/billing/entitlements/catalog')
       return send(200, { features: [{ key: 'api', label: 'API access', counter: 'calls' }], counters: [{ key: 'calls', label: 'Calls', unit: 'calls / month' }] });
-    if (p === '/api/authorize/me') return send(200, { id: 'synthetic-user', username: 'synthetic', permissions: [] });
+    // Like the real Server: a guest's identity read is 401, and only the synthetic session cookie refreshes.
+    if (p === '/api/authorize/me')
+      return authorization === 'Bearer synthetic-token' ? send(200, { id: 'synthetic-user', username: 'synthetic', permissions: [] }) : send(401, null);
+    if (p === '/api/authorize/refresh' && req.method === 'POST')
+      return /(?:^|;\s*)zucker-session=synthetic-session(?:;|$)/.test(req.headers.cookie ?? '') ? send(200, { access_token: 'synthetic-token' }) : send(401, null);
     if (p === '/api/billing/orders' && req.method === 'POST')
       return send(200, { id: 'a'.repeat(64), offerId: (body as { offerId?: string } | null)?.offerId ?? '', providerId: (body as { providerId?: string } | null)?.providerId ?? '', title: 'Synthetic', mode: 'subscription', money: money('19.90'), state: 'pending', creationState: 'created', captureState: 'idle', checkoutUrl: 'https://payments.example.test/checkout', fulfilledAt: null, createdAt: '2026-10-24T01:00:00.000Z', subscriptionId: null });
     return send(404, null);

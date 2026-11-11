@@ -4,6 +4,8 @@ import { useLocale, useTranslations } from "next-intl";
 import { httpClient } from "@/lib/http-client";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { buttonClass, FormMessage, inputClass, panelClass } from "./AccountForm";
+import { displayApiKeyScopes, selectedApiKeyScopes } from "./api-key-scopes";
+import { accountSecurityCopy } from "@/features/account-security/copy";
 
 interface AccountApiKey {
   id: string; name: string; keyPrefix: string; scopes: string[]; expiresAt: string | null;
@@ -22,7 +24,8 @@ export function AccountApiKeys() {
 }
 
 function ApiKeysPanel() {
-  const t = useTranslations("apiKeys"), locale = useLocale();
+  const t = useTranslations("apiKeys"), locale = useLocale(), scopeText = accountSecurityCopy(locale).apiKeys;
+  const [aiGenerate, setAiGenerate] = useState(false);
   const [keys, setKeys] = useState<AccountApiKey[]>([]), [loading, setLoading] = useState(true);
   const [name, setName] = useState(""), [days, setDays] = useState("30"), [revision, setRevision] = useState(0);
   const [busy, setBusy] = useState(""), [error, setError] = useState(""), [loadFailed, setLoadFailed] = useState(false);
@@ -67,10 +70,10 @@ function ApiKeysPanel() {
       event.preventDefault(); setBusy("create"); setError("");
       try {
         const result = await httpClient.post<{ apiKey: AccountApiKey; secretKey: string }>("/authorize/api-keys", {
-          name: name.trim(), expiresInDays: Number(days), scopes: ["account:read"],
+          name: name.trim(), expiresInDays: Number(days), scopes: selectedApiKeyScopes(aiGenerate),
         });
         if (!result.apiKey?.id || typeof result.secretKey !== "string" || !result.secretKey) throw new Error("Missing key creation result");
-        setSecret(result.secretKey); setCreatedId(result.apiKey.id); setCopied(false); setName("");
+        setSecret(result.secretKey); setCreatedId(result.apiKey.id); setCopied(false); setName(""); setAiGenerate(false);
         setKeys(current => [result.apiKey, ...current]); refresh();
       } catch { setError(t("createFailed")); }
       finally { setBusy(""); }
@@ -83,13 +86,23 @@ function ApiKeysPanel() {
           {[7, 30, 90, 365].map(value => <option key={value} value={value}>{t("days", { days: value })}</option>)}
         </select></div>
       <button type="submit" className={buttonClass} disabled={Boolean(busy || secret)}>{t(busy === "create" ? "creating" : "create")}</button>
+      <fieldset className="space-y-2 sm:col-span-3">
+        <legend className="mb-1.5 text-sm font-medium">{scopeText.scopes}</legend>
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked disabled />{scopeText.accountRead}</label>
+        <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={aiGenerate} disabled={Boolean(busy || secret)}
+          onChange={event => setAiGenerate(event.target.checked)} aria-describedby="api-key-ai-note" />
+          <span>{scopeText.aiGenerate}<span id="api-key-ai-note" className="block text-xs text-[var(--color-muted)]">{scopeText.aiGenerateNote}</span></span></label>
+      </fieldset>
     </form>
     <FormMessage message={error} error />
     {loadFailed && <button type="button" className={buttonClass} disabled={loading} onClick={refresh}>{t("retry")}</button>}
     {loading ? <FormMessage message={t("loading")} /> : keys.length ? <ul className="divide-y divide-[var(--color-border)]">{keys.map(key => <li key={key.id} className="flex flex-wrap items-center justify-between gap-3 py-4">
       <div className="min-w-0 space-y-1"><p className="break-all font-medium">{key.name}</p><p className="break-all font-mono text-sm text-[var(--color-muted)]">{key.keyPrefix}</p>
         <p className="text-sm text-[var(--color-muted)]">{t("expiresAt", { date: date(key.expiresAt) })} · {t("lastUsed", { date: date(key.lastUsedAt) })}</p>
-        <p className="text-sm text-[var(--color-muted)]">{key.scopes.join(", ")} · {t("requests", { count: key.usageCount ?? 0 })}</p>
+        <p className="flex flex-wrap items-center gap-1.5 text-sm text-[var(--color-muted)]">
+          {displayApiKeyScopes(key.scopes).map(scope => <span key={scope} data-scope={scope} className="rounded-full border border-[var(--color-border)] px-2 py-0.5 text-xs">
+            {scopeText.scopeLabels[scope] ?? scope}</span>)}
+          <span>{t("requests", { count: key.usageCount ?? 0 })}</span></p>
       </div>
       <div className="flex flex-wrap gap-2"><button type="button" className="rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm disabled:opacity-60"
         disabled={Boolean(busy) || !canRename(key)} aria-label={t("renameNamed", { name: key.name })} onClick={() => {

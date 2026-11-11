@@ -1,6 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { DatabaseAdapter } from '@zucker-framework/core';
 import type { Permission, RoleTreeNode } from '../interfaces';
+import {
+  activeUserRoleSelect,
+  activeUserRoleWhere,
+  resolveRoleAssignmentOptions,
+  type ResolvedRoleAssignmentOptions,
+  type RoleAssignmentOptions,
+} from './role-assignments';
 
 @Injectable()
 export class RoleHierarchyService {
@@ -19,6 +26,13 @@ export class RoleHierarchyService {
    *   instance, direct SQL) stays invisible. Local RoleService changes invalidate immediately.
    */
   constructor(private readonly db: DatabaseAdapter, private readonly cacheTtlMs = 60_000) {}
+
+  private roleAssignments: ResolvedRoleAssignmentOptions = resolveRoleAssignmentOptions(undefined);
+
+  /** Enable opt-in role expiry for user-role reads (see `role-assignments.ts`). */
+  configureRoleAssignments(options: RoleAssignmentOptions | ResolvedRoleAssignmentOptions | undefined): void {
+    this.roleAssignments = resolveRoleAssignmentOptions(options);
+  }
 
   /**
    * Invalidate the cached role hierarchy.
@@ -158,8 +172,8 @@ export class RoleHierarchyService {
     const userRoles = await this.db
       .model('userRoles')
       .findMany({
-        where: { userId },
-        select: { roleId: true },
+        where: activeUserRoleWhere(userId, this.roleAssignments, new Date()),
+        select: activeUserRoleSelect(this.roleAssignments),
       }) as Array<{ roleId: string }>;
 
     if (userRoles.length === 0) return [];

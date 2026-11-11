@@ -1,7 +1,8 @@
 import { BadRequestException, Inject, Injectable, Optional } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { DATABASE_ADAPTER } from '@zucker-framework/core';
-import { CreditPackCatalogService, HostedCheckoutService, type HostedCheckoutAdapter, type HostedCheckoutOrder, type SubscriptionAdapter, type RefundAdapter, type WebhookRequest } from '@zucker-framework/payment';
+import { checkoutPayable, CreditPackCatalogService, HostedCheckoutService, type HostedCheckoutAdapter, type HostedCheckoutOffer, type HostedCheckoutOrder,
+  type HostedCheckoutSelection, type SubscriptionAdapter, type RefundAdapter, type WebhookRequest } from '@zucker-framework/payment';
 import type { ReferralProvider } from '@zucker-framework/fe-site';
 import { ApplicationDatabase } from '../database';
 import { BillingCatalog, readBillingCatalog } from './catalog';
@@ -17,6 +18,28 @@ import { BILLING_POLICY, type BillingPolicyValues } from './billing.policy';
 import { PolicyService } from '../policy/policy.service';
 
 export const BILLING_OPTIONS = Symbol('BILLING_OPTIONS');
+
+/** Uniform refusal for every promo code cause (unknown, expired, disabled, wrong offer, exhausted, policy off). */
+export function promoInvalid(): never {
+  throw new BadRequestException({ code: 'PROMO_INVALID', message: 'This promo code cannot be used for this purchase' });
+}
+const PROMO_ALIAS = /^[A-Za-z0-9_-]{3,32}$/;
+
+/**
+ * Promotions as a checkout extension, registered by the promotions feature (see
+ * {@link BillingService.usePromotions}) so billing never imports it.
+ */
+export interface BillingPromotions {
+  /**
+   * Freeze a server-computed discount onto `offer` (`offer.promotion`) and reserve one use of it for
+   * `selection.orderId` under a lock on the promotion, so redemption limits hold under concurrency.
+   * With `selection.promotionCode` (an upper-case alias) that promotion or {@link promoInvalid};
+   * without it an automatic promotion when one applies, else the offer unchanged. Idempotent per order.
+   */
+  apply(selection: Readonly<HostedCheckoutSelection>, offer: HostedCheckoutOffer): Promise<HostedCheckoutOffer>;
+  /** Drop the reservation of an order that was never created. Idempotent; a created order keeps it. */
+  release(orderId: string): Promise<void>;
+}
 export interface BillingOptions {
   providers: readonly HostedCheckoutAdapter[];
   subscriptionProviders?: readonly SubscriptionAdapter[];
@@ -53,6 +76,7 @@ export class BillingService {
   /** Plan offers and fulfillment hooks registered by other modules (see {@link usePlanOffers}). */
   readonly extensions = new BillingExtensions();
   private readonly providerIds: ReadonlySet<string>;
+  private promotions: BillingPromotions | null = null;
   constructor(@Inject(DATABASE_ADAPTER) private readonly database: ApplicationDatabase,
     @Inject(BILLING_OPTIONS) source: BillingOptionsSource,
     @Optional() private readonly policies?: PolicyService) {
@@ -76,7 +100,12 @@ export class BillingService {
     this.checkout = new HostedCheckoutService({
       persistence: createCheckoutPersistence(database, { extensions: this.extensions, configRevision: () => current().configRevision ?? null }),
       providers: options.providers,
-      resolveOffer: selection => this.catalog.resolve(selection),
+      // The price comes from the catalog; a promotion (never the browser's amount) is frozen on top of it.
+      resolveOffer: async selection => {
+        const offer = await this.catalog.resolve(selection);
+        if (!this.promotions) return selection.promotionCode === undefined ? offer : promoInvalid();
+        return this.promotions.apply(selection, offer);
+      },
       prepareFulfillment: (order, observation) => this.refunds.prepareCheckout(order, observation),
       returnUrls: orderId => {
         const success = new URL('/billing/return', base), cancel = new URL('/billing/return', base);
@@ -90,6 +119,11 @@ export class BillingService {
   usePlanOffers(offers: BillingPlanOffers): void {
     if (this.extensions.planOffers && this.extensions.planOffers !== offers) throw new Error('Plan offers are already registered');
     this.extensions.planOffers = offers;
+  }
+  /** Registers promo code handling (called by PromotionsModule). */
+  usePromotions(promotions: BillingPromotions): void {
+    if (this.promotions && this.promotions !== promotions) throw new Error('Promotions are already registered');
+    this.promotions = promotions;
   }
   /** Adds same-transaction fulfillment hooks (for example plan entitlement write-back). */
   useFulfillmentHooks(hooks: BillingFulfillmentHooks): void { this.extensions.register(hooks); }
@@ -116,25 +150,39 @@ export class BillingService {
    * Effective checkout provider policy (the `billing` product policy when registered). A default
    * provider that is not enabled is reported as null, so the pricing page never preselects it.
    */
-  async checkoutPolicy(): Promise<{ defaultProvider: string | null; allowProviderChoice: boolean }> {
+  async checkoutPolicy(): Promise<{ defaultProvider: string | null; allowProviderChoice: boolean; promoCodes: 'none' | 'alias' }> {
     const values: BillingPolicyValues = this.policies?.ids().includes(BILLING_POLICY.id)
-      ? await this.policies.get(BILLING_POLICY) : { defaultProvider: '', allowProviderChoice: true };
+      ? await this.policies.get(BILLING_POLICY) : { defaultProvider: '', allowProviderChoice: true, allowCustomerPromoCodes: false };
     const preferred = values.defaultProvider && this.providerIds.has(values.defaultProvider) ? values.defaultProvider : null;
-    return { defaultProvider: preferred, allowProviderChoice: values.allowProviderChoice };
+    // Buyers type an alias only; the provider's own code entry stays off (its discount could not be frozen).
+    const promoCodes = values.allowCustomerPromoCodes === true && this.promotions ? 'alias' as const : 'none' as const;
+    return { defaultProvider: preferred, allowProviderChoice: values.allowProviderChoice, promoCodes };
   }
   async create(ownerId: string, key: string | undefined, body: unknown) {
     if (!key || !/^[A-Za-z0-9_-]{16,128}$/.test(key)) throw new BadRequestException('A stable Idempotency-Key is required');
     if (!body || typeof body !== 'object' || Array.isArray(body)) throw new BadRequestException('Invalid checkout request');
     const input = body as Record<string, unknown>;
-    if (Object.keys(input).some(field => !['offerId', 'providerId', 'referral'].includes(field))
+    // Exact keys: a provider code, price or discount can never be supplied by the browser.
+    if (Object.keys(input).some(field => !['offerId', 'providerId', 'referral', 'promoCode'].includes(field))
       || typeof input.offerId !== 'string' || typeof input.providerId !== 'string') throw new BadRequestException('Invalid checkout selection');
+    if (input.promoCode !== undefined && (typeof input.promoCode !== 'string' || !PROMO_ALIAS.test(input.promoCode.trim()))) promoInvalid();
     // With provider choice off, the server (not the pricing page) holds buyers to the default provider.
     const checkout = await this.checkoutPolicy();
     if (!checkout.allowProviderChoice && checkout.defaultProvider && input.providerId !== checkout.defaultProvider)
       throw new BadRequestException('Offer or payment provider is unavailable');
+    const promotionCode = typeof input.promoCode === 'string' ? input.promoCode.trim().toUpperCase() : undefined;
+    if (promotionCode !== undefined && checkout.promoCodes !== 'alias') promoInvalid();
     const orderId = createHash('sha256').update(JSON.stringify(['checkout', ownerId, key])).digest('hex');
-    return this.checkout.create({ orderId, ownerId, offerId: input.offerId, providerId: input.providerId,
-      providerMetadata: this.catalog.metadata(input.providerId, input.referral) });
+    try {
+      return await this.checkout.create({ orderId, ownerId, offerId: input.offerId, providerId: input.providerId,
+        providerMetadata: this.catalog.metadata(input.providerId, input.referral),
+        ...(promotionCode !== undefined ? { promotionCode } : {}) });
+    } catch (error) {
+      // A use reserved for an order that was then never created (provider refusal before the order
+      // insert) is returned at once instead of holding a limited code until the reservation expires.
+      await this.promotions?.release(orderId).catch(() => undefined);
+      throw error;
+    }
   }
   async list(ownerId: string, pageValue?: string) {
     const page = pageValue === undefined ? 1 : Number(pageValue);
@@ -156,6 +204,8 @@ export class BillingService {
 export function publicCheckoutOrder(order: HostedCheckoutOrder, subscriptionFulfilledAt: Date | null = null) {
   return { id: order.id, offerId: order.offerId, providerId: order.providerId,
     title: order.offer.description, mode: order.offer.mode, money: order.offer.money,
+    // The frozen amount due (after a promotion) and its discount; the provider code stays private.
+    amountDue: checkoutPayable(order.offer), discount: order.offer.promotion?.discount ?? null,
     state: order.state, creationState: order.creationState, captureState: order.captureState,
     checkoutUrl: order.fulfilledAt ? null : order.checkoutUrl,
     fulfilledAt: order.offer.mode === 'subscription' ? subscriptionFulfilledAt : order.fulfilledAt,

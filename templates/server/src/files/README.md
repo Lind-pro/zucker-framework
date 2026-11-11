@@ -131,3 +131,22 @@ Without it the URL is the relative application route `/api/public-assets/<sha256
 a public, rate-limited GET that accepts only that exact name of a ready row, verifies the bytes'
 hash, and answers with the stored type, `nosniff`, `Cache-Control: public, max-age=31536000,
 immutable`, a strong ETag and `Content-Security-Policy: default-src 'none'; sandbox`.
+
+## Large generated files and orphan objects
+
+Server-generated private files (AI outputs, `FilesService.storeGenerated`) are streamed, never
+buffered: with S3 the stream is uploaded in multipart parts of `FILES_S3_PART_SIZE_BYTES` (default
+8 MiB, 5 MiB to 5 GiB; one part in memory at a time; a failure aborts the multipart upload). The
+owner route `GET /api/files/:id/content` and ticket downloads stream files above `FILES_MAX_BYTES`
+with `Content-Length` set to the stored size; the final chunk is released only after size and
+SHA-256 match, and a mismatch destroys the connection, so a corrupt object always arrives truncated.
+
+Before the first byte is uploaded, a write-ahead row in `file_object_intents` names the new object
+key; the transaction that records the file row removes it. A crash in between leaves the intent. The
+`file-orphans` wake source (Jobs host, at most once a minute per process, 50 intents per run) deletes
+the object of any intent older than `FILES_ORPHAN_GRACE_MINUTES` (default 60) that no
+`file_assets`/`public_assets` row references, then the intent. Each intent is locked with
+`SKIP LOCKED` and its references re-checked in the transaction that removes it; recording a file
+locks the intent first and fails if the sweeper already took it. Uploads refresh their intent every
+quarter of the grace period. Public assets need no intent: their row is reserved before the upload.
+Keep a bucket lifecycle rule that aborts incomplete multipart uploads as a backstop.

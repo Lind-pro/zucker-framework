@@ -7,18 +7,16 @@ import { promisify } from 'node:util';
 import { Pool } from 'pg';
 
 /**
- * Guards that every correctness-bearing index/constraint of the back-office tables is representable
- * in the Prisma schema (prisma/schema.prisma + prisma/models/*.prisma): the migrations, applied to an empty schema, must not differ from it
- * for these tables (`prisma migrate diff` would otherwise propose dropping, e.g., a partial unique
- * index on the next `migrate dev`). Older tables have known, unrelated drift and are not checked here.
+ * Guards that every index/constraint created by the migrations is representable in the Prisma schema
+ * (prisma/schema.prisma + prisma/models/*.prisma): the migrations, applied to an empty schema, must not
+ * differ from it for ANY table (`prisma migrate diff` would otherwise propose dropping, e.g., a foreign key
+ * or a partial unique index on the next `migrate dev`). Triggers, functions and CHECK constraints are
+ * outside Prisma's model and are not compared. Phase 3 (WP 3.Z) aligned the older billing refund and
+ * subscription relations, so the whole diff must now be empty; this also covers the Phase 3 feature
+ * tables (inbox, feedback, promotions, referrals, account security, file intents).
  */
-const BACK_OFFICE_TABLES = ['subscription_plans', 'subscription_plan_prices', 'subscription_plan_price_refs', 'user_subscriptions',
-  'user_subscription_payments', 'email_templates', 'email_logs', 'quota_reservations', 'quota_usage', 'billing_orders',
-  // Phase 1 feature fragments (prisma/models/*.prisma).
-  'credit_packs', 'credit_pack_prices', 'credit_pack_price_refs', 'user_acquisition', 'starter_data_markers'];
-
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
-run('back-office schema has no drift between migrations and schema.prisma', () => {
+run('the schema has no drift between migrations and the Prisma schema', () => {
   const url = new URL(process.env.TEST_DATABASE_URL ?? 'postgresql://invalid/invalid');
   const schema = `zucker_drift_${randomUUID().replaceAll('-', '')}`;
   let pool: Pool;
@@ -48,7 +46,7 @@ run('back-office schema has no drift between migrations and schema.prisma', () =
     await pool?.end();
   });
 
-  it('prisma migrate diff proposes nothing for the back-office tables', async () => {
+  it('prisma migrate diff proposes nothing for any table', async () => {
     const scoped = new URL(url.href);
     scoped.searchParams.set('schema', schema);
     const { stdout } = await promisify(execFile)(resolve('node_modules/.bin/prisma'),
@@ -56,16 +54,8 @@ run('back-office schema has no drift between migrations and schema.prisma', () =
       ['migrate', 'diff', '--from-config-datasource', '--to-schema', 'prisma', '--script'],
       { env: { ...process.env, DATABASE_URL: scoped.href }, timeout: 120_000, maxBuffer: 16 * 1024 * 1024 });
     const statements = stdout.split(';').map(statement => statement.replace(/--.*$/gm, '').trim()).filter(Boolean);
-    // The table a statement changes: ALTER/CREATE/DROP TABLE "t", CREATE INDEX … ON "t", DROP INDEX "t_…".
-    const subject = (statement: string) => /^(?:ALTER|CREATE|DROP) TABLE\s+(?:IF (?:NOT )?EXISTS\s+)?"([^"]+)"/i.exec(statement)?.[1]
-      ?? /^CREATE (?:UNIQUE )?INDEX\s+"[^"]+"\s+ON\s+"([^"]+)"/i.exec(statement)?.[1]
-      ?? /^DROP INDEX\s+"([^"]+)"/i.exec(statement)?.[1];
-    const drift = statements.filter(statement => {
-      const name = subject(statement);
-      return !!name && BACK_OFFICE_TABLES.some(table => name === table || name.startsWith(`${table}_`));
-    });
-    expect(drift).toEqual([]);
-    // The guard is live: the generated diff is parsed (an unrelated older table is known to drift).
-    expect(stdout.length).toBeGreaterThan(0);
+    expect(statements).toEqual([]);
+    // The guard is live: Prisma printed its (empty) migration script.
+    expect(stdout).toMatch(/empty migration/i);
   }, 150_000);
 });

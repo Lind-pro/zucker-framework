@@ -43,6 +43,11 @@ import { AuthorizationSettingService } from './services/authorization-setting.se
 import { DimensionUserService } from './services/dimension-user.service';
 import { PermissionSyncService } from './services/permission-sync.service';
 import { TwoFactorService, TWO_FACTOR_PROVIDERS } from './two-factor/two-factor.service';
+import {
+  ROLE_ASSIGNMENT_OPTIONS,
+  resolveRoleAssignmentOptions,
+  type ResolvedRoleAssignmentOptions,
+} from './services/role-assignments';
 
 // Data Access Handlers
 import { DATA_ACCESS_HANDLERS } from './data-access/data-access-handler';
@@ -173,6 +178,7 @@ const MODULE_EXPORTS = [
   PermissionSyncService,
   UserSettingsService,
   TwoFactorService,
+  ROLE_ASSIGNMENT_OPTIONS,
 ];
 
 const MODULE_CONTROLLERS = [MenuController, ThirdPartyAccountController, AuthorizationController];
@@ -195,26 +201,41 @@ export class ZuckerAuthModule {
         inject: [optionsToken],
       },
 
+      // --- Opt-in role expiry (validated once; off unless roleAssignments.expiry === true) ---
+      {
+        provide: ROLE_ASSIGNMENT_OPTIONS,
+        useFactory: (opts: ZuckerAuthModuleOptions) => resolveRoleAssignmentOptions(opts.roleAssignments),
+        inject: [optionsToken],
+      },
+
       // --- Services that need DatabaseAdapter ---
       {
         provide: RoleHierarchyService,
-        useFactory: (db: DatabaseAdapter, opts: ZuckerAuthModuleOptions) =>
-          new RoleHierarchyService(db, opts.roleHierarchyCacheTtlMs),
-        inject: [DATABASE_ADAPTER, optionsToken],
+        useFactory: (db: DatabaseAdapter, opts: ZuckerAuthModuleOptions, roleAssignments: ResolvedRoleAssignmentOptions) => {
+          const svc = new RoleHierarchyService(db, opts.roleHierarchyCacheTtlMs);
+          svc.configureRoleAssignments(roleAssignments);
+          return svc;
+        },
+        inject: [DATABASE_ADAPTER, optionsToken, ROLE_ASSIGNMENT_OPTIONS],
       },
       {
         provide: PermissionService,
-        useFactory: (db: DatabaseAdapter, roleHierarchy: RoleHierarchyService) => {
+        useFactory: (db: DatabaseAdapter, roleHierarchy: RoleHierarchyService, roleAssignments: ResolvedRoleAssignmentOptions) => {
           const svc = new PermissionService(db);
           svc.setRoleHierarchyService(roleHierarchy);
+          svc.configureRoleAssignments(roleAssignments);
           return svc;
         },
-        inject: [DATABASE_ADAPTER, RoleHierarchyService],
+        inject: [DATABASE_ADAPTER, RoleHierarchyService, ROLE_ASSIGNMENT_OPTIONS],
       },
       {
         provide: MenuService,
-        useFactory: (db: DatabaseAdapter) => new MenuService(db),
-        inject: [DATABASE_ADAPTER],
+        useFactory: (db: DatabaseAdapter, roleAssignments: ResolvedRoleAssignmentOptions) => {
+          const svc = new MenuService(db);
+          svc.configureRoleAssignments(roleAssignments);
+          return svc;
+        },
+        inject: [DATABASE_ADAPTER, ROLE_ASSIGNMENT_OPTIONS],
       },
       {
         provide: ThirdPartyAccountService,

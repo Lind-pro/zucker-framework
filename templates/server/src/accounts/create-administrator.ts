@@ -17,6 +17,11 @@ export const BACK_OFFICE_PERMISSIONS: readonly string[] = [
   'subscriptions:query', 'subscriptions:update',
   'quota:query', 'quota:update',
   'mail:query', 'mail:update',
+  // Phase 3 features (menus seed only the query codes; the write codes are granted to roles explicitly).
+  'feedback:query', 'feedback:update',
+  'promotions:query', 'promotions:create', 'promotions:update', 'promotions:delete',
+  'referrals:query', 'referrals:update',
+  'insights:query',
 ];
 
 /**

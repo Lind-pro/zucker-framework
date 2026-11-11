@@ -2,14 +2,16 @@ import 'dotenv/config';
 import { ApplicationDatabase } from '../database';
 import { AssignRoleError, assignRoleByEmail, parseAssignRoleArguments } from './assign-role';
 
-/** `pnpm account:role -- --email <address> --role <name-or-id>` */
+/** `pnpm account:role -- --email <address> --role <name-or-id> [--expires <ISO date | Nd>]` */
 async function main() {
   const input = parseAssignRoleArguments(process.argv.slice(2));
   if (!process.env.DATABASE_URL) throw new AssignRoleError('Provide DATABASE_URL in private configuration.');
   const db = new ApplicationDatabase(process.env.DATABASE_URL);
   try {
     const result = await assignRoleByEmail(db, input);
-    process.stdout.write(result.assigned ? `Role ${result.roleName} assigned.\n` : `The account already has role ${result.roleName}.\n`);
+    const until = result.expiresAt ? ` until ${result.expiresAt.toISOString()}` : '';
+    process.stdout.write(result.assigned ? `Role ${result.roleName} assigned${until}.\n`
+      : result.expiryUpdated ? `Role ${result.roleName} now expires${until}.\n` : `The account already has role ${result.roleName}${until}.\n`);
   } finally { await db.disconnect(); }
 }
 main().catch(error => {

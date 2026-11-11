@@ -7,6 +7,7 @@ import { AppearanceControl } from '@/features/site/SiteTheme';
 import { localizedHref, type PublicSiteSettings } from '@/features/content/types';
 import { LocaleSwitcher } from '@/components/LocaleSwitcher';
 import { SessionMenu } from '@/components/SessionMenu';
+import { ReferralClaim } from '@/features/referrals/ReferralClaim';
 import { localizedPath } from '@/lib/site/url';
 import { isLocale } from '@/lib/site/locales';
 
@@ -31,6 +32,8 @@ export function Header({ site, adminUrl }: { site: PublicSiteSettings; adminUrl:
   ));
   return (
     <header className="sticky top-0 z-50 border-b border-[var(--color-border)] bg-[var(--color-background)]/90 backdrop-blur-sm">
+      {/* Renders nothing; claims a stored first-touch referral code once a session exists. */}
+      <ReferralClaim />
       <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between gap-5">
         <a href={isLocale(locale) ? localizedPath(locale, '/') : '/'} className="text-xl font-bold text-primary-500 truncate">
           {site.name}

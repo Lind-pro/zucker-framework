@@ -2,7 +2,9 @@ import { Body, Controller, Delete, ForbiddenException, Get, HttpCode, Param, Pos
 import { PermissionService, Permissions, Public, RefreshTokenCookie } from '@zucker-framework/auth';
 import type { RefreshCookieResponse } from '@zucker-framework/auth';
 import { RateLimit, RateLimitGuard, RateLimiterService, TooManyRequestsException } from '@zucker-framework/rate-limiter';
-import { AccountService, ACCESS_TTL_SECONDS, SESSION_TTL_SECONDS } from './account.service';
+import { spendBudgets } from './security/account-request';
+import { TWO_FACTOR_LIMITER } from './security/account-security.limits';
+import { AccountService, ACCESS_TTL_SECONDS, SESSION_TTL_SECONDS, type SessionPair, type SignInResult } from './account.service';
 import { ACCOUNTS_LIMITER, LOGIN_ACCOUNT_LIMITER, LOGIN_LIMITER, loginAccountKey, SESSION_READ_LIMITER, SESSION_REFRESH_LIMITER, SESSION_REFRESH_NETWORK_LIMITER } from '../rate-limits';
 
 interface AccountRequest {
@@ -22,6 +24,16 @@ export class AccountController {
   constructor(private readonly accounts: AccountService, private readonly permissions: PermissionService,
     private readonly limiter: RateLimiterService) {}
 
+  /** Session pair → cookie + public body; a challenge is returned as is and sets no cookie. */
+  private signedIn(result: SignInResult, res: RefreshCookieResponse) {
+    if (result.twoFactorRequired) return { twoFactorRequired: true as const, challenge: result.challenge };
+    return this.session(result, res);
+  }
+  private session(pair: SessionPair, res: RefreshCookieResponse) {
+    this.cookie.issue(res, pair.refreshToken);
+    return { userId: pair.userId, token: pair.accessToken, expires: ACCESS_TTL_SECONDS * 1000 };
+  }
+
   private sameOrigin(req: AccountRequest): void {
     if (!req.headers.origin || !this.origins.has(req.headers.origin) || req.headers['sec-fetch-site'] === 'cross-site') {
       throw new ForbiddenException('Untrusted account request origin');
@@ -36,10 +48,7 @@ export class AccountController {
   async register(@Body() body: unknown, @Req() req: AccountRequest, @Res({ passthrough: true }) res: RefreshCookieResponse) {
     this.sameOrigin(req);
     const result = await this.accounts.register(body, { ip: req.ip });
-    if (!result.verificationRequired) {
-      this.cookie.issue(res, result.refreshToken);
-      return { verificationRequired: false, userId: result.userId, token: result.accessToken, expires: ACCESS_TTL_SECONDS * 1000 };
-    }
+    if (!result.verificationRequired) return { verificationRequired: false, ...this.session(result, res) };
     return result;
   }
   @Post('verification') @Public() @HttpCode(200)
@@ -64,21 +73,40 @@ export class AccountController {
     // Per-target budgets on top of the per-IP guard: one for this account from this client, and a
     // looser one for the account across all clients (distributed guessing). Successful logins are refunded.
     // Compositions that do not configure these limiters (e.g. narrow test modules) keep only the per-IP guard.
-    const account = loginAccountKey(body), keys = account
-      ? ([[LOGIN_LIMITER, `login:${account}:${req.ip ?? 'unknown-client'}`], [LOGIN_ACCOUNT_LIMITER, `login-account:${account}`]] as const)
-        .filter(([limiter]) => this.limiter.has(limiter))
-      : [];
-    for (const [limiter, key] of keys) {
-      try { await this.limiter.consume(limiter, key); }
-      catch (error) {
-        if (error instanceof TooManyRequestsException) throw new TooManyRequestsException('Too many requests', error.retryAfter);
-        throw error;
-      }
-    }
-    const pair = await this.accounts.login(body);
-    await Promise.all(keys.map(([limiter, key]) => this.limiter.reward(limiter, key).catch(() => undefined)));
-    this.cookie.issue(res, pair.refreshToken);
-    return { userId: pair.userId, token: pair.accessToken, expires: ACCESS_TTL_SECONDS * 1000 };
+    // A correct password with two-factor on returns `{twoFactorRequired: true, challenge}` and no cookie.
+    const account = loginAccountKey(body);
+    const refund = await spendBudgets(this.limiter, account
+      ? [[LOGIN_LIMITER, `login:${account}:${req.ip ?? 'unknown-client'}`], [LOGIN_ACCOUNT_LIMITER, `login-account:${account}`]] : []);
+    const result = await this.accounts.login(body);
+    await refund();
+    return this.signedIn(result, res);
+  }
+  /**
+   * Second sign-in step: `{challenge, code}` or `{challenge, recoveryCode}` → session (cookie) as `login`.
+   * Wrong codes spend the login budgets of the challenged account (per client and across clients) and
+   * the TOTP lockout; the challenge stays usable until it expires (5 minutes) or succeeds.
+   */
+  @Post('login/two-factor') @Public() @HttpCode(200)
+  async loginTwoFactor(@Body() body: unknown, @Req() req: AccountRequest, @Res({ passthrough: true }) res: RefreshCookieResponse) {
+    this.sameOrigin(req);
+    const subject = await this.accounts.twoFactorChallengeSubject(body);
+    const refund = await spendBudgets(this.limiter, subject
+      ? [[LOGIN_LIMITER, `two-factor:${subject}:${req.ip ?? 'unknown-client'}`], [LOGIN_ACCOUNT_LIMITER, `two-factor-account:${subject}`],
+        [TWO_FACTOR_LIMITER, `two-factor:${subject}`]] : []);
+    const pair = await this.accounts.loginTwoFactor(body);
+    await refund();
+    return this.session(pair, res);
+  }
+  /** `{email}` → always `{accepted: true}` (account policy `magicLinkEnabled`; 403 `MAGIC_LINK_DISABLED` when off). */
+  @Post('magic-link') @Public() @HttpCode(200)
+  magicLink(@Body() body: unknown, @Req() req: AccountRequest) {
+    this.sameOrigin(req); return this.accounts.requestMagicLink(body);
+  }
+  /** `{ticket}` from the mailed link's fragment → session, or `{twoFactorRequired, challenge}`. */
+  @Post('magic-link/consume') @Public() @HttpCode(200)
+  async consumeMagicLink(@Body() body: unknown, @Req() req: AccountRequest, @Res({ passthrough: true }) res: RefreshCookieResponse) {
+    this.sameOrigin(req);
+    return this.signedIn(await this.accounts.consumeMagicLink(body), res);
   }
   /**
    * Page loads restore their access token here, so this is not on the credential budget: a per-IP

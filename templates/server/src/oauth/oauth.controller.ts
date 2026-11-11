@@ -70,7 +70,9 @@ export class OAuthController {
   async complete(@Param('provider') provider: string, @Body() body: unknown, @Req() req: OAuthRequest, @Res({ passthrough: true }) res: OAuthResponse) {
     this.noStore(res);
     const result = await this.oauth.complete(provider, 'login', body, this.mutation(req));
-    if (!('refreshToken' in result)) throw new Error('Expected login session');
+    if (!('twoFactorRequired' in result)) throw new Error('Expected login session');
+    // Enrolled accounts finish with POST /authorize/login/two-factor; no cookie is issued here.
+    if (result.twoFactorRequired) return { twoFactorRequired: true, challenge: result.challenge, returnPath: result.returnPath };
     this.session.issue(res, result.refreshToken);
     return { token: result.accessToken, userId: result.userId, expires: ACCESS_TTL_SECONDS * 1000, returnPath: result.returnPath };
   }

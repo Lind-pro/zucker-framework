@@ -66,7 +66,7 @@ run('account policy, acquisition and welcome credits', () => {
 
   it('keeps today\'s behaviour by default: verification required and 503 without a mail transport', async () => {
     expect((await request(app.getHttpServer()).get('/api/site/public/config').expect(200)).body.policies.account.values)
-      .toEqual({ registrationOpen: true, requireEmailVerification: true });
+      .toEqual({ registrationOpen: true, requireEmailVerification: true, twoFactorEnabled: true, magicLinkEnabled: false, deletionEnabled: true, deletionGraceDays: 7 });
     await post('register', { username: 'defaultuser', email: 'defaultuser@example.invalid', password }).expect(503);
   });
 

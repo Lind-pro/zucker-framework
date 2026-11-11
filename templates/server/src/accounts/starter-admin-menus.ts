@@ -1,6 +1,7 @@
 /** Consumer navigation policy; applied only by the explicit administrator setup command. */
 export const starterAdminMenus = [
   { key: 'dashboard', name: '概览', path: '/dashboard', permission: 'dashboard:query' },
+  { key: 'insights', name: '运营洞察', path: '/insights', permission: 'insights:query' },
   { key: 'identity', name: '用户与权限' },
   { key: 'users', name: '用户', path: '/users', parent: 'identity', permission: 'users:query' },
   { key: 'roles', name: '角色', path: '/roles', parent: 'identity', permission: 'roles:query' },
@@ -86,11 +87,14 @@ export const starterAdminMenus = [
     parent: 'commerce',
     permission: 'billing:refund',
   },
+  { key: 'promotions', name: '优惠码', path: '/promotions', parent: 'commerce', permission: 'promotions:query' },
+  { key: 'referrals', name: '邀请返利', path: '/referrals', parent: 'commerce', permission: 'referrals:query' },
   { key: 'ai', name: 'AI' },
   { key: 'ai-tasks', name: '生成任务', path: '/ai/tasks', parent: 'ai', permission: 'ai-tasks:query' },
   { key: 'ai-chats', name: 'AI 对话', path: '/ai/chats', parent: 'ai', permission: 'chats:query' },
   { key: 'ai-pricing', name: '模型与定价', path: '/ai/pricing', parent: 'ai', permission: 'config:update' },
   { key: 'operations', name: '运行与审计' },
+  { key: 'feedback', name: '用户反馈', path: '/feedback', parent: 'operations', permission: 'feedback:query' },
   {
     key: 'jobs',
     name: '任务',

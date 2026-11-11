@@ -319,17 +319,17 @@ run('credit packs, plan credits and checkout over HTTP (PostgreSQL)', () => {
     const setPolicy = async (values: Record<string, unknown>) => { const current = await policies.view('billing'); await policies.save('synthetic-operator', 'billing', { expectedRevision: current.revision, values }); };
     expect((await order(`pack:${pack.id}:USD`, `pc-${randomUUID()}`, 'paypal')).status).toBe(200); // default policy: free choice
     await setPolicy({ defaultProvider: 'stripe', allowProviderChoice: false });
-    expect((await request(app.getHttpServer()).get('/api/billing/plans').expect(200)).body.checkout).toEqual({ defaultProvider: 'stripe', allowProviderChoice: false });
+    expect((await request(app.getHttpServer()).get('/api/billing/plans').expect(200)).body.checkout).toEqual({ defaultProvider: 'stripe', allowProviderChoice: false, promoCodes: 'none' });
     const before = (await q('SELECT count(*)::int AS n FROM "S".billing_orders'))[0].n;
     expect((await order(`pack:${pack.id}:USD`, `pc-${randomUUID()}`, 'paypal')).status).toBe(400);
     expect((await q('SELECT count(*)::int AS n FROM "S".billing_orders'))[0].n).toBe(before);
     expect((await order(`pack:${pack.id}:USD`, `pc-${randomUUID()}`, 'stripe')).status).toBe(200);
     // A default provider that is not enabled is reported as null and does not lock buyers out.
     await setPolicy({ defaultProvider: 'creem', allowProviderChoice: false });
-    expect((await request(app.getHttpServer()).get('/api/billing/plans').expect(200)).body.checkout).toEqual({ defaultProvider: null, allowProviderChoice: false });
+    expect((await request(app.getHttpServer()).get('/api/billing/plans').expect(200)).body.checkout).toEqual({ defaultProvider: null, allowProviderChoice: false, promoCodes: 'none' });
     expect((await order(`pack:${pack.id}:USD`, `pc-${randomUUID()}`, 'paypal')).status).toBe(200);
     await setPolicy({ defaultProvider: null, allowProviderChoice: null });
-    expect((await request(app.getHttpServer()).get('/api/billing/plans').expect(200)).body.checkout).toEqual({ defaultProvider: null, allowProviderChoice: true });
+    expect((await request(app.getHttpServer()).get('/api/billing/plans').expect(200)).body.checkout).toEqual({ defaultProvider: null, allowProviderChoice: true, promoCodes: 'none' });
   });
 
   // ── Pack deletion with an open order; refund ────────────────────────────

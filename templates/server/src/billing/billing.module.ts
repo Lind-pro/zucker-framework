@@ -6,6 +6,7 @@ import { BillingSubscriptionsController } from './subscriptions.controller';
 import { BillingRefundsController } from './refunds/refunds.controller';
 import { RUNTIME_ENVIRONMENT } from '../runtime-settings/runtime-settings.tokens';
 import { ConnectionSettingsService } from '../runtime-settings/connection-settings.service';
+import { billingTestFakeControllers } from './test-fakes';
 
 export const CREDIT_PACK_ADMIN = Symbol('CREDIT_PACK_ADMIN');
 /**
@@ -17,7 +18,9 @@ const CreditPackAdminController = createPlanAdminController({ path: 'management/
   auditModule: 'credit-packs', guards: [] });
 
 @Module({
-  controllers: [BillingController, BillingSubscriptionsController, BillingRefundsController, CreditPackAdminController],
+  controllers: [BillingController, BillingSubscriptionsController, BillingRefundsController, CreditPackAdminController,
+    // TEST-ONLY hosted checkout page (/billing/test-checkout/*) when BILLING_TEST_FAKE_PROVIDER=true.
+    ...billingTestFakeControllers(process.env)],
   providers: [{ provide: BILLING_OPTIONS, inject: [{ token: RUNTIME_ENVIRONMENT, optional: true }, { token: ConnectionSettingsService, optional: true }],
     useFactory: (environment?: Readonly<NodeJS.ProcessEnv>, settings?: ConnectionSettingsService) => ({
       ...billingOptionsFromEnvironment(environment ?? process.env),

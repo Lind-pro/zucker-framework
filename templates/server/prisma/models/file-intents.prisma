@@ -1,0 +1,19 @@
+// ─── File object intents (WP 3.6) ────────────────────────────────────────────
+// Write-ahead record of an object key the server is about to upload for a file row it has not
+// recorded yet (server-generated private files such as AI outputs). The intent is written before the
+// first byte is uploaded and removed in the transaction that records the file row (or after the
+// object is discarded). An intent older than FILES_ORPHAN_GRACE_MINUTES whose key no file row
+// references marks an orphan left by a crash: the `file-orphans` sweeper deletes that object, then
+// the intent. Keys are server-generated, never request input.
+
+model fileObjectIntents {
+  objectKey String   @id
+  ownerId   String
+  /// generated | public-asset
+  kind      String
+  /// Refreshed while a long upload is still running, so the grace period counts from the last progress.
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([createdAt])
+  @@map("file_object_intents")
+}

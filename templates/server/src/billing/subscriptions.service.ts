@@ -128,7 +128,10 @@ export class BillingSubscriptionsService {
   }
   private validatePayment(row: BillingSubscription, payment: SubscriptionPaidPeriod | SubscriptionPaidReceipt): void {
     if (payment.subscriptionId !== row.providerSubscriptionId || payment.catalogReference !== row.catalogReference) invalid('Subscription payment identity mismatch');
-    if (moneyKey(payment.paidMoney) !== moneyKey(row.offer.money)) invalid('Subscription payment differs from the frozen offer');
+    // A first-invoice promotion (D10) is frozen on the order; only the initial payment may pay it.
+    const initial = payment.paymentId === row.initialPaymentId && payment.paymentKind === row.initialPaymentKind;
+    const expected = initial && row.offer.promotion ? row.offer.promotion.payable : row.offer.money;
+    if (moneyKey(payment.paidMoney) !== moneyKey(expected)) invalid('Subscription payment differs from the frozen offer');
     if (!payment.recordId || !payment.paymentId || !['invoice', 'transaction', 'capture', 'payment-intent'].includes(payment.paymentKind)) invalid('Invalid subscription payment identity');
     factDate(payment.paidAt);
     if (row.grantBasis === 'period') {

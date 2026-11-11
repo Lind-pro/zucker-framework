@@ -25,3 +25,17 @@ export {
   type SessionSummaryStorage,
   type SessionSummaryStorageOptions,
 } from './cookie-session';
+export {
+  OAUTH_POPUP_CHANNEL_PREFIX,
+  claimOAuthPopup,
+  openOAuthPopup,
+  parseOAuthPopupMessage,
+  type ClaimOAuthPopupOptions,
+  type OAuthPopupChannel,
+  type OAuthPopupChannelFactory,
+  type OAuthPopupClaim,
+  type OAuthPopupHandle,
+  type OAuthPopupResult,
+  type OAuthPopupWindow,
+  type OpenOAuthPopupOptions,
+} from './oauth-popup';

@@ -56,6 +56,8 @@ export interface PricingPack {
 export interface CheckoutPolicy {
   defaultProvider: string | null;
   allowProviderChoice: boolean;
+  /** 'alias': buyers may enter a promo code; the server validates it and freezes the discount. */
+  promoCodes: 'none' | 'alias';
 }
 export interface PricingCatalog {
   plans: PricingPlan[];
@@ -157,6 +159,7 @@ export function parsePricingCatalog(value: unknown): PricingCatalog {
     checkout: {
       defaultProvider: isString(checkout.defaultProvider) && checkout.defaultProvider ? checkout.defaultProvider : null,
       allowProviderChoice: checkout.allowProviderChoice !== false,
+      promoCodes: checkout.promoCodes === 'alias' ? 'alias' : 'none',
     },
   };
 }

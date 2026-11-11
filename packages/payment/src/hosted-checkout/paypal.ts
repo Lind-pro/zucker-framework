@@ -101,6 +101,8 @@ export function createPayPalHostedCheckoutAdapter(options: PayPalHostedCheckoutO
   return {
     id: 'paypal', accountScope: options.accountScope, modes: subscriptions ? ['payment', 'subscription'] : ['payment'], supportsMetadata: false,
     validate(offer) {
+      // Rejected, not ignored: PayPal reports no subtotal/discount evidence for a frozen promotion.
+      if (offer.promotion) throw new HostedCheckoutError('unsupported', 'PayPal checkout does not support promotions');
       if (offer.mode === 'subscription' && !subscriptions) throw new HostedCheckoutError('unsupported', 'PayPal subscription transport is not configured');
       if (!(PAYPAL_SUPPORTED_CURRENCIES as readonly string[]).includes(offer.money.currency)) {
         throw new HostedCheckoutError('unsupported', 'PayPal currency is unsupported');

@@ -11,6 +11,7 @@ import { FileDownloadPrivacyGuard, FilesDownloadController } from './files-downl
 import { FilesImportService } from './files-import.service';
 import { PublicAssetsController, PublicAssetsManagementController } from './public-assets.controller';
 import { PublicAssetsService } from './public-assets.service';
+import { FileOrphanSweeper } from './file-object-intents';
 import { PUBLIC_ASSETS_OPTIONS, publicAssetsOptionsFromEnvironment } from './public-assets.config';
 /** FILE_MANAGER is configured once at the composition root. Object IO is outside metadata transactions. */
 @Module({
@@ -24,7 +25,9 @@ import { PUBLIC_ASSETS_OPTIONS, publicAssetsOptionsFromEnvironment } from './pub
     { provide: FILES_IMPORT_FETCH, useValue: createPublicFetch({ allowedProtocols: ['https:'], allowedPorts: [443] }) },
     { provide: PUBLIC_ASSETS_OPTIONS, inject: [{ token: RUNTIME_ENVIRONMENT, optional: true }], useFactory: (env?: Readonly<NodeJS.ProcessEnv>) => publicAssetsOptionsFromEnvironment(env ?? process.env) },
     FilesService, FilesDownloadService, FilesImportService, FileDownloadPrivacyGuard, PublicAssetsService,
+    // Wake source `file-orphans` on the global Jobs host (absent in hosts without JobsModule).
+    FileOrphanSweeper,
   ],
-  exports: [FilesService, PublicAssetsService],
+  exports: [FilesService, PublicAssetsService, FileOrphanSweeper],
 })
 export class FilesModule {}

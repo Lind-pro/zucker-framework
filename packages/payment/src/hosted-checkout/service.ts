@@ -6,7 +6,7 @@ import {
   HostedCheckoutError, type HostedCheckoutAdapter, type HostedCheckoutObservation,
   type HostedCheckoutOptions, type HostedCheckoutOrder, type HostedCheckoutSelection,
 } from './types';
-import { canonicalMoney, checkoutUrl, nonempty, snapshotFulfillmentData, snapshotProviderMetadata } from './validation';
+import { canonicalMoney, checkoutPayable, checkoutUrl, nonempty, snapshotFulfillmentData, snapshotPromotion, snapshotProviderMetadata } from './validation';
 
 /** Durable dispatch claims + read-only reconciliation + atomic initial fulfillment. */
 export class HostedCheckoutService {
@@ -35,8 +35,13 @@ export class HostedCheckoutService {
   async create(input: HostedCheckoutSelection): Promise<HostedCheckoutOrder> {
     // Runtime snapshot: neither the caller nor an async catalog callback may rebind ownership.
     const metadata = snapshotProviderMetadata(input.providerMetadata);
+    const promotionCode = input.promotionCode;
+    if (promotionCode !== undefined && (typeof promotionCode !== 'string' || !promotionCode.trim() || promotionCode.length > 128)) {
+      throw new HostedCheckoutError('invalid_input', 'Promotion code is invalid');
+    }
     const selection = Object.freeze({ orderId: input.orderId, ownerId: input.ownerId,
-      offerId: input.offerId, providerId: input.providerId, ...(metadata ? { providerMetadata: metadata } : {}) });
+      offerId: input.offerId, providerId: input.providerId, ...(metadata ? { providerMetadata: metadata } : {}),
+      ...(promotionCode !== undefined ? { promotionCode } : {}) });
     for (const key of ['orderId', 'ownerId', 'offerId', 'providerId'] as const) nonempty(selection[key], key);
     const store = this.options.persistence.orders;
     let order = await store.findUnique({ where: { id: selection.orderId } });
@@ -45,9 +50,10 @@ export class HostedCheckoutService {
       if (metadata && provider.supportsMetadata !== true) throw new HostedCheckoutError('unsupported', 'Provider does not support arbitrary checkout metadata');
       const resolved = await this.options.resolveOffer(selection);
       const fulfillmentData = snapshotFulfillmentData(resolved.fulfillmentData);
+      const promotion = snapshotPromotion(resolved);
       const offer = structuredClone({ version: resolved.version, catalogReference: resolved.catalogReference,
         mode: resolved.mode, money: resolved.money, description: resolved.description,
-        ...(fulfillmentData === undefined ? {} : { fulfillmentData }) });
+        ...(fulfillmentData === undefined ? {} : { fulfillmentData }), ...(promotion ? { promotion } : {}) });
       nonempty(offer.version, 'Offer version'); nonempty(offer.catalogReference, 'Catalog reference');
       nonempty(offer.description, 'Offer description');
       if (!provider.modes.includes(offer.mode)) throw new HostedCheckoutError('unsupported', 'Checkout mode is unsupported');
@@ -60,6 +66,7 @@ export class HostedCheckoutService {
       if (quoted && (canonicalMoney(quoted.money) !== canonicalMoney(offer.money) || (quoted.mode !== undefined && quoted.mode !== offer.mode))) {
         throw new HostedCheckoutError('conflict', 'The provider price differs from the offer; this offer is unavailable until the catalog is corrected');
       }
+      if (offer.promotion) await this.checkPromotion(provider, providerOffer);
       const urls = this.options.returnUrls(selection.orderId);
       const key = createHash('sha256').update(JSON.stringify([provider.id, provider.accountScope, selection.orderId])).digest('hex').slice(0, 32);
       const time = this.now();
@@ -108,7 +115,7 @@ export class HostedCheckoutService {
     this.verify(order, observed, false);
     // Reject a known catalog/configuration mismatch before releasing a payable URL.
     // A settled checkout may report zero outstanding money; its actual paid money is checked on reconciliation.
-    if (observed.state !== 'paid' && observed.dueMoney && canonicalMoney(observed.dueMoney) !== canonicalMoney(order.offer.money)) {
+    if (observed.state !== 'paid' && observed.dueMoney && canonicalMoney(observed.dueMoney) !== canonicalMoney(checkoutPayable(order.offer))) {
       throw new HostedCheckoutError('verification_failed', 'Checkout amount differs from the frozen offer');
     }
     const saved = await store.compareAndSet(order.id, { revision: order.revision, creationState: 'submitting' }, {
@@ -142,7 +149,7 @@ export class HostedCheckoutService {
     const observed = await provider.retrieve(order.checkoutId);
     this.verify(order, observed, true);
     if (observed.state !== 'requires_capture' || order.captureState !== 'idle') return this.reconcile(order, observed);
-    if (!observed.dueMoney || canonicalMoney(observed.dueMoney) !== canonicalMoney(order.offer.money)) {
+    if (!observed.dueMoney || canonicalMoney(observed.dueMoney) !== canonicalMoney(checkoutPayable(order.offer))) {
       throw new HostedCheckoutError('verification_failed', 'Approved capture amount differs from the frozen offer');
     }
     const claimed = await this.options.persistence.orders.compareAndSet(order.id, {
@@ -222,11 +229,13 @@ export class HostedCheckoutService {
     // Trial/free/no-money and incomplete evidence never grant the purchased entitlement.
     const paid = observed.state === 'paid' && observed.mode === order.offer.mode && !!observed.paidMoney && !!observed.paymentId && !!observed.paymentKind &&
       (order.offer.mode !== 'subscription' || !!observed.subscriptionId);
-    if (observed.paidMoney && canonicalMoney(observed.paidMoney) !== canonicalMoney(order.offer.money)) {
-      // Money was taken but cannot be fulfilled (e.g. a provider added tax to a tax-exclusive price).
-      // Surface it so the consumer can persist it for refund/review instead of only seeing an error loop.
+    const mismatch = observed.paidMoney ? this.moneyMismatch(order, observed) : null;
+    if (mismatch) {
+      // Money was taken but cannot be fulfilled (e.g. a provider added tax to a tax-exclusive price,
+      // or applied a discount the order was not frozen with). Surface it so the consumer can persist
+      // it for refund/review instead of only seeing an error loop.
       await this.options.onPaymentMismatch?.(structuredClone(order), structuredClone(observed));
-      throw new HostedCheckoutError('verification_failed', 'Paid amount or currency differs from the frozen offer');
+      throw new HostedCheckoutError('verification_failed', mismatch);
     }
     if (paid && !order.fulfilledAt) await this.options.prepareFulfillment?.(structuredClone(order), structuredClone(observed));
     return this.options.persistence.transaction(async (transaction) => {
@@ -255,9 +264,48 @@ export class HostedCheckoutService {
         if (latest.fulfilledAt) return latest;
         throw new HostedCheckoutError('conflict', 'Concurrent checkout update; retry read-only confirmation');
       }
-      if (paid) await transaction.fulfill(structuredClone(next));
+      if (paid) await transaction.fulfill(structuredClone(next), structuredClone(observed));
       return next;
     });
+  }
+
+  /**
+   * Paid money must equal the frozen payable amount. An order frozen with a promotion also needs the
+   * provider's subtotal (= the offer) and discount (= the frozen discount), and any reported discount
+   * reference must be exactly the frozen provider code. A discount on an order frozen without a
+   * promotion is never accepted. The browser's input never reaches this comparison.
+   */
+  private moneyMismatch(order: HostedCheckoutOrder, observed: HostedCheckoutObservation): string | null {
+    const paid = observed.paidMoney;
+    if (!paid || canonicalMoney(paid) !== canonicalMoney(checkoutPayable(order.offer))) return 'Paid amount or currency differs from the frozen offer';
+    const promotion = order.offer.promotion;
+    if (!promotion) {
+      const discount = observed.discountMoney;
+      if (discount && !canonicalMoney(discount).endsWith(':0')) return 'A discount was applied to an order without a promotion';
+      if (observed.discountReferences?.length) return 'A discount was applied to an order without a promotion';
+      return null;
+    }
+    if (!observed.subtotalMoney || !observed.discountMoney) return 'Promotion evidence (subtotal and discount) is missing';
+    if (canonicalMoney(observed.subtotalMoney) !== canonicalMoney(order.offer.money)) return 'Provider subtotal differs from the frozen offer';
+    if (canonicalMoney(observed.discountMoney) !== canonicalMoney(promotion.discount)) return 'Provider discount differs from the frozen promotion';
+    const references = observed.discountReferences;
+    if (references && (references.length !== 1 || references[0] !== promotion.providerCode)) return 'Provider discount reference differs from the frozen promotion';
+    return null;
+  }
+
+  /** Before an order exists: capability, provider promotion amount and (subscriptions) once-only duration. */
+  private async checkPromotion(provider: HostedCheckoutAdapter, offer: HostedCheckoutOrder['offer']): Promise<void> {
+    const promotion = offer.promotion;
+    if (!promotion) return;
+    if (!provider.promotions?.modes.includes(offer.mode)) throw new HostedCheckoutError('unsupported', 'Provider does not support promotions for this checkout mode');
+    const quote = provider.quotePromotion ? await provider.quotePromotion(structuredClone(offer)) : null;
+    if (offer.mode === 'subscription' && quote?.duration !== 'once') {
+      // Later cycles keep exact list-price equality, so only a first-invoice-only provider coupon fits.
+      throw new HostedCheckoutError('unsupported', 'Subscription promotions require a provider discount that applies once');
+    }
+    if (quote && canonicalMoney(quote.discount) !== canonicalMoney(promotion.discount)) {
+      throw new HostedCheckoutError('conflict', 'The provider promotion differs from the frozen discount; this promotion is unavailable until it is corrected');
+    }
   }
 
   private verify(order: HostedCheckoutOrder, observed: HostedCheckoutObservation, complete: boolean): void {

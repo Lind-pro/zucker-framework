@@ -28,10 +28,12 @@ export function OrderFacts({ order }: { order: CheckoutOrder }) {
   const t = useTranslations('billing'); const locale = useLocale();
   const created = Date.parse(order.createdAt);
   const facts = [
-    [t('amount'), moneyLabel(order.money)], [t('paymentMethod'), providerLabel(order.providerId)],
+    [t('amount'), moneyLabel(order.amountDue ?? order.money)], [t('paymentMethod'), providerLabel(order.providerId)],
     [t('purchaseType'), t(order.mode === 'subscription' ? 'subscription' : 'oneTime')],
     [t('createdAt'), Number.isFinite(created) ? new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(created) : t('notAvailable')],
   ];
+  // The amount above is what is charged (after a promotion); the discount and list price are shown beside it.
+  if (order.discount) facts.splice(1, 0, [t('discountApplied', { listPrice: moneyLabel(order.money) }), `-${moneyLabel(order.discount)}`]);
   if (order.refund && ['partial', 'full'].includes(order.refund.state)) facts.push([t('refundedAmount'), moneyLabel(order.refund.refundedMoney)]);
   if (order.refund?.pendingMoney) facts.push([t('pendingRefundAmount'), moneyLabel(order.refund.pendingMoney)]);
   return <dl className="grid gap-x-6 gap-y-5 sm:grid-cols-2">

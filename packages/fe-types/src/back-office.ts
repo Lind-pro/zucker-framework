@@ -115,6 +115,24 @@ export interface BackOfficePage<T> {
   totalPages?: number;
 }
 
+// ─── User roles (GET/PUT /users/:id/roles) ───────────────────────────────────
+
+/** Role id → ISO 8601 expiry, `null` = never. Present only when the server runs with role expiry. */
+export type UserRoleExpiries = Record<string, string | null>;
+
+export interface UserRolesResponse<TRole = unknown> {
+  roleIds: string[];
+  roles: TRole[];
+  /** Omitted by servers without role expiry; clients hide expiry inputs then. */
+  expiries?: UserRoleExpiries;
+}
+
+export interface UserRolesWriteBody {
+  roleIds: string[];
+  /** Full ISO date-time with offset (e.g. `toISOString()`). Rejected with 400 when expiry is off. */
+  expiries?: UserRoleExpiries;
+}
+
 // ─── Entitlements (§8.1) ─────────────────────────────────────────────────────
 
 export type EntitlementPeriod = 'month' | 'day' | 'lifetime';
@@ -366,6 +384,8 @@ export interface PublicBillingCheckoutPolicy {
   /** Provider preselected (or the only one used when choice is off); null = first available. */
   defaultProvider: string | null;
   allowProviderChoice: boolean;
+  /** `alias` when customers may type a promotion code at checkout (`billing.allowCustomerPromoCodes`). */
+  promoCodes: 'none' | 'alias';
 }
 
 /** `GET /billing/plans[?currency=USD][&locale=en]`. */

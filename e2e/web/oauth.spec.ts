@@ -44,18 +44,24 @@ test('shows only configured providers and does not load Google before an explici
   expect(external.filter(url => url.includes('accounts.google.com'))).toEqual([]);
 });
 
-test('starts a configured code flow with locale and a safe return path', async ({ page }) => {
+test('starts a configured code flow with locale and a safe return path', async ({ page, context }) => {
+  // Sign-in opens the provider in a popup; the popup page starts the flow, so routes are context-wide.
   const starts: unknown[] = [];
-  await page.route('https://github.com/login/oauth/authorize?**', route => route.fulfill({ contentType: 'text/html', body: '<p>Synthetic provider consent</p>' }));
-  await page.route('**/api/authorize/oauth/providers', route => respond(route, { providers: [{ id: 'github', code: true }] }));
-  await page.route('**/api/authorize/oauth/github/start', route => {
+  await context.route('https://github.com/login/oauth/authorize?**', route => route.fulfill({ contentType: 'text/html', body: '<p>Synthetic provider consent</p>' }));
+  await context.route('**/api/authorize/oauth/providers', route => respond(route, { providers: [{ id: 'github', code: true }] }));
+  await context.route('**/api/authorize/oauth/github/start', route => {
     starts.push(route.request().postDataJSON());
     return respond(route, { authorizationUrl: `https://github.com/login/oauth/authorize?state=${ticket}` }, 200,
       { 'set-cookie': 'zucker-oauth-browser=synthetic-browser; Path=/api/authorize/oauth; HttpOnly; SameSite=Lax' });
   });
-  await page.goto('/en/login?redirect=%2Fen%2Faccount'); await page.getByRole('button', { name: 'Continue with GitHub' }).click();
-  await expect(page).toHaveURL(new RegExp(`github.com/login/oauth/authorize\\?state=${ticket}`));
+  await page.goto('/en/login?redirect=%2Fen%2Faccount');
+  const opened = page.waitForEvent('popup');
+  await page.getByRole('button', { name: 'Continue with GitHub' }).click();
+  const popup = await opened;
+  await expect(popup).toHaveURL(new RegExp(`github.com/login/oauth/authorize\\?state=${ticket}`));
   expect(starts).toEqual([{ locale: 'en', mode: 'code', returnPath: '/account' }]);
+  // The opener keeps its page while the popup is out.
+  await expect(page).toHaveURL(/\/login\?redirect=/);
 });
 
 test('keeps callback proof in memory, waits for confirmation and installs only the returned account session', async ({ page }) => {

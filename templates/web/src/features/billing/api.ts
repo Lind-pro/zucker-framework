@@ -4,12 +4,12 @@ import type { BillingSubscription, CheckoutOrder, CheckoutOrderPage, CheckoutSel
 export const billingApi = {
   /** Anonymous `GET /billing/plans`; parse with parsePricingCatalog. */
   plans: (locale: string) => accountPublicClient.get<unknown>('/billing/plans', { locale }),
-  identity: () => httpClient.get<{ id: string }>('/authorize/me'),
   orders: (page: number) => httpClient.get<CheckoutOrderPage>('/billing/orders', { page }),
   order: (id: string) => httpClient.get<CheckoutOrder>(`/billing/orders/${encodeURIComponent(id)}`),
   create: (selection: CheckoutSelection, key: string) => httpClient.post<CheckoutOrder>('/billing/orders', {
     offerId: selection.offerId, providerId: selection.providerId,
     ...(selection.referral ? { referral: selection.referral } : {}),
+    ...(selection.promoCode ? { promoCode: selection.promoCode } : {}),
   }, undefined, { headers: { 'Idempotency-Key': key } }),
   confirm: (id: string, checkoutId?: string) => httpClient.post<CheckoutOrder>(`/billing/orders/${encodeURIComponent(id)}/confirm`, checkoutId ? { checkoutId } : {}),
   capture: (id: string) => httpClient.post<CheckoutOrder>(`/billing/orders/${encodeURIComponent(id)}/capture`, { approved: true }),

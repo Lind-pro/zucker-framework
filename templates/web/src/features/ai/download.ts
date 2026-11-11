@@ -1,7 +1,28 @@
 import type { OutputTicket } from './types';
 
-/** Largest output the browser buffers for preview/download (video outputs can be large). */
+/**
+ * Largest output the page buffers in memory (inline preview, `redeemOutputTicket`). Downloads are not
+ * capped here: the server's AI_OUTPUT_MAX_BYTES bounds every stored output.
+ */
 export const MAX_OUTPUT_BYTES = 512 * 1024 * 1024;
+/** Outputs above this size are downloaded by navigation, so the browser streams them to disk. */
+export const STREAMED_DOWNLOAD_THRESHOLD_BYTES = 32 * 1024 * 1024;
+
+export type OutputDownloadStrategy = 'blob' | 'navigate';
+
+/**
+ * Small outputs are fetched into a Blob (credentials omitted, failures reported in the page); large or
+ * unknown sizes navigate to the ticket URL through a temporary `<a download>` so nothing is held in memory.
+ */
+export function outputDownloadStrategy(bytes: unknown): OutputDownloadStrategy {
+  return typeof bytes === 'number' && Number.isFinite(bytes) && bytes >= 0 && bytes <= STREAMED_DOWNLOAD_THRESHOLD_BYTES ? 'blob' : 'navigate';
+}
+
+/** Same-origin GET URL for a validated ticket (the server strips the query before logging). */
+export function streamedDownloadUrl(ticket: Pick<OutputTicket, 'url' | 'expiresAt'>, origin: string, now = Date.now()): string | null {
+  const parsed = parseOutputTicket(ticket, origin, now);
+  return parsed ? `${parsed.path}?token=${encodeURIComponent(parsed.token)}` : null;
+}
 
 /**
  * Accepts only a same-origin private-file ticket (`/api/files/<id>/download?token=…`) that has not
@@ -51,15 +72,30 @@ export async function redeemOutputTicket(ticket: OutputTicket, signal?: AbortSig
   return ticket.contentType && blob.type !== ticket.contentType ? new Blob([blob], { type: ticket.contentType }) : blob;
 }
 
-export function saveBlob(blob: Blob, fileName: string): void {
-  const objectUrl = URL.createObjectURL(blob);
+/** Saves one output with the strategy its declared size selects. */
+export async function downloadOutputTicket(ticket: OutputTicket, fileName: string, signal?: AbortSignal): Promise<void> {
+  if (outputDownloadStrategy(ticket.bytes) === 'blob') {
+    saveBlob(await redeemOutputTicket(ticket, signal), fileName);
+    return;
+  }
+  const url = streamedDownloadUrl(ticket, window.location.origin);
+  if (!url) throw new Error('Invalid download ticket');
+  clickDownload(url, fileName);
+}
+
+function clickDownload(href: string, fileName: string): void {
   const anchor = document.createElement('a');
-  anchor.href = objectUrl;
+  anchor.href = href;
   anchor.download = fileName;
   anchor.rel = 'noreferrer';
   document.body.append(anchor);
   anchor.click();
   anchor.remove();
+}
+
+export function saveBlob(blob: Blob, fileName: string): void {
+  const objectUrl = URL.createObjectURL(blob);
+  clickDownload(objectUrl, fileName);
   // Revoke late: an early revoke can cancel a large download that is still being written.
   setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
 }

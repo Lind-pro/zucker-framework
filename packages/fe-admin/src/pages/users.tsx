@@ -4,12 +4,13 @@ import { Button } from '../components/button';
 import { Dialog } from '../components/dialog';
 import { ErrorState, LoadingState, Notice, StatusBadge, toast } from '../components/feedback';
 import { FormDialog, type FieldSpec } from '../components/form';
-import { Checkbox } from '../components/inputs';
+import { Checkbox, Input } from '../components/inputs';
+import type { UserRoleExpiries, UserRolesWriteBody } from '@zucker-framework/fe-types/back-office';
 import { PageContainer } from '../components/layout';
 import { Pagination, ResourceTable, type ResourceTableHandle } from '../components/data-table';
 import { useAdmin, useAdminApi, usePermissionCheck } from '../app/context';
 import { useAdminI18n } from '../i18n/context';
-import { formatDateTime } from '../lib/format';
+import { errorBody, formatDateTime } from '../lib/format';
 import { BatchDeleteButton, DeleteAction, crudLoader, enc } from './shared';
 
 export interface UserRecord {
@@ -32,6 +33,8 @@ export function UsersPage() {
   const [selected, setSelected] = useState<string[]>([]);
   const [editing, setEditing] = useState<UserRecord | 'new' | null>(null);
   const [roleUser, setRoleUser] = useState<UserRecord | null>(null);
+  const [twoFactorUser, setTwoFactorUser] = useState<UserRecord | null>(null);
+  const resetPath = config.usersTwoFactorResetPath;
   const reload = () => table.current?.reload();
   const fields = (record: UserRecord | null): FieldSpec[] => [
     { name: 'username', label: t('users.username'), required: true, disabled: Boolean(record), autoComplete: 'off', maxLength: 64 },
@@ -104,6 +107,11 @@ export function UsersPage() {
                 {t('common.edit')}
               </Button>
             )}
+            {resetPath && can(codes.update) && (
+              <Button size="sm" variant="ghost" onClick={() => setTwoFactorUser(row)}>
+                {t('users.resetTwoFactor')}
+              </Button>
+            )}
             {can(codes.delete) && (
               <DeleteAction
                 onDelete={async () => {
@@ -145,6 +153,14 @@ export function UsersPage() {
           reload();
         }}
       />
+      {twoFactorUser && resetPath && (
+        <TwoFactorResetDialog
+          key={twoFactorUser.id}
+          user={twoFactorUser}
+          path={resetPath.replace(':id', enc(twoFactorUser.id))}
+          onClose={() => setTwoFactorUser(null)}
+        />
+      )}
       {roleUser && (
         <UserRoleEditor
           key={roleUser.id}
@@ -160,6 +176,81 @@ export function UsersPage() {
   );
 }
 
+const RESET_ERROR_KEYS = {
+  TWO_FACTOR_NOT_ENABLED: 'users.resetTwoFactorNotEnabled',
+  RECENT_AUTHENTICATION_REQUIRED: 'users.resetTwoFactorReauth',
+  RECENT_AUTHENTICATION_FAILED: 'users.resetTwoFactorReauth',
+  TWO_FACTOR_RESET_FORBIDDEN: 'users.resetTwoFactorForbidden',
+} as const;
+
+/**
+ * Staff reset of another account's two-factor authentication. The operator's password is sent only
+ * for the server's recent-authentication check and is cleared when the dialog closes.
+ */
+export function TwoFactorResetDialog({ user, path, onClose }: { user: UserRecord; path: string; onClose: () => void }) {
+  const api = useAdminApi();
+  const { t } = useAdminI18n();
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  async function submit() {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.post(path, password ? { password } : {});
+      toast.success(t('users.resetTwoFactorDone'));
+      onClose();
+    } catch (failure) {
+      // fe-http-client flattens the server's `code`; port-style bodies carry it as `reason`.
+      const flattened = (failure as { code?: unknown } | null)?.code;
+      const reason = (typeof flattened === 'string' && flattened in RESET_ERROR_KEYS ? flattened : errorBody(failure).reason) as
+        keyof typeof RESET_ERROR_KEYS | undefined;
+      setError(t(reason && RESET_ERROR_KEYS[reason] ? RESET_ERROR_KEYS[reason] : 'users.resetTwoFactorFailed'));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => !open && onClose()}
+      busy={busy}
+      title={t('users.resetTwoFactorTitle', { name: user.username })}
+      footer={
+        <>
+          <Button disabled={busy} onClick={onClose}>
+            {t('common.cancel')}
+          </Button>
+          <Button variant="danger" loading={busy} onClick={() => void submit()}>
+            {t('users.resetTwoFactorConfirm')}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <Notice tone="warning" title={t('users.resetTwoFactor')}>
+          {t('users.resetTwoFactorDescription')}
+        </Notice>
+        <label className="block space-y-1 text-sm">
+          <span>{t('users.resetTwoFactorPassword')}</span>
+          <Input
+            type="password"
+            autoComplete="current-password"
+            value={password}
+            disabled={busy}
+            onChange={(event) => setPassword(event.target.value)}
+          />
+        </label>
+        {error && (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        )}
+      </div>
+    </Dialog>
+  );
+}
+
 interface Role {
   id: string;
   name: string;
@@ -168,6 +259,35 @@ interface Role {
 const validRole = (value: unknown): value is Role =>
   !!value && typeof (value as Role).id === 'string' && !!(value as Role).id && typeof (value as Role).name === 'string';
 const ROLE_PAGE_SIZE = 20;
+
+/** `expiries` from the server, or null when it does not support role expiry (field omitted or malformed). */
+export function parseRoleExpiries(value: unknown): UserRoleExpiries | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const result: UserRoleExpiries = {};
+  for (const [roleId, at] of Object.entries(value as Record<string, unknown>)) {
+    if (at === null) result[roleId] = null;
+    else if (typeof at === 'string' && Number.isFinite(Date.parse(at))) result[roleId] = new Date(at).toISOString();
+    else return null;
+  }
+  return result;
+}
+
+const pad = (value: number) => String(value).padStart(2, '0');
+
+/** Local calendar date (`YYYY-MM-DD`) of an ISO instant, for `<input type="date">`. */
+export function expiryDateValue(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const at = new Date(iso);
+  return Number.isFinite(at.getTime()) ? `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}` : '';
+}
+
+/** A picked local date expires at the end of that local day; empty → never. */
+export function expiryFromDateValue(value: string): string | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return null;
+  const at = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 23, 59, 59, 999);
+  return Number.isFinite(at.getTime()) ? at.toISOString() : null;
+}
 
 /**
  * Replace a user's complete role set (`GET/PUT /users/:id/roles`). Selections persist across
@@ -183,6 +303,9 @@ export function UserRoleEditor({ user, onClose, onSaved }: { user: UserRecord; o
   const alive = useRef(true);
   const [initial, setInitial] = useState<string[] | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
+  // null: the server does not return `expiries` (role expiry off) and the field stays hidden.
+  const [initialExpiries, setInitialExpiries] = useState<UserRoleExpiries | null>(null);
+  const [expiries, setExpiries] = useState<UserRoleExpiries | null>(null);
   const [known, setKnown] = useState<Map<string, Role>>(new Map());
   const [roles, setRoles] = useState<Role[]>([]);
   const [total, setTotal] = useState(0);
@@ -203,13 +326,16 @@ export function UserRoleEditor({ user, onClose, onSaved }: { user: UserRecord; o
     const controller = new AbortController();
     setDetail((state) => ({ ...state, loading: true, error: false }));
     api
-      .get<{ roleIds?: unknown; roles?: unknown }>(rolesPath, undefined, { signal: controller.signal })
+      .get<{ roleIds?: unknown; roles?: unknown; expiries?: unknown }>(rolesPath, undefined, { signal: controller.signal })
       .then((result) => {
         if (!result || !Array.isArray(result.roleIds) || result.roleIds.some((id) => typeof id !== 'string' || !id))
           throw new Error('Invalid user roles');
         const ids = [...new Set(result.roleIds as string[])].sort();
         setInitial(ids);
         setSelected(ids);
+        const loadedExpiries = parseRoleExpiries(result.expiries);
+        setInitialExpiries(loadedExpiries);
+        setExpiries(loadedExpiries);
         const current = Array.isArray(result.roles) ? result.roles.filter(validRole) : [];
         setKnown((previous) => new Map([...previous, ...current.map((role) => [role.id, role] as const)]));
         setDetail((state) => ({ ...state, loading: false }));
@@ -247,7 +373,21 @@ export function UserRoleEditor({ user, onClose, onSaved }: { user: UserRecord; o
     setSaveError(false);
     setSelected((previous) => (checked ? [...new Set([...previous, id])].sort() : previous.filter((value) => value !== id)));
   };
-  const changed = initial !== null && JSON.stringify(selected) !== JSON.stringify(initial);
+  const expiryOf = (map: UserRoleExpiries | null, id: string) => map?.[id] ?? null;
+  const setExpiry = (id: string, value: string) => {
+    setSaveError(false);
+    setExpiries((previous) => {
+      if (!previous) return previous;
+      const current = previous[id] ?? null;
+      const next = expiryFromDateValue(value);
+      // Keep the stored instant when the same local day is shown again.
+      if (next !== null && current !== null && expiryDateValue(current) === value) return previous;
+      return { ...previous, [id]: next };
+    });
+  };
+  const expiriesChanged = expiries !== null
+    && selected.some((id) => expiryOf(expiries, id) !== expiryOf(initialExpiries, id));
+  const changed = initial !== null && (JSON.stringify(selected) !== JSON.stringify(initial) || expiriesChanged);
   const canSave = canAccess && initial !== null && !detail.loading && !detail.error && !catalog.loading && !catalog.error && changed && !saving;
   async function save() {
     if (!canSave) return;
@@ -255,7 +395,10 @@ export function UserRoleEditor({ user, onClose, onSaved }: { user: UserRecord; o
     setSaving(true);
     setSaveError(false);
     try {
-      const result = await api.put<{ roleIds?: unknown }>(rolesPath, { roleIds });
+      const body: UserRolesWriteBody = expiries
+        ? { roleIds, expiries: Object.fromEntries(roleIds.map((id) => [id, expiryOf(expiries, id)])) }
+        : { roleIds };
+      const result = await api.put<{ roleIds?: unknown }>(rolesPath, body);
       if (!result || !Array.isArray(result.roleIds) || JSON.stringify([...new Set(result.roleIds)].sort()) !== JSON.stringify(roleIds))
         throw new Error('Role save not confirmed');
       if (!alive.current) return;
@@ -308,9 +451,26 @@ export function UserRoleEditor({ user, onClose, onSaved }: { user: UserRecord; o
                 <ul className="flex flex-wrap gap-2">
                   {selected.map((id) => {
                     const name = known.get(id)?.name ?? id;
+                    const expiresAt = expiryOf(expiries, id);
                     return (
-                      <li key={id} className="flex max-w-full items-center gap-1 rounded-md border px-2 py-1 text-sm">
+                      <li key={id} className="flex max-w-full flex-wrap items-center gap-1 rounded-md border px-2 py-1 text-sm">
                         <span className="break-all">{name}</span>
+                        {expiries && (
+                          <>
+                            <Input
+                              type="date"
+                              className="h-8 w-auto"
+                              aria-label={t('roleAssign.expiresLabel', { name })}
+                              title={t('roleAssign.expires')}
+                              disabled={saving}
+                              value={expiryDateValue(expiresAt)}
+                              onChange={(event) => setExpiry(id, event.target.value)}
+                            />
+                            {expiresAt && Date.parse(expiresAt) <= Date.now() && (
+                              <StatusBadge tone="danger">{t('roleAssign.expired')}</StatusBadge>
+                            )}
+                          </>
+                        )}
                         <Button
                           size="sm"
                           variant="ghost"
@@ -326,6 +486,9 @@ export function UserRoleEditor({ user, onClose, onSaved }: { user: UserRecord; o
                 </ul>
               ) : (
                 <p className="text-sm text-muted-foreground">{t('roleAssign.noneSelected')}</p>
+              )}
+              {expiries && selected.length > 0 && (
+                <p className="text-xs text-muted-foreground">{t('roleAssign.expiresHint')}</p>
               )}
             </section>
           )}

@@ -1,6 +1,7 @@
 import { ConflictException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import type { FileAsset, FileAssetMutation, FileAssetRepository, FileAssetReservation } from '@zucker-framework/storage';
 import { ApplicationDatabase, type ApplicationTransaction } from '../database';
+import { FileObjectIntents } from './file-object-intents';
 
 interface FileAssetRow extends Omit<FileAsset, 'scope' | 'createdAt' | 'updatedAt' | 'deletedAt' | 'cleanupConfirmedAt'> {
   ownerId: string;
@@ -93,8 +94,14 @@ export class PostgresFileAssetRepository implements FileAssetRepository {
    * lock as `reserve`, so concurrent uploads/outputs cannot overshoot. An existing row for the request
    * key is returned unchanged (the caller then discards its own object).
    */
-  insertReady(input: FileAssetReservation): Promise<FileAsset> {
+  /**
+   * Records a server-written object as a ready file. With `intentKey`, the object's write-ahead intent
+   * is locked first (failing when the orphan sweeper already reclaimed it) and removed with the insert;
+   * on a replay the intent is kept, because the caller still has to delete its own unrecorded object.
+   */
+  insertReady(input: FileAssetReservation, intentKey?: string): Promise<FileAsset> {
     return this.database.transaction(async tx => {
+      if (intentKey !== undefined) await FileObjectIntents.lock(tx, intentKey);
       await lockOwnerQuota(tx, input.scope);
       const replay = await tx.query<FileAssetRow>('SELECT * FROM file_assets WHERE "ownerId"=$1 AND "idempotencyKey"=$2', [input.scope, input.idempotencyKey]);
       if (replay.rows[0]) return fromRow(replay.rows[0]);
@@ -103,6 +110,7 @@ export class PostgresFileAssetRepository implements FileAssetRepository {
         INSERT INTO file_assets ("id", "ownerId", "idempotencyKey", "objectKey", "fileName", "sha256", "size", "mimeType", "state", "createdAt", "updatedAt")
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'ready',$9,$9) RETURNING *
       `, [input.id, input.scope, input.idempotencyKey, input.objectKey, input.fileName, input.sha256, input.size, input.mimeType, new Date(input.createdAt)]);
+      if (intentKey !== undefined) await FileObjectIntents.settle(tx, intentKey);
       return fromRow(inserted.rows[0]);
     });
   }

@@ -6,6 +6,7 @@ import { BufferedFileManagerStore, FILE_MANAGER, FileAssetError, PrivateFileAsse
 import type { FileAsset, FileManager } from '@zucker-framework/storage';
 import { ApplicationDatabase } from '../database';
 import { FileQuotaExceededError, PostgresFileAssetRepository, type FileOwnerQuota } from './file-asset.repository';
+import { FileObjectIntentLostError, FileObjectIntents, graceMilliseconds } from './file-object-intents';
 import { DEFAULT_OWNER_MAX_BYTES, DEFAULT_OWNER_MAX_FILES, detectPrivateFileMime, FILES_OPTIONS, type FilesOptions, MAX_FILE_BYTES } from './files.config';
 
 function quotaExceeded(): HttpException {
@@ -36,12 +37,14 @@ export class FilesService {
   private readonly repository: PostgresFileAssetRepository;
   private readonly assets: PrivateFileAssetService<{ ownerId: string }>;
   private readonly quota: FileOwnerQuota;
+  private readonly intents: FileObjectIntents;
   private readonly logger = new Logger(FilesService.name);
   constructor(@Inject(DATABASE_ADAPTER) private readonly database: ApplicationDatabase,
     @Inject(FILE_MANAGER) private readonly manager: FileManager, @Inject(FILES_OPTIONS) private readonly options: FilesOptions) {
     if (options.maxObjectBytes > MAX_FILE_BYTES) throw new Error('Private file limit exceeds the HTTP upload boundary');
     this.quota = { maxBytes: options.maxOwnerBytes ?? DEFAULT_OWNER_MAX_BYTES, maxFiles: options.maxOwnerFiles ?? DEFAULT_OWNER_MAX_FILES };
     this.repository = new PostgresFileAssetRepository(database, this.quota);
+    this.intents = new FileObjectIntents(database);
     this.assets = new PrivateFileAssetService({ repository: this.repository,
       objects: new BufferedFileManagerStore(manager, options.maxObjectBytes), maxObjectBytes: options.maxObjectBytes,
       authorize: (context, access) => !!context.ownerId && context.ownerId === access.scope, detectMimeType: detectPrivateFileMime });
@@ -88,6 +91,11 @@ export class FilesService {
    * verified, then recorded `ready` in one quota-checked transaction (the actual size counts toward
    * the owner's file quota). Any failure removes the object. Idempotent per (owner, key): an existing
    * ready file is returned without consuming the stream.
+   *
+   * Crash safety: a write-ahead intent for the object key is recorded before the first byte is uploaded
+   * and removed in the transaction that records the row (or after the object is discarded), so a crash
+   * in between leaves an intent the `file-orphans` sweeper uses to delete the unrecorded object. Uploads
+   * that run longer than a quarter of the grace period refresh the intent as bytes flow.
    */
   async storeGenerated(ownerId: string, key: string, input: GeneratedFileInput): Promise<FileAsset> {
     const idempotencyKey = this.validateRequestKey(key);
@@ -107,7 +115,11 @@ export class FilesService {
     const id = randomUUID(), objectKey = `private-assets/${id}`;
     const hash = createHash('sha256');
     let size = 0, head = Buffer.alloc(0);
-    const limit = input.maxBytes;
+    const limit = input.maxBytes, intents = this.intents;
+    const refreshMs = Math.max(1000, Math.floor(graceMilliseconds(this.options) / 4));
+    try { await intents.open(ownerId, objectKey, 'generated'); }
+    catch (error) { input.stream.destroy(); throw error; }
+    let touchedAt = Date.now();
     const counted = Readable.from((async function* () {
       for await (const chunk of input.stream) {
         const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
@@ -115,6 +127,11 @@ export class FilesService {
         if (size > limit) throw new PayloadTooLargeException({ code: 'FILE_TOO_LARGE', message: 'Generated file exceeds the configured size limit' });
         hash.update(buffer);
         if (head.length < 16) head = Buffer.concat([head, buffer.subarray(0, 16 - head.length)]);
+        // Awaited, so a sweeper that already reclaimed the key stops the upload instead of racing it.
+        if (Date.now() - touchedAt >= refreshMs) {
+          if (!await intents.touch(objectKey)) throw new FileObjectIntentLostError();
+          touchedAt = Date.now();
+        }
         yield buffer;
       }
     })());
@@ -124,20 +141,28 @@ export class FilesService {
       const sha256 = hash.digest('hex');
       await this.verifyObject(objectKey, size, sha256);
       const asset = await this.repository.insertReady({ id, scope: ownerId, idempotencyKey, objectKey, fileName, sha256, size,
-        mimeType: detectPrivateFileMime(head), createdAt: Date.now() });
+        mimeType: detectPrivateFileMime(head), createdAt: Date.now() }, objectKey);
       if (asset.id !== id) {
         // A concurrent attempt recorded this request first; keep its object, drop ours.
-        await this.discardObject(objectKey);
+        await this.discardUnrecorded(objectKey);
         if (asset.state !== 'ready') throw new FileAssetError('ASSET_NOT_READY');
       }
       return asset;
     } catch (error) {
       input.stream.destroy();
       // Remove a partial or unrecorded object (a no-op when nothing was written).
-      await this.discardObject(objectKey);
+      await this.discardUnrecorded(objectKey);
       if (error instanceof FileQuotaExceededError) throw quotaExceeded();
+      if (error instanceof FileObjectIntentLostError) throw new FileAssetError('UPLOAD_UNVERIFIED');
       throw error;
     }
+  }
+
+  /** Deletes an object no row references, then its intent; a failed delete leaves the intent for the sweeper. */
+  private async discardUnrecorded(objectKey: string): Promise<void> {
+    if (!await this.discardObject(objectKey)) return;
+    try { await this.intents.close(objectKey); }
+    catch { this.logger.warn('generated_file_intent_close_failed'); }
   }
 
   /** Re-reads a just-written object as a stream and checks its size and SHA-256. */
@@ -156,9 +181,9 @@ export class FilesService {
     if (read !== size || hash.digest('hex') !== sha256) throw new FileAssetError('UPLOAD_UNVERIFIED');
   }
 
-  private async discardObject(objectKey: string): Promise<void> {
-    try { await this.manager.delete(objectKey); }
-    catch { this.logger.warn('generated_file_cleanup_failed'); }
+  private async discardObject(objectKey: string): Promise<boolean> {
+    try { await this.manager.delete(objectKey); return true; }
+    catch { this.logger.warn('generated_file_cleanup_failed'); return false; }
   }
 
   /**
@@ -178,15 +203,22 @@ export class FilesService {
     if (object.size !== asset.size) { object.stream.destroy(); throw new FileAssetError('CONTENT_UNAVAILABLE'); }
     const hash = createHash('sha256');
     let read = 0;
+    // The latest chunk is held back until the next one arrives, and the final chunk is released only
+    // after the size and SHA-256 match: a client never receives every declared byte of a bad object
+    // (Content-Length is the stored size), so a mismatch always reads as a truncated, failed download.
+    let held: Buffer | undefined;
     const verified = new Transform({
       transform(chunk: Buffer, _encoding, done) {
         read += chunk.length;
         if (read > asset.size) return done(new FileAssetError('CONTENT_UNAVAILABLE'));
         hash.update(chunk);
-        done(null, chunk);
+        const previous = held;
+        held = chunk;
+        done(null, previous);
       },
       flush(done) {
-        done(read === asset.size && hash.digest('hex') === asset.sha256 ? null : new FileAssetError('CONTENT_UNAVAILABLE'));
+        if (read !== asset.size || hash.digest('hex') !== asset.sha256) return done(new FileAssetError('CONTENT_UNAVAILABLE'));
+        done(null, held);
       },
     });
     object.stream.on('error', error => verified.destroy(error));

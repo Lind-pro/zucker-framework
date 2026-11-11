@@ -53,7 +53,9 @@ export class SubscriptionCycleService {
           throw new HostedCheckoutError('conflict', 'Subscription cycle evidence changed');
         return { receipt: existing, granted: false };
       }
-      if (canonicalMoney(binding.money) !== paid)
+      const initial = payment.paymentId === binding.initialPaymentId && payment.paymentKind === binding.initialPaymentKind;
+      // Only the initial payment may carry a frozen first-invoice discount; renewals pay the list price.
+      if (canonicalMoney(initial && binding.initialMoney ? binding.initialMoney : binding.money) !== paid)
         throw new HostedCheckoutError('verification_failed', 'Paid cycle amount differs from the frozen offer');
       const claimed = await transaction.findPayment({ providerId: selection.providerId, accountScope: selection.accountScope,
         paymentKind: payment.paymentKind, paymentId: payment.paymentId });
@@ -69,8 +71,7 @@ export class SubscriptionCycleService {
         periodStart, periodEnd,
         paymentId: payment.paymentId, paymentKind: payment.paymentKind, recordId: payment.recordId,
         paidMoney: structuredClone(payment.paidMoney), paidAt: new Date(payment.paidAt),
-        policyVersion: binding.policyVersion, policy, initial: payment.paymentId === binding.initialPaymentId
-          && payment.paymentKind === binding.initialPaymentKind,
+        policyVersion: binding.policyVersion, policy, initial,
         fulfilledAt: this.now(),
       };
       await transaction.insertReceipt(structuredClone(receipt));
