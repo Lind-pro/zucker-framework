@@ -128,7 +128,9 @@ const artifacts = orderReleasePackages(manifest.packages.map((artifact) => {
     const catalog = JSON.parse(execFileSync('tar', ['-xOf', tarball, '--', 'package/dist/release-catalog.json'], { encoding: 'utf8' }));
     if (!catalog.versions || typeof catalog.versions !== 'object') throw new Error('CLI release catalog is missing');
     // These are scaffold targets, not runtime dependencies to install with CLI.
-    releaseDependencies = Object.keys(catalog.versions).filter((name) => name !== packed.name);
+    // create-app depends on the CLI (it only wraps `zucker create`), so it must publish after it, not before.
+    releaseDependencies = Object.keys(catalog.versions)
+      .filter((name) => name !== packed.name && name !== '@zucker-framework/create-app');
   }
   return { ...artifact, dependencies: packed.dependencies, peerDependencies: packed.peerDependencies,
     optionalDependencies: packed.optionalDependencies, releaseDependencies, tarball, sha1: sha1(tarball) };
