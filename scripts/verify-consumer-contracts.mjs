@@ -10,7 +10,8 @@ const tsc = join(directory, 'node_modules/typescript/bin/tsc');
 const run = (args, cwd = directory) => execFileSync(process.execPath, args, { cwd, encoding: 'utf8', stdio: 'pipe' });
 const write = (name, value) => writeFileSync(join(directory, name), typeof value === 'string' ? value : `${JSON.stringify(value, null, 2)}\n`);
 
-const strictNames = names.filter((name) => !['@zucker-framework/cli', '@zucker-framework/fe-form'].includes(name));
+// Bin-only packages (cli, create-app) ship no importable API; importing create-app would run the scaffolder.
+const strictNames = names.filter((name) => !['@zucker-framework/cli', '@zucker-framework/create-app', '@zucker-framework/fe-form'].includes(name));
 for (const format of ['mts', 'cts']) {
   write(`contract-types.${format}`, strictNames.map((name, index) => format === 'mts'
     ? `import * as p${index} from ${JSON.stringify(name)}; void p${index};`
@@ -56,7 +57,7 @@ const html = renderToString(createElement(DynamicForm, {
 assert(html.includes('Release smoke') && html.includes('Synthetic value'));\n`);
 run(['frontend-render.mjs']);
 
-const runtimeNames = names.filter((name) => !name.startsWith('@zucker-framework/fe-') && !['@zucker-framework/cli', '@zucker-framework/ext-kit'].includes(name));
+const runtimeNames = names.filter((name) => !name.startsWith('@zucker-framework/fe-') && !['@zucker-framework/cli', '@zucker-framework/create-app', '@zucker-framework/ext-kit'].includes(name));
 write('runtime-contract.mjs', `import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
