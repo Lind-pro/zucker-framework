@@ -1,5 +1,13 @@
 # @zucker-framework/dashboard
 
+## 1.0.20
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies [5280170]
+  - @zucker-framework/core@1.0.20
+
 ## 1.0.19
 
 ### Patch Changes

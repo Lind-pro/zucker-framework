@@ -1,6 +1,6 @@
 {
   "name": "@zucker-framework/fe-admin",
-  "version": "1.0.19",
+  "version": "1.0.20",
   "description": "Reusable Radix + Tailwind back-office shell, component kit and management pages for Zucker applications.",
   "main": "dist/index.js",
   "module": "dist/index.mjs",

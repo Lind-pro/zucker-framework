@@ -1,5 +1,141 @@
 # @zucker-framework/cli
 
+## 1.0.20
+
+### Patch Changes
+
+- Frontend packages, CLI and the bundled admin/web templates (review fixes).
+
+  **fe-form**
+  - `DynamicForm` accepts `httpGet` (authenticated fetcher) and `definitionBasePath` for `formId` mode. The definition endpoint requires `JwtAuthGuard` + `form:query`, so pass e.g. a fe-http-client `get`; the default `fetch` now sends same-origin credentials. The `{ status, code, message, result }` envelope is unwrapped and a malformed payload becomes a load error instead of a render crash. `formId` is URL-encoded, stale responses are ignored, and an inline `httpGet` no longer triggers a refetch on every render.
+  - Validators read the server parameter names (`min`, `max`, `pattern`) and still accept the legacy `value`. An invalid or missing pattern/limit skips that rule instead of throwing during render or accepting everything.
+  - `onFinish` receives values in the server's shapes: JSON → object, ARRAY → array typed by `elementType` (ARRAY fields are now a tag input), DATE → `YYYY-MM-DD`, DATETIME → ISO string, FILE → the result of the new `uploadFile(file, field)` prop (raw `File` objects without it; previously antd `UploadFile` objects). **Behaviour change:** callers that parsed the JSON text or read `UploadFile` objects themselves must drop that step.
+  - `field.defaultValue` seeds the form (caller `initialValues` win). `layout.labelPosition` (server spelling) is supported next to `labelAlign`; invalid `columns` fall back to one column. Remote ENUM options handle failures (`optionsLoadFailedText` message) and ignore stale loads.
+  - JSON fields accept only a JSON object or array (the server checks `typeof === 'object'`); invalid JSON reaching submit (for example from a custom renderer without the validator) is shown as a field error instead of an unhandled rejection, and `onFinish` is not called. ARRAY options keep their declared number/boolean value when no `elementType` is set.
+  - New exports: `normalizeFormValues`, `definitionInitialValues`, `unwrapFormDefinition`, `compilePattern`, `FormValueError`, `parseJsonFieldText` and their types.
+
+  **fe-analytics**
+  - **Behaviour change:** `referrer` drops the query string and fragment by default (`referrerPolicy: 'origin-path'`). Use `referrerPolicy: 'full'` for the old value, or `'origin'` / `'none'`. `sanitizeReferrer` is exported.
+  - Same-origin beacons are sent as an `application/json` Blob so JSON-only body parsers accept them; cross-origin beacons stay `text/plain` to avoid a CORS preflight.
+
+  **fe-admin**
+  - Post-login redirect also rejects control characters (`/\t/evil.com`).
+  - A new filter or new `deps` clears the previous rows, so a failed load can no longer show actionable rows of another query.
+  - Clickable rows expose a named "Open record" button (visible on focus) instead of a focusable `<tr>`/`role="button"` `<dl>`; pointer row clicks are unchanged.
+  - `ResourceTable` takes `pageSizeOptions`; a single option hides the page-size selector.
+  - Subscriptions: clearing an end date sends `endDate: null` (the server rejects it with a clear message) instead of silently keeping the stored date. AI models: clearing a stored temperature/max tokens sends `null`, which the catalog accepts; changing the provider or Base URL requires re-entering the API key in the form (the catalog would otherwise reject the save with 400).
+
+  **cli**
+  - `zucker add` installs the framework package and its Nest peers at the versions from the CLI's release catalog, exits non-zero when the install fails, and rejects prototype keys such as `constructor`.
+  - **Behaviour change:** `zucker ext` only runs from a framework source checkout (it never reads `node_modules/templates`), `sync-server` refuses to overwrite files without the AUTO-GENERATED banner, and `create` validates options (`#rrggbb` colours, single-line bounded text) and escapes substitutions per file type (JSON/JS string escaping, HTML entities); non-text files are copied unchanged.
+  - `zucker doctor` prints only the length of `JWT_SECRET`, checks `.env` (or `.env.local`) and requires Node >= 22.12.0 like `engines`.
+  - `zucker ai status` and `smoke` no longer run schema DDL; only `store init`, `login` and `profile import` do. A missing table yields a hint to run `zucker ai store init`.
+  - `init --template server` only uses `templates/server` from a real framework checkout.
+
+  **templates (bundled by the CLI)**
+  - web: baseline security headers on every route (`frame-ancestors 'none'`/`X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy`, `Permissions-Policy`, `base-uri`/`object-src` CSP, HSTS in production). The layout forwards an `x-nonce` request header to SiteAnalytics/SiteConnections for consumers adding a strict CSP. Layout reads run concurrently and site settings time out after 3 s (was 8 s + 3 s sequentially). Download object URLs are revoked after 60 s.
+  - admin: the content table is locked to the API's fixed page size of 20; the form-definition list drops the nonexistent "Updated" column (the `name$like` filter relies on the FormController fix in `@zucker-framework/admin`).
+
+- 5280170: Launch baseline (phase 1): plans that grant credits, admin-editable credit packs, product policies,
+  transactional mail, block-based landing pages and a `zucker create` workspace.
+
+  **BREAKING: `GET /billing/plans` returns an object instead of an array.** The public catalog is now
+  `{ plans, packs, checkout }`: `plans` is the former array (each price gains `credits` and
+  `creditExpiry` (`'period'`, days or `null`), plans gain `featured`, `badge`, `highlights` and, for a
+  signed-in caller, `current`); `packs` lists purchasable credit packs; `checkout` is
+  `{ defaultProvider, allowProviderChoice }`. Migration: read `response.plans` where the array was used.
+  A request with a valid bearer token is answered `private, no-store`; an invalid token is treated as
+  anonymous. `GET /billing/currencies` is new.
+
+  **New projects default to English.** `zucker create <name> [--locale en|zh]` (and
+  `pnpm create @zucker-framework/app <name>`) chooses the default routed locale at creation time;
+  the default is `en` and both locales always ship. Existing projects keep their configured locale.
+
+  - payment / fe-types / fe-admin: plan prices carry `credits` and `creditExpiry`; plan presentation
+    fields and translations (`nameI18n`, `descriptionI18n`, `badgeI18n`, `highlightsI18n`). New
+    `CreditPackCatalogService`, `validateCreditPackWrite` and offer ids `plan:<id>:<interval>:<CUR>` /
+    `pack:<id>:<CUR>`. fe-admin adds the Credit packs page (`/credit-packs`, `plans:*` permissions) and
+    connection apply-mode badges (hot / restart).
+  - credit: `consumeOrder: 'expiry_first'` draws the soonest-expiring lots first (never-expiring last);
+    the default stays `'fifo'`.
+  - fe-site: site documents version 2 (validator accepts v1 and v2, returns v2) with hero variants,
+    logo cloud, stats, steps, testimonials, showcase, pricing, newsletter, blog list, changelog and
+    media blocks; every href and image is re-checked with `safeSiteHref`.
+  - fe-blocks (new): fetch-free React Server Component renderer (`BlockRenderer`) and theme registry
+    (`defineTheme`, `resolveThemeBlock`, `--zb-*` tokens) for validated site documents.
+  - core: `classifyAddress`, `resolvePublicAddress`, `assertPublicOutboundUrl`, `createPinnedLookup`,
+    `pinnedFetch` and `createPublicFetch` (DNS-pinned, public addresses only, no redirects). The rule
+    engine HTTP action uses the same implementation; its behaviour is unchanged.
+  - cli / create-app (new): `zucker create` generates a pnpm workspace (`apps/server`, `apps/web`,
+    `apps/admin`), Dockerfiles, Docker Compose (PostgreSQL, Redis, MinIO, Mailpit, one-shot
+    migrations) and one root `.env` with generated secrets. `zucker doctor` checks key lengths,
+    origins, database reachability and migration state.
+  - notification: `EmailProvider` no longer attempts SMTP AUTH when user and password are both empty
+    (local catchers and IP-allowlisted relays).
+  - logging: persisted log values replace U+0000 (PostgreSQL rejects it in text/jsonb, which dropped
+    the whole log row).
+
+  Server template (copied by `zucker create` / `zucker init`, not versioned): hot-applied product
+  policies (`account`, `billing`) with an admin Policies page; registration switch, optional email
+  verification, initial role and welcome credits granted once (in the sign-up transaction, or a retry
+  task committed with it); sign-up acquisition data; Resend or SMTP for account and transactional
+  mail with editable templates and purchase receipts; `changelog` content kind, file-backed starter
+  content (published by `pnpm account:admin`), signed Web cache revalidation; remote file imports
+  through `createPublicFetch`; payment callbacks that fail verification answer 400. New scripts
+  `pnpm account:role` and `pnpm content:seed`. Run `prisma migrate deploy`: the migrations are
+  additive (plan credits and credit packs, account acquisition, changelog kind, starter-data markers
+  and the new starter menus).
+
+- 1696a82: Platform hardening (phase 4): every connection profile applies without a restart, payment credentials
+  are kept per revision, and generated projects ship assistant skills. All changes are additive.
+
+  - config: new subpath `@zucker-framework/config/connections` with the connection-profile machinery
+    (`defineConnectionProfile`, `composeConnectionProfiles`, field validation, the
+    endpoint-follows-secret rule), `ConnectionProfileStore` (advisory lock, revision compare-and-swap,
+    same-transaction audit callback, encrypted revision archive in `connection_profile_revisions`,
+    `deleteRevisions` that never deletes the current revision), `ConnectionRuntime` (`environment`,
+    `liveEnvironment`, `environmentAt`, `revisions`, `currentRevision`) and `RuntimeProviderSlot`
+    (`ttl` or `strict` freshness, leased instances disposed after their last user, a failed build keeps
+    the previous instance). The package root export is unchanged.
+  - payment: `HostedCheckoutOptions.providers` also accepts a resolver (`ids`, `current`, `forOrder`,
+    `webhookCandidates`, at most 8 candidates, own account only); the service captures one adapter per
+    operation, and a verified webhook can never settle an order of another account scope. The existing
+    array form behaves as before. `staticHostedCheckoutProviders` is exported. Orders may carry a
+    `configRevision`.
+  - auth, notification, storage, ai, payment: plain-data connection descriptors
+    (`connection-descriptor.ts`, one export each) with stable ids, environment keys and label keys; no
+    new dependency.
+  - cli: project-template bundles carry an optional `skills` field; `create` and `init` install the
+    bundled skills (brand quick-start, page builder, feature builder, provider setup, deploy checklist)
+    into `.agents/skills` with `.claude/skills` links, never overwriting, never following links out of the
+    project, and only warning when a directory is unwritable. New exports `installConsumerAgentSkills`,
+    `validateConsumerSkills` and `CONSUMER_SKILL_LIMITS` in `@zucker-framework/cli/agent-instructions`.
+  - fe-admin: the Connections page shows per-profile apply errors (`applyError`), the retained revision
+    count and the payment hot-apply notice, and asks for confirmation before a private-storage location
+    change (409 `DATA_LOCATION_CHANGE_UNACKNOWLEDGED`), resending with `acknowledgeDataLocationChange`.
+
+  Templates (not published packages): payment, sign-in, mail, delivery, storage and AI profiles are
+  `applyMode: 'hot'`. New payment orders record `payment-<id>@<revision>` and use the current revision;
+  existing orders, subscriptions and refunds use the newest retained revision of their own account (D12).
+  Superseded payment revisions are purged only by an operator, older than
+  `CONNECTION_REVISION_RETENTION_DAYS` (default and minimum 400; D13). A storage location change while files
+  exist needs explicit acknowledgement (D14). New migration `20261112010000_connection_revisions` (it
+  archives the current revision of each saved profile at start-up). New server script `content:check`.
+  Dockerfiles accept an optional `NPM_REGISTRY` build argument (default unchanged).
+
+  Generated workspace fixes found by the packed-artefact launch acceptance (`pnpm acceptance:launch`):
+  - The compose stack could not start: MinIO no longer publishes pullable community images, and production
+    refused the internal `http://minio:9000` endpoint. Storage is now SeaweedFS (`chrislusf/seaweedfs:4.01`,
+    service still named `minio`, same `MINIO_*`/`FILES_S3_*` keys, app account limited to its bucket), and
+    `FILES_S3_INTERNAL_HTTP=true` (environment only) allows plain http to a single-label private host.
+  - CMS publish revalidation now reaches Web inside compose (`REVALIDATE_URL=http://web:3000`, and the web
+    container receives `REVALIDATE_SECRET`); before, published pages stayed stale for the cache lifetime.
+  - `pnpm setup:admin` seeds two example plans and one example credit pack (not purchasable until a
+    provider price is added) when `BILLING_CATALOG_JSON` has no offers.
+
+- Updated dependencies
+  - @zucker-framework/ai-access@1.0.20
+
 ## 1.0.19
 
 ### Patch Changes
