@@ -152,7 +152,7 @@ export class LocalFileStorage implements FileManager {
   ): Promise<{ stream: ReadStream; size: number }> {
     const filePath = this.resolvePath(key);
     const stat = fs.statSync(filePath);
-    // Position 0 of an empty file is a valid (empty) range, as before 1.0.19.
+    // Position 0 of an empty file is a valid (empty) range, as before 1.0.20.
     if (position === 0 && stat.size === 0 && (length === undefined || (Number.isSafeInteger(length) && length > 0))) {
       return { stream: createReadStream(filePath), size: 0 };
     }

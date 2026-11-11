@@ -24,7 +24,7 @@ export interface AnalyticsConfig {
   /**
    * How much of `document.referrer` is recorded. Default `origin-path` drops the query string and
    * fragment (OAuth `code`/`state`, payment session ids, tokens). `origin` keeps only the origin,
-   * `none` sends an empty referrer, `full` restores the pre-1.0.19 behaviour.
+   * `none` sends an empty referrer, `full` restores the pre-1.0.20 behaviour.
    */
   referrerPolicy?: AnalyticsReferrerPolicy;
 }

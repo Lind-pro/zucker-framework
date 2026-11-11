@@ -21,7 +21,7 @@ let warnedMissingProvider = false;
 function assertEndpointForProvider(provider: string | undefined, baseURL: string | undefined): void {
   if (baseURL?.trim()) return;
   if (!provider) {
-    // Opt-in in 1.0.19: without `provider` the key's owner is unknown, so a key for another
+    // Opt-in in 1.0.20: without `provider` the key's owner is unknown, so a key for another
     // provider would be sent to api.openai.com. Warn once; `provider` becomes required later.
     if (!warnedMissingProvider) {
       warnedMissingProvider = true;

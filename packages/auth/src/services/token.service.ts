@@ -21,7 +21,7 @@ export const TOKEN_CACHE = Symbol('TOKEN_CACHE');
 /**
  * Token 黑名单缓存 key 前缀. Keys are `token:blacklist:<sha256 hex of the token>` so raw bearer
  * tokens never become cache key names. The legacy `token:blacklist:<raw token>` form written by
- * 1.0.19 builds is still read (one release of compatibility), never written.
+ * 1.0.19 and earlier builds is still read (one release of compatibility), never written.
  */
 const BLACKLIST_PREFIX = 'token:blacklist:';
 /**
@@ -467,7 +467,7 @@ export class TokenService implements OnApplicationBootstrap {
     const cache = this.getCache();
     if (cache) {
       if (await cache.has(`${BLACKLIST_PREFIX}${digest}`)) return true;
-      // Legacy raw-token key written by 1.0.19 builds; remove after one release.
+      // Legacy raw-token key written by 1.0.19 and earlier builds; remove after one release.
       return cache.has(`${BLACKLIST_PREFIX}${token}`);
     }
     this.pruneRevocations();

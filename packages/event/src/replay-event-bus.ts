@@ -9,7 +9,7 @@ export interface ReplayEventBusOptions<TContext, TPayload> {
   /**
    * How long a completed (terminal) channel is retained so late subscribers still receive the
    * terminal event and completion. Default: `min(channelTtlMs, 30 000)`. `0` restores the
-   * pre-1.0.19 behaviour (channel removed at the terminal event).
+   * pre-1.0.20 behaviour (channel removed at the terminal event).
    *
    * When channel keys are reused across runs (e.g. keyed by document id), producers must call
    * {@link ReplayEventBus.begin} when a new run is accepted, or a subscriber of the new run that

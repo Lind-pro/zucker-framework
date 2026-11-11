@@ -367,7 +367,7 @@ export interface PendingRefund {
   hadPriorPartial: boolean;
 }
 
-/** Number of completed partial refunds recorded on the order (0 for orders from before 1.0.19). */
+/** Number of completed partial refunds recorded on the order (0 for orders from before 1.0.20). */
 export function partialRefundCount(order: Pick<Order, 'metadata'>): number {
   const value = Number(order.metadata?.[PARTIAL_REFUND_COUNT_KEY] ?? 0);
   return Number.isSafeInteger(value) && value > 0 ? value : 0;

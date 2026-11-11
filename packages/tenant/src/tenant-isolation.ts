@@ -12,7 +12,7 @@ export class TenantContextRequiredError extends Error {
 
 export interface RowLevelIsolationOptions {
   /**
-   * Restore the pre-1.0.19 fail-open behaviour: without a tenant context, queries are not
+   * Restore the pre-1.0.20 fail-open behaviour: without a tenant context, queries are not
    * filtered and created rows get no tenant. Defaults to false (throw).
    */
   allowMissingTenant?: boolean;

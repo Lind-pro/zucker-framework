@@ -202,7 +202,7 @@ export function AIModelsPage() {
             autoComplete: 'new-password',
           },
           { name: 'baseUrl', label: t('ai.baseUrl'), maxLength: 500 },
-          // Clearing a stored number on edit sends null, which the catalog accepts since 1.0.19.
+          // Clearing a stored number on edit sends null, which the catalog accepts since 1.0.20.
           { name: 'temperature', label: t('ai.temperature'), type: 'number', min: 0, max: 2 },
           { name: 'maxTokens', label: t('ai.maxTokens'), type: 'integer', min: 1 },
           { name: 'isEnabled', label: t('ai.enabled'), type: 'switch' },

@@ -390,7 +390,7 @@ export interface PlanPriceSnapshot {
 
 /**
  * Canonical amount for the currency, or a two-decimal amount stored for a three-decimal currency
- * (KWD, BHD, JOD, OMR, TND) before 1.0.19 used ISO exponents. The stored string is kept as is.
+ * (KWD, BHD, JOD, OMR, TND) before 1.0.20 used ISO exponents. The stored string is kept as is.
  */
 function isStoredSnapshotAmount(amount: string, currency: string): boolean {
   if (normalizePlanAmount(amount, currency) === amount) return true;
