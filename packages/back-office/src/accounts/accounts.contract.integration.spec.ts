@@ -137,6 +137,33 @@ run('account host on a differently named PostgreSQL schema', () => {
     expect(results.filter(result => result.status === 'fulfilled').length).toBeGreaterThanOrEqual(1);
     expect((await q('SELECT "credentialVersion" FROM users WHERE id=$1', [fresh.id])).rows[0].credentialVersion).toBe(results.filter(result => result.status === 'fulfilled').length);
   });
+
+  it('login.identifier email: registers with the configured typeId, verifies, and signs in by any case of the address', async () => {
+    const f = make({ login: { identifier: 'email' }, signup: { typeId: 'user' } });
+    await f.accounts.register({ username: 'user_pg_email', email: ' PG-Email@Example.Invalid ', password: PASSWORD, locale: 'en' });
+    expect((await q('SELECT email, "typeId" FROM users WHERE username=$1', ['user_pg_email'])).rows[0]).toEqual({ email: 'pg-email@example.invalid', typeId: 'user' });
+    // Unverified (code mode, verification required): the same 401 as an unknown address.
+    const unverified = await f.accounts.login({ email: 'pg-email@example.invalid', password: PASSWORD }).catch(error => error);
+    const unknown = await f.accounts.login({ email: 'nobody-pg@example.invalid', password: PASSWORD }).catch(error => error);
+    expect(unverified).toBeInstanceOf(UnauthorizedException);
+    expect(unknown).toBeInstanceOf(UnauthorizedException);
+    expect(unverified.getResponse()).toEqual(unknown.getResponse());
+    await f.accounts.consumeEmail({ email: 'pg-email@example.invalid', code: f.mailer.last('verify-email')!.secret }, 'verify-email');
+    const login = await f.accounts.login({ email: 'PG-EMAIL@example.invalid', password: PASSWORD }) as { userId: string };
+    expect(login.userId).toBe((await q('SELECT id FROM users WHERE username=$1', ['user_pg_email'])).rows[0].id);
+    await expect(f.accounts.login({ username: 'user_pg_email', password: PASSWORD })).rejects.toSatisfy(error => (error as { getStatus(): number }).getStatus() === 400);
+  });
+
+  it('login.identifier username-or-email: the login field takes either, an exact username wins', async () => {
+    const f = make({ login: { identifier: 'username-or-email' } });
+    const owner = await f.createUser('pg-either', { email: 'pg-either@example.invalid' });
+    const named = await f.createUser('pg-other@example.invalid', { email: 'pg-named@example.invalid' });
+    await f.createUser('pg-other', { email: 'pg-other@example.invalid' });
+    expect(await f.accounts.login({ login: 'pg-either', password: PASSWORD })).toMatchObject({ userId: owner.id });
+    expect(await f.accounts.login({ login: 'PG-Either@example.invalid', password: PASSWORD })).toMatchObject({ userId: owner.id });
+    expect(await f.accounts.login({ login: 'pg-other@example.invalid', password: PASSWORD })).toMatchObject({ userId: named.id });
+    await expect(f.accounts.login({ login: 'pg-missing@example.invalid', password: PASSWORD })).rejects.toBeInstanceOf(UnauthorizedException);
+  });
 });
 
 /**

@@ -185,6 +185,12 @@ Page notes:
 - **aiModels** — provider ids are product vocabulary: set `ai.providers`; without it the page shows a
   warning and offers no create.
 
+`login.identifier` (`'username'` by default, `'email'` or `'username-or-email'`) must match the
+server's `BackOfficeAccountsModule` `login.identifier`: it selects the sign-in label and subtitle
+(`shell.username` / `shell.email` / `shell.usernameOrEmail`), the input type (`email` for e-mail
+only) and the request field (`username`, `email` or `login`), through `loginIdentifierInput` /
+`loginRequestBody` of `@zucker-framework/fe-auth`.
+
 `login.forgotPasswordHref` shows a "Forgot password?" link under the sign-in form (a site-relative
 path or an http(s) URL, checked by `resolveConfig`). Set it only when the server offers password reset
 (for example the site's forgot-password page backed by `POST /authorize/forgot-password`).

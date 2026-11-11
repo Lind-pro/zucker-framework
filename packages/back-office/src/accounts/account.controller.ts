@@ -85,7 +85,7 @@ export function createAccountController(config: AccountControllerConfig = {}): T
       // looser one for the account across all clients (distributed guessing). Successful logins are refunded.
       // Compositions that do not configure these limiters keep only the per-IP guard.
       // A correct password with two-factor on returns `{twoFactorRequired: true, challenge}` and no cookie.
-      const account = loginAccountKey(body);
+      const account = loginAccountKey(body, this.options.login.identifier);
       const refund = await spendBudgets(this.limiter, account
         ? [[LOGIN_LIMITER, `login:${account}:${req.ip ?? 'unknown-client'}`], [LOGIN_ACCOUNT_LIMITER, `login-account:${account}`]] : []);
       const result = await this.accounts.login(body);

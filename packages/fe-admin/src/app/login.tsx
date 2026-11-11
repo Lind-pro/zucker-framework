@@ -1,11 +1,13 @@
-import { KeyRound, Lock, User } from 'lucide-react';
+import { KeyRound, Lock, Mail, User } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { Navigate, useNavigate, useSearchParams } from 'react-router';
-import { isSafeRelativeRedirect } from '@zucker-framework/fe-auth';
+import { isSafeRelativeRedirect, loginIdentifierInput } from '@zucker-framework/fe-auth';
 import { Button } from '../components/button';
 import { Notice, toast } from '../components/feedback';
 import { Field, Input } from '../components/inputs';
 import { useAdminI18n } from '../i18n/context';
+import type { AdminMessageKey } from '../i18n/zh-CN';
+import type { LoginIdentifier } from '@zucker-framework/fe-auth';
 import { useAdmin } from './context';
 import { LanguageSwitcher } from './layout';
 import { AdminTwoFactorRequiredError } from './session';
@@ -22,6 +24,13 @@ export function twoFactorInput(mode: TwoFactorStep['mode'], value: string): stri
   if (mode === 'code') return /^\d{6,8}$/.test(compact) ? compact : null;
   return /^[A-Za-z0-9-]{10,32}$/.test(compact) ? compact : null;
 }
+
+const IDENTIFIER_LABELS = {
+  username: 'shell.username', email: 'shell.email', 'username-or-email': 'shell.usernameOrEmail',
+} as const satisfies Record<LoginIdentifier, AdminMessageKey>;
+const IDENTIFIER_SUBTITLES = {
+  username: 'shell.loginSubtitle', email: 'shell.loginSubtitleEmail', 'username-or-email': 'shell.loginSubtitleUsernameOrEmail',
+} as const satisfies Record<LoginIdentifier, AdminMessageKey>;
 
 /** Sign in through the account module (`POST /authorize/login`, then `GET /authorize/me`). */
 /**
@@ -41,6 +50,10 @@ export function LoginPage() {
   const isAuthenticated = session.store((state) => state.isAuthenticated);
   const token = session.store((state) => state.token);
   const [username, setUsername] = useState('');
+  // Label, input type and request field follow the server's `login.identifier` option.
+  const identifier = loginIdentifierInput(config.loginIdentifier);
+  const identifierLabel = t(IDENTIFIER_LABELS[config.loginIdentifier]);
+  const IdentifierIcon = config.loginIdentifier === 'email' ? Mail : User;
   const [password, setPassword] = useState('');
   const [errors, setErrors] = useState<{ username?: string; password?: string }>({});
   const [failed, setFailed] = useState(false);
@@ -54,7 +67,7 @@ export function LoginPage() {
   async function submit(event: FormEvent) {
     event.preventDefault();
     const next = {
-      username: username.trim() ? undefined : t('common.required', { label: t('shell.username') }),
+      username: username.trim() ? undefined : t('common.required', { label: identifierLabel }),
       password: password ? undefined : t('common.required', { label: t('shell.password') }),
     };
     setErrors(next);
@@ -118,7 +131,7 @@ export function LoginPage() {
           {config.logo && <div className="mb-3 flex justify-center">{config.logo}</div>}
           <h1 className="text-xl font-semibold">{config.brandName ?? t('shell.loginTitle')}</h1>
           <p className="text-sm text-muted-foreground">
-            {step ? t(step.mode === 'code' ? 'shell.twoFactorSubtitle' : 'shell.recoverySubtitle') : t('shell.loginSubtitle')}
+            {step ? t(step.mode === 'code' ? 'shell.twoFactorSubtitle' : 'shell.recoverySubtitle') : t(IDENTIFIER_SUBTITLES[config.loginIdentifier])}
           </p>
         </div>
         {failed && <Notice tone="danger" title={t(step ? 'shell.twoFactorFailed' : 'shell.loginFailed')} />}
@@ -169,14 +182,18 @@ export function LoginPage() {
           </form>
         ) : (
           <form noValidate onSubmit={(event) => void submit(event)} className="space-y-4" aria-label={t('shell.login')}>
-            <Field label={t('shell.username')} error={errors.username} required>
+            <Field label={identifierLabel} error={errors.username} required>
               {({ id, describedBy, invalid }) => (
                 <div className="relative">
-                  <User className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+                  <IdentifierIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
                   <Input
                     id={id}
-                    name="username"
-                    autoComplete="username"
+                    name={identifier.field}
+                    type={identifier.type}
+                    inputMode={identifier.inputMode}
+                    autoComplete={identifier.autoComplete}
+                    autoCapitalize="none"
+                    spellCheck={false}
                     autoFocus
                     className="h-10 pl-9"
                     aria-describedby={describedBy}

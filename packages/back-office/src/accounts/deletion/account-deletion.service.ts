@@ -42,7 +42,7 @@ export class AccountDeletionService implements OnModuleInit, AccountDeletionRunn
   private get feature() { return this.options.features.deletion ?? { mount: true }; }
 
   /**
-   * `POST /authorize/deletion {confirm: <username>, reason?, password?}` → `{scheduled: true, executeAfter}`.
+   * `POST /authorize/deletion {confirm: <username, or the address with an e-mail login identifier>, reason?, password?}` → `{scheduled: true, executeAfter}`.
    * 409 with `ACCOUNT_LAST_SUPERADMIN` or a product refusal (`assertDeletable`).
    */
   async schedule(userId: string, sessionId: string, body: unknown): Promise<{ scheduled: true; executeAfter: string }> {
@@ -51,7 +51,7 @@ export class AccountDeletionService implements OnModuleInit, AccountDeletionRunn
     const policy = await this.accounts.policy();
     if (!policy.deletionEnabled) throw accountSecurityError(403, E.deletionDisabled, 'Account deletion is turned off');
     const user = await this.accounts.assertRecentAuthentication(userId, sessionId, input.password);
-    if (input.confirm !== user.username) throw accountSecurityError(400, E.deletionConfirmMismatch, 'Type your username to confirm');
+    if (!this.confirms(input.confirm, user)) throw accountSecurityError(400, E.deletionConfirmMismatch, 'Type your username to confirm');
     const now = this.clock();
     const executeAfter = new Date(now.getTime() + policy.deletionGraceDays * DAY_MS);
     const scheduled = await this.database.$transaction(async tx => {
@@ -103,9 +103,10 @@ export class AccountDeletionService implements OnModuleInit, AccountDeletionRunn
    * `{cancelled: true}`. The account can sign in again (two-factor still applies); API keys stay revoked.
    */
   async cancel(body: unknown): Promise<{ cancelled: true }> {
-    const input = stringFields(body, ['username', 'password', 'ticket']);
+    const { field } = this.options.login;
+    const input = stringFields(body, [field, 'password', 'ticket']);
     if (input.ticket !== undefined) {
-      if (input.username !== undefined || input.password !== undefined || !TICKET.test(input.ticket)) throw new BadRequestException('Invalid ticket');
+      if (input[field] !== undefined || input.password !== undefined || !TICKET.test(input.ticket)) throw new BadRequestException('Invalid ticket');
       try {
         await this.database.$transaction(async tx => {
           const user = await this.accounts.consumeTicket(tx, input.ticket!, 'cancel-deletion');
@@ -117,11 +118,18 @@ export class AccountDeletionService implements OnModuleInit, AccountDeletionRunn
       }
       return { cancelled: true };
     }
-    if (!input.username || !input.password) throw new BadRequestException('Username and password are required');
-    const user: UserEntity | null = await this.accounts.verifyPassword(input.username, input.password);
+    if (!input[field] || !input.password) throw new BadRequestException(field === 'username' ? 'Username and password are required' : 'Credentials are required');
+    const user: UserEntity | null = await this.accounts.verifyLoginPassword(input[field]!, input.password);
     if (!user?.status) throw new UnauthorizedException('Invalid credentials');
     await this.database.$transaction(tx => this.restore(tx, user.id));
     return { cancelled: true };
+  }
+
+  /** The typed confirmation: the username, or with an e-mail sign-in identifier also the account's address. */
+  private confirms(confirm: string | undefined, user: UserEntity): boolean {
+    if (confirm === undefined) return false;
+    if (confirm === user.username) return true;
+    return this.options.login.identifier !== 'username' && !!user.email && confirm.trim().toLowerCase() === user.email.toLowerCase();
   }
 
   private async restore(tx: DatabaseAdapter, userId: string): Promise<void> {

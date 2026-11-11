@@ -21,6 +21,8 @@ import {
 } from './accounts.tokens';
 import { AccountTwoFactorService, secondFactor } from './two-factor/two-factor.service';
 
+const LOGIN_FIELD_LABELS = { username: 'Username', email: 'Email', login: 'Username or email' } as const;
+
 /** `register` result: verification mail sent, or (verification off) a signed-in session. */
 export type RegisterResult = { verificationRequired: true }
   | ({ verificationRequired: false } & RefreshTokenPair & { userId: string });
@@ -213,7 +215,7 @@ export class AccountService implements OnApplicationShutdown {
         // turning the policy back on requires these accounts to verify before their next sign-in.
         const user = await this.users().addUser({
           username: input.username, password: input.password, email, locale,
-          name: input.username, typeId: 'member', status: true, emailVerified: false,
+          name: input.username, typeId: this.options.signup.typeId, status: true, emailVerified: false,
         }, { transaction: tx });
         return { user, recorded: this.signupHooks ? await this.signupHooks.recordSignup(tx, user.id, signup, policy) : null };
       });
@@ -358,27 +360,68 @@ export class AccountService implements OnApplicationShutdown {
     return { success: true };
   }
 
+  /**
+   * Password sign-in by the configured identifier (`login.identifier`: body `{username|email|login, password}`).
+   * Unknown, ambiguous, disabled and unverified accounts all answer the same 401.
+   */
   async login(body: unknown): Promise<SignInResult> {
-    const input = requiredFields(body, ['username', 'password']);
-    if (!input.username || !input.password) throw new BadRequestException('Username and password are required');
-    const user = await this.verifyPassword(input.username, input.password);
+    const { field } = this.options.login;
+    const input = requiredFields(body, [field, 'password']);
+    if (!input[field] || !input.password) throw new BadRequestException(`${LOGIN_FIELD_LABELS[field]} and password are required`);
+    const user = await this.verifyLoginPassword(input[field]!, input.password);
     if (!user?.status || !await this.emailRequirementMet(user)) throw new UnauthorizedException('Invalid credentials or email not verified');
     return this.completeSignIn(user, { kind: 'password' });
   }
 
   /**
-   * The account whose password matches, or null. Unknown usernames and password-less accounts cost the
-   * same one hash as a wrong password, so timing does not reveal which accounts exist.
+   * The account whose username (exact match) and password match, or null. Unknown usernames and
+   * password-less accounts cost the same one hash as a wrong password, so timing does not reveal which
+   * accounts exist.
    */
   async verifyPassword(username: string, password: string): Promise<UserEntity | null> {
-    const users = this.users();
-    const known = await users.findByUsername(username);
+    return this.checkPassword(username ? await this.users().findByUsername(username) : null, password);
+  }
+
+  /**
+   * Like `verifyPassword`, but the account is found by the configured `login.identifier`: a username, a
+   * normalized address, or either (an exact username match wins). Same one-hash cost for every miss.
+   */
+  async verifyLoginPassword(identifier: string, password: string): Promise<UserEntity | null> {
+    return this.checkPassword(await this.findLoginAccount(identifier), password);
+  }
+
+  /**
+   * The account a login identifier names under the configured option, or null. Addresses are trimmed and
+   * lower-cased — the form every host write stores — and must name exactly one account (an address shared
+   * by several legacy rows signs in nobody). With `'username-or-email'` and an `@` in the value both lookups
+   * run, so the query cost does not depend on which one matches.
+   */
+  async findLoginAccount(identifier: string): Promise<UserEntity | null> {
+    const mode = this.options.login.identifier;
+    if (typeof identifier !== 'string' || !identifier) return null;
+    const byEmail = mode === 'email' || (mode === 'username-or-email' && identifier.includes('@'));
+    const [username, email] = await Promise.all([
+      mode === 'email' ? null : this.users().findByUsername(identifier),
+      byEmail ? this.findByLoginEmail(identifier) : null,
+    ]);
+    return username ?? email;
+  }
+  private async findByLoginEmail(value: string): Promise<UserEntity | null> {
+    const email = value.trim().toLowerCase();
+    if (!email || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return null;
+    const rows = await this.model('users').findMany({ where: { email }, take: 2 }) as UserEntity[];
+    return rows.length === 1 ? rows[0]! : null;
+  }
+  /** Compares against the account's hash, or a dummy hash in the configured format when there is none. */
+  private async checkPassword(known: UserEntity | null, password: string): Promise<UserEntity | null> {
     if (!known?.password) {
       this.dummyHash ??= this.encoder.encode(randomUUID());
       await this.encoder.matches(password, await this.dummyHash);
       return null;
     }
-    return users.findByUsernameAndPassword(username, password);
+    if (!await this.encoder.matches(password, known.password)) return null;
+    const { password: _password, ...user } = known;
+    return user as UserEntity;
   }
 
   /**

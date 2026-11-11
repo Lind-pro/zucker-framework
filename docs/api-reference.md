@@ -20,6 +20,14 @@
 | fe-storage / 1.0.2 | `setCookie/getCookie/removeCookie/CookieOptions`：SSR安全，显式scope/expiry，不持有产品key和寿命 | [storage](../packages/fe-storage/README.md) |
 | ext-kit / 1.0.2 | cleanup/download completion/checkpoint、session/offscreen lease、scroll watchdog、popup恢复；licensing request/normalize/timeout政策端口（配置破坏性变化）；正式资产必须与声明一起交付 | [ext-kit](../packages/ext-kit/README.md) |
 
+### 待发布：账号宿主登录标识（fixed group patch）
+
+| 包 | 新契约 | 详细说明 |
+| --- | --- | --- |
+| back-office | `BackOfficeAccountsModule.forRoot({ login: { identifier: 'username' \| 'email' \| 'username-or-email' }, signup: { typeId } })`（默认 `'username'`/`'member'`，行为不变）；`AccountService.verifyLoginPassword/findLoginAccount`、`ACCOUNT_LOGIN_IDENTIFIER_FIELDS`、`loginAccountKey(body, identifier?)` | [back-office](../packages/back-office/README.md#sign-in-identifier) |
+| fe-auth | `loginIdentifierInput(identifier)`、`loginRequestBody(identifier, value, password)` | [fe-auth](../packages/fe-auth/README.md) |
+| fe-admin | `login.identifier`（标签、输入类型与请求字段） | [fe-admin](../packages/fe-admin/README.md) |
+
 ### 1.0.21 后台服务端宿主（未发布，fixed group patch）
 
 | 包 | 新契约 | 详细说明 |
@@ -772,6 +780,7 @@ function resolveModelNames(host, defaults, overrides): ModelNames; // 拒绝未�
 // /accounts
 BackOfficeAccountsModule.forRoot({ models, tables, tokens, passwordEncoder, verification: { mode: 'ticket' | 'code' },
   mailer /* class | instance | { useExisting: token } */, policy, signupHooks, cookie, origins, locales,
+  login: { identifier: 'username' | 'email' | 'username-or-email' }, signup: { typeId },   // 默认 'username' / 'member'
   signInMethods, features: { register, magicLink, twoFactor, deletion, avatar, apiKeys, oauth } });
 class AccountService; class AccountGuard; class AccountSessionCookie; class AccountSessionAdminHooks;
 function createAdministrator(db, admin, options); function syncMenus(db, catalog, options); function syncPermissions(db, codes, options);

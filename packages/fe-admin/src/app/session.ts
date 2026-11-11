@@ -5,6 +5,7 @@ import {
   createSessionRequestScope,
   createSessionSummaryStorage,
   jwtSessionKey,
+  loginRequestBody,
   type AuthStore,
   type CookieSessionRestoreResult,
 } from '@zucker-framework/fe-auth';
@@ -126,7 +127,8 @@ export interface AdminSession {
   needsRestore: () => boolean;
   restore: () => Promise<RestoreResult>;
   /** Throws {@link AdminTwoFactorRequiredError} when the account needs a second factor. */
-  login: (username: string, password: string) => Promise<AdminUser>;
+  /** `identifier` is a username, an address or either, per `login.identifier`. */
+  login: (identifier: string, password: string) => Promise<AdminUser>;
   /** Complete a two-factor sign-in (`POST <login>/two-factor`). */
   loginTwoFactor: (challenge: string, factor: AdminTwoFactorFactor) => Promise<AdminUser>;
   logout: () => Promise<void>;
@@ -229,10 +231,11 @@ export function createAdminSession(config: AdminAppConfig, resolved: ResolvedAdm
     usePermission: createUsePermission({ useAuthStore: store }),
     needsRestore: () => cookieSession.needsRestore(),
     restore: () => cookieSession.restore(),
-    async login(username, password) {
+    async login(identifier, password) {
       // Let a pending restore settle first so its result cannot replace this sign-in.
       await cookieSession.settled();
-      const result = await publicClient.post<{ token?: unknown }>(endpoints.login, { username, password });
+      // The identifier field follows `login.identifier` (`username` by default).
+      const result = await publicClient.post<{ token?: unknown }>(endpoints.login, loginRequestBody(resolved.loginIdentifier, identifier, password));
       // Servers without two-factor sign-in never return the flag: behaviour unchanged for them.
       const challenge = twoFactorChallenge(result);
       if (challenge) throw new AdminTwoFactorRequiredError(challenge);

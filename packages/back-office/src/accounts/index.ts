@@ -1,10 +1,10 @@
 // Public surface of `@zucker-framework/back-office/accounts` (work package F2).
 export { BackOfficeAccountsModule, deletionContributorProviders } from './accounts.module';
 export {
-  DEFAULT_ACCOUNTS_MODELS, DEFAULT_ACCOUNTS_TABLES, resolveAccountsOptions, accountOrigins, accountLocale, cookieSecure, requireSql, table as accountTable,
+  DEFAULT_ACCOUNTS_MODELS, DEFAULT_ACCOUNTS_TABLES, ACCOUNT_LOGIN_IDENTIFIER_FIELDS, resolveAccountsOptions, accountOrigins, accountLocale, cookieSecure, requireSql, table as accountTable,
   type AccountModelKey, type AccountTableKey, type AccountTables, type AccountFeatureName, type AccountPortRef, type BackOfficeAccountsOptions, type ResolvedAccountsOptions,
   type ResolvedAccountsFeatures, type AccountTwoFactorFeature, type AccountDeletionFeature, type AccountApiKeysFeature, type AccountOAuthFeature,
-  type AccountAvatarFeature,
+  type AccountAvatarFeature, type AccountLoginIdentifier,
 } from './accounts.options';
 export {
   ACCOUNTS_OPTIONS, ACCOUNTS_MAILER, ACCOUNTS_CLOCK, ACCOUNTS_POLICY, ACCOUNTS_SIGNUP_HOOKS, ACCOUNTS_PASSWORD_ENCODER, ACCOUNTS_ACCESS_VERIFIERS,

@@ -38,6 +38,19 @@ const OPTIONAL_TABLES: ReadonlySet<AccountTableKey> = new Set(['userPermissions'
   'userSettings', 'notifySubscribers', 'userTokens', 'userLoginHistory', 'userAcquisition']);
 export type AccountTables = Readonly<Record<AccountTableKey, string | null>>;
 
+/**
+ * What `POST /authorize/login` (and the password confirmation of deletion cancel) identifies the account by.
+ * `'username'`: body `{username, password}`, exact username match (the default, unchanged behaviour).
+ * `'email'`: body `{email, password}`, the address trimmed and lower-cased and matched against the stored
+ * (normalized) `users.email`. `'username-or-email'`: body `{login, password}`; an exact username match wins,
+ * otherwise a value containing `@` is matched as an address.
+ */
+export type AccountLoginIdentifier = 'username' | 'email' | 'username-or-email';
+/** Request-body field of each identifier option. */
+export const ACCOUNT_LOGIN_IDENTIFIER_FIELDS: Readonly<Record<AccountLoginIdentifier, 'username' | 'email' | 'login'>> = Object.freeze({
+  username: 'username', email: 'email', 'username-or-email': 'login',
+});
+
 export type AccountFeatureName = 'register' | 'magicLink' | 'twoFactor' | 'deletion' | 'avatar' | 'apiKeys' | 'oauth';
 /** `mount: false` = the feature is part of the deployment (the core honours it) but its routes are composed elsewhere. */
 interface Mountable { mount?: boolean; imports?: ModuleMetadata['imports']; providers?: Provider[] }
@@ -124,6 +137,13 @@ export interface BackOfficeAccountsOptions {
   mailer?: Type<AccountMailer> | AccountMailer | AccountPortRef;
   policy?: Type<AccountPolicySource> | AccountPolicySource;
   signupHooks?: Type<AccountSignupHooks>;
+  /** Password sign-in identifier (default `{ identifier: 'username' }`). */
+  login?: { identifier?: AccountLoginIdentifier };
+  /**
+   * Values of accounts the host creates (`POST /authorize/register`, OAuth sign-up). `typeId` defaults to
+   * `'member'`; product sign-up paths can read the resolved value from `AccountService.options.signup`.
+   */
+  signup?: { typeId?: string };
   /** Refresh cookie. `secure` may be a function read at construction. */
   cookie?: { name?: string; path?: string; sameSite?: 'lax' | 'strict' | 'none'; secure?: boolean | (() => boolean); domain?: string };
   /** Trusted `Origin` values of browser mutations (exact match); a function is read at construction. Default: none. */
@@ -179,6 +199,8 @@ export interface ResolvedAccountsOptions {
   readonly mailer?: Type<AccountMailer> | AccountMailer | AccountPortRef;
   readonly policy?: Type<AccountPolicySource> | AccountPolicySource;
   readonly signupHooks?: Type<AccountSignupHooks>;
+  readonly login: { readonly identifier: AccountLoginIdentifier; readonly field: 'username' | 'email' | 'login' };
+  readonly signup: { readonly typeId: string };
   readonly cookie: { readonly name: string; readonly path: string; readonly sameSite: 'lax' | 'strict' | 'none'; readonly secure: boolean | (() => boolean); readonly domain?: string };
   readonly origins: readonly string[] | (() => Iterable<string>);
   readonly locales: { readonly supported: readonly string[]; readonly default: string };
@@ -265,6 +287,11 @@ export function resolveAccountsOptions(input: BackOfficeAccountsOptions = {}): R
     if (!/^[a-z][a-z0-9-]{0,31}$/.test(name) || RESERVED_METHODS.has(name)) fail(`sign-in method "${name}" is invalid or reserved`);
     if (!method || typeof method.emailProof !== 'boolean') fail(`sign-in method "${name}" needs emailProof`);
   }
+  if (input.login !== undefined && (!input.login || typeof input.login !== 'object' || Array.isArray(input.login))) fail('login must be an object');
+  const identifier = input.login?.identifier ?? 'username';
+  if (!Object.hasOwn(ACCOUNT_LOGIN_IDENTIFIER_FIELDS, identifier)) fail('login.identifier must be "username", "email" or "username-or-email"');
+  if (input.signup !== undefined && (!input.signup || typeof input.signup !== 'object' || Array.isArray(input.signup))) fail('signup must be an object');
+  const typeId = text(input.signup?.typeId, 'member', 'signup.typeId', /^[A-Za-z0-9_.:-]{1,64}$/);
   const features = input.features ?? {};
   const apiKeys = feature(features.apiKeys, false);
   const oauth = feature(features.oauth, false);
@@ -319,6 +346,8 @@ export function resolveAccountsOptions(input: BackOfficeAccountsOptions = {}): R
       signInOnVerify: verification.signInOnVerify ?? false,
     }),
     mailer: input.mailer, policy: input.policy, signupHooks: input.signupHooks,
+    login: Object.freeze({ identifier, field: ACCOUNT_LOGIN_IDENTIFIER_FIELDS[identifier] }),
+    signup: Object.freeze({ typeId }),
     cookie: Object.freeze({ name: text(cookie.name, 'zucker-session', 'cookie.name', /^[A-Za-z0-9_-]{1,64}$/),
       path: text(cookie.path, '/', 'cookie.path', /^\/[\x21-\x7e]{0,127}$/), sameSite, secure: cookie.secure ?? true,
       ...(cookie.domain ? { domain: text(cookie.domain, '', 'cookie.domain', /^[A-Za-z0-9.-]{1,253}$/) } : {}) }),

@@ -1,4 +1,5 @@
 import type { LimiterConfig } from '@zucker-framework/rate-limiter';
+import { ACCOUNT_LOGIN_IDENTIFIER_FIELDS, type AccountLoginIdentifier } from './accounts.options';
 
 /**
  * Credential endpoints (login, registration, email verification, password reset and other
@@ -14,9 +15,9 @@ export const SESSION_REFRESH_LIMITER = 'session-refresh';
 export const SESSION_REFRESH_NETWORK_LIMITER = 'session-refresh-network';
 /** `GET /authorize/me`, per signed-in user: read on every page load, kept apart from `api-default`. */
 export const SESSION_READ_LIMITER = 'session-read';
-/** Password login, per normalized username + client IP (brute force from one source). */
+/** Password login, per normalized login identifier + client IP (brute force from one source). */
 export const LOGIN_LIMITER = 'login';
-/** Password login, per normalized username across every client (distributed guessing); looser to limit lockout abuse. */
+/** Password login, per normalized login identifier across every client (distributed guessing); looser to limit lockout abuse. */
 export const LOGIN_ACCOUNT_LIMITER = 'login-account';
 /** Second-factor guesses per account (login step-up, confirm, disable, recovery-code regeneration). */
 export const TWO_FACTOR_LIMITER = 'two-factor';
@@ -27,12 +28,17 @@ export const API_KEY_LIMITER = 'api-key';
 /** General per-user/per-IP budget of read endpoints; the consumer configures it (it is shared with other features). */
 export const API_DEFAULT_LIMITER = 'api-default';
 
-/** Normalized, bounded login identifier used as the per-account limiter key; undefined for malformed bodies. */
-export function loginAccountKey(body: unknown): string | undefined {
+/**
+ * Normalized (trimmed, lower-cased), bounded login identifier used as the per-account limiter key, read
+ * from the body field of the configured identifier option (`username`, `email` or `login`); undefined for
+ * malformed bodies. Addresses are normalized the same way the lookup normalizes them, so case variants
+ * of one address share one budget.
+ */
+export function loginAccountKey(body: unknown, identifier: AccountLoginIdentifier = 'username'): string | undefined {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined;
-  const username = (body as Record<string, unknown>).username;
-  if (typeof username !== 'string') return undefined;
-  const normalized = username.trim().toLowerCase();
+  const value = (body as Record<string, unknown>)[ACCOUNT_LOGIN_IDENTIFIER_FIELDS[identifier] ?? 'username'];
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.trim().toLowerCase();
   return normalized && normalized.length <= 256 ? normalized : undefined;
 }
 

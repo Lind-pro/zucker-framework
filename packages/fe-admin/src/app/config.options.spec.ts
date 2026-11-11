@@ -142,3 +142,12 @@ describe('matchesPath', () => {
     expect(findPage(pages, '/other')).toBeUndefined();
   });
 });
+
+describe('resolveConfig: login.identifier', () => {
+  it('defaults to username, keeps a valid option and rejects an unknown one', () => {
+    expect(resolve({}).loginIdentifier).toBe('username');
+    expect(resolve({ login: { identifier: 'email' } }).loginIdentifier).toBe('email');
+    expect(resolve({ login: { identifier: 'username-or-email' } }).loginIdentifier).toBe('username-or-email');
+    fail({ login: { identifier: 'phone' as never } }, /Unknown login identifier/);
+  });
+});

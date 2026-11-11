@@ -1,4 +1,5 @@
 import type { ComponentType, ReactNode } from 'react';
+import { loginIdentifierInput, type LoginIdentifier } from '@zucker-framework/fe-auth';
 import type { RequestConfig } from '@zucker-framework/fe-http-client';
 import type { PlanPrice, SubscriptionPlanWriteBody } from '@zucker-framework/fe-types/back-office';
 import type { AdminMessageKey, AdminMessages } from '../i18n/zh-CN';
@@ -329,6 +330,12 @@ export interface AdminAppConfig {
   };
   login?: {
     /**
+     * Identifier of `POST /authorize/login`, matching the server's `BackOfficeAccountsModule` option
+     * `login.identifier`: `'username'` (default, body `{username}`), `'email'` (`{email}`, an email input) or
+     * `'username-or-email'` (`{login}`). The form label, input type and request field follow it.
+     */
+    identifier?: LoginIdentifier;
+    /**
      * "Forgot password?" link under the sign-in form, to the page where an account requests a reset
      * (for example the site's `/en/forgot-password`, served by the account host's
      * `POST /authorize/forgot-password`). Set it only when the server offers password reset; omitted,
@@ -386,6 +393,8 @@ export interface ResolvedAdminConfig {
   planPresets: readonly PlanPreset[];
   /** `login.forgotPasswordHref`, or null (no link). */
   loginForgotPasswordHref: string | null;
+  /** `login.identifier` (default `'username'`). */
+  loginIdentifier: LoginIdentifier;
   mailContentFields: Record<string, string>;
   mailPreviewLocales: readonly string[];
   aiProviders: readonly string[];
@@ -411,6 +420,12 @@ function resolvePasswordReset(input: UserPasswordResetConfig | undefined): Resol
   if (input.minLength !== undefined && (!Number.isSafeInteger(input.minLength) || input.minLength < 1))
     throw new TypeError('[fe-admin] users.passwordReset.minLength must be a positive integer');
   return { path: input.path, method, ...(input.minLength ? { minLength: input.minLength } : {}) };
+}
+
+function resolveLoginIdentifier(value: LoginIdentifier | undefined): LoginIdentifier {
+  if (value === undefined) return 'username';
+  loginIdentifierInput(value); // throws for an unknown option, at startup
+  return value;
 }
 
 function resolveLinkHref(value: string | undefined, name: string): string | null {
@@ -456,6 +471,7 @@ export function resolveConfig(config: AdminAppConfig): ResolvedAdminConfig {
     usersPasswordReset: resolvePasswordReset(config.users?.passwordReset),
     planPresets: uniqueKeys(config.plans?.presets, (preset) => preset.key, 'plans.presets'),
     loginForgotPasswordHref: resolveLinkHref(config.login?.forgotPasswordHref, 'login.forgotPasswordHref'),
+    loginIdentifier: resolveLoginIdentifier(config.login?.identifier),
     mailContentFields: contentFields,
     mailPreviewLocales: config.mail?.previewLocales ?? Object.keys(contentFields),
     aiProviders: config.ai?.providers ?? [],

@@ -60,3 +60,50 @@ describe('admin login two-factor step', () => {
     expect(server.find('POST', '/authorize/login/two-factor')).toHaveLength(0);
   });
 });
+
+describe('admin login identifier option', () => {
+  it('email: labels an email input and posts { email, password }', async () => {
+    const server = createMockServer({
+      'GET /menu/tree': [],
+      'GET /authorize/me': meResponse(['*']),
+      'POST /authorize/login': { token },
+    });
+    const { session } = renderAdmin({ httpAdapter: server.adapter as never, login: { identifier: 'email' } }, { path: '/login' });
+    await screen.findByText('请输入邮箱和密码');
+    const input = screen.getByLabelText(/邮箱/) as HTMLInputElement;
+    expect(input.type).toBe('email');
+    expect(input.name).toBe('email');
+    expect(input.autocomplete).toBe('username');
+    fireEvent.change(input, { target: { value: ' Admin@Example.Invalid ' } });
+    fireEvent.change(screen.getByLabelText(/密码/), { target: { value: 'secret' } });
+    fireEvent.click(screen.getByRole('button', { name: '登录' }));
+    await waitFor(() => expect(session.store.getState().token).toBe(token));
+    expect(server.find('POST', '/authorize/login').map((call) => call.body)).toEqual([{ email: 'Admin@Example.Invalid', password: 'secret' }]);
+  });
+
+  it('username-or-email: one text field posted as { login }', async () => {
+    const server = createMockServer({
+      'GET /menu/tree': [],
+      'GET /authorize/me': meResponse(['*']),
+      'POST /authorize/login': { token },
+    });
+    const { session } = renderAdmin({ httpAdapter: server.adapter as never, login: { identifier: 'username-or-email' } }, { path: '/login' });
+    const input = (await screen.findByLabelText(/用户名或邮箱/)) as HTMLInputElement;
+    expect(input.type).toBe('text');
+    fireEvent.change(input, { target: { value: 'admin' } });
+    fireEvent.change(screen.getByLabelText(/密码/), { target: { value: 'secret' } });
+    fireEvent.click(screen.getByRole('button', { name: '登录' }));
+    await waitFor(() => expect(session.store.getState().token).toBe(token));
+    expect(server.find('POST', '/authorize/login').map((call) => call.body)).toEqual([{ login: 'admin', password: 'secret' }]);
+  });
+
+  it('username stays the default body', async () => {
+    const server = createMockServer({ 'GET /menu/tree': [], 'GET /authorize/me': meResponse(['*']), 'POST /authorize/login': { token } });
+    const { session } = renderAdmin({ httpAdapter: server.adapter as never }, { path: '/login' });
+    await screen.findByRole('heading', { name: '登录管理后台' });
+    expect((screen.getByLabelText(/用户名/) as HTMLInputElement).name).toBe('username');
+    enterPassword();
+    await waitFor(() => expect(session.store.getState().token).toBe(token));
+    expect(server.find('POST', '/authorize/login').map((call) => call.body)).toEqual([{ username: 'admin', password: 'secret' }]);
+  });
+});

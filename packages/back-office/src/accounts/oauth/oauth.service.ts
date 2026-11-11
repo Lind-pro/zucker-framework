@@ -240,7 +240,7 @@ export class OAuthService {
           // Provider subjects authenticate password-less accounts; a random username is not a generated password.
           user = await this.accounts.users().addUser({ username: `member_${randomUUID().replaceAll('-', '').slice(0, 20)}`,
             name: identity.displayName?.trim().slice(0, 100) || `${provider === 'google' ? 'Google' : 'GitHub'} member`,
-            typeId: 'member', status: true, email: identity.emailVerified ? email ?? undefined : undefined,
+            typeId: this.accounts.options.signup.typeId, status: true, email: identity.emailVerified ? email ?? undefined : undefined,
             emailVerified: Boolean(identity.emailVerified && email), locale: row.locale }, { passwordless: true, transaction: tx });
           created = { user, recorded: await this.accounts.recordSignup(tx, user.id, { method: `oauth:${provider}`, ip: context.ip }, policy) };
         }

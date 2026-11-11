@@ -56,9 +56,39 @@ environment pins, plans-only billing, field maps): see
 | `verification` | `{ mode: 'ticket' }` | `mode: 'code'`: six-digit codes over `emailVerifications` (`attempts` store required; `signInOnVerify`). |
 | `mailer` | required | `AccountMailer` class, instance or `{ useExisting: MAIL_ACCOUNT_MAILER }` (the mail host's `BackOfficeAccountMailer`). |
 | `policy`, `signupHooks` | `DEFAULT_ACCOUNT_POLICY`, none | Registration/verification/2FA/deletion switches; sign-up transaction hooks. |
+| `login.identifier` | `'username'` | Password sign-in identifier (see below). |
+| `signup.typeId` | `'member'` | `typeId` of accounts created by `POST /authorize/register` and OAuth sign-up; product sign-up paths read `AccountService.options.signup.typeId`. |
 | `cookie`, `origins`, `locales` | `zucker-session` on `/`, none, `['en','zh']` | Refresh cookie; trusted browser origins (mutations from others get 403). |
 | `signInMethods`, `profile` | `{}` | Product sign-in methods for `AccountService.signIn(user, method)`; extra `/authorize/me` fields. |
 | `features` | `register`, `magicLink`, `twoFactor` on; `deletion`, `avatar`, `apiKeys`, `oauth` off | Each `boolean` or an object (`mount: false` keeps the core behaviour and lets the consumer mount the routes). |
+
+### Sign-in identifier
+
+`login.identifier` decides what `POST /authorize/login` (and the password form of
+`POST /authorize/deletion/cancel`) identifies the account by:
+
+| Value | Body | Lookup |
+|---|---|---|
+| `'username'` (default) | `{username, password}` | Exact username, as before. |
+| `'email'` | `{email, password}` | Trimmed, lower-cased address equal to `users.email`. |
+| `'username-or-email'` | `{login, password}` | Exact username; a value with `@` is also looked up as an address, and the username match wins. |
+
+- Addresses are matched in the normalized form every host write stores (register, OAuth, code mode).
+  Rows written elsewhere with upper-case or padded addresses must be normalized (a backfill) before
+  they can sign in by address; an address held by more than one row signs nobody in.
+- Unknown, malformed, ambiguous, password-less, disabled and (with verification required) unverified
+  accounts all get the same 401 `Invalid credentials or email not verified`, after exactly one hash
+  comparison (a dummy hash in the configured encoder's format for misses). With
+  `'username-or-email'` and an `@` in the value both lookups always run.
+- The `login` / `login-account` budgets key on the normalized identifier (`loginAccountKey(body,
+  identifier)`); a two-factor step-up, code-mode verification and additional access-token verifiers
+  are unchanged. With `'username-or-email'` the username and the address of one account are separate
+  budget keys.
+- With an e-mail identifier the deletion confirmation (`confirm`) also accepts the account's address.
+- `AccountService.verifyLoginPassword(identifier, password)` and `findLoginAccount(identifier)` give
+  product routes the same lookup; `verifyPassword(username, password)` stays username-only.
+- Browser forms: `loginIdentifierInput` / `loginRequestBody` of `@zucker-framework/fe-auth`;
+  fe-admin's `login.identifier`.
 
 Exports: `AccountService`, `AccountGuard`, `AccountSessionCookie`, `AccountSessionAdminHooks` (for
 `ZuckerAdminModule` user hooks), `AccountTwoFactorService`, `OAuthService`, `AccountApiKeysService`,

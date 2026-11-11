@@ -19,9 +19,11 @@ import { AccountDeletionService } from './account-deletion.service';
 export class AccountDeletionController {
   private readonly origins: ReadonlySet<string>;
   private readonly cookie: AccountSessionCookie;
+  private readonly identifier: ResolvedAccountsOptions['login']['identifier'];
   constructor(private readonly deletions: AccountDeletionService, private readonly limiter: RateLimiterService,
     @Optional() @Inject(ACCOUNTS_OPTIONS) options?: ResolvedAccountsOptions) {
     const resolved = options ?? resolveAccountsOptions();
+    this.identifier = resolved.login.identifier;
     this.origins = accountOrigins(resolved);
     this.cookie = new AccountSessionCookie(resolved);
   }
@@ -37,11 +39,11 @@ export class AccountDeletionController {
     return result;
   }
 
-  /** `{username, password}` or `{ticket}` → `{cancelled: true}`. */
+  /** `{<login identifier field>, password}` (`username` by default) or `{ticket}` → `{cancelled: true}`. */
   @Post('cancel') @Public() @HttpCode(200) @Header('Cache-Control', 'private, no-store')
   async cancel(@Body() body: unknown, @Req() req: Omit<AccountRequest, 'user'>) {
     assertAccountOrigin(this.origins, req);
-    const account = loginAccountKey(body);
+    const account = loginAccountKey(body, this.identifier);
     const refund = await spendBudgets(this.limiter, account
       ? [[LOGIN_LIMITER, `login:${account}:${req.ip ?? 'unknown-client'}`], [LOGIN_ACCOUNT_LIMITER, `login-account:${account}`]] : []);
     const result = await this.deletions.cancel(body);
