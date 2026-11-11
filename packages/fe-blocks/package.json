@@ -1,6 +1,6 @@
 {
   "name": "@zucker-framework/fe-blocks",
-  "version": "1.0.20",
+  "version": "1.0.21",
   "description": "Fetch-free React renderer and theme registry for validated site-document landing blocks.",
   "main": "dist/index.js",
   "module": "dist/index.mjs",

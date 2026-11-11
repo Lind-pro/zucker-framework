@@ -1,6 +1,6 @@
 {
   "name": "@zucker-framework/task",
-  "version": "1.0.20",
+  "version": "1.0.21",
   "description": "Durable task lifecycle contracts and state machine for Zucker applications",
   "main": "dist/index.js",
   "module": "dist/index.mjs",

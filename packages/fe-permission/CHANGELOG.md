@@ -1,5 +1,11 @@
 # @zucker-framework/fe-permission
 
+## 1.0.21
+
+### Patch Changes
+
+- @zucker-framework/fe-auth@1.0.21
+
 ## 1.0.20
 
 ### Patch Changes
