@@ -88,3 +88,31 @@ env -u TEST_DATABASE_URL -u TEST_REDIS_URL -u AI_ACCESS_POSTGRES_TEST_URL -u S3_
 - 代码 diff 空白检查通过；原始历史日志、可应用 patch 的上下文空行与 Markdown 换行标记保持原样，
   未为消除归档文本的空白提示而改写已有证据。
 - PostgreSQL/Redis/MinIO 环境变量与 opt-in 浏览器测试开关已移除；跳过项不作为外部服务验证通过。
+
+## 后续：AI SDK 结构化输出测试超时
+
+上节记录的 jsonMode 超时已定位：安装的 LangChain SDK 在流式 `invoke` 收集结果后，仍调用
+`BaseLanguageModel.getNumTokens` 估算 token 数。首次使用会通过全局 fetch 下载
+`https://tiktoken.pages.dev/js/gpt2.json`，绕过测试注入的 OpenAI transport。
+临时 CPU 采样中调用耗时约 4.287 秒，其中约 4.118 秒为空闲等待；仅加入禁止额外请求的检查，
+原用例在约 249 毫秒内失败，并明确记录两次词表下载请求，确认了隐藏的外网依赖。
+
+[兼容测试](../../../packages/ai/src/langchain-openai-compatibility.spec.ts) 现在在每个用例中替换公共
+`getNumTokens` 方法为固定的合成计数，覆盖结构化输出内部创建的 SDK 实例；请求构造、流解析、
+结构化输出和 provider usage 断言继续使用真实 SDK。全局 fetch 拦截器禁止额外网络访问，
+即使 SDK 捕获网络错误后降级，测试结束时仍检查并拒绝这种访问。拦截器使用 AbortError
+避免 SDK 重试退避延续到测试清理之后，每个用例结束时恢复 mock 与全局变量。
+默认 5 秒上限、原有断言、依赖版本和运行时代码均未修改。
+
+验证详情见 fix-evidence.json 的 `aiSdkTimeoutFollowup`：
+
+- 兼容文件 13 项全部通过；jsonMode 约 3.6 毫秒，jsonSchema 约 4.5 毫秒。
+- `vitest run packages/ai --maxWorkers=4` 匹配 ai、ai-access 和 ai-tasks：53 文件，432 通过、22 跳过。
+- 根套件按默认超时、4 workers 复跑：582 文件，6,622 通过、0 失败、125 跳过；jsonMode 约 8.6 毫秒。
+  使用与提交前相同的环境变量移除命令，未访问真实付费 provider，也未启用外部服务或浏览器 opt-in 测试。
+- 本次兼容文件及其导入闭包通过定向 TypeScript 检查，ESLint 0 error / 0 warning。
+- 额外执行 AI 包完整 TypeScript 检查，6 个未改动的旧测试文件仍有 49 个错误：缺少 Vitest 全局声明、
+  缺少 MediaGenerationConfig.apiKey，以及旧 NativeStreamOptions.maxAttempts。该完整类型检查未通过；
+  本次没有扩大范围修改这些测试，也没有将定向类型检查描述为全包类型检查通过。
+
+本次仅调整测试及审阅证据，无公开导出、消费者接线、数据库迁移或发布制品变化；回滚只会恢复测试的外网依赖。

@@ -4770,5 +4770,69 @@
     },
     "knownFailure": "Both complete runs timed out at the default 5s in ai/langchain-openai-compatibility.spec.ts jsonMode structured output. Isolated 13-test run passed. Disposable instrumentation with a 15s limit measured 5.776s invocation, with assertions passing. Original test and limits unchanged; cause not determined.",
     "note": "No production build, package publication or deployment. Historical review logs and patch artifacts retained byte-for-byte."
+  },
+  "aiSdkTimeoutFollowup": {
+    "rootCause": "Streaming structured invoke estimates tokens through BaseLanguageModel.getNumTokens; first use downloads https://tiktoken.pages.dev/js/gpt2.json through ambient fetch, bypassing the injected OpenAI transport.",
+    "diagnostics": {
+      "cpuProfileSeconds": 4.287,
+      "idleSeconds": 4.118,
+      "networkGuardBeforeFix": {
+        "testFiles": 1,
+        "numPassedTests": 0,
+        "numFailedTests": 1,
+        "numPendingTests": 12,
+        "success": false,
+        "unexpectedTokenizerRequests": 2,
+        "jsonModeDurationMs": 248.669
+      }
+    },
+    "fix": "Stub public token counting in this transport compatibility suite; reject and assert against ambient fetch, using AbortError to avoid retry backoff; restore mocks and globals after each case. Original assertions and default timeout retained.",
+    "runs": {
+      "compatibility": {
+        "testFiles": 1,
+        "numPassedTests": 13,
+        "numFailedTests": 0,
+        "numPendingTests": 0,
+        "success": true
+      },
+      "aiAndRelatedPackages": {
+        "testFiles": 53,
+        "numPassedTests": 432,
+        "numFailedTests": 0,
+        "numPendingTests": 22,
+        "success": true
+      },
+      "rootSuite": {
+        "testFiles": 582,
+        "numPassedTests": 6622,
+        "numFailedTests": 0,
+        "numPendingTests": 125,
+        "success": true
+      }
+    },
+    "jsonModeDurationMs": {
+      "isolated": 3.598,
+      "rootSuite": 8.568
+    },
+    "checks": {
+      "targetTypeScript": {
+        "exitCode": 0,
+        "scope": "Compatibility test and imported dependencies, using a temporary config extending packages/ai/tsconfig.json"
+      },
+      "targetEslint": {
+        "errors": 0,
+        "warnings": 0
+      },
+      "packageTypeScript": {
+        "exitCode": 2,
+        "existingErrors": 49,
+        "unchangedTestFiles": 6,
+        "note": "Missing Vitest globals; missing MediaGenerationConfig.apiKey; obsolete NativeStreamOptions.maxAttempts. No diagnostics in the changed compatibility test."
+      }
+    },
+    "sha256": {
+      "packages/ai/src/langchain-openai-compatibility.spec.ts": "be127ea1a37f218b67ea421bb66ceea8674aec9d78d0e09afc4e9124b694a0a0"
+    },
+    "impact": "Test and documentation only; no runtime, dependency, public API, migration or publication changes. Previous preCommitValidation failures retained as historical evidence."
   }
 }

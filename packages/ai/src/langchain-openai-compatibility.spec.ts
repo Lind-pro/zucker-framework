@@ -1,10 +1,35 @@
 // @vitest-environment node
-import { describe, expect, it, vi } from 'vitest';
+import { BaseLanguageModel } from '@langchain/core/language_models/base';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import {
   createLangChainChatModel,
   type LangChainChatModelOptions,
 } from './langchain-model-builder';
+
+// The configured OpenAI transport does not intercept SDK auxiliary requests.
+// Fail the test even when an SDK catches a rejected ambient fetch and falls back.
+const unexpectedFetch = vi.fn<typeof globalThis.fetch>(async input => {
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+  // AbortError prevents the SDK's retry backoff from outliving test cleanup.
+  throw new DOMException(`Unexpected network request in SDK compatibility test: ${url}`, 'AbortError');
+});
+beforeEach(() => {
+  unexpectedFetch.mockClear();
+  vi.stubGlobal('fetch', unexpectedFetch);
+  // Streaming invoke estimates tokens via a lazily downloaded tokenizer even
+  // when provider usage is present. This suite tests transport/structured output,
+  // not tokenizer accuracy; include the SDK instances cloned by structured output.
+  vi.spyOn(BaseLanguageModel.prototype, 'getNumTokens').mockResolvedValue(1);
+});
+afterEach(() => {
+  try {
+    expect(unexpectedFetch).not.toHaveBeenCalled();
+  } finally {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  }
+});
 
 const answer = { ok: true };
 const usage = { prompt_tokens: 7, completion_tokens: 3, total_tokens: 10 };
