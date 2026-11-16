@@ -1,6 +1,6 @@
 {
   "name": "@zucker-framework/notification",
-  "version": "1.0.21",
+  "version": "1.0.22",
   "description": "Notification providers and durable delivery primitives for Zucker applications",
   "main": "dist/index.js",
   "module": "dist/index.mjs",

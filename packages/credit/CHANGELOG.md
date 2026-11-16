@@ -1,5 +1,12 @@
 # @zucker-framework/credit
 
+## 1.0.22
+
+### Patch Changes
+
+- @zucker-framework/core@1.0.22
+  - @zucker-framework/fe-types@1.0.22
+
 ## 1.0.21
 
 ### Patch Changes

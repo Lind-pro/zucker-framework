@@ -1,5 +1,7 @@
 # @zucker-framework/feature-flags
 
+## 1.0.22
+
 ## 1.0.21
 
 ## 1.0.20

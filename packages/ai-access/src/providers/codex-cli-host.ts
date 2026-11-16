@@ -4,6 +4,7 @@ import net from 'node:net';
 import http from 'node:http';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
+import { codexInferenceConfigArgs } from './codex-inference-config';
 
 const MAX_REQUEST_BYTES = 16 * 1024 * 1024;
 const EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
@@ -84,23 +85,8 @@ function buildArgs(request: HostInferenceRequest, workdir: string, schemaPath?: 
     '--skip-git-repo-check',
     '--color',
     'never',
-    '--config',
-    'approval_policy="never"',
-    '--config',
-    'allow_login_shell=false',
-    '--config',
-    'shell_environment_policy.inherit="none"',
-    '--config',
-    'default_permissions="subscription_inference"',
-    // Host mode reads only a freshly-created scratch directory containing its schema.
-    '--config',
-    'permissions.subscription_inference.filesystem={":minimal"="read",":workspace_roots"={"."="read"}}',
-    '--config',
-    'permissions.subscription_inference.network.enabled=false',
-    '--config',
-    'web_search="disabled"',
-    '--config',
-    'tools.web_search=false',
+    // The per-request scratch directory holds only the schema, which Codex reads itself.
+    ...codexInferenceConfigArgs(),
     '--model',
     request.model,
     '--cd',

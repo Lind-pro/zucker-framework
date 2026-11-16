@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { AIAccessRequest } from '../contracts';
+import { codexInferenceConfigArgs } from './codex-inference-config';
 import {
   CodexCliSubscriptionError,
   OpenAICodexCliSubscriptionProvider,
@@ -122,7 +123,14 @@ describe('OpenAICodexCliSubscriptionProvider', () => {
     expect(captured?.args).not.toContain('--sandbox');
     expect(captured?.args.join(' ')).toContain('default_permissions="subscription_inference"');
     expect(captured?.args.join(' ')).toContain('shell_environment_policy.inherit="none"');
-    expect(captured?.args.join(' ')).toContain('permissions.subscription_inference.filesystem');
+    // Current Codex CLIs fail session creation when they cannot read AGENTS.md from a
+    // denied workspace; the project-doc load must stay disabled with the workspace denied.
+    expect(captured?.args.join(' ')).toContain(codexInferenceConfigArgs().join(' '));
+    expect(captured?.args).toContain(
+      'permissions.subscription_inference.filesystem={":minimal"="read",":workspace_roots"={"."="deny"}}',
+    );
+    expect(captured?.args).toContain('project_doc_max_bytes=0');
+    expect(captured?.args).toContain('features.apps=false');
     expect(captured?.args.join(' ')).toContain(
       'permissions.subscription_inference.network.enabled=false',
     );

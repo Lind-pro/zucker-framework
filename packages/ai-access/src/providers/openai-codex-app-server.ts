@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import type { AIAccessRequest, AIAccessResult } from '../contracts';
+import { codexInferenceConfigArgs } from './codex-inference-config';
 import { CodexCliSubscriptionError } from './openai-codex-cli';
 
 export interface CodexAppServerCommand {
@@ -20,30 +21,7 @@ export async function runCodexAppServer(command: CodexAppServerCommand): Promise
   const { request } = command;
   if (request.signal?.aborted)
     throw new CodexCliSubscriptionError('CANCELLED', 'Codex subscription call cancelled.');
-  const args = ['app-server', '--stdio', '--strict-config'];
-  for (const override of [
-    'approval_policy="never"',
-    'allow_login_shell=false',
-    'shell_environment_policy.inherit="none"',
-    'default_permissions="subscription_inference"',
-    'permissions.subscription_inference.filesystem={":minimal"="read",":workspace_roots"={"."="deny"}}',
-    'permissions.subscription_inference.network.enabled=false',
-    'features.hooks=false',
-    'features.apps=false',
-    'features.plugins=false',
-    'features.memories=false',
-    'memories.use_memories=false',
-    'memories.generate_memories=false',
-    'features.multi_agent=false',
-    'features.shell_tool=false',
-    'features.unified_exec=false',
-    'features.code_mode.enabled=false',
-    'web_search="disabled"',
-    'tools.web_search=false',
-    'apps._default.enabled=false',
-    'project_doc_max_bytes=0',
-  ])
-    args.push('--config', override);
+  const args = ['app-server', '--stdio', '--strict-config', ...codexInferenceConfigArgs()];
 
   return new Promise<AIAccessResult>((resolve, reject) => {
     const child = spawn(command.executable, args, {

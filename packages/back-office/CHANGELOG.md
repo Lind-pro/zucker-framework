@@ -1,5 +1,37 @@
 # @zucker-framework/back-office
 
+## 1.0.22
+
+### Patch Changes
+
+- aee88b9: Sign-in identifier options for the back-office account host. Defaults keep the 1.0.21 behaviour.
+
+  - back-office/accounts: `BackOfficeAccountsModule.forRoot({ login: { identifier } })` with
+    `'username'` (default, body `{username, password}`), `'email'` (`{email, password}`; trimmed,
+    lower-cased address matched against the stored normalized `users.email`, an address on several rows
+    signs nobody in) or `'username-or-email'` (`{login, password}`; an exact username wins). Every miss
+    (unknown, malformed, ambiguous, password-less, disabled, unverified) answers the same 401 after one
+    hash comparison; the `login`/`login-account` budgets key on the normalized identifier. Deletion cancel
+    takes the same field and deletion confirmation also accepts the address with an e-mail identifier.
+    New `AccountService.verifyLoginPassword` / `findLoginAccount`, `ACCOUNT_LOGIN_IDENTIFIER_FIELDS`,
+    `AccountLoginIdentifier`; `loginAccountKey(body, identifier?)`.
+  - back-office/accounts: `signup: { typeId }` (default `'member'`) for accounts created by register and
+    OAuth sign-up.
+  - fe-auth: `loginIdentifierInput(identifier)` and `loginRequestBody(identifier, value, password)`.
+  - fe-admin: `login.identifier` selects the sign-in label, input type and request field.
+
+- @zucker-framework/admin@1.0.22
+  - @zucker-framework/auth@1.0.22
+  - @zucker-framework/config@1.0.22
+  - @zucker-framework/core@1.0.22
+  - @zucker-framework/credit@1.0.22
+  - @zucker-framework/crud@1.0.22
+  - @zucker-framework/fe-types@1.0.22
+  - @zucker-framework/logging@1.0.22
+  - @zucker-framework/notification@1.0.22
+  - @zucker-framework/payment@1.0.22
+  - @zucker-framework/rate-limiter@1.0.22
+
 ## 1.0.21
 
 ### Patch Changes

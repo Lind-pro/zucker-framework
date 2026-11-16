@@ -1,6 +1,6 @@
 {
   "name": "@zucker-framework/ext-kit",
-  "version": "1.0.21",
+  "version": "1.0.22",
   "description": "Browser extension infrastructure kit — batch engine, capture session, licensing, popup driver. Vendored into extensions as ext-kit.js / ext-kit-popup.js.",
   "main": "dist/index.js",
   "module": "dist/index.mjs",

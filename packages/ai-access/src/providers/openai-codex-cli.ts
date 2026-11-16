@@ -8,6 +8,7 @@ import {
   type AIAccessRequest,
   type AIAccessResult,
 } from '../contracts';
+import { codexInferenceConfigArgs } from './codex-inference-config';
 import { runCodexAppServer } from './openai-codex-app-server';
 
 const DEFAULT_TIMEOUT_MS = 15 * 60_000;
@@ -292,22 +293,7 @@ export class OpenAICodexCliSubscriptionClient {
       '--skip-git-repo-check',
       '--color',
       'never',
-      '--config',
-      'approval_policy="never"',
-      '--config',
-      'allow_login_shell=false',
-      '--config',
-      'shell_environment_policy.inherit="none"',
-      '--config',
-      'default_permissions="subscription_inference"',
-      '--config',
-      'permissions.subscription_inference.filesystem={":minimal"="read",":workspace_roots"={"."="deny"}}',
-      '--config',
-      'permissions.subscription_inference.network.enabled=false',
-      '--config',
-      'web_search="disabled"',
-      '--config',
-      'tools.web_search=false',
+      ...codexInferenceConfigArgs(),
       '--model',
       model,
       '--cd',
@@ -622,7 +608,7 @@ function classifyProcessFailure(stderr: string): CodexCliSubscriptionError {
   ) {
     return new CodexCliSubscriptionError(
       'NOT_CONFIGURED',
-      'Codex CLI 版本过旧或与当前配置不兼容，请使用应用固定的 CLI 版本。',
+      'Codex CLI 版本过旧或与当前配置不兼容，请更新到最新版 Codex CLI。',
     );
   }
   if (normalized.includes('not logged in') || normalized.includes('login required')) {
@@ -644,7 +630,7 @@ function classifyEventFailure(event: Record<string, unknown>): CodexCliSubscript
   if (normalized.includes('requires a newer version of codex')) {
     return new CodexCliSubscriptionError(
       'NOT_CONFIGURED',
-      'Codex CLI 版本过旧，无法使用当前模型，请使用应用固定的 CLI 版本。',
+      'Codex CLI 版本过旧，无法使用当前模型，请更新到最新版 Codex CLI。',
     );
   }
   if (normalized.includes('not logged in') || normalized.includes('login required')) {

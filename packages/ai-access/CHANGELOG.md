@@ -1,5 +1,19 @@
 # @zucker-framework/ai-access
 
+## 1.0.22
+
+### Patch Changes
+
+- Codex subscription inference starts sessions on current Codex CLIs (verified 0.160.1 and 0.169.0).
+
+  - ai-access/openai-codex: exec, app-server and the Unix socket host now share one override list. It adds
+    `project_doc_max_bytes=0`, so Codex no longer tries to read AGENTS.md from the denied inference workspace
+    (session creation failed with `failed to load AGENTS.md instructions … Permission denied`). The workspace
+    stays denied; the exec path and the host also gain the app-server's feature switches (hooks, apps, plugins,
+    memories, multi-agent, shell, unified exec, code mode off). The host's per-request directory is now denied
+    as well; Codex reads `--output-schema` itself.
+  - Version-mismatch errors ask for the latest Codex CLI instead of an application-pinned version.
+
 ## 1.0.21
 
 ## 1.0.20

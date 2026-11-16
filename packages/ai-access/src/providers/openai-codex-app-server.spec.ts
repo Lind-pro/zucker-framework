@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { codexInferenceConfigArgs } from './codex-inference-config';
 import { OpenAICodexCliSubscriptionProvider } from './openai-codex-cli';
 
 async function fixture(
@@ -21,6 +22,7 @@ async function fixture(
       "const fs = require('node:fs'); const readline = require('node:readline');",
       `const events = ${JSON.stringify(events)};`,
       `const log = ${JSON.stringify(join(directory, 'requests.jsonl'))};`,
+      `fs.writeFileSync(${JSON.stringify(join(directory, 'argv.json'))}, JSON.stringify(process.argv.slice(2)));`,
       "const send = event => process.stdout.write(JSON.stringify(event) + '\\n');",
       "readline.createInterface({input: process.stdin}).on('line', line => {",
       "const request = JSON.parse(line); fs.appendFileSync(log, line + '\\n');",
@@ -108,6 +110,10 @@ describe('Codex app-server streamed inference', () => {
         .trim()
         .split('\n')
         .map((line) => JSON.parse(line));
+      const argv: string[] = JSON.parse(await readFile(join(directory, 'argv.json'), 'utf8'));
+      expect(argv.slice(0, 3)).toEqual(['app-server', '--stdio', '--strict-config']);
+      expect(argv.join(' ')).toContain(codexInferenceConfigArgs().join(' '));
+      expect(argv).toContain('project_doc_max_bytes=0');
       const start = messages.find((message) => message.method === 'thread/start');
       expect(start.params).toMatchObject({
         ephemeral: true,

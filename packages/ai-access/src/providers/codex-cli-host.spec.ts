@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { runCodexCliHostClient, startCodexCliHost } from './codex-cli-host';
+import { codexInferenceConfigArgs } from './codex-inference-config';
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -100,6 +101,11 @@ describe('Codex Unix socket host/client contract', () => {
     expect(output.cwd.startsWith(f.workRoot + '/')).toBe(true);
     expect(output.args).toContain('approval_policy="never"');
     expect(output.args).toContain('permissions.subscription_inference.network.enabled=false');
+    expect(output.args.join(' ')).toContain(codexInferenceConfigArgs().join(' '));
+    expect(output.args).toContain(
+      'permissions.subscription_inference.filesystem={":minimal"="read",":workspace_roots"={"."="deny"}}',
+    );
+    expect(output.args).toContain('project_doc_max_bytes=0');
     expect(output.args).toContain('model_reasoning_effort="high"');
     expect(output.args).not.toContain('approval_policy="always"');
     await expect.poll(async () => readdir(f.workRoot)).toEqual([]);
