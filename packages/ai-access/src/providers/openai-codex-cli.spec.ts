@@ -247,6 +247,20 @@ describe('OpenAICodexCliSubscriptionProvider', () => {
       { type: 'error', message: 'Reconnecting... 2/5 (workspace routing discovery timed out)' },
       { type: 'item.completed', item: { type: 'agent_message', text: 'partial' } },
     ], errorCode: 'EXECUTION_FAILED' },
+    { name: '推理与配置提示不算工具调用', events: [
+      { type: 'item.completed', item: { type: 'error', message: 'Codex is ignoring 1 unrecognized configuration setting.' } },
+      { type: 'item.started', item: { type: 'reasoning' } },
+      { type: 'item.completed', item: { type: 'reasoning', text: 'thinking' } },
+      { type: 'item.completed', item: { type: 'agent_message', text: 'final' } },
+      { type: 'turn.completed', usage: { input_tokens: 7, output_tokens: 3 } },
+    ], errorCode: null },
+    ...['collab_tool_call', 'mcp_tool_call', 'command_execution', 'file_change', 'web_search', 'todo_list'].map(itemType => ({
+      name: `工具调用 ${itemType} 立即终止`, events: [
+        { type: 'item.started', item: { type: itemType } },
+        { type: 'item.completed', item: { type: 'agent_message', text: 'final' } },
+        { type: 'turn.completed', usage: { input_tokens: 7, output_tokens: 3 } },
+      ], errorCode: 'EXECUTION_FAILED',
+    })),
     { name: '没有完成用量', events: [
       { type: 'item.completed', item: { type: 'agent_message', text: 'partial' } },
     ], errorCode: 'INVALID_OUTPUT' },

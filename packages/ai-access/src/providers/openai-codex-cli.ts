@@ -42,6 +42,9 @@ export type CodexCliSubscriptionErrorCode =
   | 'EXECUTION_FAILED'
   | 'INVALID_OUTPUT';
 
+/** `codex exec --json` item types that a tool-free text inference may emit. */
+const INFERENCE_ITEM_TYPES: ReadonlySet<string> = new Set(['agent_message', 'reasoning', 'error']);
+
 export class CodexCliSubscriptionError extends Error {
   readonly retryable: boolean;
 
@@ -393,6 +396,13 @@ async function runCodexCliCommand(command: CodexCliCommand): Promise<AIAccessRes
       const type = stringValue(event.type);
       if (type === 'thread.started') {
         responseId = stringValue(event.thread_id);
+      } else if ((type === 'item.started' || type === 'item.completed') && isRecord(event.item)
+        && !INFERENCE_ITEM_TYPES.has(String(event.item.type))) {
+        // Text inference never needs a tool. Stop at the first call instead of letting
+        // the model loop through tools that each re-send the full context.
+        streamError = new CodexCliSubscriptionError('EXECUTION_FAILED', 'Unexpected tool activity during text inference.');
+        terminate();
+        return;
       } else if (type === 'item.completed' && isRecord(event.item)) {
         if (event.item.type === 'agent_message' && typeof event.item.text === 'string') {
           content = event.item.text;
