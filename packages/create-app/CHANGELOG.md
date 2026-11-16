@@ -1,5 +1,12 @@
 # @zucker-framework/create-app
 
+## 1.0.23
+
+### Patch Changes
+
+- Updated dependencies [e7c1b6e]
+  - @zucker-framework/cli@1.0.23
+
 ## 1.0.22
 
 ### Patch Changes

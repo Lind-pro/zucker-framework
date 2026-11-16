@@ -1,5 +1,25 @@
 # @zucker-framework/provider
 
+## 1.0.23
+
+### Patch Changes
+
+- e7c1b6e: Bind HTTP retries and cookie-session restoration to the originating session. Add the
+  optional HttpClientConfig.sessionKey callback and wire the admin consumer to its existing
+  identity policy. Cookie clients without a stable key conservatively cancel ambiguous
+  credential changes; retain request abort scopes for prompt cancellation.
+
+  Release Observable subscriptions and tracing spans on completion, failure and cancellation.
+  Dispose late network/datasource creations after lifecycle changes, roll back partially
+  started rule triggers, bind provider disposables to their registration, stream local upload
+  chunks with backpressure, preserve valid zero aggregations and cap all HybridCache L1 writes.
+
+  Network shutdown now waits for pending provider operations; providers must bound their I/O.
+  HybridCache L1 caps must be finite and non-negative; zero disables L1 population. Correct
+  legacy test typing without changing runtime exports or weakening assertions.
+
+- @zucker-framework/core@1.0.23
+
 ## 1.0.22
 
 ### Patch Changes

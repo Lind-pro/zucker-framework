@@ -1,5 +1,51 @@
 # @zucker-framework/cache
 
+## 1.0.23
+
+### Patch Changes
+
+- e7c1b6e: Bind HTTP retries and cookie-session restoration to the originating session. Add the
+  optional HttpClientConfig.sessionKey callback and wire the admin consumer to its existing
+  identity policy. Cookie clients without a stable key conservatively cancel ambiguous
+  credential changes; retain request abort scopes for prompt cancellation.
+
+  Release Observable subscriptions and tracing spans on completion, failure and cancellation.
+  Dispose late network/datasource creations after lifecycle changes, roll back partially
+  started rule triggers, bind provider disposables to their registration, stream local upload
+  chunks with backpressure, preserve valid zero aggregations and cap all HybridCache L1 writes.
+
+  Network shutdown now waits for pending provider operations; providers must bound their I/O.
+  HybridCache L1 caps must be finite and non-negative; zero disables L1 population. Correct
+  legacy test typing without changing runtime exports or weakening assertions.
+
+- e7c1b6e: Harden account revocation, transactional credential changes, payment-history replay,
+  AI task recovery, cache sequence ordering, dynamic transaction reads, browser session
+  isolation, CLI execution and streamed output cleanup after the 1.0.18–1.0.21 review.
+
+  Admin user policies may run in the mutation transaction through `userChanging` and
+  `userRolesChanging` (including validated role expiries). Consumers retain policy names
+  and must use the supplied transaction and a consistent lock order. Credential hooks
+  must migrate from post-commit-only `sensitiveFieldsChanged` to
+  `sensitiveFieldsChanging(change, tx)`; required revocation writes commit atomically.
+
+  Direct permission replacement removes legacy untyped links by their stored IDs,
+  so consumers with a required grant-type field do not receive an invalid null filter.
+  Other grant types remain outside that replacement.
+
+  Custom authentication caches must support atomic sequence advancement/reads. Redis
+  sequence values are returned as decimal strings before safe-integer validation to
+  avoid RESP integer rounding at the JavaScript boundary.
+
+  AI task consumers must apply the supplied expand-only execution-checkpoint migration
+  and coordinate worker cutover. Unknown prior submissions are not automatically sent
+  again. Payment history must be retained with the ledger; automatic refunds fail closed
+  when the historical application evidence needed to restore entitlements is absent.
+
+  These patch-version contract changes require consumer migration and verification;
+  source-level tests do not replace installation of the final immutable release.
+
+- @zucker-framework/core@1.0.23
+
 ## 1.0.22
 
 ### Patch Changes

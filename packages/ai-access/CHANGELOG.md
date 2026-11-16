@@ -1,5 +1,11 @@
 # @zucker-framework/ai-access
 
+## 1.0.23
+
+### Patch Changes
+
+- Codex `exec` text inference now disables the built-in goal, sleep, image, browser, computer-use, tool-suggestion, skill-search and multi-agent features and clears MCP servers, and stops the run at the first non-inference item (tool or command activity) with a retryable `EXECUTION_FAILED`. Previously a run could keep calling built-in tools, re-sending the full prompt each round.
+
 ## 1.0.22
 
 ### Patch Changes
