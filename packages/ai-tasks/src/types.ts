@@ -53,6 +53,9 @@ export interface AITaskResult {
 
 export type AITaskHoldState = 'NONE' | 'HELD' | 'CONFIRMED' | 'RELEASED';
 
+/** Independent of the worker lease: retrying a settlement must never repeat a paid submission. */
+export type AITaskExecutionState = 'NEW' | 'SUBMITTING' | 'ACCEPTED' | 'GENERATED' | 'STORED';
+
 export interface AITaskOutputView {
   index: number;
   contentType: string;

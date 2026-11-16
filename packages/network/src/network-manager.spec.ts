@@ -308,6 +308,8 @@ describe('DefaultNetworkManager', () => {
     await vi.advanceTimersByTimeAsync(30_000);
 
     expect(provider.reload).toHaveBeenCalledTimes(1);
+    alive = true;
+    await vi.advanceTimersByTimeAsync(5_000);
   });
 
   // ---- onModuleDestroy ----

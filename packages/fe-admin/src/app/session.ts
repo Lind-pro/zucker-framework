@@ -205,6 +205,7 @@ export function createAdminSession(config: AdminAppConfig, resolved: ResolvedAdm
     ...shared,
     refreshWithCookie: () => cookieSession.guardedRefresh(),
     getToken: () => store.getState().token,
+    sessionKey,
     setToken: (token) => {
       const state = store.getState();
       if (acceptsSessionToken(state, token, sessionKey)) state.updateToken(token);

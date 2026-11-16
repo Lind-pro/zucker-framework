@@ -155,10 +155,8 @@ class MemoryTimeSeriesService implements TimeSeriesService {
 
         for (const col of columns) {
           const alias = col.alias ?? col.property;
-          const val = this.computeAggregation(items, col.property, col.aggregation);
-          result.values![alias] = val === 0 && col.defaultValue !== undefined
-            ? col.defaultValue
-            : val;
+          const val = this.computeAggregation(items, col.property, col.aggregation, col.defaultValue);
+          result.values![alias] = val;
         }
 
         // 第一列的值作为主 value（向后兼容）
@@ -177,10 +175,8 @@ class MemoryTimeSeriesService implements TimeSeriesService {
     const values: Record<string, number> = {};
     for (const col of columns) {
       const alias = col.alias ?? col.property;
-      const val = this.computeAggregation(data, col.property, col.aggregation);
-      values[alias] = val === 0 && col.defaultValue !== undefined
-        ? col.defaultValue
-        : val;
+      const val = this.computeAggregation(data, col.property, col.aggregation, col.defaultValue);
+      values[alias] = val;
     }
 
     const firstAlias = columns.length > 0 ? (columns[0].alias ?? columns[0].property) : '';
@@ -280,21 +276,23 @@ class MemoryTimeSeriesService implements TimeSeriesService {
     data: TimeSeriesData[],
     field: string,
     aggregation: AggregationType,
+    defaultValue = 0,
   ): number {
     if (aggregation === AggregationType.COUNT) {
-      return data.filter(d => d.values[field] !== undefined).length;
+      const count = data.filter(d => d.values[field] !== undefined).length;
+      return count || defaultValue;
     }
 
     if (aggregation === AggregationType.DISTINCT_COUNT) {
       const seen = new Set(data.map(d => d.values[field]).filter(v => v !== undefined));
-      return seen.size;
+      return seen.size || defaultValue;
     }
 
     if (aggregation === AggregationType.FIRST || aggregation === AggregationType.TOP) {
       const first = data[0];
-      if (!first) return 0;
+      if (!first) return defaultValue;
       const v = first.values[field];
-      return typeof v === 'number' ? v : 0;
+      return typeof v === 'number' ? v : defaultValue;
     }
 
     if (aggregation === AggregationType.NONE) {
@@ -305,7 +303,7 @@ class MemoryTimeSeriesService implements TimeSeriesService {
       .map(d => d.values[field])
       .filter((v): v is number => typeof v === 'number');
 
-    if (values.length === 0) return 0;
+    if (values.length === 0) return defaultValue;
 
     switch (aggregation) {
       case AggregationType.SUM:

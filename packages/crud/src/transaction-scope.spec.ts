@@ -27,6 +27,34 @@ const dynamic = (db: DatabaseAdapter) =>
   new DynamicQueryService(db, new DynamicQueryParamService(new FilterOperatorFactory(ALL_OPERATORS.map((Op) => new Op()))));
 
 describe('transaction binding lifetime (N-M10)', () => {
+  it('dynamic list, count and existence reads share writes and leave the transaction on rollback', async () => {
+    const root = adapter();
+    const tx = adapter();
+    const row = { id: 'new', name: 'uncommitted' };
+    (root.db.$transaction as ReturnType<typeof vi.fn>).mockImplementation(async (fn: (a: DatabaseAdapter) => unknown) => fn(tx.db));
+    tx.modelOps.create.mockImplementation(async () => {
+      tx.modelOps.findMany.mockResolvedValue([row]);
+      tx.modelOps.findUnique.mockResolvedValue(row);
+      tx.modelOps.count.mockResolvedValue(1);
+      return row;
+    });
+    const queries = dynamic(root.db);
+    const writer = new RowService(root.db, queries, 'rows');
+    const reader = new RowService(root.db, queries, 'rows');
+    await expect(writer.transaction(async () => {
+      await writer.create(row);
+      expect(await reader.findOne(row.id)).toEqual(row);
+      expect((await reader.findAll({ page: 1 })).data).toEqual([row]);
+      expect(await reader.countByQuery({})).toBe(1);
+      expect(await reader.exists({})).toBe(true);
+      expect(await queries.findOne('rows', row.id)).toEqual(row);
+      throw new Error('rollback');
+    })).rejects.toThrow('rollback');
+    expect(root.modelOps.findMany).not.toHaveBeenCalled();
+    expect((await reader.findAll({})).data).toEqual([]);
+    expect(await reader.exists({})).toBe(false);
+  });
+
   it('work started inside a transaction but resolved after commit runs on the root adapter', async () => {
     const root = adapter();
     const tx = adapter();

@@ -69,8 +69,8 @@ export interface BackOfficeBillingOptions {
   /** Per-user limiter (default `'billing'`, `false` none) and webhook limiter (default `'billing-webhook'`). */
   rateLimit?: RateLimitSetting | false;
   webhookRateLimit?: RateLimitSetting | false;
-  paths?: Partial<typeof DEFAULT_BILLING_PATHS>;
-  permissions?: Partial<typeof DEFAULT_BILLING_PERMISSIONS>;
+  paths?: Partial<Record<keyof typeof DEFAULT_BILLING_PATHS, string>>;
+  permissions?: Partial<Record<keyof typeof DEFAULT_BILLING_PERMISSIONS, string>>;
   /**
    * Routes per feature. Defaults: orders, subscriptions, refunds, recovery on; paymentCredentials,
    * creditPacks (needs `credits`), testCheckout off. A disabled feature registers no route.
@@ -85,8 +85,8 @@ export interface BackOfficeBillingOptions {
 export interface ResolvedBillingOptions extends Omit<BackOfficeBillingOptions, 'features' | 'paths' | 'permissions' | 'models' | 'tables' | 'lockAccount' | 'credits'> {
   readonly persistence: BillingPersistenceConfig;
   readonly features: Readonly<Record<BillingFeature, boolean>>;
-  readonly paths: Readonly<typeof DEFAULT_BILLING_PATHS>;
-  readonly permissions: Readonly<typeof DEFAULT_BILLING_PERMISSIONS>;
+  readonly paths: Readonly<Record<keyof typeof DEFAULT_BILLING_PATHS, string>>;
+  readonly permissions: Readonly<Record<keyof typeof DEFAULT_BILLING_PERMISSIONS, string>>;
 }
 
 function fail(message: string): never { throw new TypeError(`[back-office/billing] ${message}`); }

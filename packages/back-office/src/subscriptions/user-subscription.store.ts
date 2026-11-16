@@ -1,6 +1,6 @@
 import type { DatabaseAdapter } from '@zucker-framework/core';
 import type {
-  AssignablePlan, SubscriptionPaymentEvidence, UserSubscriptionRecord, UserSubscriptionStore,
+  AssignablePlan, SubscriptionPaymentEvidence, SubscriptionPaymentHistory, UserSubscriptionRecord, UserSubscriptionStore,
 } from '@zucker-framework/payment';
 import type { SubscriptionsStorage } from './storage';
 
@@ -21,6 +21,8 @@ export interface UserSubscriptionStoreOptions {
   /** Reuse a caller transaction (payment write-back inside billing fulfillment); the account lock is re-entrant. */
   transaction?: DatabaseAdapter;
   now?: () => Date;
+  /** Opt in to durable refund history. Omitted for legacy hosts with no history/outbox model. */
+  paymentHistory?: SubscriptionPaymentHistory<DatabaseAdapter>;
 }
 
 /**
@@ -68,6 +70,7 @@ export function createUserSubscriptionStore(database: DatabaseAdapter, storage: 
     },
     findPaymentEvidence: async (tx, reference) =>
       await storage.of(tx).subscriptionPayments.findUnique({ where: { reference }, select: EVIDENCE_FIELDS }) as unknown as SubscriptionPaymentEvidence | null,
+    paymentHistory: options.paymentHistory,
     async save(tx, userId, data) {
       const subscriptions = storage.of(tx).subscriptions;
       // Safe as update-then-insert because every writer holds the account lock; userId is unique.

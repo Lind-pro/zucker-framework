@@ -89,8 +89,7 @@ export function workspaceSettings(name: string, apps: ReadonlySet<WorkspaceApp>,
     DEFAULT_LOCALE: locale,
     VITE_DEFAULT_LOCALE: locale,
     ACCOUNT_ORIGINS: (browserApps.length ? browserApps : ['server' as const]).map(origin).join(','),
-    WEB_URL: origin('web'),
-    SITE_URL: origin('web'),
+    ...(apps.has('web') ? { WEB_URL: origin('web'), SITE_URL: origin('web') } : {}),
     ADMIN_URL: apps.has('admin') ? origin('admin') : '',
     API_URL: `${origin('server')}/api`,
     API_PROXY_TARGET: origin('server'),
@@ -217,7 +216,15 @@ export function createCreateCommand(runtimeDirectory?: string, workingDirectory?
         }
 
         const settings = workspaceSettings(name, apps, options.locale);
-        const omit = { PORT: 'every app shares this file; the server listens on 4200 unless PORT is exported.' };
+        const omit: Record<string, string> = {
+          PORT: 'every app shares this file; the server listens on 4200 unless PORT is exported.',
+          // Unset rather than empty: server URL readers distinguish an absent optional origin from
+          // an explicitly invalid URL. Mail links need a consumer-owned frontend in --no-web mode.
+          ...(!apps.has('web') ? {
+            WEB_URL: 'no Web app was generated; set your own frontend origin before enabling account mail links.',
+            SITE_URL: 'no Web app was generated; set this when adding your own public site.',
+          } : {}),
+        };
         const secretKeys = workspaceSecrets(settings);
         const blankSecrets = Object.fromEntries(Object.keys(secretKeys).map(key => [key, '']));
         writeFileSync(join(targetDir, '.env.example'), composeEnvironment(sections, { ...settings, ...blankSecrets }, omit), { flag: 'wx' });

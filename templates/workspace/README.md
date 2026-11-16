@@ -22,6 +22,8 @@ There is one configuration file: the root `.env`. `zucker create` generated it w
 and file mode 0600. It is ignored by Git and by Docker builds; `.env.example` documents every key.
 Keep `CONFIG_ENCRYPTION_KEY` stable: it protects provider settings saved in the back office.
 Apps read the root `.env` through `scripts/with-env.mjs`, so do not copy it into `apps/*`.
+When created with `--no-web`, `WEB_URL` and `SITE_URL` are unset. Set them to your own frontend and
+allow its origin in `ACCOUNT_ORIGINS` before enabling self-service account mail links.
 
 ## Develop on the host
 

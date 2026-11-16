@@ -1,4 +1,5 @@
 import { httpClient } from '@/lib/http-client';
+import { accountRequestSignal } from '@/lib/account-session';
 import type { ChatDetail, ChatPage, ChatSummary } from './types';
 
 const id = (value: string) => encodeURIComponent(value);
@@ -19,6 +20,6 @@ export const chatApi = {
       method: 'POST',
       body,
       headers: { Accept: 'text/event-stream' },
-      signal,
+      signal: accountRequestSignal(signal),
     }),
 };

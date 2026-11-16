@@ -1,0 +1,1197 @@
+{
+  "summary": {
+    "packages": 57,
+    "sourceFiles": 1000,
+    "cycles": [],
+    "packagesWithUndeclaredImports": [
+      {
+        "package": "fe-admin",
+        "undeclared": {
+          "@testing-library/react": [
+            "packages/fe-admin/src/test/harness.tsx"
+          ],
+          "vitest": [
+            "packages/fe-admin/src/test/harness.tsx"
+          ]
+        }
+      }
+    ]
+  },
+  "packages": [
+    {
+      "package": "admin",
+      "sourceFiles": 46,
+      "exports": {
+        ".": {
+          "import": {
+            "types": "./dist/index.d.mts",
+            "default": "./dist/index.mjs"
+          },
+          "require": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+          }
+        },
+        "./package.json": "./package.json"
+      },
+      "internalDependencies": [
+        "@zucker-framework/ai",
+        "@zucker-framework/auth",
+        "@zucker-framework/logging",
+        "@zucker-framework/fe-types",
+        "@zucker-framework/core",
+        "@zucker-framework/crud",
+        "@zucker-framework/config",
+        "@zucker-framework/credit",
+        "@zucker-framework/dictionary",
+        "@zucker-framework/form",
+        "@zucker-framework/common",
+        "@zucker-framework/notification"
+      ],
+      "undeclared": {}
+    },
+    {
+      "package": "ai",
+      "sourceFiles": 67,
+      "exports": {
+        ".": {
+          "import": {
+            "types": "./dist/index.d.mts",
+            "default": "./dist/index.mjs"
+          },
+          "require": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+          }
+        },
+        "./langchain": {
+          "import": {
+            "types": "./dist/langchain.d.mts",
+            "default": "./dist/langchain.mjs"
+          },
+          "require": {
+            "types": "./dist/langchain.d.ts",
+            "default": "./dist/langchain.js"
+          }
+        },
+        "./native": {
+          "import": {
+            "types": "./dist/native.d.mts",
+            "default": "./dist/native.mjs"
+          },
+          "require": {
+            "types": "./dist/native.d.ts",
+            "default": "./dist/native.js"
+          }
+        },
+        "./testing": {
+          "import": {
+            "types": "./dist/testing.d.mts",
+            "default": "./dist/testing.mjs"
+          },
+          "require": {
+            "types": "./dist/testing.d.ts",
+            "default": "./dist/testing.js"
+          }
+        }
+      },
+      "internalDependencies": [
+        "@zucker-framework/core",
+        "@zucker-framework/ai-access",
+        "@zucker-framework/common"
+      ],
+      "undeclared": {}
+    },
+    {
+      "package": "ai-access",
+      "sourceFiles": 11,
+      "exports": {
+        ".": {
+          "import": {
+            "types": "./dist/index.d.mts",
+            "default": "./dist/index.mjs"
+          },
+          "require": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+          }
+        },
+        "./openai-codex": {
+          "import": {
+            "types": "./dist/openai-codex.d.mts",
+            "default": "./dist/openai-codex.mjs"
+          },
+          "require": {
+            "types": "./dist/openai-codex.d.ts",
+            "default": "./dist/openai-codex.js"
+          }
+        }
+      },
+      "internalDependencies": [],
+      "undeclared": {}
+    },
+    {
+      "package": "ai-tasks",
+      "sourceFiles": 12,
+      "exports": {
+        ".": {
+          "import": {
+            "types": "./dist/index.d.mts",
+            "default": "./dist/index.mjs"
+          },
+          "require": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+          }
+        },
+        "./adapters": {
+          "import": {
+            "types": "./dist/adapters.d.mts",
+            "default": "./dist/adapters.mjs"
+          },
+          "require": {
+            "types": "./dist/adapters.d.ts",
+            "default": "./dist/adapters.js"
+          }
+        },
+        "./package.json": "./package.json"
+      },
+      "internalDependencies": [
+        "@zucker-framework/credit",
+        "@zucker-framework/storage",
+        "@zucker-framework/ai",
+        "@zucker-framework/core",
+        "@zucker-framework/task"
+      ],
+      "undeclared": {}
+    },
+    {
+      "package": "auth",
+      "sourceFiles": 78,
+      "exports": {
+        ".": {
+          "import": {
+            "types": "./dist/index.d.mts",
+            "default": "./dist/index.mjs"
+          },
+          "require": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+          }
+        }
+      },
+      "internalDependencies": [
+        "@zucker-framework/core",
+        "@zucker-framework/cache",
+        "@zucker-framework/crud"
+      ],
+      "undeclared": {}
+    },
+    {
+      "package": "back-office",
+      "sourceFiles": 111,
+      "exports": {
+        ".": {
+          "import": {
+            "types": "./dist/index.d.mts",
+            "default": "./dist/index.mjs"
+          },
+          "require": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+          }
+        },
+        "./accounts": {
+          "import": {
+            "types": "./dist/accounts.d.mts",
+            "default": "./dist/accounts.mjs"
+          },
+          "require": {
+            "types": "./dist/accounts.d.ts",
+            "default": "./dist/accounts.js"
+          }
+        },
+        "./subscriptions": {
+          "import": {
+            "types": "./dist/subscriptions.d.mts",
+            "default": "./dist/subscriptions.mjs"
+          },
+          "require": {
+            "types": "./dist/subscriptions.d.ts",
+            "default": "./dist/subscriptions.js"
+          }
+        },
+        "./billing": {
+          "import": {
+            "types": "./dist/billing.d.mts",
+            "default": "./dist/billing.mjs"
+          },
+          "require": {
+            "types": "./dist/billing.d.ts",
+            "default": "./dist/billing.js"
+          }
+        },
+        "./management": {
+          "import": {
+            "types": "./dist/management.d.mts",
+            "default": "./dist/management.mjs"
+          },
+          "require": {
+            "types": "./dist/management.d.ts",
+            "default": "./dist/management.js"
+          }
+        },
+        "./mail": {
+          "import": {
+            "types": "./dist/mail.d.mts",
+            "default": "./dist/mail.mjs"
+          },
+          "require": {
+            "types": "./dist/mail.d.ts",
+            "default": "./dist/mail.js"
+          }
+        },
+        "./settings": {
+          "import": {
+            "types": "./dist/settings.d.mts",
+            "default": "./dist/settings.mjs"
+          },
+          "require": {
+            "types": "./dist/settings.d.ts",
+            "default": "./dist/settings.js"
+          }
+        },
+        "./package.json": "./package.json"
+      },
+      "internalDependencies": [
+        "@zucker-framework/rate-limiter",
+        "@zucker-framework/auth",
+        "@zucker-framework/core",
+        "@zucker-framework/admin",
+        "@zucker-framework/logging",
+        "@zucker-framework/crud",
+        "@zucker-framework/payment",
+        "@zucker-framework/credit",
+        "@zucker-framework/fe-types",
+        "@zucker-framework/config",
+        "@zucker-framework/notification"
+      ],
+      "undeclared": {}
+    },
+    {
+      "package": "buffer",
+      "sourceFiles": 3,
+      "exports": {},
+      "internalDependencies": [
+        "@zucker-framework/core"
+      ],
+      "undeclared": {}
+    },
+    {
+      "package": "cache",
+      "sourceFiles": 13,
+      "exports": {
+        ".": {
+          "import": {
+            "types": "./dist/index.d.mts",
+            "default": "./dist/index.mjs"
+          },
+          "require": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+          }
+        },
+        "./package.json": "./package.json"
+      },
+      "internalDependencies": [],
+      "undeclared": {}
+    },
+    {
+      "package": "cli",
+      "sourceFiles": 14,
+      "exports": {
+        ".": {
+          "import": {
+            "types": "./dist/tooling.d.mts",
+            "default": "./dist/tooling.mjs"
+          },
+          "require": {
+            "types": "./dist/tooling.d.ts",
+            "default": "./dist/tooling.js"
+          }
+        },
+        "./agent-instructions": {
+          "types": "./tooling/agent-instructions.d.mts",
+          "import": "./tooling/agent-instructions.mjs",
+          "default": "./tooling/agent-instructions.mjs"
+        },
+        "./create": {
+          "types": "./dist/create.d.ts",
+          "default": "./dist/create.js"
+        }
+      },
+      "internalDependencies": [
+        "@zucker-framework/ai-access"
+      ],
+      "undeclared": {}
+    },
+    {
+      "package": "cluster",
+      "sourceFiles": 6,
+      "exports": {},
+      "internalDependencies": [
+        "@zucker-framework/event",
+        "@zucker-framework/core"
+      ],
+      "undeclared": {}
+    },
+    {
+      "package": "common",
+      "sourceFiles": 24,
+      "exports": {
+        ".": {
+          "import": {
+            "types": "./dist/index.d.mts",
+            "default": "./dist/index.mjs"
+          },
+          "require": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+          }
+        }
+      },
+      "internalDependencies": [
+        "@zucker-framework/core"
+      ],
+      "undeclared": {}
+    },
+    {
+      "package": "config",
+      "sourceFiles": 17,
+      "exports": {
+        ".": {
+          "import": {
+            "types": "./dist/index.d.mts",
+            "default": "./dist/index.mjs"
+          },
+          "require": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+          }
+        },
+        "./connections": {
+          "import": {
+            "types": "./dist/connections.d.mts",
+            "default": "./dist/connections.mjs"
+          },
+          "require": {
+            "types": "./dist/connections.d.ts",
+            "default": "./dist/connections.js"
+          }
+        },
+        "./package.json": "./package.json"
+      },
+      "internalDependencies": [
+        "@zucker-framework/core",
+        "@zucker-framework/crud",
+        "@zucker-framework/feature-flags"
+      ],
+      "undeclared": {}
+    },
+    {
+      "package": "core",
+      "sourceFiles": 52,
+      "exports": {
+        ".": {
+          "import": {
+            "types": "./dist/index.d.mts",
+            "default": "./dist/index.mjs"
+          },
+          "require": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+          }
+        },
+        "./privacy": {
+          "import": {
+            "types": "./dist/privacy.d.mts",
+            "default": "./dist/privacy.mjs"
+          },
+          "require": {
+            "types": "./dist/privacy.d.ts",
+            "default": "./dist/privacy.js"
+          }
+        },
+        "./user-agent": {
+          "import": {
+            "types": "./dist/user-agent.d.mts",
+            "default": "./dist/user-agent.mjs"
+          },
+          "require": {
+            "types": "./dist/user-agent.d.ts",
+            "default": "./dist/user-agent.js"
+          }
+        }
+      },
+      "internalDependencies": [],
+      "undeclared": {}
+    },
+    {
+      "package": "create-app",
+      "sourceFiles": 1,
+      "exports": {},
+      "internalDependencies": [
+        "@zucker-framework/cli"
+      ],
+      "undeclared": {}
+    },
+    {
+      "package": "credit",
+      "sourceFiles": 11,
+      "exports": {
+        ".": {
+          "import": {
+            "types": "./dist/index.d.mts",
+            "default": "./dist/index.mjs"
+          },
+          "require": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+          }
+        },
+        "./package.json": "./package.json"
+      },
+      "internalDependencies": [
+        "@zucker-framework/core",
+        "@zucker-framework/fe-types"
+      ],
+      "undeclared": {}
+    },
+    {
+      "package": "crud",
+      "sourceFiles": 30,
+      "exports": {
+        ".": {
+          "import": {
+            "types": "./dist/index.d.mts",
+            "default": "./dist/index.mjs"
+          },
+          "require": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+          }
+        }
+      },
+      "internalDependencies": [
+        "@zucker-framework/core",
+        "@zucker-framework/event",
+        "@zucker-framework/cache"
+      ],
+      "undeclared": {}
+    },
+    {
+      "package": "dashboard",
+      "sourceFiles": 4,
+      "exports": {},
+      "internalDependencies": [],
+      "undeclared": {}
+    },
+    {
+      "package": "datasource",
+      "sourceFiles": 9,
+      "exports": {},
+      "internalDependencies": [
+        "@zucker-framework/core"
+      ],
+      "undeclared": {}
+    },
+    {
+      "package": "dictionary",
+      "sourceFiles": 11,
+      "exports": {
+        ".": {
+          "import": {
+            "types": "./dist/index.d.mts",
+            "default": "./dist/index.mjs"
+          },
+          "require": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+          }
+        },
+        "./package.json": "./package.json"
+      },
+      "internalDependencies": [
+        "@zucker-framework/core",
+        "@zucker-framework/crud"
+      ],
+      "undeclared": {}
+    },
+    {
+      "package": "event",
+      "sourceFiles": 18,
+      "exports": {
+        ".": {
+          "import": {
+            "types": "./dist/index.d.mts",
+            "default": "./dist/index.mjs"
+          },
+          "require": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+          }
+        }
+      },
+      "internalDependencies": [],
+      "undeclared": {}
+    },
+    {
+      "package": "ext-kit",
+      "sourceFiles": 21,
+      "exports": {
+        ".": {
+          "import": {
+            "types": "./dist/index.d.mts",
+            "default": "./dist/index.mjs"
+          },
+          "require": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+          }
+        }
+      },
+      "internalDependencies": [],
+      "undeclared": {}
+    },
+    {
+      "package": "ext-server",
+      "sourceFiles": 4,
+      "exports": {
+        ".": {
+          "import": {
+            "types": "./dist/index.d.mts",
+            "default": "./dist/index.mjs"
+          },
+          "require": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+          }
+        }
+      },
+      "internalDependencies": [],
+      "undeclared": {}
+    },
+    {
+      "package": "fe-admin",
+      "sourceFiles": 46,
+      "exports": {
+        ".": {
+          "import": {
+            "types": "./dist/index.d.mts",
+            "default": "./dist/index.mjs"
+          },
+          "require": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+          }
+        },
+        "./styles.css": "./styles.css",
+        "./package.json": "./package.json"
+      },
+      "internalDependencies": [
+        "@zucker-framework/fe-auth",
+        "@zucker-framework/fe-http-client",
+        "@zucker-framework/fe-types",
+        "@zucker-framework/fe-storage",
+        "@zucker-framework/fe-permission"
+      ],
+      "undeclared": {
+        "@testing-library/react": [
+          "packages/fe-admin/src/test/harness.tsx"
+        ],
+        "vitest": [
+          "packages/fe-admin/src/test/harness.tsx"
+        ]
+      }
+    },
+    {
+      "package": "fe-analytics",
+      "sourceFiles": 3,
+      "exports": {
+        ".": {
+          "import": {
+            "types": "./dist/index.d.mts",
+            "default": "./dist/index.mjs"
+          },
+          "require": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+          }
+        },
+        "./site-analytics": {
+          "import": {
+            "types": "./dist/site-analytics.d.mts",
+            "default": "./dist/site-analytics.mjs"
+          },
+          "require": {
+            "types": "./dist/site-analytics.d.ts",
+            "default": "./dist/site-analytics.js"
+          }
+        }
+      },
+      "internalDependencies": [],
+      "undeclared": {}
+    },
+    {
+      "package": "fe-auth",
+      "sourceFiles": 8,
+      "exports": {
+        ".": {
+          "import": {
+            "types": "./dist/index.d.mts",
+            "default": "./dist/index.mjs"
+          },
+          "require": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+          }
+        }
+      },
+      "internalDependencies": [],
+      "undeclared": {}
+    },
+    {
+      "package": "fe-blocks",
+      "sourceFiles": 6,
+      "exports": {
+        ".": {
+          "import": {
+            "types": "./dist/index.d.mts",
+            "default": "./dist/index.mjs"
+          },
+          "require": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+          }
+        }
+      },
+      "internalDependencies": [
+        "@zucker-framework/fe-site"
+      ],
+      "undeclared": {}
+    },
+    {
+      "package": "fe-form",
+      "sourceFiles": 16,
+      "exports": {
+        ".": {
+          "import": {
+            "types": "./dist/index.d.mts",
+            "default": "./dist/index.mjs"
+          },
+          "require": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+          }
+        }
+      },
+      "internalDependencies": [],
+      "undeclared": {}
+    },
+    {
+      "package": "fe-http-client",
+      "sourceFiles": 8,
+      "exports": {
+        ".": {
+          "import": {
+            "types": "./dist/index.d.mts",
+            "default": "./dist/index.mjs"
+          },
+          "require": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+          }
+        }
+      },
+      "internalDependencies": [],
+      "undeclared": {}
+    },
+    {
+      "package": "fe-permission",
+      "sourceFiles": 3,
+      "exports": {
+        ".": {
+          "import": {
+            "types": "./dist/index.d.mts",
+            "default": "./dist/index.mjs"
+          },
+          "require": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+          }
+        }
+      },
+      "internalDependencies": [
+        "@zucker-framework/fe-auth"
+      ],
+      "undeclared": {}
+    },
+    {
+      "package": "fe-site",
+      "sourceFiles": 5,
+      "exports": {
+        ".": {
+          "import": {
+            "types": "./dist/index.d.mts",
+            "default": "./dist/index.mjs"
+          },
+          "require": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+          }
+        },
+        "./content": {
+          "import": {
+            "types": "./dist/content.d.mts",
+            "default": "./dist/content.mjs"
+          },
+          "require": {
+            "types": "./dist/content.d.ts",
+            "default": "./dist/content.js"
+          }
+        }
+      },
+      "internalDependencies": [],
+      "undeclared": {}
+    },
+    {
+      "package": "fe-storage",
+      "sourceFiles": 5,
+      "exports": {
+        ".": {
+          "import": {
+            "types": "./dist/index.d.mts",
+            "default": "./dist/index.mjs"
+          },
+          "require": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+          }
+        }
+      },
+      "internalDependencies": [],
+      "undeclared": {}
+    },
+    {
+      "package": "fe-types",
+      "sourceFiles": 5,
+      "exports": {
+        ".": {
+          "import": {
+            "types": "./dist/index.d.mts",
+            "default": "./dist/index.mjs"
+          },
+          "require": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+          }
+        },
+        "./back-office": {
+          "import": {
+            "types": "./dist/back-office.d.mts",
+            "default": "./dist/back-office.mjs"
+          },
+          "require": {
+            "types": "./dist/back-office.d.ts",
+            "default": "./dist/back-office.js"
+          }
+        }
+      },
+      "internalDependencies": [
+        "@zucker-framework/core"
+      ],
+      "undeclared": {}
+    },
+    {
+      "package": "feature-flags",
+      "sourceFiles": 1,
+      "exports": {
+        ".": {
+          "types": "./dist/index.d.ts",
+          "import": "./dist/index.mjs",
+          "require": "./dist/index.js"
+        }
+      },
+      "internalDependencies": [],
+      "undeclared": {}
+    },
+    {
+      "package": "form",
+      "sourceFiles": 6,
+      "exports": {
+        ".": {
+          "import": {
+            "types": "./dist/index.d.mts",
+            "default": "./dist/index.mjs"
+          },
+          "require": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+          }
+        },
+        "./package.json": "./package.json"
+      },
+      "internalDependencies": [
+        "@zucker-framework/core",
+        "@zucker-framework/crud"
+      ],
+      "undeclared": {}
+    },
+    {
+      "package": "gateway",
+      "sourceFiles": 7,
+      "exports": {},
+      "internalDependencies": [
+        "@zucker-framework/things",
+        "@zucker-framework/network"
+      ],
+      "undeclared": {}
+    },
+    {
+      "package": "i18n",
+      "sourceFiles": 8,
+      "exports": {},
+      "internalDependencies": [
+        "@zucker-framework/core"
+      ],
+      "undeclared": {}
+    },
+    {
+      "package": "io",
+      "sourceFiles": 8,
+      "exports": {},
+      "internalDependencies": [],
+      "undeclared": {}
+    },
+    {
+      "package": "logging",
+      "sourceFiles": 21,
+      "exports": {
+        ".": {
+          "import": {
+            "types": "./dist/index.d.mts",
+            "default": "./dist/index.mjs"
+          },
+          "require": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+          }
+        },
+        "./package.json": "./package.json"
+      },
+      "internalDependencies": [
+        "@zucker-framework/core"
+      ],
+      "undeclared": {}
+    },
+    {
+      "package": "media",
+      "sourceFiles": 17,
+      "exports": {
+        ".": {
+          "browser": {
+            "import": {
+              "types": "./dist/browser.d.mts",
+              "default": "./dist/browser.mjs"
+            },
+            "require": {
+              "types": "./dist/browser.d.ts",
+              "default": "./dist/browser.js"
+            }
+          },
+          "import": {
+            "types": "./dist/index.d.mts",
+            "default": "./dist/index.mjs"
+          },
+          "require": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+          }
+        }
+      },
+      "internalDependencies": [],
+      "undeclared": {}
+    },
+    {
+      "package": "monitoring",
+      "sourceFiles": 19,
+      "exports": {
+        ".": {
+          "import": {
+            "types": "./dist/index.d.mts",
+            "default": "./dist/index.mjs"
+          },
+          "require": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+          }
+        },
+        "./package.json": "./package.json"
+      },
+      "internalDependencies": [
+        "@zucker-framework/core"
+      ],
+      "undeclared": {}
+    },
+    {
+      "package": "network",
+      "sourceFiles": 10,
+      "exports": {},
+      "internalDependencies": [],
+      "undeclared": {}
+    },
+    {
+      "package": "notification",
+      "sourceFiles": 42,
+      "exports": {
+        ".": {
+          "types": "./dist/index.d.ts",
+          "import": "./dist/index.mjs",
+          "require": "./dist/index.js"
+        }
+      },
+      "internalDependencies": [
+        "@zucker-framework/core",
+        "@zucker-framework/queue"
+      ],
+      "undeclared": {}
+    },
+    {
+      "package": "payment",
+      "sourceFiles": 43,
+      "exports": {
+        ".": {
+          "import": {
+            "types": "./dist/index.d.mts",
+            "default": "./dist/index.mjs"
+          },
+          "require": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+          }
+        },
+        "./package.json": "./package.json"
+      },
+      "internalDependencies": [
+        "@zucker-framework/core",
+        "@zucker-framework/fe-types"
+      ],
+      "undeclared": {}
+    },
+    {
+      "package": "provider",
+      "sourceFiles": 11,
+      "exports": {
+        ".": {
+          "import": {
+            "types": "./dist/index.d.mts",
+            "default": "./dist/index.mjs"
+          },
+          "require": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+          }
+        },
+        "./package.json": "./package.json"
+      },
+      "internalDependencies": [
+        "@zucker-framework/core"
+      ],
+      "undeclared": {}
+    },
+    {
+      "package": "queue",
+      "sourceFiles": 12,
+      "exports": {
+        ".": {
+          "import": {
+            "types": "./dist/index.d.mts",
+            "default": "./dist/index.mjs"
+          },
+          "require": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+          }
+        },
+        "./package.json": "./package.json"
+      },
+      "internalDependencies": [],
+      "undeclared": {}
+    },
+    {
+      "package": "rate-limiter",
+      "sourceFiles": 6,
+      "exports": {
+        ".": {
+          "import": {
+            "types": "./dist/index.d.mts",
+            "default": "./dist/index.mjs"
+          },
+          "require": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+          }
+        },
+        "./package.json": "./package.json"
+      },
+      "internalDependencies": [
+        "@zucker-framework/core"
+      ],
+      "undeclared": {}
+    },
+    {
+      "package": "reference",
+      "sourceFiles": 8,
+      "exports": {
+        ".": {
+          "import": {
+            "types": "./dist/index.d.mts",
+            "default": "./dist/index.mjs"
+          },
+          "require": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+          }
+        },
+        "./package.json": "./package.json"
+      },
+      "internalDependencies": [],
+      "undeclared": {}
+    },
+    {
+      "package": "relation",
+      "sourceFiles": 4,
+      "exports": {},
+      "internalDependencies": [],
+      "undeclared": {}
+    },
+    {
+      "package": "rule-engine",
+      "sourceFiles": 30,
+      "exports": {
+        ".": {
+          "import": {
+            "types": "./dist/index.d.mts",
+            "default": "./dist/index.mjs"
+          },
+          "require": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+          }
+        },
+        "./package.json": "./package.json"
+      },
+      "internalDependencies": [
+        "@zucker-framework/core",
+        "@zucker-framework/script",
+        "@zucker-framework/event"
+      ],
+      "undeclared": {}
+    },
+    {
+      "package": "script",
+      "sourceFiles": 8,
+      "exports": {
+        ".": {
+          "import": {
+            "types": "./dist/index.d.mts",
+            "default": "./dist/index.mjs"
+          },
+          "require": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+          }
+        },
+        "./package.json": "./package.json"
+      },
+      "internalDependencies": [],
+      "undeclared": {}
+    },
+    {
+      "package": "search",
+      "sourceFiles": 5,
+      "exports": {},
+      "internalDependencies": [],
+      "undeclared": {}
+    },
+    {
+      "package": "storage",
+      "sourceFiles": 16,
+      "exports": {
+        ".": {
+          "import": {
+            "types": "./dist/index.d.mts",
+            "default": "./dist/index.mjs"
+          },
+          "require": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+          }
+        },
+        "./package.json": "./package.json"
+      },
+      "internalDependencies": [],
+      "undeclared": {}
+    },
+    {
+      "package": "task",
+      "sourceFiles": 21,
+      "exports": {
+        ".": {
+          "import": {
+            "types": "./dist/index.d.mts",
+            "default": "./dist/index.mjs"
+          },
+          "require": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+          }
+        }
+      },
+      "internalDependencies": [],
+      "undeclared": {}
+    },
+    {
+      "package": "tenant",
+      "sourceFiles": 10,
+      "exports": {},
+      "internalDependencies": [
+        "@zucker-framework/core"
+      ],
+      "undeclared": {}
+    },
+    {
+      "package": "things",
+      "sourceFiles": 8,
+      "exports": {},
+      "internalDependencies": [
+        "@zucker-framework/timeseries"
+      ],
+      "undeclared": {}
+    },
+    {
+      "package": "timeseries",
+      "sourceFiles": 5,
+      "exports": {},
+      "internalDependencies": [],
+      "undeclared": {}
+    },
+    {
+      "package": "tracing",
+      "sourceFiles": 6,
+      "exports": {},
+      "internalDependencies": [],
+      "undeclared": {}
+    }
+  ]
+}

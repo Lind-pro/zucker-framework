@@ -1,0 +1,23 @@
+{
+  "framework": {
+    "head": "aee88b9bcd0b4f4bd181ac3b7116897f70af63d2",
+    "sourceDirty": true,
+    "files": {
+      "packages/admin/src/users/users.options.ts": "c3f0613042a0d34a39ffd2f5c28e8c11b507d39798a74bf304924319fbccf2ac",
+      "packages/admin/src/users/users.controller.ts": "13b04b5aa9ca84004e1bc8cb9d7fadeefb74495af0fe35794df227e2d053e91c",
+      "packages/admin/src/users/users-policy-hooks.spec.ts": "ed7e8702fe4296df648c1c8840482c9cc498a2def76bbd3fe74ca5765b887435",
+      "packages/back-office/src/accounts/account-security.transaction.spec.ts": "7026f3ba20a11044c13ba04d5600425d32ac5c1ef9c7a60720ab6733d638ed2d"
+    }
+  },
+  "ccopyright": {
+    "head": "dac278e10e9896d89e5607cf6326d13d3cb3318a",
+    "sourceDirty": true,
+    "files": {
+      "apps/server/src/modules/back-office/copyright-admin-user-hooks.ts": "78d60210d370736f1017e5731281b36e0bc12c936b46af7f3cee2e8436f6c8f7",
+      "apps/server/src/modules/back-office/back-office.module.ts": "4e68b9c9fb5b1f8381649de2e6016e765af872c1991340ffbaeca5e43074fa9c",
+      "apps/server/src/modules/back-office/protected-role.ts": "17380e7439ee7a675ec6d0449eaf8647dbc670a6b2bb24afa7bc37ebe8bd8287",
+      "apps/server/src/test/contracts/account-protected-order.contract.spec.ts": "d84c57f5ace3a0bbcf2011c102492fcb80227629cde1c486b4f80c94a54bdfe7",
+      "apps/server/src/test/contracts/account-safety.phase2.spec.ts": "1343201fb1bea7663990d05943cfa9e2c00dbc32b5868ec33a6683b9f4cac6f0"
+    }
+  }
+}

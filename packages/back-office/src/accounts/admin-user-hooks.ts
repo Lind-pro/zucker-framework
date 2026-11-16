@@ -19,13 +19,16 @@ export class AccountSessionAdminHooks implements AdminUserHooks {
     this.options = options ?? resolveAccountsOptions();
   }
 
-  async sensitiveFieldsChanged(change: AdminUserSensitiveChange): Promise<void> {
+  async sensitiveFieldsChanging(change: AdminUserSensitiveChange, tx: DatabaseAdapter): Promise<void> {
     if (!change.fields.some(field => SESSION_ENDING_FIELDS.has(field))) return;
     const { users, accountSessions } = this.options.models;
-    await this.db.$transaction(async tx => {
-      await tx.model(users).updateMany({ where: { id: change.userId }, data: { credentialVersion: { increment: 1 } } });
-      await tx.model(accountSessions).updateMany({ where: { userId: change.userId, revokedAt: null },
-        data: { revokedAt: new Date(), revokedReason: 'admin-credential-change' } });
-    });
+    await tx.model(users).updateMany({ where: { id: change.userId }, data: { credentialVersion: { increment: 1 } } });
+    await tx.model(accountSessions).updateMany({ where: { userId: change.userId, revokedAt: null },
+      data: { revokedAt: new Date(), revokedReason: 'admin-credential-change' } });
+  }
+
+  /** Legacy direct callers; current UsersController always supplies its update transaction. */
+  async sensitiveFieldsChanged(change: AdminUserSensitiveChange): Promise<void> {
+    await this.db.$transaction(tx => this.sensitiveFieldsChanging(change, tx));
   }
 }

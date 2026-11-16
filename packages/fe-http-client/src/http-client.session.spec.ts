@@ -251,7 +251,7 @@ describe('refresh with a mid-flight access token change (N-L4)', () => {
       baseURL: '/api', getToken: () => token, setToken: (value) => { token = value; },
       getRefreshToken: () => refreshToken, setRefreshToken, refreshTokenFn,
     });
-    await expect(client.get('/me', {}, { adapter: denied })).resolves.toBeDefined();
+    await expect(client.get('/me', {}, { adapter: denied })).rejects.toSatisfy(axios.isCancel);
     expect(setRefreshToken).not.toHaveBeenCalled();
     expect(refreshToken).toBe('other-session-refresh');
   });
@@ -268,7 +268,7 @@ describe('refresh with a mid-flight access token change (N-L4)', () => {
       baseURL: '/api', getToken: () => token, setToken: (value) => { token = value; },
       getRefreshToken, setRefreshToken, refreshWithCookie,
     });
-    await expect(client.get('/me', {}, { adapter: denied })).resolves.toBeDefined();
+    await expect(client.get('/me', {}, { adapter: denied })).rejects.toSatisfy(axios.isCancel);
     expect(setRefreshToken).not.toHaveBeenCalled();
     expect(getRefreshToken).not.toHaveBeenCalled();
   });

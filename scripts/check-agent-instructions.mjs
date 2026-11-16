@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isMainModule } from './cli-entry.mjs';
 // The same directly executable public module is shipped in the CLI package.
 import { auditAgentInstructions } from '../packages/cli/tooling/agent-instructions.mjs';
 import { collectConsumerSkills } from './prepare-cli-templates.mjs';
@@ -42,7 +43,7 @@ export function checkTemplateSkills(repository) {
   return result;
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (isMainModule(import.meta.url)) {
   const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
   if (process.argv.includes('--template-skills')) {
     const result = checkTemplateSkills(repositoryRoot);

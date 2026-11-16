@@ -67,6 +67,9 @@ function currentOrigin(): string | undefined {
 
 /** Refresh result carrying an optional rotated refresh token for the refreshTokenFn flow. */
 type RefreshResult = { access_token: string; refresh_token?: string };
+type RequestSession = { token: string | null; key: string | null; matchesRefresh: (token: string | null | undefined) => boolean };
+type RefreshedSession = { access_token: string; session: RequestSession };
+type SessionRequest = { _session?: RequestSession };
 
 /**
  * 默认配置
@@ -103,6 +106,7 @@ interface InternalConfig {
   refreshLockName?: string;
   trustedOrigins?: readonly string[];
   acceptResponseToken?: HttpClientConfig['acceptResponseToken'];
+  sessionKey?: HttpClientConfig['sessionKey'];
   getRefreshToken?: HttpClientConfig['getRefreshToken'];
   setRefreshToken?: HttpClientConfig['setRefreshToken'];
   errorHandler: (error: Error, response?: ApiResponse<unknown>) => void;
@@ -117,7 +121,7 @@ interface InternalConfig {
 export class HttpClient {
   private api: AxiosInstance;
   private config: InternalConfig;
-  private refreshPromise?: Promise<{ access_token: string }>;
+  private refreshPromise?: Promise<RefreshedSession>;
 
   constructor(config: HttpClientConfig = {}) {
     // 合并配置
@@ -164,6 +168,9 @@ export class HttpClient {
   private setupRequestInterceptor(): void {
     this.api.interceptors.request.use(
       (config) => {
+        const request = config as typeof config & SessionRequest;
+        if (request._session) this.assertSession(request._session);
+        request._session = this.captureSession();
         // 添加 token 到请求头
         // Never leak the bearer to an origin other than the API's (M9).
         const token = this.config.getToken();
@@ -286,6 +293,8 @@ export class HttpClient {
 
           // A foreign origin's 401/403 says nothing about this application's session.
           const trustedRequest = !!originalRequest && this.isTrustedUrl(this.resolveRequestUrl(originalRequest));
+          const session = (originalRequest as typeof originalRequest & SessionRequest)?._session;
+          if (trustedRequest && session) this.assertSession(session);
           // 处理401未授权错误
           if (status === 401 && trustedRequest) {
             // 检查是否是重试的请求，避免无限循环
@@ -309,8 +318,10 @@ export class HttpClient {
             if (refreshFn && originalRequest) {
               try {
                 const failedAccessToken = this.readBearerToken(originalRequest.headers);
-                const tokens = await this.refreshAccessToken(refreshFn, failedAccessToken);
+                const tokens = await this.refreshAccessToken(refreshFn, session ?? this.captureSession(), failedAccessToken);
                 if (originalRequest.signal?.aborted) throw new axios.CanceledError();
+                this.assertSession(tokens.session);
+                (originalRequest as typeof originalRequest & SessionRequest)._session = tokens.session;
                 // refreshWithCrossTabLock already stored the token after re-checking the session.
                 originalRequest.headers = originalRequest.headers || {};
                 originalRequest.headers['Authorization'] = `Bearer ${tokens.access_token}`;
@@ -320,6 +331,7 @@ export class HttpClient {
                 if (originalRequest.signal?.aborted || axios.isCancel(refreshError)) {
                   throw new axios.CanceledError();
                 }
+                if (session) this.assertSession(session);
                 const failure = normalizeRefreshFailure(refreshError);
                 if (failure.status !== 401 && failure.status !== 403) return Promise.reject(failure);
                 this.config.clearAuth();
@@ -437,12 +449,34 @@ export class HttpClient {
     this.config.setToken(token);
   }
 
+  private captureSession(): RequestSession {
+    const token = this.config.getToken() ?? null;
+    // Keep the refresh credential in a closure, never in serializable Axios error/config metadata.
+    const refresh = this.config.refreshWithCookie ? null : this.config.getRefreshToken?.() ?? null;
+    return {
+      token,
+      key: token ? this.config.sessionKey?.(token) ?? null : null,
+      matchesRefresh: value => !!refresh && value === refresh,
+    };
+  }
+
+  private assertSession(expected: RequestSession): void {
+    const current = this.captureSession();
+    const same = expected.key !== null
+      ? current.key === expected.key
+      : current.token === expected.token ||
+        (!!current.token && !this.config.refreshWithCookie && expected.matchesRefresh(this.config.getRefreshToken?.()));
+    if (!same) throw new axios.CanceledError('Session changed during request');
+  }
+
   private refreshAccessToken(
     refresh: () => Promise<RefreshResult>,
+    session: RequestSession,
     failedAccessToken?: string,
-  ): Promise<{ access_token: string }> {
+  ): Promise<RefreshedSession> {
+    this.assertSession(session);
     if (!this.refreshPromise) {
-      this.refreshPromise = this.refreshWithCrossTabLock(refresh, failedAccessToken).finally(() => {
+      this.refreshPromise = this.refreshWithCrossTabLock(refresh, session, failedAccessToken).finally(() => {
         this.refreshPromise = undefined;
       });
     }
@@ -451,45 +485,42 @@ export class HttpClient {
 
   private async refreshWithCrossTabLock(
     refresh: () => Promise<RefreshResult>,
+    session: RequestSession,
     failedAccessToken?: string,
-  ): Promise<{ access_token: string }> {
+  ): Promise<RefreshedSession> {
     const execute = async () => {
+      this.assertSession(session);
       const currentAccessToken = this.config.getToken();
       if (failedAccessToken && currentAccessToken && currentAccessToken !== failedAccessToken) {
-        return { access_token: currentAccessToken };
+        return { access_token: currentAccessToken, session: this.captureSession() };
       }
-
-      // Cookie refresh never reads or persists a refresh token.
-      const presentedRefreshToken = this.config.refreshWithCookie ? undefined : this.config.getRefreshToken?.();
-      const tokens = await refresh();
-      // Re-check the session after the (possibly long) refresh: a sign-out or account switch
-      // that happened meanwhile must not be overwritten with the refreshed credentials.
+      const presented = this.captureSession();
+      let tokens: RefreshResult;
+      try {
+        tokens = await refresh();
+      } catch (error) {
+        this.assertSession(presented);
+        throw error;
+      }
+      this.assertSession(presented);
+      if (presented.key !== null && this.config.sessionKey?.(tokens.access_token) !== presented.key) {
+        throw new axios.CanceledError('Refresh returned another session');
+      }
       const afterRefresh = this.config.getToken();
       if ((afterRefresh ?? null) !== (currentAccessToken ?? null)) {
-        if (afterRefresh) {
-          // The access token changed (e.g. adopted from a response header) but the session is the
-          // same one whose refresh token we just rotated: keep the rotated refresh token, the
-          // stored one has been consumed by this refresh.
-          const sameSession =
-            !!presentedRefreshToken && this.config.getRefreshToken?.() === presentedRefreshToken;
-          if (sameSession && tokens.refresh_token && !this.config.refreshWithCookie) {
-            this.config.setRefreshToken?.(tokens.refresh_token);
-          }
-          return { access_token: afterRefresh };
+        if (!afterRefresh) throw new axios.CanceledError('Session ended during token refresh');
+        // Preserve an adopted access token and persist only the refresh token we consumed.
+        if (tokens.refresh_token && !this.config.refreshWithCookie && presented.matchesRefresh(this.config.getRefreshToken?.())) {
+          this.config.setRefreshToken?.(tokens.refresh_token);
         }
-        throw new axios.CanceledError('Session ended during token refresh');
+        return { access_token: afterRefresh, session: this.captureSession() };
       }
       this.config.setToken(tokens.access_token);
-      if (tokens.refresh_token) this.config.setRefreshToken?.(tokens.refresh_token);
-      return { access_token: tokens.access_token };
+      if (tokens.refresh_token && !this.config.refreshWithCookie) this.config.setRefreshToken?.(tokens.refresh_token);
+      return { access_token: tokens.access_token, session: this.captureSession() };
     };
-
-    if (typeof navigator === 'undefined' || !navigator.locks) {
-      return execute();
-    }
-
-    const lockName =
-      this.config.refreshLockName ?? `zucker:http-refresh:${this.config.baseURL ?? 'default'}`;
+    if (typeof navigator === 'undefined' || !navigator.locks) return execute();
+    const lockName = this.config.refreshLockName ?? `zucker:http-refresh:${this.config.baseURL ?? 'default'}`;
     return navigator.locks.request(lockName, execute);
   }
 
@@ -774,7 +805,8 @@ export class HttpClient {
 
     // 添加 Authorization（仅发往 API / 可信来源）
     const trustedRequest = this.isTrustedUrl(url);
-    const token = this.config.getToken();
+    let session = this.captureSession();
+    const token = session.token;
     if (token && trustedRequest) {
       requestHeaders['Authorization'] = `Bearer ${token}`;
     }
@@ -830,14 +862,17 @@ export class HttpClient {
 
       // 处理 401 未授权（外部来源的 401 与本应用会话无关）
       if (response.status === 401 && trustedRequest) {
+        this.assertSession(session);
         const refreshFn = this.resolveRefresh();
 
         // 尝试刷新 token
         if (refreshFn) {
           try {
-            const tokens = await awaitWithSignal(this.refreshAccessToken(refreshFn, token ?? undefined), signal);
+            const tokens = await awaitWithSignal(this.refreshAccessToken(refreshFn, session, token ?? undefined), signal);
             externalSignal?.throwIfAborted();
 
+            this.assertSession(tokens.session);
+            session = tokens.session;
             requestHeaders['Authorization'] = `Bearer ${tokens.access_token}`;
 
           } catch (error) {
@@ -845,6 +880,7 @@ export class HttpClient {
             if (axios.isCancel(error)) throw error;
             // 如果已经处理过（例如 retryResponse.status === 401 的 throw 被捕获），直接向上抛出避免重复处理
             if ((error as { _authHandled?: boolean } | null)?._authHandled) throw error;
+            this.assertSession(session);
             const failure = normalizeRefreshFailure(error);
             if (failure.status !== 401 && failure.status !== 403) throw failure;
             this.config.clearAuth();
@@ -857,6 +893,7 @@ export class HttpClient {
             credentials: this.config.withCredentials ? 'include' : 'same-origin',
           });
           if (response.status === 401) {
+            this.assertSession(session);
             this.config.clearAuth();
             this.config.onUnauthorized();
             throw Object.assign(new Error('认证失败'), { _authHandled: true });

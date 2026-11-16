@@ -24,3 +24,17 @@ Binary HTTP failures decode JSON Blob/ArrayBuffer bodies up to 1 MiB for message
 `RequestConfig._rawResponse: true` returns the full Axios response before envelope unwrapping, including arbitrary third-party JSON fields. It still processes token headers and HTTP errors. Default envelope behavior is unchanged; external API consumers must configure their own credential and redirect policy rather than reuse a product-authenticated client.
 
 A cancelled `fetchStream` waiter rejects immediately while other callers can finish the shared refresh. Refreshed stream responses undergo the same permission/status checks, and retry transport failures do not revoke valid identity. `readSseStream` cancels the upstream reader on parser/consumer failure, preserves the original error if cancellation fails, and releases the lock. Source tests are not evidence that an older published version includes these lifecycle fixes.
+
+
+`HttpClientConfig.sessionKey(token)` identifies a session across access-token rotation. For example, pass
+`jwtSessionKey(['sub', 'sid'])` from `@zucker-framework/fe-auth`; include a session identifier rather than
+only a user id. The client binds Axios and `fetchStream` requests to their starting credentials, checks
+again after the refresh lock and exchange, and cancels a stale retry with `ERR_CANCELED`. A late refresh
+failure cannot clear a newer session. The callback compares identity only; it never authorizes requests.
+
+Without `sessionKey`, an unchanged access token (or an unchanged explicit refresh token) proves continuity.
+Cookie clients without a recognizable session key conservatively cancel if another request/tab rotates the
+access token while they wait; configure the callback to retain cross-tab reuse. Cookie refresh never reads
+or persists a JavaScript refresh token. Keep `createSessionRequestScope` / abort signals to cancel active
+work promptly on sign-out and to distinguish sign-out/sign-in using the same credentials. Web and fe-admin
+source consumers now pass their existing session key; published consumers need the next immutable release.

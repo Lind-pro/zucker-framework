@@ -35,7 +35,7 @@ jobs:
 
       - name: Validate agent instructions
         run: |
-          node --test packages/cli/tooling/agent-instructions.test.mjs packages/cli/tooling/agent-skills.edge.test.mjs scripts/check-agent-instructions.test.mjs
+          node --test packages/cli/tooling/agent-instructions.test.mjs packages/cli/tooling/agent-skills.edge.test.mjs scripts/check-agent-instructions.test.mjs scripts/cli-entry.test.mjs
           node scripts/check-agent-instructions.mjs
           node scripts/check-agent-instructions.mjs --template-skills
 
@@ -50,7 +50,7 @@ jobs:
         # The page-builder block catalogue is generated from @zucker-framework/fe-site and must not drift.
         run: |
           node scripts/prepare-skill-block-catalogue.mjs --check
-          node --test scripts/prepare-skill-block-catalogue.test.mjs scripts/prepare-skill-block-catalogue.drift.test.mjs scripts/prepare-cli-templates.test.mjs scripts/acceptance/file-registry.test.mjs scripts/acceptance/pack.test.mjs
+          node --test scripts/prepare-skill-block-catalogue.test.mjs scripts/prepare-skill-block-catalogue.drift.test.mjs scripts/prepare-cli-templates.test.mjs scripts/acceptance/file-registry.test.mjs scripts/acceptance/pack.test.mjs scripts/acceptance/launch-ready.test.mjs
 
       - name: Build all packages
         env:

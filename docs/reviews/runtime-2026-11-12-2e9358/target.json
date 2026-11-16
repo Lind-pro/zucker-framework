@@ -1,0 +1,6 @@
+{
+  "database": "zf_review_20261112_2dd6fc_test",
+  "postgres": "127.0.0.1:55439",
+  "redis": "127.0.0.1:56439/13",
+  "head": "aee88b9bcd0b4f4bd181ac3b7116897f70af63d2"
+}

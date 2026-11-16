@@ -1,0 +1,31 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /Users/lind/Documents/projects/zucker-ccopyright/apps/server/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+Synthetic concurrent protected-role HTTP statuses [400,200]
+PASS src/test/contracts/account-safety.phase2.spec.ts (8.12 s)
+  Phase 2: account safety on PostgreSQL
+    ✓ CLI bootstrap rejects its independent password-policy boundary abcdef (132 ms)
+    ✓ CLI bootstrap rejects its independent password-policy boundary abcdefgh (113 ms)
+    ✓ CLI bootstrap rejects its independent password-policy boundary Abcdefgh (286 ms)
+    ✓ CLI bootstrap accepts a compliant password and preserves the existing account on retry (290 ms)
+    ✓ CLI concurrent grants create one binding and ordinary revoke is idempotent (150 ms)
+    ✓ CLI concurrent protected-role revocations preserve one holder (156 ms)
+    ✓ HTTP refuses to disable its sole superadmin (104 ms)
+    ✓ HTTP refuses to revoke its sole superadmin (95 ms)
+    ✓ HTTP deletion preserves all links while billing is active (171 ms)
+    ✓ HTTP deletion preserves all links while billing is unknown (139 ms)
+    ✓ HTTP deletion blocks a queued Dossier billed to the target (136 ms)
+    ✓ HTTP deletion blocks a running Dossier billed to the target (148 ms)
+    ✓ HTTP deletion rolls link removal back when the final user delete fails inside PostgreSQL (192 ms)
+    ✓ HTTP refuses to disable the last enabled superadmin with a disabled alternate (142 ms)
+    ✓ HTTP refuses to revoke the last enabled superadmin with a disabled alternate (140 ms)
+    ✓ CLI refuses to revoke the last enabled superadmin with a disabled alternate (129 ms)
+    ✓ HTTP concurrent disable and revoke preserve at least one enabled superadmin (189 ms)
+    ✓ CLI grant racing HTTP deletion does not leave an orphan role binding (132 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       18 passed, 18 total
+Snapshots:   0 total
+Time:        8.318 s
+Ran all test suites within paths "src/test/contracts/account-safety.phase2.spec.ts".
+Test results written to: ../../../zucker-framework/docs/reviews/runtime-2026-11-12-2e9358/joint-candidate-safety-deduped.json

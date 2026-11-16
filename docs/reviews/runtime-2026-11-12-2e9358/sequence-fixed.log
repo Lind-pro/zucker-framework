@@ -1,0 +1,31 @@
+
+ RUN  v4.1.11 /Users/lind/Documents/projects/zucker-framework
+
+ ✓ packages/cache/src/cache-sequence.integration.spec.ts (1 test) 48ms
+[Nest] 4098  - 11/12/2026, 2:54:19 PM     LOG [TokenService] 用户 owner 的所有 token 已撤销
+[Nest] 4098  - 01/01/1970, 8:00:03 AM     LOG [TokenService] 用户 owner 的所有 token 已撤销
+[Nest] 4098  - 01/01/1970, 8:00:03 AM     LOG [TokenService] 用户 owner 的所有 token 已撤销
+[Nest] 4098  - 01/01/1970, 8:00:01 AM     LOG [TokenService] 用户 owner 的所有 token 已撤销
+[Nest] 4098  - 01/01/1970, 8:00:01 AM     LOG [TokenService] 用户 owner 的所有 token 已撤销
+[Nest] 4098  - 01/01/1970, 8:00:01 AM     LOG [TokenService] 用户 owner 的所有 token 已撤销
+[Nest] 4098  - 01/01/1970, 8:00:01 AM     LOG [TokenService] 用户 owner 的所有 token 已撤销
+[Nest] 4098  - 01/01/1970, 8:00:01 AM     LOG [TokenService] 用户 owner 的所有 token 已撤销
+[Nest] 4098  - 01/01/1970, 8:00:01 AM     LOG [TokenService] 用户 owner 的所有 token 已撤销
+[Nest] 4098  - 01/01/1970, 8:00:01 AM     LOG [TokenService] 用户 owner 的所有 token 已撤销
+[Nest] 4098  - 01/01/1970, 8:00:01 AM     LOG [TokenService] 用户 owner 的所有 token 已撤销
+[Nest] 4098  - 11/12/2026, 2:54:19 PM     LOG [TokenService] 用户 u1 的所有 token 已撤销
+[Nest] 4098  - 11/12/2026, 2:54:19 PM     LOG [TokenService] 用户 u1 的所有 token 已撤销
+[Nest] 4098  - 11/12/2026, 2:54:19 PM     LOG [UserService] Revoked sessions of user u1 (disabled)
+[Nest] 4098  - 11/12/2026, 2:54:19 PM     LOG [TokenService] 用户 u1 的所有 token 已撤销
+[Nest] 4098  - 11/12/2026, 2:54:19 PM     LOG [UserService] Revoked sessions of user u1 (password changed)
+[Nest] 4098  - 11/12/2026, 2:54:19 PM     LOG [TokenService] 用户 u1 的所有 token 已撤销
+[Nest] 4098  - 11/12/2026, 2:54:19 PM     LOG [UserService] Revoked sessions of user u1 (deleted)
+ ✓ packages/auth/src/services/token-revocation.spec.ts (12 tests) 9ms
+ ✓ packages/cache/src/cache-sequence.spec.ts (7 tests) 7ms
+
+ Test Files  3 passed (3)
+      Tests  20 passed (20)
+   Start at  14:54:17
+   Duration  2.13s (transform 353ms, setup 27ms, import 825ms, tests 64ms, environment 961ms)
+
+JSON report written to /Users/lind/Documents/projects/zucker-framework/docs/reviews/runtime-2026-11-12-2e9358/sequence-fixed.json

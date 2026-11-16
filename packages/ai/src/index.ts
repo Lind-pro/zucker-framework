@@ -123,8 +123,9 @@ export type {
   MediaTaskResult,
   MediaModelInfo,
   MediaProvider,
+  MediaGenerationCapabilities,
 } from './media.interface';
-export { MediaType, MediaTaskStatus, isAudioGenerationProvider } from './media.interface';
+export { MediaType, MediaTaskStatus, isAudioGenerationProvider, getMediaGenerationCapabilities } from './media.interface';
 export type {
   AIProviderCallbackHeaders,
   AIProviderCallbackVerification,

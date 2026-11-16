@@ -127,6 +127,7 @@ describe('HTTP refresh compatibility', () => {
       },
       refreshWithCookie: refresh,
       refreshLockName: 'shared-refresh',
+      sessionKey: () => 'same-session',
     };
     const clients = [new HttpClient(config), new HttpClient(config)];
     await Promise.all(

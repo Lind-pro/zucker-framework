@@ -69,12 +69,19 @@ export function createVerifiedOutputStore(options: VerifiedOutputStoreOptions): 
   if (!/^[A-Za-z0-9][A-Za-z0-9/_-]{0,100}$/.test(prefix)) throw new RangeError('Invalid output key prefix');
   return {
     async put(output) {
+      output.signal.throwIfAborted();
       const extension = AI_OUTPUT_EXTENSIONS[output.contentType];
       if (!extension || !/^ait_[a-f0-9]{64}$/.test(output.taskId)) throw new RangeError('Unsupported AI task output');
       const destinationKey = `${prefix}/${output.taskId}/${output.index}.${extension}`;
       const result = await transferVerifiedObject({
         source: { body: output.body, reportedSize: output.body.length },
-        target: options.store,
+        // The legacy buffered store has no cancellation API. Fence every subsequent operation so
+        // an exists/read that finishes after the deadline cannot start a new remote upload.
+        target: {
+          async exists(key) { output.signal.throwIfAborted(); const value = await options.store.exists(key); output.signal.throwIfAborted(); return value; },
+          async read(key) { output.signal.throwIfAborted(); const value = await options.store.read(key); output.signal.throwIfAborted(); return value; },
+          async write(key, body, metadata) { output.signal.throwIfAborted(); const value = await options.store.write(key, body, metadata); output.signal.throwIfAborted(); return value; },
+        },
         destinationKey,
         mode: 'apply',
         allowUpload: true,

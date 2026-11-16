@@ -84,3 +84,32 @@ These factories implement the shared back-office contract (`docs/back-office-rfc
 | `createMailLogAdminController()` | `GET /management/email-logs?to&status&template&userId` | `mail:query` | `MailHistoryService` |
 
 Plan writes (`SubscriptionPlanWriteBody`: `prices[]`, optional `expectedRevision`) are validated by the port (features/quotas against the host's entitlement catalog, price list, slug and provider-reference uniqueness); deletion is refused while a subscription, payment or open billing record references the plan. Subscription assignment validates the body (`planSlug`, `billingCycle` MONTHLY/YEARLY/ONE_TIME/LIFETIME, `status` ACTIVE/CANCELED/EXPIRED, ISO `startDate`/`endDate`) and passes the acting administrator ID; the port refuses changes while a plan payment is pending or a provider subscription controls the term (409 with `details.blocking`). The list filter `active=active|inactive` uses the derived validity (expiry is not swept into the stored status). Quota lists use the default projections `DEFAULT_QUOTA_USAGE_PROJECTION` / `DEFAULT_QUOTA_RESERVATION_PROJECTION` (response `userId` ← `subjectId`; internal policy metadata omitted). Release/confirm go through the reservation state machine and return `{ id, changed }`; confirming charges usage and releasing a live job's reservation makes that job's later confirmation fail as inactive. Mail log rows exclude provider metadata (`MAIL_LOG_FIELDS`). Use `createMailTemplateAdminController` with `mail:query` / `mail:update` for `/management/email-templates`.
+
+## Transactional credential hooks
+
+`UsersController.update` locks the user row, compares sensitive fields, updates through the existing
+`UserService`, then calls `AdminUserHooks.sensitiveFieldsChanging(change, tx)` before committing.
+Required credential-version and session-revocation writes must use that supplied adapter. A hook
+failure rolls back the edit as well, so retrying the same request still performs the required work.
+Do not open another transaction that locks the same account from this hook.
+
+Legacy hooks providing only `sensitiveFieldsChanged` are refused at controller construction with a
+migration error; silently continuing post-commit revocation would retain the security gap. A hook
+may retain the old method for direct callers if it also implements the transactional method, but
+this controller invokes only `sensitiveFieldsChanging`. `AccountSessionAdminHooks` from
+`@zucker-framework/back-office/accounts` already implements the transaction contract.
+
+`AdminUserHooks.userChanging({ userId, changes, actorId }, tx)` runs before the user update,
+after the user row is locked and sensitive-field permissions are checked.
+`userRolesChanging({ userId, roleIds, expiries, actorId }, tx)` runs before replacing role
+bindings, after locking the user and before pinning the requested roles. `expiries` contains
+the validated role-expiry map when that feature is enabled. These hooks let consumers enforce
+their own policies with transactional reads and stable locks; throwing rejects the whole mutation.
+Policy hooks must use `tx`, must not send external messages, and must use a consistent lock order
+with every other writer (for example, user row, policy role, then sorted requested roles).
+Named protected roles and which enabled holders are acceptable remain consumer policy.
+The older `sensitiveFieldsChanging` hook still performs credential/session effects after the edit
+within the same transaction; policy hooks do not replace it.
+
+Admin email writes are trimmed and lower-cased; an empty string clears the optional address. Invalid
+nonempty addresses are rejected. Existing mixed-case rows are not rewritten automatically.

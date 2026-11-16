@@ -40,6 +40,8 @@ export interface MediaGenerationConfig {
   count?: number;
   /** 参考图片 URL（图生图） */
   referenceImageUrl?: string;
+  /** Multiple reference images, in caller order; only for providers declaring this capability. */
+  referenceImageUrls?: readonly string[];
   /** 图生图强度 (0-1)，越高越偏离原图 */
   imageStrength?: number;
   /** 负面提示词 */
@@ -81,10 +83,14 @@ export interface MediaGenerationConfig {
    * 回调只是唤醒提示：结果以验证过的回调或主动轮询为准，见 AIProviderCallbackVerifier。
    */
   callbackUrl?: string;
+  /** Stable application request identity for providers supporting lookup/idempotency by client key. */
+  clientRequestId?: string;
 }
 
 /** 媒体生成结果 */
 export interface MediaGenerationResult {
+  /** Complete synchronous result batch; top-level fields retain the first output for compatibility. */
+  outputs?: MediaGenerationResult[];
   /** 媒体访问 URL */
   url?: string;
   /** Base64 编码的媒体数据 */
@@ -153,6 +159,24 @@ export interface MediaModelInfo {
   supportedFormats?: string[];
 }
 
+export interface MediaGenerationCapabilities {
+  maxOutputs: number;
+  maxReferences: number;
+  /** How verified image bytes reach this provider. Omit when references are unsupported. */
+  referenceInput?: 'single' | 'multiple' | 'frames';
+}
+
+/** Undeclared capabilities are conservative: one output and no reference images. */
+export function getMediaGenerationCapabilities(provider: Pick<MediaProvider, 'getCapabilities'>, modelId: string): MediaGenerationCapabilities {
+  const value = provider.getCapabilities?.(modelId) ?? { maxOutputs: 1, maxReferences: 0 };
+  if (!Number.isSafeInteger(value.maxOutputs) || value.maxOutputs < 1 || value.maxOutputs > 16
+    || !Number.isSafeInteger(value.maxReferences) || value.maxReferences < 0 || value.maxReferences > 16
+    || (value.maxReferences > 0 && (!value.referenceInput || !['single', 'multiple', 'frames'].includes(value.referenceInput)))
+    || (value.referenceInput === 'single' && value.maxReferences > 1)
+    || (value.referenceInput === 'frames' && value.maxReferences > 2)) throw new TypeError('Invalid media provider capabilities');
+  return { ...value };
+}
+
 /**
  * 媒体生成 Provider 接口
  * 所有图片/视频/音频生成 provider 均需实现此接口
@@ -182,6 +206,8 @@ export interface MediaProvider {
 
   /** 获取此 provider 支持的模型列表 */
   getModels(): MediaModelInfo[];
+  /** Per-model request limits. Consumers must reject unsupported count/references before charging. */
+  getCapabilities?(modelId: string): MediaGenerationCapabilities;
 }
 
 /**

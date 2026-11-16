@@ -19,7 +19,7 @@ const quote = (identifier: string) => {
 };
 const isPlain = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date);
-const OPERATORS = new Set(['equals', 'in', 'notIn', 'not', 'gt', 'gte', 'lt', 'lte']);
+const OPERATORS = new Set(['equals', 'in', 'notIn', 'not', 'gt', 'gte', 'lt', 'lte', 'mode']);
 
 class Params {
   readonly values: unknown[] = [];
@@ -36,10 +36,12 @@ function condition(column: string, value: unknown, params: Params): string {
   if (!isPlain(value)) return `${col} = ${params.add(value)}`;
   const keys = Object.keys(value);
   if (!keys.length || keys.some(key => !OPERATORS.has(key))) throw new Error(`Unsupported filter on ${column}: ${JSON.stringify(value)}`);
-  return keys.map(key => {
+  if (value.mode !== undefined && (value.mode !== 'insensitive' || keys.some(key => key !== 'mode' && key !== 'equals') || typeof value.equals !== 'string'))
+    throw new Error(`Unsupported case-insensitive filter on ${column}`);
+  return keys.filter(key => key !== 'mode').map(key => {
     const operand = value[key];
     switch (key) {
-      case 'equals': return condition(column, operand, params);
+      case 'equals': return value.mode === 'insensitive' ? `lower(${col}) = lower(${params.add(operand)})` : condition(column, operand, params);
       case 'in':
       case 'notIn': {
         const list = operand as unknown[];
@@ -116,10 +118,10 @@ function model(db: PgQueryable, table: string): ModelOperations<Record<string, u
       return (await db.query(sql, params.values)).rows[0];
     },
     async update(args) {
-      allowed(args, ['where', 'data']);
+      allowed(args, ['where', 'data', 'select']);
       const params = new Params();
       const set = assignments(args.data as Record<string, unknown>, params);
-      const rows = (await db.query(`UPDATE ${t} SET ${set} WHERE ${where(args.where, params)} RETURNING *`, params.values)).rows;
+      const rows = (await db.query(`UPDATE ${t} SET ${set} WHERE ${where(args.where, params)} RETURNING ${columns(args.select)}`, params.values)).rows;
       if (rows.length !== 1) throw Object.assign(new Error('Record to update not found'), { code: 'P2025' });
       return rows[0];
     },

@@ -131,14 +131,31 @@ export class HotProvider<T> {
    * (streams included). With no instance at all (the very first build failed) the request gets 503.
    */
   middleware() {
-    return (_request: unknown, response: { once(event: 'close', listener: () => void): unknown }, next: (error?: unknown) => void): void => {
+    return (_request: unknown, response: {
+      once(event: 'close', listener: () => void): unknown;
+      removeListener?(event: 'close', listener: () => void): unknown;
+      readonly closed?: boolean;
+      readonly destroyed?: boolean;
+    }, next: (error?: unknown) => void): void => {
+      const disconnected = () => response.closed === true || response.destroyed === true;
+      if (disconnected()) return;
       if (this.pinned.getStore() !== undefined) { next(); return; }
-      let started = false;
-      this.slot.use(instance => new Promise<void>(resolve => {
+      let started = false, closed = false;
+      let release!: () => void;
+      const completed = new Promise<void>(resolve => { release = resolve; });
+      const onClose = () => { closed = true; release(); };
+      // Acquisition can await storage or a provider rebuild. Observe termination before it so a
+      // disconnect in that interval cannot leave a lease waiting for an event that already fired.
+      response.once('close', onClose);
+      if (disconnected()) onClose();
+      void this.slot.use(instance => {
+        if (closed || disconnected()) return;
         started = true; this.latest = instance;
-        response.once('close', resolve);
         this.pinned.run(instance, () => next());
-      })).catch(() => { if (!started) next(new ServiceUnavailableException('Connection provider is unavailable')); });
+        return completed;
+      }).catch(error => {
+        if (!closed && !disconnected()) next(started ? error : new ServiceUnavailableException('Connection provider is unavailable'));
+      }).finally(() => { response.removeListener?.('close', onClose); });
     };
   }
   state(): RuntimeProviderSlotState { return this.slot.state(); }

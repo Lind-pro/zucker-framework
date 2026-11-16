@@ -78,15 +78,19 @@ describe('UsersController write boundaries (H3)', () => {
     expect(created).not.toHaveProperty('password');
   });
 
-  it('runs the consumer hook after sensitive changes so sessions can be revoked (template M1)', async () => {
-    const hooks = { sensitiveFieldsChanged: vi.fn(async () => {}), userDeleted: vi.fn(async () => {}) };
+  it('runs the consumer hook inside sensitive changes so sessions can be revoked atomically', async () => {
+    const hooks = { sensitiveFieldsChanging: vi.fn(async () => {}), userDeleted: vi.fn(async () => {}) };
     const h = await harness({}, hooks);
     await h.users.update('target', { name: 'Only profile' }, as('authorizer'));
-    expect(hooks.sensitiveFieldsChanged).not.toHaveBeenCalled();
+    expect(hooks.sensitiveFieldsChanging).not.toHaveBeenCalled();
     await h.users.update('target', { password: 'N3w-password!', status: false }, as('authorizer'));
-    expect(hooks.sensitiveFieldsChanged).toHaveBeenCalledWith({ userId: 'target', fields: ['password', 'status'], actorId: 'authorizer' });
+    expect(hooks.sensitiveFieldsChanging).toHaveBeenCalledWith({ userId: 'target', fields: ['password', 'status'], actorId: 'authorizer' }, expect.objectContaining({ model: expect.any(Function) }));
     await h.users.remove('target', as('authorizer'));
     expect(hooks.userDeleted).toHaveBeenCalledWith('target', 'authorizer');
+  });
+
+  it('refuses a legacy security hook before any credential writes can occur', async () => {
+    await expect(harness({}, { sensitiveFieldsChanged: async () => {} })).rejects.toThrow('migrate to sensitiveFieldsChanging');
   });
 
   it('validates permission and dimension bodies and keeps other grant types', async () => {
@@ -178,10 +182,10 @@ describe('UsersController update edge cases (N17)', () => {
 
   it('fails without re-inserting when the user is deleted between the read and the write', async () => {
     const h = await harness();
-    const row = await h.userService.findById('target');
-    const spy = vi.spyOn(h.userService, 'findById').mockImplementationOnce(async () => {
+    const update = h.userService.updateUser.bind(h.userService);
+    const spy = vi.spyOn(h.userService, 'updateUser').mockImplementationOnce(async (id, changes, options) => {
       await h.db.model('users').delete({ where: { id: 'target' } });
-      return row;
+      return update(id, changes, options);
     });
     await expect(h.users.update('target', { name: 'Ghost' }, as('editor'))).rejects.toBeInstanceOf(Error);
     spy.mockRestore();

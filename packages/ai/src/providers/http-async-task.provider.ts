@@ -8,6 +8,8 @@ import type {
 } from '../ai-provider-callback';
 import {
   MediaTaskStatus,
+  getMediaGenerationCapabilities,
+  type MediaGenerationCapabilities,
   type MediaGenerationConfig,
   type MediaGenerationResult,
   type MediaModelInfo,
@@ -94,6 +96,12 @@ export class HttpAsyncTaskMediaProvider implements MediaProvider {
     this.id = config.id;
     this.name = config.name ?? config.id;
     this.supportedTypes = [config.mediaType];
+    getMediaGenerationCapabilities(this, config.models[0].id);
+    if ((config.maxOutputs ?? 1) > 1 && !config.submit.fields?.count) throw new HttpAsyncTaskConfigError('Multiple outputs require submit.fields.count');
+    if ((config.maxReferences ?? 0) > 0 && !this.getCapabilities().referenceInput)
+      throw new HttpAsyncTaskConfigError('References require a mapped reference field');
+    if (this.getCapabilities().referenceInput === 'frames' && this.getCapabilities().maxReferences > 1 && !config.submit.fields?.lastFrameUrl)
+      throw new HttpAsyncTaskConfigError('Two reference frames require submit.fields.lastFrameUrl');
     this.send = transport.fetch
       ?? createPublicFetch({ allowedProtocols: ['https:'], allowedPorts: this.ports, resolve: transport.resolve });
   }
@@ -102,9 +110,21 @@ export class HttpAsyncTaskMediaProvider implements MediaProvider {
     return this.config.models.map((model) => ({ ...model }));
   }
 
+  getCapabilities(): MediaGenerationCapabilities {
+    const fields = this.config.submit.fields;
+    const referenceInput = fields?.referenceImageUrls ? 'multiple' : fields?.referenceImageUrl ? 'single' : fields?.firstFrameUrl ? 'frames' : undefined;
+    const inferred = referenceInput === 'single' ? 1 : referenceInput === 'frames' ? (fields?.lastFrameUrl ? 2 : 1) : 0;
+    return { maxOutputs: this.config.maxOutputs ?? 1, maxReferences: this.config.maxReferences ?? inferred, ...(referenceInput ? { referenceInput } : {}) };
+  }
+
   async generate(prompt: string, config: MediaGenerationConfig): Promise<MediaTaskResult> {
     if (typeof prompt !== 'string' || !prompt.trim()) throw new TypeError('Prompt must be non-empty text');
     const modelId = config.modelId || this.config.models[0].id;
+    const capabilities = getMediaGenerationCapabilities(this, modelId);
+    if (!Number.isSafeInteger(config.count ?? 1) || (config.count ?? 1) < 1 || (config.count ?? 1) > capabilities.maxOutputs)
+      throw new RangeError('Requested output count exceeds adapter capabilities');
+    const references = config.referenceImageUrls?.length ?? (config.referenceImageUrl ? 1 : (config.firstFrameUrl ? 1 : 0) + (config.lastFrameUrl ? 1 : 0));
+    if (references > capabilities.maxReferences) throw new RangeError('Requested references exceed adapter capabilities');
     if (!this.config.models.some((model) => model.id === modelId)) throw new TypeError(`Unknown model for ${this.id}: ${modelId}`);
     this.assertSameEndpoint(config);
     const body = this.submitBody(prompt, { ...config, modelId });
@@ -254,10 +274,12 @@ export class HttpAsyncTaskMediaProvider implements MediaProvider {
       prompt, model: config.modelId, negativePrompt: config.negativePrompt, width: config.width, height: config.height,
       format: config.format, count: config.count, seed: config.seed, steps: config.steps, cfgScale: config.cfgScale,
       quality: config.quality, style: config.style, referenceImageUrl: config.referenceImageUrl,
+      referenceImageUrls: config.referenceImageUrls,
       imageStrength: config.imageStrength, duration: config.duration, fps: config.fps, resolution: config.resolution,
       firstFrameUrl: config.firstFrameUrl, lastFrameUrl: config.lastFrameUrl, cameraMotion: config.cameraMotion,
       lyrics: config.lyrics, instrumental: config.instrumental, voice: config.voice, audioTags: config.audioTags,
       callbackUrl: config.callbackUrl,
+      clientRequestId: config.clientRequestId,
     };
     for (const [param, field] of Object.entries(fields) as [HttpAsyncTaskRequestParam, string | undefined][]) {
       if (field && values[param] !== undefined) writePath(body, field, values[param]);

@@ -60,6 +60,11 @@ export interface AddUserOptions {
   transaction?: DatabaseAdapter;
 }
 
+/** Join a caller-owned update transaction while preserving this service's encoder and validators. */
+export interface UpdateUserOptions {
+  transaction?: DatabaseAdapter;
+}
+
 import { DATABASE_ADAPTER } from '@zucker-framework/crud';
 const PASSWORD_ENCODER = Symbol('PASSWORD_ENCODER');
 const TOPIC_EVENT_BUS = 'TOPIC_EVENT_BUS';
@@ -176,10 +181,11 @@ export class UserService {
   }
 
   /** Update only an existing account; missing accounts must not become inserts. */
-  async updateUser(id: string, changes: Partial<UserEntity>): Promise<UserEntity> {
-    const existing = await this.findById(id);
+  async updateUser(id: string, changes: Partial<UserEntity>, options: UpdateUserOptions = {}): Promise<UserEntity> {
+    const db = options.transaction ?? this.db;
+    const existing = await db.model('users').findUnique({ where: { id } }) as UserEntity | null;
     if (!existing) throw new NotFoundException('User not found');
-    return this.doUpdate(existing, changes);
+    return this.doUpdate(existing, changes, db, !!options.transaction);
   }
 
   /** Replace role bindings on one adapter transaction, then invalidate authorization. */
@@ -280,6 +286,8 @@ export class UserService {
   private async doUpdate(
     old: UserEntity,
     input: Partial<UserEntity>,
+    db: DatabaseAdapter = this.db,
+    inTransaction = false,
   ): Promise<UserEntity> {
     // Never mutate the caller's DTO or write undefined fields back to storage.
     const newer = Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)) as Partial<UserEntity>;
@@ -319,7 +327,7 @@ export class UserService {
     const updateData = { ...newer };
     delete updateData.id;
 
-    await this.db.model('users').update({
+    await db.model('users').update({
       where: { id: old.id },
       data: updateData,
     });
@@ -332,17 +340,14 @@ export class UserService {
       await this.revokeSessions(old.id, 'disabled');
     }
 
-    // Publish UserModifiedEvent
-    await this.publishEvent(
-      AUTH_EVENT_TOPICS.USER_MODIFIED,
-      createUserModifiedEvent(old.id, changes, undefined, passwordChanged),
-    );
-
-    // Clear authorization cache
-    await this.publishEvent(
-      AUTH_EVENT_TOPICS.CLEAR_AUTH_CACHE,
-      createClearAuthCacheEvent(old.id, 'user_modified'),
-    );
+    const publish = async () => {
+      await this.publishEvent(AUTH_EVENT_TOPICS.USER_MODIFIED,
+        createUserModifiedEvent(old.id, changes, undefined, passwordChanged));
+      await this.publishEvent(AUTH_EVENT_TOPICS.CLEAR_AUTH_CACHE,
+        createClearAuthCacheEvent(old.id, 'user_modified'));
+    };
+    if (inTransaction) await TransactionHolder.afterCommit(publish);
+    else await publish();
 
     return updated;
   }

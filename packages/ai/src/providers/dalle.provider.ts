@@ -20,8 +20,13 @@ export class DalleProvider implements MediaProvider {
   supportedTypes = [MediaType.IMAGE];
 
   async generate(prompt: string, config: MediaGenerationConfig): Promise<MediaGenerationResult> {
-    const client = await this.createClient(config);
     const modelId = config.modelId || 'dall-e-3';
+    const count = config.count ?? 1;
+    if (!Number.isSafeInteger(count) || count < 1 || count > this.getCapabilities(modelId).maxOutputs)
+      throw new RangeError(`${modelId} does not support the requested output count`);
+    if (config.referenceImageUrl || config.referenceImageUrls?.length || config.firstFrameUrl || config.lastFrameUrl)
+      throw new TypeError('DALL-E generation does not support reference images');
+    const client = await this.createClient(config);
     const startTime = Date.now();
 
     const params: Record<string, unknown> = {
@@ -43,22 +48,24 @@ export class DalleProvider implements MediaProvider {
     }
 
     const response = await (client as any).images.generate(params, { signal: config.signal });
-    const image = response.data?.[0];
-
-    return {
+    if (!Array.isArray(response.data) || response.data.length !== count) throw new Error('Image provider returned an incomplete output batch');
+    const outputs: MediaGenerationResult[] = response.data.map((image: { url?: string; b64_json?: string; revised_prompt?: string }) => ({
       url: image?.url,
       base64: image?.b64_json,
       mediaType: MediaType.IMAGE,
       width: config.width,
       height: config.height,
       format: 'png',
-      cost: this.estimateCost(modelId, config),
+      cost: this.estimateCost(modelId, { ...config, count: 1 }),
       provider: this.id,
       model: modelId,
       durationMs: Date.now() - startTime,
       revisedPrompt: image?.revised_prompt,
-    };
+    }));
+    return { ...outputs[0], cost: this.estimateCost(modelId, config), ...(outputs.length > 1 ? { outputs } : {}) };
   }
+
+  getCapabilities(modelId: string) { return { maxOutputs: modelId === 'dall-e-2' ? 10 : 1, maxReferences: 0 }; }
 
   getModels(): MediaModelInfo[] {
     return [

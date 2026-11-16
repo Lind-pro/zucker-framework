@@ -34,6 +34,7 @@ export {
 export type { StoredPlan, StoredPlanPrice } from './plan-catalog.store';
 export { createUserSubscriptionStore, PENDING_PAYMENT_BLOCK_MS } from './user-subscription.store';
 export type { UserSubscriptionStoreOptions } from './user-subscription.store';
+export { createPaymentHistory, PLAN_PAYMENT_APPLICATION_KIND, PLAN_PAYMENT_REFUND_KIND, PLAN_PAYMENT_HISTORY_KINDS } from './payment-history';
 export {
   createQuotaReservationStore, createQuotaCapacityStore, createResourceChargeLookup, activeResourceKey, quotaCounterUsage,
   listQuotaReservations, findQuotaReservation,

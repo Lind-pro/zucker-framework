@@ -11,7 +11,7 @@ export { ThirdPartyAccountService } from './third-party-account.service';
 export type { ThirdPartyProfile } from './third-party-account.service';
 export { DepartmentDimensionProvider } from './department-dimension.provider';
 export { UserService, PASSWORD_ENCODER } from './user.service';
-export type { UserEntity, AddUserOptions } from './user.service';
+export type { UserEntity, AddUserOptions, UpdateUserOptions } from './user.service';
 export { AuthorizationSettingService } from './authorization-setting.service';
 export type { AuthorizationSettingEntity } from './authorization-setting.service';
 export { DimensionUserService } from './dimension-user.service';

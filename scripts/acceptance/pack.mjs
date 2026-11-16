@@ -14,6 +14,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isMainModule } from '../cli-entry.mjs';
 
 export const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -62,7 +63,7 @@ export function pack({ out, skipBuild = false, root = rootDir, log = (line) => p
   return manifest;
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (isMainModule(import.meta.url)) {
   const args = process.argv.slice(2);
   const outIndex = args.indexOf('--out');
   if (outIndex < 0 || !args[outIndex + 1]) throw new Error('usage: pack.mjs --out <dir> [--skip-build]');

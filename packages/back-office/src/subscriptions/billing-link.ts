@@ -21,18 +21,19 @@ export function createSqlBillingLink(options: { tables?: Partial<Record<BillingL
   // Only plan purchases decide the term (credit-only purchases never block). Recent unsettled plan
   // checkouts, and provider plan subscriptions still paying for the term, block; paused, unpaid,
   // canceled and stale pending/unknown states are left to billing reconciliation.
-  const pendingSql = `SELECT * FROM (
-      (SELECT 'order' AS kind, id, state FROM ${orders}
+  // Provider billing must win: cancellation and checkout may intentionally ignore pending orders.
+  const pendingSql = `SELECT kind, id, state FROM (
+      (SELECT 'order' AS kind, id, state, 1 AS priority FROM ${orders}
         WHERE "ownerId"=$1 AND offer->'fulfillmentData'->'plan' IS NOT NULL
           AND state IN ('pending','requires_capture','unknown') AND "createdAt" > $2
         ORDER BY "createdAt" DESC LIMIT 1)
       UNION ALL
-      (SELECT 'subscription' AS kind, id, status AS state FROM ${subscriptions}
+      (SELECT 'subscription' AS kind, id, status AS state, 0 AS priority FROM ${subscriptions}
         WHERE "ownerId"=$1 AND offer->'fulfillmentData'->'plan' IS NOT NULL
           AND (status IN ('active','trialing') OR (status='past_due' AND ("currentPeriodEnd" IS NULL OR "currentPeriodEnd" > $3))
             OR (status='unknown' AND "createdAt" > $2))
         ORDER BY "createdAt" DESC LIMIT 1)
-    ) AS blocking LIMIT 1`;
+    ) AS blocking ORDER BY priority LIMIT 1`;
   const referencedSql = `SELECT
       EXISTS (SELECT 1 FROM ${orders} WHERE offer->'fulfillmentData'->'plan'->>'planId'=$1
         AND state <> 'unpaid' AND "fulfilledAt" IS NULL)

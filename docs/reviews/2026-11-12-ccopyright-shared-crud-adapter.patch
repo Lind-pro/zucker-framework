@@ -1,0 +1,111 @@
+--- a/apps/server/src/infrastructure/database/prisma-crud.service.ts
++++ b/apps/server/src/infrastructure/database/prisma-crud.service.ts
+@@ -1,6 +1,7 @@
+-import { CrudService, DynamicQueryService, PrismaAdapter } from '@zucker-framework/crud';
++import { CrudService, DynamicQueryService } from '@zucker-framework/crud';
+ import type { GenericEntity } from '@zucker-framework/core';
+ import { PrismaService } from './prisma.service';
++import { CopyrightDatabase } from './framework-database';
+ 
+ // Existing product tables do not all expose framework's mandatory audit dates.
+ export type PrismaCrudEntity = Pick<GenericEntity, 'id'> & Partial<Pick<GenericEntity, 'createdAt' | 'updatedAt'>>;
+@@ -11,13 +12,13 @@
+ export abstract class PrismaCrudService<T extends PrismaCrudEntity> extends CrudService<T> {
+   constructor(
+     protected readonly prisma: PrismaService,
++    database: CopyrightDatabase,
+     dynamicQuery: DynamicQueryService,
+     modelName: string,
+     options?: { defaultOrderField?: string },
+   ) {
+-    // Prisma's generated client omits the index signature used by the public
+-    // adapter port to resolve model delegates. No runtime client is substituted.
+-    super(new PrismaAdapter(prisma as unknown as ConstructorParameters<typeof PrismaAdapter>[0]),
+-      dynamicQuery, modelName, undefined, options);
++    // Share the composition root's adapter with DynamicQueryService. A second adapter over
++    // the same Prisma client has a different transaction identity and loses dynamic reads.
++    super(database, dynamicQuery, modelName, undefined, options);
+   }
+ }
+--- a/apps/server/src/modules/subscriptions/payment-records.controller.ts
++++ b/apps/server/src/modules/subscriptions/payment-records.controller.ts
+@@ -3,13 +3,16 @@
+ import { Permissions, Resource } from '@zucker-framework/auth';
+ import { PrismaService } from '@/infrastructure/database/prisma.service';
+ import { PrismaCrudService } from '@/infrastructure/database/prisma-crud.service';
++import { CopyrightDatabase } from '@/infrastructure/database/framework-database';
+ import { COPYRIGHT_CRUD_ROUTES } from '@/infrastructure/database/crud-routes.config';
+ 
+ class LedgerRow { id: string; createdAt?: Date; updatedAt?: Date }
+ 
+ @Injectable()
+ export class PaymentRecordQueryService extends PrismaCrudService<LedgerRow> {
+-  constructor(prisma: PrismaService, query: DynamicQueryService) { super(prisma, query, 'paymentRecord'); }
++  constructor(prisma: PrismaService, database: CopyrightDatabase, query: DynamicQueryService) {
++    super(prisma, database, query, 'paymentRecord');
++  }
+ }
+ 
+ /** Read-only payment ledger of the local billing engine (admin `payments` page); removed with it in Phase 3. */
+--- a/apps/server/src/infrastructure/database/prisma-crud.integration.spec.ts
++++ b/apps/server/src/infrastructure/database/prisma-crud.integration.spec.ts
+@@ -9,6 +9,7 @@
+ import { PrismaCrudModule } from './prisma-crud.module';
+ import { QueryParam } from '@/infrastructure/database/query-param.dto';
+ import { PrismaCrudService } from './prisma-crud.service';
++import { CopyrightDatabase, TRANSACTION_LIMITS } from './framework-database';
+ 
+ @Controller('migration-fixture')
+ class FixtureController {
+@@ -33,7 +34,7 @@
+     update: jest.fn().mockResolvedValue(row),
+     delete: jest.fn().mockResolvedValue(row),
+   };
+-  const prisma = { themeConfig: delegate, aIModel: delegate };
++  const prisma = { themeConfig: delegate, aIModel: delegate, $transaction: jest.fn() };
+ 
+   beforeAll(async () => {
+     const module = await Test.createTestingModule({
+@@ -82,7 +83,7 @@
+   });
+ 
+   it('uses framework CRUD and preserves missing-record HTTP exceptions', async () => {
+-    const service = new FixtureService(prisma as unknown as PrismaService, app.get(DynamicQueryService), 'themeConfig');
++    const service = new FixtureService(prisma as unknown as PrismaService, app.get(CopyrightDatabase), app.get(DynamicQueryService), 'themeConfig');
+     await expect(service.create(row)).resolves.toEqual(row);
+     expect(delegate.create).toHaveBeenCalledWith({ data: row });
+     delegate.update.mockRejectedValueOnce({ code: 'P2025' });
+@@ -90,6 +91,33 @@
+     await expect(service.delete(row.id)).resolves.toEqual(row);
+     expect(delegate.findUnique).toHaveBeenCalledWith({ where: { id: row.id } });
+     expect(delegate.delete).toHaveBeenCalledWith({ where: { id: row.id } });
++  });
++
++  it('keeps framework dynamic reads inside the same product transaction as CRUD writes', async () => {
++    const inside = { id: 'inside-transaction' };
++    const txDelegate = {
++      ...delegate,
++      create: jest.fn().mockResolvedValue(inside),
++      findUnique: jest.fn().mockResolvedValue(inside),
++      findMany: jest.fn().mockResolvedValue([inside]),
++      count: jest.fn().mockResolvedValue(1),
++    };
++    prisma.$transaction.mockImplementationOnce(async (work: (client: unknown) => Promise<unknown>) =>
++      work({ themeConfig: txDelegate }));
++    const queries = app.get(DynamicQueryService);
++    const service = new FixtureService(prisma as unknown as PrismaService, app.get(CopyrightDatabase), queries, 'themeConfig');
++    await expect(service.transaction(async () => {
++      await service.create(inside);
++      expect(await service.findOne(inside.id)).toEqual(inside);
++      expect((await service.findAll({ page: 1 })).data).toEqual([inside]);
++      expect(await service.countByQuery({})).toBe(1);
++      expect(await service.exists({})).toBe(true);
++      expect(await queries.findOne('themeConfig', inside.id)).toEqual(inside);
++      throw new Error('synthetic rollback');
++    })).rejects.toThrow('synthetic rollback');
++    expect(delegate.findMany).not.toHaveBeenCalled();
++    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), TRANSACTION_LIMITS);
++    expect((await service.findAll({})).data).toEqual([row]);
+   });
+ 
+   it('uses the async seconds-based cache and coalesces factory calls', async () => {

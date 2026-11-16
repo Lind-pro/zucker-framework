@@ -3,11 +3,12 @@ import { isActiveTerm } from '@zucker-framework/credit';
 import { CYCLE_FOR_INTERVAL } from '@zucker-framework/fe-types/back-office';
 import {
   HostedCheckoutError, SubscriptionAssignmentService, addBillingCycle, readPlanPriceSnapshot,
-  type PlanPriceSnapshot, type SubscriptionPaymentResult, type SubscriptionRefundResult,
+  type PlanPriceSnapshot, type SubscriptionPaymentHistory, type SubscriptionPaymentResult, type SubscriptionRefundResult,
 } from '@zucker-framework/payment';
 import type { SubscriptionsStorage } from './storage';
 import type { PlanFulfillmentHooks, PlanPaymentRefunded } from './subscriptions.ports';
 import { createUserSubscriptionStore } from './user-subscription.store';
+import { createPaymentHistory } from './payment-history';
 
 /** Event written with every plan term change caused by a payment (publish it after commit). */
 export const PLAN_TERM_CHANGED_OUTBOX_KIND = 'billing.plan-term-changed';
@@ -46,8 +47,9 @@ export interface PlanTermInput {
  * makes every reference count once, and SubscriptionAssignmentService decides precedence.
  */
 export async function recordPlanTerm(database: DatabaseAdapter, storage: SubscriptionsStorage, tx: DatabaseAdapter, input: PlanTermInput,
-  events: PlanPaymentEventSink = outboxEventSink(storage)): Promise<SubscriptionPaymentResult> {
-  const result = await new SubscriptionAssignmentService(createUserSubscriptionStore(database, storage, { transaction: tx }), { activeTerm: isActiveTerm })
+  events: PlanPaymentEventSink = outboxEventSink(storage),
+  history: SubscriptionPaymentHistory<DatabaseAdapter> = createPaymentHistory(storage)): Promise<SubscriptionPaymentResult> {
+  const result = await new SubscriptionAssignmentService(createUserSubscriptionStore(database, storage, { transaction: tx, paymentHistory: history }), { activeTerm: isActiveTerm })
     .recordPayment({ userId: input.userId, planId: input.plan.planId, billingCycle: CYCLE_FOR_INTERVAL[input.plan.interval],
       periodStart: input.periodStart, periodEnd: input.periodEnd, reference: input.reference, orderId: input.orderId,
       purchasedAt: input.purchasedAt });
@@ -77,6 +79,8 @@ function snapshot(fulfillmentData: unknown): PlanPriceSnapshot | null {
 export interface PlanFulfillmentOptions {
   /** Where plan payment events go. Default {@link outboxEventSink}. */
   events?: PlanPaymentEventSink;
+  /** Permanent application/refund ledger. Defaults to the existing outbox JSON storage. */
+  paymentHistory?: SubscriptionPaymentHistory<DatabaseAdapter>;
   /**
    * Creation time of a renewing subscription's checkout order (its purchase decision). Default: the
    * `createdAt` of the storage's `billingOrders` row `initialOrderId`.
@@ -88,6 +92,7 @@ export interface PlanFulfillmentOptions {
 export function createPlanFulfillmentHooks(database: DatabaseAdapter, storage: SubscriptionsStorage,
   options: PlanFulfillmentOptions = {}): PlanFulfillmentHooks {
   const events = options.events ?? outboxEventSink(storage);
+  const history = options.paymentHistory ?? createPaymentHistory(storage);
   const purchasedAt = options.purchasedAt ?? (async (tx, id) => {
     const order = await storage.of(tx).billingOrders.findUnique({ where: { id }, select: { createdAt: true } }) as { createdAt: Date } | null;
     return order?.createdAt ?? null;
@@ -103,7 +108,7 @@ export function createPlanFulfillmentHooks(database: DatabaseAdapter, storage: S
         : plan.interval === 'one_time' && plan.termDays ? new Date(start.getTime() + plan.termDays * 86_400_000) : undefined;
       if (end === undefined) throw new HostedCheckoutError('conflict', 'A recurring plan price cannot be sold as a one-time payment');
       await recordPlanTerm(database, storage, tx, { userId: order.ownerId, plan, periodStart: start, periodEnd: end,
-        reference: `order:${order.id}`, orderId: order.id, purchasedAt: order.createdAt, checkout: true }, events);
+        reference: `order:${order.id}`, orderId: order.id, purchasedAt: order.createdAt, checkout: true }, events, history);
     },
     // Each paid cycle of a plan subscription extends the term by its proven period.
     async cycleFulfilled(tx, { ownerId, subscription, receipt }) {
@@ -117,24 +122,26 @@ export function createPlanFulfillmentHooks(database: DatabaseAdapter, storage: S
       // The subscription's purchase decision is its checkout order: a revocation made after it wins.
       await recordPlanTerm(database, storage, tx, { userId: ownerId, plan, periodStart, periodEnd,
         reference: `cycle:${receipt.id}`, orderId: subscription.initialOrderId,
-        purchasedAt: await purchasedAt(tx, subscription.initialOrderId), checkout: receipt.initial === true }, events);
+        purchasedAt: await purchasedAt(tx, subscription.initialOrderId), checkout: receipt.initial === true }, events, history);
     },
     // A payment refunded in full no longer pays for its term (partial refunds keep it).
     async paymentRefunded(tx, input) {
-      await revokePlanTerm(database, storage, tx, input, events);
+      await revokePlanTerm(database, storage, tx, input, events, history);
     },
   };
 }
 
 /**
- * Revokes (or shortens) the plan term defined by one fully refunded payment. Orders without a plan
- * snapshot are ignored; a term defined by other evidence stays unchanged (`not_current`).
+ * Removes one fully refunded payment from the current entitlement ancestry. Orders without a plan
+ * snapshot are ignored; unrefunded payments and administrator baselines survive. History is durable
+ * and transaction-bound; repeated refunds do not write duplicate term-change events.
  */
 export async function revokePlanTerm(database: DatabaseAdapter, storage: SubscriptionsStorage, tx: DatabaseAdapter,
-  input: Readonly<PlanPaymentRefunded>, events: PlanPaymentEventSink = outboxEventSink(storage)): Promise<SubscriptionRefundResult | null> {
+  input: Readonly<PlanPaymentRefunded>, events: PlanPaymentEventSink = outboxEventSink(storage),
+  history: SubscriptionPaymentHistory<DatabaseAdapter> = createPaymentHistory(storage)): Promise<SubscriptionRefundResult | null> {
   const plan = snapshot(input.fulfillmentData);
   if (!plan) return null;
-  const result = await new SubscriptionAssignmentService(createUserSubscriptionStore(database, storage, { transaction: tx }), { activeTerm: isActiveTerm })
+  const result = await new SubscriptionAssignmentService(createUserSubscriptionStore(database, storage, { transaction: tx, paymentHistory: history }), { activeTerm: isActiveTerm })
     .revokePayment({ userId: input.ownerId, reference: input.reference });
   if (result.change)
     await events(tx, { kind: PLAN_TERM_CHANGED_OUTBOX_KIND, aggregateId: `refund:${input.reference}`,

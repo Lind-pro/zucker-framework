@@ -273,7 +273,7 @@ run('AI tasks launch gates (HTTP + PostgreSQL, fake media provider)', () => {
     const created = (await submit({ ...image('with reference'), references: [own.id] }).expect(202)).body;
     expect(await drive(created.id)).toBe('COMPLETED');
     const call = media.calls.filter(entry => entry.method === 'generate').at(-1)!;
-    expect(String((call.config as Record<string, unknown>).referenceImageUrl)).toMatch(/^data:image\/png;base64,/);
+    expect(String((call.config as { referenceImageUrls?: string[] }).referenceImageUrls?.[0])).toMatch(/^data:image\/png;base64,/);
     expect(JSON.stringify(created)).not.toContain(own.id);
   });
 

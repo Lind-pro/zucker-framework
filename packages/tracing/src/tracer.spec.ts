@@ -6,6 +6,7 @@ import {
   RatioSampler,
   ParentBasedSampler,
   SamplingDecision,
+  type Sampler,
 } from './tracer';
 
 describe('InMemoryTracer', () => {
@@ -85,27 +86,27 @@ describe('InMemoryTracer', () => {
 describe('Samplers', () => {
   describe('AlwaysOnSampler', () => {
     it('should always return RECORD_AND_SAMPLE', () => {
-      const sampler = new AlwaysOnSampler();
+      const sampler: Sampler = new AlwaysOnSampler();
       expect(sampler.shouldSample('any')).toBe(SamplingDecision.RECORD_AND_SAMPLE);
     });
   });
 
   describe('AlwaysOffSampler', () => {
     it('should always return DROP', () => {
-      const sampler = new AlwaysOffSampler();
+      const sampler: Sampler = new AlwaysOffSampler();
       expect(sampler.shouldSample('any')).toBe(SamplingDecision.DROP);
     });
   });
 
   describe('RatioSampler', () => {
     it('should clamp ratio to 0-1 range', () => {
-      const sampler = new RatioSampler(2.0);
+      const sampler: Sampler = new RatioSampler(2.0);
       // Ratio clamped to 1.0, so should always sample
       expect(sampler.shouldSample('op')).toBe(SamplingDecision.RECORD_AND_SAMPLE);
     });
 
     it('should drop all when ratio is 0', () => {
-      const sampler = new RatioSampler(0);
+      const sampler: Sampler = new RatioSampler(0);
       expect(sampler.shouldSample('op')).toBe(SamplingDecision.DROP);
     });
   });

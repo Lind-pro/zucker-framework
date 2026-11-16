@@ -84,7 +84,10 @@ export interface AITaskStoredObject {
  * (taskId, index): a retried attempt writes the same output again (or reuses the stored one).
  *
  * `putStream` (preferred) receives the output as a bounded stream. It must remove any partially
- * written object when the stream or the write fails, and may return an existing object for the same
+ * written object when `signal` aborts and must check it before starting new work. `put` must also
+ * honour the signal; the worker stops waiting at the output deadline even for a broken port.
+ *
+ * It also removes partial objects when the stream or the write fails, and may return an existing object for the same
  * (taskId, index) without consuming the stream. Throw `AITaskOutputRejectedError('quota')` for a
  * permanent storage refusal (e.g. owner quota): the task then fails and releases its hold instead of
  * retrying. Without `putStream`, `put` receives the output buffered (bounded by the same cap).
@@ -100,6 +103,8 @@ export interface AIMediaResultLike {
   url?: string;
   base64?: string;
   format?: string;
+  /** All synchronous outputs; the top-level fields remain the first output for older consumers. */
+  outputs?: readonly AIMediaResultLike[];
 }
 
 /** Structural subset of `@zucker-framework/ai`'s MediaTaskResult used here. */
@@ -140,6 +145,13 @@ export interface ResolvedAITaskProvider {
 /** Resolves the configured provider and its credentials at execution time (never persisted). */
 export interface AITaskProviderResolver {
   resolve(request: AITaskProviderRequest): ResolvedAITaskProvider | Promise<ResolvedAITaskProvider>;
+  /**
+   * Read-only recovery by stable application task id after a submit outcome was lost. Never submit
+   * a new generation here. Return null while unknown, a task/result once found, or FAILED only when
+   * the provider confirms rejection. Without this port unknown submissions fail safely and refund.
+   */
+  recoverSubmission?(request: AITaskProviderRequest, signal: AbortSignal):
+    Promise<AIMediaResultLike | AIMediaTaskLike | null>;
 }
 
 /** Verified callback content. `outcome` is optional: a verified callback may also be only a wake-up. */

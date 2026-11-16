@@ -179,3 +179,40 @@ Features `apiKeys`, `orders`, `billingSubscriptions`, `jobs`, `deliveries`, `fil
   `POLICY_<ID>_<KEY>`), CAS saves with audit, `GET <publicPath>/config`.
 - `ConnectionSettingsService` is the `ConnectionCredentialSource` the billing host reads
   (`SETTINGS_CONNECTIONS`). Tokens: `SETTINGS_*`.
+
+Plan refund history uses the existing unique `(kind, aggregateId)` JSON outbox storage, so no schema
+migration is required for hosts already using that schema. `recordPlanTerm` / `revokePlanTerm`
+atomically record application snapshots and full-refund markers. Direct `createUserSubscriptionStore`
+callers opt in through `options.paymentHistory` (for example `createPaymentHistory(storage)`); the
+default does not touch an outbox, preserving legacy payment writers without that model. Those hosts
+must add a durable history port before automatic refunds; history-free refunds fail closed. `PLAN_PAYMENT_HISTORY_KINDS` (`subscription.payment-application` and
+`subscription.payment-refund`) identifies permanent accounting records: exclude them from delivery
+workers and all outbox TTL/cleanup, and retain them with payment evidence after account deletion.
+The template's workers select their own event kinds and do not purge these records. Custom consumers
+must preserve the same retention contract or supply a dedicated `SubscriptionPaymentHistory` port.
+Legacy terms without application snapshots require audited reconciliation; automatic refund
+settlement fails closed and can be retried after importing verified snapshots using
+`createPaymentHistory().recordApplication`. Do not synthesize admin grants from payment periods.
+
+### Account security update compatibility
+
+`AccountSessionAdminHooks.sensitiveFieldsChanging(change, tx)` now revokes sessions and advances the
+credential version in the same transaction as the admin user edit. Use the matching updated admin
+package; custom hooks must migrate from post-commit `sensitiveFieldsChanged` to this supplied-transaction
+contract. No account-table migration is required.
+
+Email sign-in uses an exact case-insensitive lookup (`equals` with `mode: 'insensitive'`) and requires
+exactly one match, including legacy mixed-case rows. Custom model adapters must support this query.
+Case-colliding accounts fail closed rather than selecting an arbitrary identity. Review existing
+case-insensitive collisions before normalizing stored addresses or adding a case-insensitive unique
+index; this update does not mutate existing account data.
+
+The account TOTP host uses its conditional database update as the replay authority. A failed claim or
+rolled-back protected action therefore leaves the valid code available for retry; a committed claim
+still prevents every later replay across instances. Failed-attempt lockouts remain in force.
+
+Payment revision `0` means the bootstrap environment of the current process. It is not an archived,
+immutable configuration across restarts. Keep its account and mode stable for outstanding orders;
+when changing test/live mode or provider account across restarts, use a distinct account scope or a
+persisted configuration revision. Revision-zero orders fail closed when bootstrap credentials cannot
+be assembled or do not identify a mode; they never guess a newer configuration's mode.

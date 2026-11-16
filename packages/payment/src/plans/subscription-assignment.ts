@@ -52,6 +52,22 @@ export interface SubscriptionPaymentEvidence {
   orderId: string | null;
 }
 
+/** Durable application ancestry. Keep it as long as the payment evidence; it is not a delivery event. */
+export interface SubscriptionPaymentApplication {
+  evidence: SubscriptionPaymentEvidence;
+  appliedAt: Date;
+  /** The live term before this application, including an administrator-granted baseline. */
+  previous: UserSubscriptionWrite | null;
+}
+/** All writes join the same account-serialized transaction as evidence and the current term. */
+export interface SubscriptionPaymentHistory<Tx> {
+  recordApplication(tx: Tx, application: SubscriptionPaymentApplication): Promise<void>;
+  findApplication(tx: Tx, reference: string): Promise<SubscriptionPaymentApplication | null>;
+  /** Inserts a permanent full-refund marker; false on replay. */
+  recordRefund(tx: Tx, reference: string, userId: string): Promise<boolean>;
+  isRefunded(tx: Tx, reference: string): Promise<boolean>;
+}
+
 /** The billing record that must be settled before an administrator may change the term. */
 export type PendingPaymentBlock = PendingPaymentDetails['blocking'];
 
@@ -72,6 +88,8 @@ export interface UserSubscriptionStore<Tx> {
   /** Inserts the evidence; false (and no write) when its reference was already recorded. */
   recordPaymentEvidence(tx: Tx, evidence: SubscriptionPaymentEvidence): Promise<boolean>;
   findPaymentEvidence(tx: Tx, reference: string): Promise<SubscriptionPaymentEvidence | null>;
+  /** Required for automatic refunds. Legacy stores may omit it, but refunds then fail closed. */
+  paymentHistory?: SubscriptionPaymentHistory<Tx>;
   save(tx: Tx, userId: string, data: UserSubscriptionWrite): Promise<UserSubscriptionRecord>;
 }
 
@@ -160,9 +178,8 @@ export interface SubscriptionPaymentResult {
 /**
  * What a full refund of one payment did to the term (see {@link SubscriptionAssignmentService.revokePayment}):
  * - `revoked`: the term was defined by this payment and has ended;
- * - `shortened`: the term was defined by this payment and falls back to what earlier payments paid for;
- * - `not_current`: the term is defined by other evidence (a later payment, another plan or an
- *   administrator), so it is unchanged;
+ * - `shortened`: the term falls back to surviving unrefunded payments or an administrator baseline;
+ * - `not_current`: the refund was already applied or does not change this term's entitlement ancestry;
  * - `inactive`: there is no live term;
  * - `not_found`: no payment evidence with this reference for this user.
  */
@@ -395,21 +412,22 @@ export class SubscriptionAssignmentService<Tx> {
         if (current && current.periodStart > start) return unchanged('superseded');
         write = this.paidTerm(plan.id, input, start, end);
       } else write = this.paidTerm(plan.id, input, start, end);
+      await this.store.paymentHistory?.recordApplication(tx, {
+        evidence: { reference: input.reference, userId: input.userId, planId: plan.id, billingCycle: input.billingCycle,
+          periodStart: start, periodEnd: end, orderId: input.orderId ?? null },
+        appliedAt: now, previous: live ? this.write(live) : null,
+      });
       const after = await this.store.save(tx, input.userId, write);
       return { outcome: 'applied', subscription: after, change: { kind: 'paid', userId: input.userId, before, after } };
     });
   }
 
   /**
-   * Refund write-back: a payment refunded IN FULL takes back the term it paid for. Call it from the
-   * refund settlement transaction through a store bound to that transaction (a partial refund keeps
-   * the term and must not call this). Only a live term whose `paymentReference` is this payment changes:
-   * - LIFETIME: the term is revoked (status EXPIRED);
-   * - ONE_TIME: the paid duration is removed from the (possibly stacked) end date;
-   * - MONTHLY/YEARLY: the term falls back to the start of the refunded period (earlier periods stay paid);
-   * when the resulting end is not in the future the term is revoked (status EXPIRED, end now).
-   * Evidence stays recorded, so the refunded reference can never be applied again. Not idempotent by
-   * itself: the caller runs it once per refunded payment.
+   * Full-refund write-back. Replays the current term's application ancestry excluding every refunded
+   * reference, preserving unrefunded payments and administrator baselines in either refund order.
+   * Refund markers make replay idempotent. Missing legacy ancestry fails closed: a consumer must
+   * restore audited application history before retrying; payment periods alone cannot prove grants.
+   * All history, markers and term updates must commit in the caller's refund transaction.
    */
   async revokePayment(input: SubscriptionRefundInput): Promise<SubscriptionRefundResult> {
     this.identifier(input?.userId, 'userId');
@@ -419,18 +437,54 @@ export class SubscriptionAssignmentService<Tx> {
       const before = await this.store.find(tx, input.userId);
       const unchanged = (outcome: SubscriptionRefundOutcome): SubscriptionRefundResult => ({ outcome, subscription: before, change: null });
       if (!evidence || evidence.userId !== input.userId) return unchanged('not_found');
+      const history = this.store.paymentHistory;
+      if (!history) throw new SubscriptionAssignmentError('unavailable', 'Durable payment application history is required for refunds');
       const now = this.clock();
-      if (!before || before.status === 'EXPIRED' || !this.isActive(before, now)) return unchanged('inactive');
-      if (before.paymentReference !== input.reference || before.planId !== evidence.planId) return unchanged('not_current');
-      let endDate: Date | null;
-      if (evidence.billingCycle === 'LIFETIME' || before.billingCycle === 'LIFETIME' || before.endDate === null) endDate = null;
-      else if (evidence.billingCycle === 'ONE_TIME' && evidence.periodEnd)
-        endDate = new Date(before.endDate.getTime() - (evidence.periodEnd.getTime() - evidence.periodStart.getTime()));
-      else endDate = evidence.periodStart < before.endDate ? evidence.periodStart : before.endDate;
-      const write: UserSubscriptionWrite = endDate && endDate > now
-        ? { ...this.write(before), endDate }
-        : { ...this.write(before), status: 'EXPIRED', endDate: before.billingCycle === 'LIFETIME' || before.endDate === null ? null : now,
-          cancelAtPeriodEnd: false, canceledAt: now };
+      const firstRefund = await history.recordRefund(tx, input.reference, input.userId);
+      if (!before || before.status === 'EXPIRED' || (before.endDate !== null && before.endDate <= now)) return unchanged('inactive');
+      if (!firstRefund || before.source !== 'payment' || !before.paymentReference) return unchanged('not_current');
+
+      const applications: SubscriptionPaymentApplication[] = [];
+      const seen = new Set<string>();
+      let baseline: UserSubscriptionWrite | null = this.write(before);
+      while (baseline?.source === 'payment' && baseline.paymentReference) {
+        const reference = baseline.paymentReference;
+        if (seen.has(reference)) throw new SubscriptionAssignmentError('unavailable', 'Cyclic payment application history');
+        seen.add(reference);
+        const application = await history.findApplication(tx, reference);
+        if (!application || application.evidence.userId !== input.userId || application.evidence.reference !== reference)
+          throw new SubscriptionAssignmentError('unavailable', 'Payment application history is incomplete; audited reconciliation is required', { reference });
+        applications.unshift(application);
+        baseline = application.previous;
+      }
+      // Refunding an unapplied payment or a term behind an administrator boundary changes no grant.
+      if (!seen.has(input.reference)) return unchanged('not_current');
+      let restored = baseline;
+      for (const application of applications) {
+        if (await history.isRefunded(tx, application.evidence.reference)) continue;
+        const paid = application.evidence;
+        const live = restored && this.options.activeTerm(restored, application.appliedAt) ? restored : null;
+        const decision = this.precedence(live, paid.planId, paid.billingCycle, paid.periodEnd);
+        if (decision === 'lifetime' || decision === 'admin' || decision === 'covered') continue;
+        if (live && (decision === 'stack' || decision === 'extend')) {
+          const endDate = decision === 'stack' && paid.periodEnd && live.endDate
+            ? new Date(Math.max(application.appliedAt.getTime(), live.endDate.getTime()) + paid.periodEnd.getTime() - paid.periodStart.getTime())
+            : paid.periodEnd;
+          restored = { ...live, status: 'ACTIVE', cancelAtPeriodEnd: false, canceledAt: null, source: 'payment',
+            endDate, billingCycle: paid.billingCycle, paymentReference: paid.reference };
+        } else restored = this.paidTerm(paid.planId, paid, paid.periodStart, paid.periodEnd);
+      }
+      const write: UserSubscriptionWrite = restored
+        ? { ...restored }
+        : { ...this.write(before), paymentReference: null, status: 'EXPIRED',
+          endDate: before.billingCycle === 'LIFETIME' ? null : now, cancelAtPeriodEnd: false, canceledAt: now };
+      if (write.endDate && write.endDate <= now) {
+        write.status = 'EXPIRED'; write.cancelAtPeriodEnd = false; write.canceledAt = now;
+      } else if (restored && before.cancelAtPeriodEnd && write.billingCycle !== 'LIFETIME') {
+        // A user's later cancellation remains in force for the surviving finite term.
+        write.status = 'CANCELED'; write.cancelAtPeriodEnd = true; write.canceledAt = before.canceledAt;
+      }
+      if (JSON.stringify(write) === JSON.stringify(this.write(before))) return unchanged('not_current');
       const after = await this.store.save(tx, input.userId, write);
       return { outcome: write.status === 'EXPIRED' ? 'revoked' : 'shortened', subscription: after,
         change: { kind: 'refunded', userId: input.userId, before, after } };
@@ -441,7 +495,7 @@ export class SubscriptionAssignmentService<Tx> {
    * Shared precedence of checkout admission and payment write-back for a purchase of `planId` ending
    * at `end` (null for LIFETIME) against the live term.
    */
-  private precedence(live: UserSubscriptionRecord | null, planId: string, cycle: UserSubscriptionCycle, end: Date | null):
+  private precedence(live: UserSubscriptionWrite | null, planId: string, cycle: UserSubscriptionCycle, end: Date | null):
     'new' | 'lifetime' | 'admin' | 'covered' | 'stack' | 'extend' | 'replace' {
     if (!live) return 'new';
     if (live.billingCycle === 'LIFETIME' || live.endDate === null) return 'lifetime';

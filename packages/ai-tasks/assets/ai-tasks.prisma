@@ -23,6 +23,8 @@ model AITask {
   wakeRequestedAt DateTime?
   deadlineAt      DateTime
   callbackOutcome Json?
+  executionState  String         @default("NEW")
+  generatedOutputs Json?
   createdAt       DateTime
   updatedAt       DateTime
   outputs         AITaskOutput[]

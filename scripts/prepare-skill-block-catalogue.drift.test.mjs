@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -45,7 +45,11 @@ test('--check exits 0 when current and 1 when stale; without --check it regenera
   const copy = scratch(context), target = join(copy, CATALOGUE_PATH);
   // The script resolves the repository from its own location, so run a copy of it inside the scratch root.
   mkdirSync(join(copy, 'scripts'), { recursive: true }); cpSync(script, join(copy, 'scripts/prepare-skill-block-catalogue.mjs'));
-  const run = (...args) => spawnSync(process.execPath, [join(copy, 'scripts/prepare-skill-block-catalogue.mjs'), ...args], { encoding: 'utf8' });
+  cpSync(join(root, 'scripts/cli-entry.mjs'), join(copy, 'scripts/cli-entry.mjs'));
+  // Exercise an actual symlink on every platform, not just macOS's /var -> /private/var.
+  const link = join(copy, 'catalogue.mjs');
+  symlinkSync(join(copy, 'scripts/prepare-skill-block-catalogue.mjs'), link);
+  const run = (...args) => spawnSync(process.execPath, [link, ...args], { encoding: 'utf8' });
   assert.equal(run('--check').status, 0);
   writeFileSync(target, 'stale\n');
   const stale = run('--check'); assert.equal(stale.status, 1); assert.equal(readFileSync(target, 'utf8'), 'stale\n');

@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { Readable, Transform } from 'node:stream';
+import { pipeline, Readable, Transform } from 'node:stream';
 import { BadRequestException, HttpException, Inject, Injectable, Logger, NotFoundException, PayloadTooLargeException } from '@nestjs/common';
 import { DATABASE_ADAPTER } from '@zucker-framework/core';
 import { BufferedFileManagerStore, FILE_MANAGER, FileAssetError, PrivateFileAssetService, sanitizeFileName } from '@zucker-framework/storage';
@@ -221,8 +221,9 @@ export class FilesService {
         done(null, held);
       },
     });
-    object.stream.on('error', error => verified.destroy(error));
-    object.stream.pipe(verified);
+    // Tie both lifetimes together: a cancelled response or failed verification must release the
+    // storage read too. Errors remain observable on the returned stream; pipeline owns cleanup.
+    pipeline(object.stream, verified, () => {});
     return { asset, stream: verified, size: asset.size };
   }
 

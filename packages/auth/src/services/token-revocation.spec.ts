@@ -54,6 +54,52 @@ function context(token: string): ExecutionContext {
 }
 
 describe('TokenService revocation (H3)', () => {
+  it('keeps a tracked token revoked when earlier replica writes arrive after a later revocation', async () => {
+    let release!: () => void;
+    let started!: () => void;
+    const pending = new Promise<void>(resolve => { release = resolve; });
+    const ready = new Promise<void>(resolve => { started = resolve; });
+    class DelayedCache extends MemoryCache {
+      private first = true;
+      override async advanceSequence(key: string, minimum: number, ttlMs: number): Promise<number> {
+        if (this.first) { this.first = false; started(); await pending; }
+        return super.advanceSequence(key, minimum, ttlMs);
+      }
+    }
+    const shared = new DelayedCache();
+    const early = new TokenService(shared), late = new TokenService(shared), issuer = new TokenService(shared);
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(1000);
+    try {
+      const first = early.revokeUserTokens('owner');
+      await ready;
+      clock.mockReturnValue(2000);
+      await issuer.signIn('owner', 'tracked');
+      clock.mockReturnValue(3000);
+      const secondWatermark = await late.revokeUserTokens('owner');
+      const claims = { sub: 'owner', iat: 2, sessionTracked: true };
+      expect(await issuer.checkAccessToken('tracked', claims)).toBe('user_revoked');
+      release();
+      expect(await first).toBeGreaterThan(secondWatermark);
+      expect(await issuer.checkAccessToken('tracked', claims)).toBe('user_revoked');
+    } finally { release(); clock.mockRestore(); }
+  });
+
+  it('fails closed instead of falling back to non-atomic cache writes', async () => {
+    const cache = { get: vi.fn(), set: vi.fn(), has: async () => false, del: vi.fn(), clear: vi.fn() };
+    const service = new TokenService(cache);
+    await expect(service.revokeUserTokens('owner')).rejects.toThrow('atomic advanceSequence');
+    expect(cache.set).not.toHaveBeenCalled();
+    await expect(service.checkAccessToken('token', { sub: 'owner' })).rejects.toThrow('authoritative readSequence');
+  });
+
+  it('gives simultaneous local revocations different watermarks within the same millisecond', async () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(1000);
+    try {
+      const service = new TokenService();
+      expect(new Set(await Promise.all(Array.from({ length: 8 }, () => service.revokeUserTokens('owner')))).size).toBe(8);
+    } finally { clock.mockRestore(); }
+  });
+
   it('blacklists signed-out tokens', async () => {
     const tokens = new TokenService();
     const token = jwt({ sub: 'u1', iat: nowSec() });

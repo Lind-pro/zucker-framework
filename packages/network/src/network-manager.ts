@@ -70,6 +70,12 @@ export class DefaultNetworkManager implements INetworkManager, OnModuleDestroy {
   /** 被显式 shutdown 的网络：保留在缓存中，但健康检查不再自动重载 */
   private readonly stopped = new Set<string>();
 
+  // Serialize lifecycle operations per key. Closing invalidates work already waiting on I/O.
+  private readonly operations = new Map<string, Promise<unknown>>();
+  private readonly generations = new Map<string, symbol>();
+  private closed = false;
+  private closing?: Promise<void>;
+
   private checkTimer: ReturnType<typeof setInterval> | undefined;
 
   /** 健康检查是否正在运行；慢速重载时跳过下一个 tick，避免重叠 */
@@ -95,6 +101,7 @@ export class DefaultNetworkManager implements INetworkManager, OnModuleDestroy {
   /* ------------------------------------------------------------------ */
 
   registerProvider(provider: NetworkProvider<unknown>): void {
+    this.assertOpen();
     this.providers.set(provider.type.id, provider);
     this.logger.log(`NetworkProvider registered: ${provider.type.id}`);
   }
@@ -104,23 +111,27 @@ export class DefaultNetworkManager implements INetworkManager, OnModuleDestroy {
   /* ------------------------------------------------------------------ */
 
   async getNetwork<T extends Network = Network>(type: NetworkType, id: string): Promise<T> {
-    const networkMap = this.getNetworkStore(type.id);
-    const cached = networkMap.get(id) as T | undefined;
-    if (cached) return cached;
-
-    // 并发调用共享同一个创建 Promise，避免重复创建（重复绑定端口或泄漏客户端连接）
+    this.assertOpen();
     const key = this.key(type.id, id);
     let creating = this.pending.get(key);
     if (!creating) {
-      creating = this.createFromConfig(type, id)
-        .then((network) => {
-          networkMap.set(id, network);
-          return network;
-        })
-        .finally(() => {
-          this.pending.delete(key);
-        });
+      const generation = this.generation(key);
+      creating = this.enqueue(key, async () => {
+        this.assertCurrent(key, generation);
+        const networkMap = this.getNetworkStore(type.id);
+        const cached = networkMap.get(id);
+        if (cached) return cached;
+        const network = await this.createFromConfig(type, id);
+        if (!this.isCurrent(key, generation)) {
+          await network.shutdown();
+          throw new Error(`Network operation superseded: ${key}`);
+        }
+        networkMap.set(id, network);
+        return network;
+      });
       this.pending.set(key, creating);
+      const cleanup = () => { if (this.pending.get(key) === creating) this.pending.delete(key); };
+      void creating.then(cleanup, cleanup);
     }
     return (await creating) as T;
   }
@@ -144,67 +155,80 @@ export class DefaultNetworkManager implements INetworkManager, OnModuleDestroy {
   }
 
   async reload(type: NetworkType, id: string): Promise<void> {
-    const provider = this.requireProvider(type.id);
-    const props = await this.configManager.getConfig(type, id);
-    if (!props || !props.enabled) {
-      // 配置已删除或被禁用：关闭并移除仍在运行的实例，而不是让它继续运行
-      await this.destroy(type, id);
-      return;
-    }
-
-    const config = await provider.createConfig(props);
-    const networkMap = this.getNetworkStore(type.id);
-    const existing = networkMap.get(id);
-
-    const network = existing
-      ? await provider.reload(existing, config)
-      : await provider.createNetwork(config);
-    networkMap.set(id, network);
-    this.stopped.delete(this.key(type.id, id));
+    this.assertOpen();
+    const key = this.key(type.id, id);
+    const generation = this.generation(key);
+    await this.enqueue(key, async () => {
+      this.assertCurrent(key, generation);
+      const provider = this.requireProvider(type.id);
+      const props = await this.configManager.getConfig(type, id);
+      this.assertCurrent(key, generation);
+      const networkMap = this.getNetworkStore(type.id);
+      const existing = networkMap.get(id);
+      if (!props || !props.enabled) {
+        networkMap.delete(id);
+        this.stopped.delete(key);
+        if (existing) await existing.shutdown();
+        return;
+      }
+      const config = await provider.createConfig(props);
+      this.assertCurrent(key, generation);
+      const network = existing
+        ? await provider.reload(existing, config)
+        : await provider.createNetwork(config);
+      if (!this.isCurrent(key, generation)) {
+        // The queued close owns the cached instance; only release a new, untracked result here.
+        if (network !== existing) await network.shutdown();
+        throw new Error(`Network operation superseded: ${key}`);
+      }
+      networkMap.set(id, network);
+      this.stopped.delete(key);
+    });
   }
 
   async shutdown(type: NetworkType, id: string): Promise<void> {
-    const network = this.getNetworkStore(type.id).get(id);
-    if (network) {
-      // 显式关闭的网络保留在缓存中，但不能被健康检查自动重启；调用 reload 可恢复
-      this.stopped.add(this.key(type.id, id));
-      await network.shutdown();
-    }
+    if (this.closed) return this.onModuleDestroy();
+    const key = this.key(type.id, id);
+    this.invalidate(key);
+    this.stopped.add(key);
+    await this.enqueue(key, async () => {
+      const network = this.store.get(type.id)?.get(id);
+      if (network) await network.shutdown();
+    });
   }
 
   async destroy(type: NetworkType, id: string): Promise<void> {
-    const networkMap = this.getNetworkStore(type.id);
-    const network = networkMap.get(id);
-    this.stopped.delete(this.key(type.id, id));
-    if (network) {
-      networkMap.delete(id);
-      await network.shutdown();
-    }
+    if (this.closed) return this.onModuleDestroy();
+    const key = this.key(type.id, id);
+    this.invalidate(key);
+    this.stopped.delete(key);
+    await this.enqueue(key, async () => {
+      const networkMap = this.store.get(type.id);
+      const network = networkMap?.get(id);
+      networkMap?.delete(id);
+      if (network) await network.shutdown();
+    });
   }
 
-  /* ------------------------------------------------------------------ */
-  /*  生命周期                                                           */
-  /* ------------------------------------------------------------------ */
-
-  async onModuleDestroy(): Promise<void> {
-    if (this.checkTimer) {
-      clearInterval(this.checkTimer);
-      this.checkTimer = undefined;
-    }
-    // 关闭所有网络组件
-    const shutdowns: Promise<void>[] = [];
-    for (const map of this.store.values()) {
-      for (const network of map.values()) {
-        shutdowns.push(
-          Promise.resolve(network.shutdown()).catch((err) =>
-            this.logger.error(`Failed to shutdown network ${network.id}`, err),
-          ),
-        );
-      }
-    }
-    await Promise.all(shutdowns);
-    this.store.clear();
-    this.stopped.clear();
+  onModuleDestroy(): Promise<void> {
+    if (this.closing) return this.closing;
+    this.closed = true;
+    if (this.checkTimer) clearInterval(this.checkTimer);
+    this.checkTimer = undefined;
+    this.closing = (async () => {
+      // Pending factories/reloads dispose their late results before cached instances are closed.
+      await Promise.allSettled(this.operations.values());
+      const networks = new Set(this.getNetworks());
+      this.store.clear();
+      this.stopped.clear();
+      this.generations.clear();
+      await Promise.all([...networks].map(async network => {
+        try { await network.shutdown(); } catch (err) {
+          this.logger.error(`Failed to shutdown network ${network.id}`, err);
+        }
+      }));
+    })();
+    return this.closing;
   }
 
   /* ------------------------------------------------------------------ */
@@ -212,7 +236,39 @@ export class DefaultNetworkManager implements INetworkManager, OnModuleDestroy {
   /* ------------------------------------------------------------------ */
 
   private key(typeId: string, id: string): string {
-    return `${typeId}/${id}`;
+    return JSON.stringify([typeId, id]);
+  }
+
+  private assertOpen(): void {
+    if (this.closed) throw new Error('Network manager is closed');
+  }
+
+  private generation(key: string): symbol {
+    let value = this.generations.get(key);
+    if (!value) this.generations.set(key, value = Symbol(key));
+    return value;
+  }
+
+  private invalidate(key: string): void {
+    this.generations.set(key, Symbol(key));
+    this.pending.delete(key);
+  }
+
+  private isCurrent(key: string, generation: symbol): boolean {
+    return !this.closed && this.generations.get(key) === generation;
+  }
+
+  private assertCurrent(key: string, generation: symbol): void {
+    if (!this.isCurrent(key, generation)) throw new Error(`Network operation superseded: ${key}`);
+  }
+
+  private enqueue<T>(key: string, task: () => Promise<T>): Promise<T> {
+    const previous = this.operations.get(key);
+    const operation = (previous ? previous.catch(() => undefined) : Promise.resolve()).then(task);
+    this.operations.set(key, operation);
+    const cleanup = () => { if (this.operations.get(key) === operation) this.operations.delete(key); };
+    void operation.then(cleanup, cleanup);
+    return operation;
   }
 
   private getNetworkStore(typeId: string): Map<string, Network> {
@@ -246,29 +302,15 @@ export class DefaultNetworkManager implements INetworkManager, OnModuleDestroy {
    * 定期检查网络组件存活状态 — 与 jetlinks checkNetwork() 逻辑对齐。
    */
   private async checkNetworks(): Promise<void> {
-    for (const [typeId, networkMap] of this.store) {
-      const provider = this.providers.get(typeId);
-      if (!provider) continue;
-
-      for (const [id, network] of networkMap) {
-        if (network.isAlive() || !network.isAutoReload()) continue;
-        if (this.stopped.has(this.key(typeId, id))) continue;
-
-        try {
-          const props = await this.configManager.getConfig(network.type, id);
-          if (!props || !props.enabled) {
-            // 配置被禁用/删除：不再保留死掉的实例
-            networkMap.delete(id);
-            continue;
-          }
-
-          const config = await provider.createConfig(props);
-          const reloaded = await provider.reload(network, config);
-          networkMap.set(id, reloaded);
-          this.logger.log(`Reloaded network: ${typeId}/${id}`);
-        } catch (err) {
-          this.logger.warn(`Failed to reload network ${typeId}/${id}`, err);
-        }
+    for (const network of this.getNetworks()) {
+      if (this.closed) return;
+      if (this.store.get(network.type.id)?.get(network.id) !== network) continue;
+      const key = this.key(network.type.id, network.id);
+      if (network.isAlive() || !network.isAutoReload() || this.stopped.has(key) || this.operations.has(key)) continue;
+      try {
+        await this.reload(network.type, network.id);
+      } catch (err) {
+        this.logger.warn(`Failed to reload network ${network.type.id}/${network.id}`, err);
       }
     }
   }

@@ -19,6 +19,8 @@ CREATE TABLE ai_tasks (
   "wakeRequestedAt" timestamptz,
   "deadlineAt" timestamptz NOT NULL,
   "callbackOutcome" jsonb,
+  "executionState" text NOT NULL DEFAULT 'NEW' CHECK ("executionState" IN ('NEW', 'SUBMITTING', 'ACCEPTED', 'GENERATED', 'STORED')),
+  "generatedOutputs" jsonb,
   "createdAt" timestamptz NOT NULL,
   "updatedAt" timestamptz NOT NULL,
   CONSTRAINT ai_tasks_hold_consistent CHECK (("holdState" = 'NONE') = ("holdId" IS NULL))

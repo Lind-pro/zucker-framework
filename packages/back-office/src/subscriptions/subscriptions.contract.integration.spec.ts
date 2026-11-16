@@ -3,7 +3,7 @@ import { ConflictException } from '@nestjs/common';
 import { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
-  PLAN_PAYMENT_UNAPPLIED_OUTBOX_KIND, PLAN_TERM_CHANGED_OUTBOX_KIND, SubscriptionsService, advisoryLocks, createPlanFulfillmentHooks,
+  PLAN_PAYMENT_APPLICATION_KIND, PLAN_PAYMENT_UNAPPLIED_OUTBOX_KIND, PLAN_TERM_CHANGED_OUTBOX_KIND, SubscriptionsService, advisoryLocks, createPlanFulfillmentHooks,
   createSqlBillingLink, planSeedsFromOffers, recordPlanTerm, resolveSubscriptionsOptions, resolveSubscriptionsSettings, seedPlans,
   type BackOfficeSubscriptionsOptions, type PresentedEntitlementCatalog,
 } from './index';
@@ -283,7 +283,7 @@ run('subscriptions host concurrency on a ccopyright-shaped PostgreSQL schema', (
     expect((await q(`SELECT count(*)::int AS n FROM "userSubscriptionPayment" WHERE reference='order:race-1'`)).rows[0].n).toBe(1);
     expect((await q(`SELECT count(*)::int AS n FROM "userSubscription" WHERE "userId"=$1`, [buyer])).rows[0].n).toBe(1);
     const kinds = (await q(`SELECT kind FROM "billingOutbox" WHERE "aggregateId"='order:race-1' ORDER BY kind`)).rows.map(row => row.kind);
-    expect(kinds).toEqual([PLAN_TERM_CHANGED_OUTBOX_KIND]);
+    expect(kinds).toEqual([PLAN_TERM_CHANGED_OUTBOX_KIND, PLAN_PAYMENT_APPLICATION_KIND]);
     expect(results.filter(result => result.change)).toHaveLength(1);
     expect(kinds).not.toContain(PLAN_PAYMENT_UNAPPLIED_OUTBOX_KIND);
     const row = (await q(`SELECT status::text, "billingCycle"::text AS cycle, "paymentReference" FROM "userSubscription" WHERE "userId"=$1`, [buyer])).rows[0];

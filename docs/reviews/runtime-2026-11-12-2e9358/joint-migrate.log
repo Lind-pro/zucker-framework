@@ -1,0 +1,52 @@
+Loaded Prisma config from prisma.config.ts.
+
+Prisma schema loaded from prisma
+Datasource "db": PostgreSQL database "ccopyright_fix_hook_joint_efa0d2", schema "public" at "127.0.0.1:55439"
+
+13 migrations found in prisma/migrations
+
+Applying migration `20260101000000_baseline_existing_schema`
+Applying migration `20260130_simplify_prompt_styles`
+Applying migration `20260510_add_pre_review_reports`
+Applying migration `20260623_add_web_template_schema`
+Applying migration `20260801000000_add_extension_licensing`
+Applying migration `20261020000000_add_dossier_execution`
+Applying migration `20261030000000_add_persistent_auth_sessions`
+Applying migration `20261030000200_add_subscription_billing`
+Applying migration `20261103000000_add_passwordless_google_login`
+Applying migration `20261112000000_quota_reservation_resource_charge`
+Applying migration `20261120000000_back_office_access`
+Applying migration `20261120000100_back_office_plans`
+Applying migration `20261120000200_subscription_notice_delivery`
+
+The following migration(s) have been applied:
+
+migrations/
+  └─ 20260101000000_baseline_existing_schema/
+    └─ migration.sql
+  └─ 20260130_simplify_prompt_styles/
+    └─ migration.sql
+  └─ 20260510_add_pre_review_reports/
+    └─ migration.sql
+  └─ 20260623_add_web_template_schema/
+    └─ migration.sql
+  └─ 20260801000000_add_extension_licensing/
+    └─ migration.sql
+  └─ 20261020000000_add_dossier_execution/
+    └─ migration.sql
+  └─ 20261030000000_add_persistent_auth_sessions/
+    └─ migration.sql
+  └─ 20261030000200_add_subscription_billing/
+    └─ migration.sql
+  └─ 20261103000000_add_passwordless_google_login/
+    └─ migration.sql
+  └─ 20261112000000_quota_reservation_resource_charge/
+    └─ migration.sql
+  └─ 20261120000000_back_office_access/
+    └─ migration.sql
+  └─ 20261120000100_back_office_plans/
+    └─ migration.sql
+  └─ 20261120000200_subscription_notice_delivery/
+    └─ migration.sql
+
+All migrations have been successfully applied.

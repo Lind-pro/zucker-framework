@@ -4,6 +4,7 @@
     "outDir": "dist",
     "rootDir": "src",
     "jsx": "react-jsx",
+    "types": ["node"],
     "experimentalDecorators": false,
     "emitDecoratorMetadata": false,
     "lib": [

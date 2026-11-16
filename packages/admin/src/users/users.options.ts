@@ -1,9 +1,11 @@
+import type { DatabaseAdapter } from '@zucker-framework/core';
+
 /** Injection token for {@link UsersAdminOptions}. */
 export const ADMIN_USERS_OPTIONS = Symbol('ADMIN_USERS_OPTIONS');
 /** Injection token for the consumer's {@link AdminUserHooks} implementation. */
 export const ADMIN_USER_HOOKS = Symbol('ADMIN_USER_HOOKS');
 
-/** Change notification passed to {@link AdminUserHooks.sensitiveFieldsChanged}. */
+/** Credential change passed to {@link AdminUserHooks.sensitiveFieldsChanging}. */
 export interface AdminUserSensitiveChange {
   userId: string;
   /** Sensitive fields present in the request whose value changed (`password` is always listed when sent). */
@@ -13,12 +15,33 @@ export interface AdminUserSensitiveChange {
 }
 
 /**
- * Consumer hooks for the admin user routes. Use them to apply the application's session policy
- * (e.g. bump a credential version and revoke refresh sessions after an administrator password
- * reset, disable or e-mail change). A hook error fails the request with the write already applied;
- * a retry with the same body runs the hook again.
+ * Consumer hooks for admin user routes. Required security effects belong in
+ * `sensitiveFieldsChanging`: the credential edit and its revocation commit or roll back together.
  */
 export interface AdminUserHooks {
+  /**
+   * Product policy before a validated user update. Runs after the user row is locked,
+   * in the same transaction as the mutation. Use only `tx` for policy reads/locks;
+   * throw to reject without writing or publishing credential-change events.
+   */
+  userChanging?(change: { userId: string; changes: Readonly<Record<string, unknown>>; actorId?: string }, tx: DatabaseAdapter): Promise<void>;
+  /**
+   * Product policy before replacing role bindings. Runs after locking the user and
+   * before locking requested roles, so a policy can acquire its own stable role lock.
+   * Do not perform external effects; an error aborts the entire mutation.
+   */
+  userRolesChanging?(change: { userId: string; roleIds: readonly string[]; expiries?: Readonly<Record<string, string | null>>; actorId?: string }, tx: DatabaseAdapter): Promise<void>;
+  /**
+   * Runs with the user's row locked, after its edit and before commit. Write ONLY through `tx`:
+   * opening another transaction that locks this user can deadlock. An error rolls the edit back.
+   * When present this replaces the legacy `sensitiveFieldsChanged` callback.
+   */
+  sensitiveFieldsChanging?(change: AdminUserSensitiveChange, tx: DatabaseAdapter): Promise<void>;
+  /**
+   * @deprecated Old direct callers may retain this method, but UsersController refuses a hook
+   * with this method alone at construction. Implement `sensitiveFieldsChanging` before upgrading;
+   * post-commit revocation cannot guarantee credential safety or retry recovery.
+   */
   sensitiveFieldsChanged?(change: AdminUserSensitiveChange): Promise<void>;
   /** Called after a user and its role/permission links were deleted. */
   userDeleted?(userId: string, actorId?: string): Promise<void>;

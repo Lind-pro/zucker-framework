@@ -1,8 +1,8 @@
 "use client";
-import { createCookieRefresh } from "@zucker-framework/fe-http-client";
-import { accountPublicClient, httpClient } from "@/lib/http-client";
-import { useAuthStore } from "@/lib/stores/auth-store";
-import { accountPermissions, accountReturnPath, type AccountIdentity } from "./account-flow";
+import { accountPublicClient } from "@/lib/http-client";
+import { refreshAfterPopupSignIn } from "@/lib/account-session";
+import { accountReturnPath } from "./account-flow";
+import { establishSession } from "./sign-in";
 
 export interface OAuthProvider { id: "google" | "github"; code: boolean; oneTapClientId?: string }
 export async function oauthProviders(): Promise<OAuthProvider[]> {
@@ -11,20 +11,15 @@ export async function oauthProviders(): Promise<OAuthProvider[]> {
 }
 export async function acceptOAuthLogin(result: { token: string; returnPath?: string }): Promise<string> {
   if (!result.token || typeof result.token !== "string") throw new Error("Missing account session");
-  useAuthStore.getState().updateToken(result.token);
-  try {
-    const me = await httpClient.get<AccountIdentity>("/authorize/me");
-    useAuthStore.getState().setAuthState({ token: useAuthStore.getState().token || result.token,
-      user: { id: me.id, username: me.username, name: me.name, email: me.email }, permissions: accountPermissions(me) });
-    return accountReturnPath(result.returnPath ?? null);
-  } catch (error) { useAuthStore.getState().logout(); throw error; }
+  await establishSession(result.token);
+  return accountReturnPath(result.returnPath ?? null);
 }
 /**
  * After a popup sign-in, the session lives only in the HttpOnly refresh cookie the popup received.
  * The opener trusts the popup's "done" message only once this refresh returns an access token.
  */
 export async function restoreSessionFromCookie(): Promise<string> {
-  const { access_token } = await createCookieRefresh("/api/authorize/refresh")();
+  const { access_token } = await refreshAfterPopupSignIn();
   return access_token;
 }
 export function oauthError(error: unknown): string {

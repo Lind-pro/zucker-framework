@@ -1,0 +1,57 @@
+
+ RUN  v4.1.11 /Users/lind/Documents/projects/zucker-framework
+
+[Nest] 14532  - 11/12/2026, 3:52:51 PM   DEBUG [UsersController] dimensionUsers cleanup skipped for target: relation "dimension_users" does not exist
+ ✓ packages/admin/src/users/users.controller.spec.ts (21 tests) 59ms
+ ❯ packages/admin/src/users/users-policy-hooks.spec.ts (3 tests | 2 failed) 8ms
+     × aborts a user change and its policy writes before credential mutation or events 6ms
+     × rejects a validated role replacement transaction without losing existing bindings 1ms
+     ✓ lets policy acceptance proceed before transactional session effects and commit notifications 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  packages/admin/src/users/users-policy-hooks.spec.ts > admin transactional pre-mutation policy hooks > aborts a user change and its policy writes before credential mutation or events
+AssertionError: expected 1 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ packages/admin/src/users/users-policy-hooks.spec.ts:35:58
+     33|     await expect(h.controller.update('target', { status: false }, h.ac…
+     34|     expect(await h.db.model('users').findUnique({ where: { id: 'target…
+     35|     expect(await h.db.model('policyEvidence').count({})).toBe(0);
+       |                                                          ^
+     36|     expect(sensitive).not.toHaveBeenCalled(); expect(h.bus.publish).no…
+     37|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  packages/admin/src/users/users-policy-hooks.spec.ts > admin transactional pre-mutation policy hooks > rejects a validated role replacement transaction without losing existing bindings
+AssertionError: expected 1 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ packages/admin/src/users/users-policy-hooks.spec.ts:49:58
+     47|     await expect(h.controller.setUserRoles('target', { roleIds: ['new'…
+     48|     expect(await h.db.model('userRoles').findMany({ where: { userId: '…
+     49|     expect(await h.db.model('policyEvidence').count({})).toBe(0);
+       |                                                          ^
+     50|   });
+     51|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  2 failed | 22 passed (24)
+   Start at  15:52:49
+   Duration  1.91s (transform 543ms, setup 20ms, import 1.64s, tests 67ms, environment 0ms)
+
+JSON report written to /Users/lind/Documents/projects/zucker-framework/docs/reviews/runtime-2026-11-12-2e9358/admin-policy-hooks.json

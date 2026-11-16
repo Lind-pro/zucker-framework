@@ -19,6 +19,7 @@ import {
 import { resolvePageTotal, type PaginatedResult } from './pagination';
 import { DATABASE_ADAPTER } from './crud.module';
 import { TermExpressionParser } from './expression/term-expression-parser';
+import { transactionScoped } from './transaction-scope';
 
 /** Re-export Term as QueryTerm for consumers of this module */
 export type QueryTerm = Term;
@@ -423,16 +424,20 @@ export class DynamicQueryParamService {
 @Injectable()
 export class DynamicQueryService {
   private readonly logger = new Logger(DynamicQueryService.name);
+  private readonly db: DatabaseAdapter;
 
   /** model → field metadata (null: adapter has none). */
   private readonly modelFieldCache = new Map<string, ReadonlyMap<string, ModelFieldInfo> | null>();
   private readonly strippedWarned = new Set<string>();
 
   constructor(
-    @Inject(DATABASE_ADAPTER) private readonly db: DatabaseAdapter,
+    @Inject(DATABASE_ADAPTER) db: DatabaseAdapter,
     private readonly dynamicQueryParam: DynamicQueryParamService,
     @Optional() @Inject(CRUD_QUERY_POLICY) private readonly defaultPolicy?: CrudQueryPolicy,
-  ) {}
+  ) {
+    // Dynamic reads must observe the same transaction as the CrudService that calls them.
+    this.db = transactionScoped(db);
+  }
 
   /** Effective `pageSize` upper bound for a service policy merged over the module default. */
   maxPageSizeFor(policy?: CrudQueryPolicy): number {

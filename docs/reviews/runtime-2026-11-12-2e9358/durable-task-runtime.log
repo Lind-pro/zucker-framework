@@ -1,0 +1,14 @@
+
+ RUN  v4.1.11 /Users/lind/Documents/projects/zucker-framework
+
+ ✓ packages/queue/src/bullmq.integration.spec.ts (2 tests) 45ms
+ ✓ packages/task/src/postgres-task-repository.integration.spec.ts (2 tests) 93ms
+ ✓ packages/task/src/worker-restart.integration.spec.ts (1 test) 842ms
+     ✓ recovers a killed worker and fences its stale lease  841ms
+
+ Test Files  3 passed (3)
+      Tests  5 passed (5)
+   Start at  17:53:56
+   Duration  2.52s (transform 58ms, setup 24ms, import 173ms, tests 980ms, environment 1.08s)
+
+JSON report written to /Users/lind/Documents/projects/zucker-framework/docs/reviews/runtime-2026-11-12-2e9358/durable-task-runtime.json

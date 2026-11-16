@@ -478,11 +478,14 @@ subscription, not by an unsettled checkout. Validity comes from the injected `ac
 from credit). `changed` runs after `assign`/`cancel` commit; `recordPayment` runs inside the caller's
 payment transaction and returns its `change` for the caller to publish after commit (for example
 through its outbox).
-`revokePayment({ userId, reference })` is the refund write-back: call it once, in the refund settlement
-transaction, when a payment was refunded in full (a partial refund keeps the term). Only a live term
-whose `paymentReference` is that payment changes: LIFETIME is revoked (`EXPIRED`), a stacked
-`ONE_TIME` term loses the paid duration, a recurring term falls back to the start of the refunded
-period; an end that is not in the future revokes the term (`EXPIRED`, end now). Outcomes: `revoked`,
-`shortened`, `not_current` (another payment, plan or administrator defines the term), `inactive`,
-`not_found`. The evidence stays recorded, so the refunded reference is never applied again; the
-returned `change` (`kind: 'refunded'`) is published by the caller after commit.
+`revokePayment({ userId, reference })` runs in the full-refund settlement transaction (partial refunds
+keep the term). `UserSubscriptionStore.paymentHistory` persists each applied payment's live baseline
+and application time, plus permanent refund markers. Refunds replay that ancestry excluding all
+refunded references, in either refund order, restoring unrefunded periods, earlier plans and admin
+grants. Replays are idempotent; a cancellation of the remaining finite term is preserved. Unapplied
+payments and payments behind a later administrator assignment do not change that grant. Outcomes
+remain `revoked`, `shortened`, `not_current`, `inactive`, `not_found`; publish the returned change after
+commit. A store without history, or legacy live terms missing application snapshots, fails with
+`unavailable` instead of guessing which admin/paid periods survived. Consumers can backfill the
+exported `SubscriptionPaymentApplication` contract only from audited application evidence; payment
+periods alone are insufficient. Keep history and refund markers at least as long as payment evidence.

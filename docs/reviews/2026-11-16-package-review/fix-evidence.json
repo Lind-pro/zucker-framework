@@ -1,0 +1,4838 @@
+{
+  "scope": "Authorized local R01-R11 fixes; baseline audit artifacts remain historical",
+  "runs": {
+    "final": {
+      "files": 91,
+      "numPassedTests": 970,
+      "numFailedTests": 0,
+      "numPendingTests": 22,
+      "success": true,
+      "cases": [
+        {
+          "file": "packages/cache/src/cache-hardening.spec.ts",
+          "tests": [
+            {
+              "title": "H9A: invalidation survives a Redis outage replays deletes issued while degraded before serving reads again",
+              "status": "passed"
+            },
+            {
+              "title": "H9A: invalidation survives a Redis outage applies the optional key prefix to every command",
+              "status": "passed"
+            },
+            {
+              "title": "H9B: fences are per key a mutation of another key does not stop getOrSet from caching",
+              "status": "passed"
+            },
+            {
+              "title": "M19: counters and TTL edge cases increments with an atomic script when EVAL is available",
+              "status": "passed"
+            },
+            {
+              "title": "M19: counters and TTL edge cases memory incr does not lose concurrent increments nor extend the expiry",
+              "status": "passed"
+            },
+            {
+              "title": "M19: counters and TTL edge cases a zero TTL never creates an immortal entry",
+              "status": "passed"
+            },
+            {
+              "title": "M19: counters and TTL edge cases a corrupt value is a miss and does not open the breaker",
+              "status": "passed"
+            },
+            {
+              "title": "L10: memory bound and hybrid backfill prunes expired entries before evicting live ones",
+              "status": "passed"
+            },
+            {
+              "title": "L10: memory bound and hybrid backfill L1 backfill never outlives the remaining L2 TTL",
+              "status": "passed"
+            },
+            {
+              "title": "M10: decorator keys are type-preserving distinguishes dates, strings vs numbers and separator-containing arguments",
+              "status": "passed"
+            },
+            {
+              "title": "M10: decorator keys are type-preserving allEntries also evicts keys written through a custom key template",
+              "status": "passed"
+            },
+            {
+              "title": "N-M6: writes made while Redis is degraded are replayed with their remaining TTL SETs the value into Redis on recovery with the remaining TTL, and get returns it",
+              "status": "passed"
+            },
+            {
+              "title": "N-M6: writes made while Redis is degraded are replayed with their remaining TTL an expired pending write becomes a DEL: the old Redis value is removed, not resurrected",
+              "status": "passed"
+            },
+            {
+              "title": "N-M6: writes made while Redis is degraded are replayed with their remaining TTL keeps a newer pending operation recorded while an expired write is being deleted",
+              "status": "passed"
+            },
+            {
+              "title": "N-M6: writes made while Redis is degraded are replayed with their remaining TTL a delete issued after a set wins",
+              "status": "passed"
+            },
+            {
+              "title": "N-M6: writes made while Redis is degraded are replayed with their remaining TTL a set issued after a delete wins",
+              "status": "passed"
+            },
+            {
+              "title": "N-M6: writes made while Redis is degraded are replayed with their remaining TTL the latest of several writes during the outage is the one replayed",
+              "status": "passed"
+            },
+            {
+              "title": "N-M6: writes made while Redis is degraded are replayed with their remaining TTL a write without a positive TTL is not replayed as a value but still invalidates the Redis copy",
+              "status": "passed"
+            },
+            {
+              "title": "N-L11: remembered @Cacheable custom keys are capped forgets the oldest key beyond the cap (TTL only) and warns once",
+              "status": "passed"
+            },
+            {
+              "title": "N-L11: remembered @Cacheable custom keys are capped re-caching a remembered key does not consume capacity",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/cache/src/cache-sequence.integration.spec.ts",
+          "tests": [
+            {
+              "title": "Redis sequence contract atomically advances across clients, preserves TTL and rejects corrupt/overflowing state",
+              "status": "skipped"
+            }
+          ]
+        },
+        {
+          "file": "packages/cache/src/cache-sequence.spec.ts",
+          "tests": [
+            {
+              "title": "atomic cache sequences allocates distinct monotonic values for simultaneous memory calls and respects the minimum",
+              "status": "passed"
+            },
+            {
+              "title": "atomic cache sequences extends expiry without shortening an existing window",
+              "status": "passed"
+            },
+            {
+              "title": "atomic cache sequences fails without modifying invalid or overflowing memory state",
+              "status": "passed"
+            },
+            {
+              "title": "atomic cache sequences hybrid reads always see the L2 sequence even when another instance has stale L1 data",
+              "status": "passed"
+            },
+            {
+              "title": "atomic cache sequences does not emulate an atomic backend with ordinary get/set",
+              "status": "passed"
+            },
+            {
+              "title": "atomic cache sequences Redis uses one namespaced atomic operation and propagates backend failures",
+              "status": "passed"
+            },
+            {
+              "title": "atomic cache sequences decodes exact Redis decimal replies without trusting lossy or malformed transport values",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/cache/src/cache-service.spec.ts",
+          "tests": [
+            {
+              "title": "CacheService loading and invalidation coalesces concurrent loads and permits a retry after rejection",
+              "status": "passed"
+            },
+            {
+              "title": "CacheService loading and invalidation fences late loads after delete",
+              "status": "passed"
+            },
+            {
+              "title": "CacheService loading and invalidation fences late loads after set",
+              "status": "passed"
+            },
+            {
+              "title": "CacheService loading and invalidation fences late loads after shutdown",
+              "status": "passed"
+            },
+            {
+              "title": "CacheService loading and invalidation an earlier completion cannot remove a newer in-flight load",
+              "status": "passed"
+            },
+            {
+              "title": "CacheService loading and invalidation keeps the configured capacity, seconds TTL and non-immortal zero TTL",
+              "status": "passed"
+            },
+            {
+              "title": "CacheService loading and invalidation owns one cleanup timer and clears it on repeated shutdown",
+              "status": "passed"
+            },
+            {
+              "title": "CacheService loading and invalidation falls back while Redis is unavailable and removes stale fallback copies",
+              "status": "passed"
+            },
+            {
+              "title": "CacheService loading and invalidation clears coalescing state after a cache write rejects",
+              "status": "passed"
+            },
+            {
+              "title": "CacheService loading and invalidation registers each service once, without a lifecycle alias",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/cache/src/memory-cache.spec.ts",
+          "tests": [
+            {
+              "title": "MemoryCache should return undefined for missing key",
+              "status": "passed"
+            },
+            {
+              "title": "MemoryCache should set and get a value",
+              "status": "passed"
+            },
+            {
+              "title": "MemoryCache should overwrite existing value",
+              "status": "passed"
+            },
+            {
+              "title": "MemoryCache should delete a value",
+              "status": "passed"
+            },
+            {
+              "title": "MemoryCache should not throw when deleting nonexistent key",
+              "status": "passed"
+            },
+            {
+              "title": "MemoryCache should report has correctly",
+              "status": "passed"
+            },
+            {
+              "title": "MemoryCache should clear all values",
+              "status": "passed"
+            },
+            {
+              "title": "MemoryCache should expire values after TTL",
+              "status": "passed"
+            },
+            {
+              "title": "MemoryCache should not expire values without TTL",
+              "status": "passed"
+            },
+            {
+              "title": "MemoryCache should use defaultTtlMs when no per-key TTL provided",
+              "status": "passed"
+            },
+            {
+              "title": "MemoryCache should report has as false for expired keys",
+              "status": "passed"
+            },
+            {
+              "title": "MemoryCache should expire at exactly the TTL boundary (>= check)",
+              "status": "passed"
+            },
+            {
+              "title": "MemoryCache should return value when key exists via getOrDefault",
+              "status": "passed"
+            },
+            {
+              "title": "MemoryCache should return default when key is missing via getOrDefault",
+              "status": "passed"
+            },
+            {
+              "title": "MemoryCache should return and remove value via getAndRemove",
+              "status": "passed"
+            },
+            {
+              "title": "MemoryCache should return undefined for missing key via getAndRemove",
+              "status": "passed"
+            },
+            {
+              "title": "MemoryCache should return all valid keys and evict expired ones",
+              "status": "passed"
+            },
+            {
+              "title": "MemoryCache should return values for specified keys via getAll",
+              "status": "passed"
+            },
+            {
+              "title": "MemoryCache should return all non-expired values when called without args",
+              "status": "passed"
+            },
+            {
+              "title": "MemoryCache should skip missing keys in getAll",
+              "status": "passed"
+            },
+            {
+              "title": "MemoryCache should remove all specified keys via evictAll",
+              "status": "passed"
+            },
+            {
+              "title": "MemoryCache synchronous local state shares expiry and capacity with the asynchronous API while exposing resident size",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/cache/src/package-review.regression.spec.ts",
+          "tests": [
+            {
+              "title": "Package review regressions R11: direct hybrid writes expire within the L1 bound",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions caps direct L1 writes without shortening L2 TTL undefined",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions caps direct L1 writes without shortening L2 TTL 1000",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions caps direct L1 writes without shortening L2 TTL 5",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions zero L1 TTL disables direct writes and backfill",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/cache/src/redis-cache-service.spec.ts",
+          "tests": [
+            {
+              "title": "RedisCacheService bounded degradation bounds a hanging read, resets once, and allows authoritative loading",
+              "status": "passed"
+            },
+            {
+              "title": "RedisCacheService bounded degradation never queues or replays commands and initializes or destroys only once",
+              "status": "passed"
+            },
+            {
+              "title": "RedisCacheService bounded degradation uses JSON and seconds TTL without manufacturing immortal keys",
+              "status": "passed"
+            },
+            {
+              "title": "RedisCacheService bounded degradation redacts connection errors and treats malformed JSON as a bounded cache miss",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/datasource/src/datasource-config.spec.ts",
+          "tests": [
+            {
+              "title": "InMemoryDataSourceConfigRepository 初始 findAll() 返回空数组",
+              "status": "passed"
+            },
+            {
+              "title": "InMemoryDataSourceConfigRepository add() 后 findAll() 返回已添加配置",
+              "status": "passed"
+            },
+            {
+              "title": "InMemoryDataSourceConfigRepository add() 返回传入的配置对象",
+              "status": "passed"
+            },
+            {
+              "title": "InMemoryDataSourceConfigRepository findById() 返回已添加的配置",
+              "status": "passed"
+            },
+            {
+              "title": "InMemoryDataSourceConfigRepository findById() 不存在时返回 undefined",
+              "status": "passed"
+            },
+            {
+              "title": "InMemoryDataSourceConfigRepository remove() 删除已有配置并返回该配置",
+              "status": "passed"
+            },
+            {
+              "title": "InMemoryDataSourceConfigRepository remove() 删除不存在的 id 返回 undefined",
+              "status": "passed"
+            },
+            {
+              "title": "InMemoryDataSourceConfigRepository add() 覆盖同 id 的旧配置",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/datasource/src/datasource-errors.spec.ts",
+          "tests": [
+            {
+              "title": "DataSourceNotFoundException 继承 NotFoundException",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceNotFoundException 默认消息包含数据源 ID",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceNotFoundException 携带 dataSourceId 属性",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceNotFoundException name 为 DataSourceNotFoundException",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceNotFoundException 支持自定义消息",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceClosedException 继承 BusinessException",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceClosedException 默认消息包含数据源 ID",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceClosedException 携带 dataSourceId 属性",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceClosedException name 为 DataSourceClosedException",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceClosedException code 为 DATASOURCE_CLOSED",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/datasource/src/datasource-holder.spec.ts",
+          "tests": [
+            {
+              "title": "DataSourceHolder useDataSource 在 fn 内 getCurrent() 返回指定 adapter",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceHolder useDataSource 在 fn 内 getCurrentDataSourceId() 返回绑定 id",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceHolder useDataSource 执行完毕后 getCurrentDataSourceId() 恢复为 undefined",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceHolder useDataSource(不存在) 抛 DataSourceNotFoundException",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceHolder 无上下文时 getCurrent() 返回默认数据源",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceHolder useDataSource 内 getCurrent() 返回绑定数据源",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceHolder getDefault() 返回 manager 默认数据源",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceHolder getDataSource(id) 委托 manager 返回正确 adapter",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceHolder 无上下文时 currentIsDefault() 为 true，isDynamic() 为 false",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceHolder useDataSource 内 currentIsDefault() 为 false，isDynamic() 为 true",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceHolder existing(id) 委托 manager.existing()",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceHolder currentExisting() 无动态上下文时返回 true（默认）",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceHolder currentExisting() 在 useDataSource 内返回 true",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceHolder isReady() 有默认数据源时返回 true",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceHolder isReady() 无数据源时返回 false",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceHolder checkReady() 无数据源时抛 BusinessException",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceHolder 嵌套 useDataSource 内层上下文不干扰外层（AsyncLocalStorage 语义）",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/datasource/src/datasource-manager.spec.ts",
+          "tests": [
+            {
+              "title": "DataSourceManager registerFactory 注册工厂后 addDataSource 调用工厂创建 adapter",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceManager addDataSource 后 getDataSource(id) 返回对应 adapter",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceManager addDataSource 未注册工厂时抛出 NotFoundException",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceManager register() 直接注册 adapter，getDataSource 可返回",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceManager getDataSource(不存在) 抛 DataSourceNotFoundException",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceManager DataSourceNotFoundException 携带正确的 dataSourceId",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceManager close(id) 后 getDataSource(id) 抛 DataSourceClosedException",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceManager isClosed(id) 在 close 后返回 true",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceManager close(不存在) 抛 DataSourceNotFoundException",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceManager remove(id) 后 has(id) 返回 false",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceManager remove(id) 后 getDataSource(id) 抛 DataSourceNotFoundException（非 Closed）",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceManager 第一次 addDataSource 自动设为默认数据源",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceManager setDefault(id) 切换默认数据源",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceManager setDefault(不存在) 抛 DataSourceNotFoundException",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceManager has(id) 对已注册数据源返回 true",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceManager existing(id) 对已注册数据源返回 true，对不存在的返回 false",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceManager existing(id) 对已关闭数据源返回 false",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceManager getConfigs() 返回所有已注册的配置",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceManager reload(id) 重新调用工厂创建新的 adapter",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceManager reload(不存在) 抛 DataSourceNotFoundException",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceManager reload 工厂失败时保留旧 adapter 可用",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceManager reload/remove/close 会释放被替换的 adapter",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceManager disposal (L9) an adapter registered under two ids is not disconnected when one id is removed",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceManager disposal (L9) an adapter replaced by an id that still points at it elsewhere is not released",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceManager disposal (L9) disposeOnReplace: false never disconnects",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceManager disposal (L9) drainDelayMs delays the release (fake timers)",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceManager disposal (L9) an adapter registered again during the drain delay is not released",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/datasource/src/datasource-strategy.spec.ts",
+          "tests": [
+            {
+              "title": "CachedDataSourceSwitchStrategyMatcher match() 对有策略的 target/method 返回 true",
+              "status": "passed"
+            },
+            {
+              "title": "CachedDataSourceSwitchStrategyMatcher match() 对无策略的 target/method 返回 false",
+              "status": "passed"
+            },
+            {
+              "title": "CachedDataSourceSwitchStrategyMatcher match() 命中后 createStrategyIfMatch 只调用一次（缓存）",
+              "status": "passed"
+            },
+            {
+              "title": "CachedDataSourceSwitchStrategyMatcher getStrategy() 返回缓存的策略",
+              "status": "passed"
+            },
+            {
+              "title": "CachedDataSourceSwitchStrategyMatcher getStrategy() 未命中时返回 undefined",
+              "status": "passed"
+            },
+            {
+              "title": "CachedDataSourceSwitchStrategyMatcher 不同 target#method 组合各自独立缓存",
+              "status": "passed"
+            },
+            {
+              "title": "CachedDataSourceSwitchStrategyMatcher 策略中 useDefaultDataSource / fallbackDefault 字段被正确保存",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/datasource/src/datasource-switcher.spec.ts",
+          "tests": [
+            {
+              "title": "DefaultSwitcher 初始状态 current() 返回 undefined",
+              "status": "passed"
+            },
+            {
+              "title": "DefaultSwitcher use(id) 后 current() 返回该 id",
+              "status": "passed"
+            },
+            {
+              "title": "DefaultSwitcher use 多次后 current() 返回最后一次 id（栈顶）",
+              "status": "passed"
+            },
+            {
+              "title": "DefaultSwitcher useLast() 回退到上一个 id",
+              "status": "passed"
+            },
+            {
+              "title": "DefaultSwitcher useLast() 在空栈时不抛异常，current() 仍为 undefined",
+              "status": "passed"
+            },
+            {
+              "title": "DefaultSwitcher useDefault() 后 current() 返回 undefined（DEFAULT_MARKER 被过滤）",
+              "status": "passed"
+            },
+            {
+              "title": "DefaultSwitcher useDefault() 后 useLast() 恢复为上一个 id",
+              "status": "passed"
+            },
+            {
+              "title": "DefaultSwitcher reset() 清空历史，current() 回到 undefined",
+              "status": "passed"
+            },
+            {
+              "title": "DefaultSwitcher run() 提供隔离上下文，不同 run 块互不干扰",
+              "status": "passed"
+            },
+            {
+              "title": "DefaultSwitcher runAsync() 异步隔离上下文",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceSwitcher run() 隔离 datasource / schema / table 三个切换器",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceSwitcher run() 结束后三个切换器上下文均回到初始状态",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceSwitcher runAsync() 异步隔离三切换器",
+              "status": "passed"
+            },
+            {
+              "title": "DataSourceSwitcher resetAll() 清空所有切换器历史",
+              "status": "passed"
+            },
+            {
+              "title": "switcher misuse / interceptor teardown (review M11, L12) use() outside run() warns once and has no effect",
+              "status": "passed"
+            },
+            {
+              "title": "switcher misuse / interceptor teardown (review M11, L12) DataSourceInterceptor unsubscribes the inner stream and ends the scope on teardown",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/datasource/src/package-review.regression.spec.ts",
+          "tests": [
+            {
+              "title": "Package review regressions R04: datasource reload cannot resurrect a removed source",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions a newer close supersedes a pending reload",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions a newer register supersedes a pending reload",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions a newer reload supersedes a pending reload",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions removing a pending add disposes its result without publishing its configuration",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/fe-auth/src/cookie-session.spec.ts",
+          "tests": [
+            {
+              "title": "cookie session restore restores the persisted summary once and adopts the refreshed token",
+              "status": "passed"
+            },
+            {
+              "title": "cookie session restore never moves the page into another account and signs out instead",
+              "status": "passed"
+            },
+            {
+              "title": "cookie session restore reports an unknown outcome (timeout/network) as failed and keeps the summary",
+              "status": "passed"
+            },
+            {
+              "title": "cookie session restore releases the cross-tab lock when the exchange fails",
+              "status": "passed"
+            },
+            {
+              "title": "cookie session restore guardedRefresh rejects a token issued for another account with 401",
+              "status": "passed"
+            },
+            {
+              "title": "cookie session restore guardedRefresh rejects while signed out without exchanging the cookie",
+              "status": "passed"
+            },
+            {
+              "title": "cookie session restore guardedRefresh accepts only the summary account while no access token is held",
+              "status": "passed"
+            },
+            {
+              "title": "cross-tab session sync signs this tab out when another tab signs out",
+              "status": "passed"
+            },
+            {
+              "title": "cross-tab session sync drops this tab when another tab switches account, without overwriting that summary",
+              "status": "passed"
+            },
+            {
+              "title": "cross-tab session sync never persists this tab’s stale identity over another tab’s summary",
+              "status": "passed"
+            },
+            {
+              "title": "cross-tab session sync signs this tab out when another tab clears the whole storage area",
+              "status": "passed"
+            },
+            {
+              "title": "cross-tab session sync ignores writes to unrelated storage keys",
+              "status": "passed"
+            },
+            {
+              "title": "cross-tab session sync ignores same-identity writes from other tabs",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/fe-auth/src/hydration.spec.tsx",
+          "tests": [
+            {
+              "title": "auth persistence hydration updates after hydration and releases the subscription on unmount",
+              "status": "passed"
+            },
+            {
+              "title": "auth persistence hydration reflects an already hydrated store without a timer",
+              "status": "passed"
+            },
+            {
+              "title": "auth persistence hydration keeps a store without browser persistence unhydrated",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/fe-auth/src/login-identifier.spec.ts",
+          "tests": [
+            {
+              "title": "login identifier input maps each option to its body field and input presentation",
+              "status": "passed"
+            },
+            {
+              "title": "login identifier input builds the login body with a trimmed identifier and the password as typed",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/fe-auth/src/oauth-popup.browser.spec.ts",
+          "tests": [
+            {
+              "title": "OAuth popup protocol in a real browser completes, passes only a safe return path, and closes the popup",
+              "status": "skipped"
+            },
+            {
+              "title": "OAuth popup protocol in a real browser drops an off-site return path in the real channel",
+              "status": "skipped"
+            },
+            {
+              "title": "OAuth popup protocol in a real browser reports a failure code and sanitises junk codes",
+              "status": "skipped"
+            },
+            {
+              "title": "OAuth popup protocol in a real browser a foreign state never reaches the opener; closing a silent popup resolves closed",
+              "status": "skipped"
+            },
+            {
+              "title": "OAuth popup protocol in a real browser times out and closes the popup when nothing claims the attempt",
+              "status": "skipped"
+            }
+          ]
+        },
+        {
+          "file": "packages/fe-auth/src/oauth-popup.spec.ts",
+          "tests": [
+            {
+              "title": "openOAuthPopup resolves blocked and releases the channel when window.open returns null",
+              "status": "passed"
+            },
+            {
+              "title": "openOAuthPopup completes over ready/claim/done with a safe return path",
+              "status": "passed"
+            },
+            {
+              "title": "openOAuthPopup the popup keeps its result until the opener acknowledges it, and both sides close the popup",
+              "status": "passed"
+            },
+            {
+              "title": "openOAuthPopup a popup whose result is never acknowledged closes itself after a bounded wait",
+              "status": "passed"
+            },
+            {
+              "title": "openOAuthPopup drops an unsafe return path and reports failure codes",
+              "status": "passed"
+            },
+            {
+              "title": "openOAuthPopup ignores malformed messages and times out, closing the popup",
+              "status": "passed"
+            },
+            {
+              "title": "openOAuthPopup resolves closed when the user closes the popup",
+              "status": "passed"
+            },
+            {
+              "title": "openOAuthPopup rejects a weak state at call time",
+              "status": "passed"
+            },
+            {
+              "title": "claimOAuthPopup returns null when no opener claims within the default 3000 ms (not earlier)",
+              "status": "passed"
+            },
+            {
+              "title": "claimOAuthPopup returns null without BroadcastChannel or with a malformed state",
+              "status": "passed"
+            },
+            {
+              "title": "parseOAuthPopupMessage accepts exact shapes only",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/fe-auth/src/package-review.regression.spec.ts",
+          "tests": [
+            {
+              "title": "Package review regressions R08: stale restore failure 401 preserves a newly adopted account",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions R08: stale restore failure 403 preserves a newly adopted account",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions discards restore success after sign-out and a new summary for the same user",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/fe-auth/src/redirect.spec.ts",
+          "tests": [
+            {
+              "title": "relative authentication redirects accepts a local path: /dashboard",
+              "status": "passed"
+            },
+            {
+              "title": "relative authentication redirects accepts a local path: /fr/dashboard?view=recent#top",
+              "status": "passed"
+            },
+            {
+              "title": "relative authentication redirects accepts a local path: /",
+              "status": "passed"
+            },
+            {
+              "title": "relative authentication redirects rejects an unsafe redirect: https://example.test",
+              "status": "passed"
+            },
+            {
+              "title": "relative authentication redirects rejects an unsafe redirect: //example.test",
+              "status": "passed"
+            },
+            {
+              "title": "relative authentication redirects rejects an unsafe redirect: /\\example.test",
+              "status": "passed"
+            },
+            {
+              "title": "relative authentication redirects rejects an unsafe redirect: /a\nLocation: example.test",
+              "status": "passed"
+            },
+            {
+              "title": "relative authentication redirects rejects an unsafe redirect: /a\rLocation: example.test",
+              "status": "passed"
+            },
+            {
+              "title": "relative authentication redirects rejects an unsafe redirect: /\t/evil.com",
+              "status": "passed"
+            },
+            {
+              "title": "relative authentication redirects rejects an unsafe redirect: /\u0000/evil.com",
+              "status": "passed"
+            },
+            {
+              "title": "relative authentication redirects rejects an unsafe redirect: /\u001f/evil.com",
+              "status": "passed"
+            },
+            {
+              "title": "relative authentication redirects rejects an unsafe redirect: //evil.com",
+              "status": "passed"
+            },
+            {
+              "title": "relative authentication redirects rejects an unsafe redirect: /\t\t//evil.com",
+              "status": "passed"
+            },
+            {
+              "title": "relative authentication redirects rejects an unsafe redirect: ",
+              "status": "passed"
+            },
+            {
+              "title": "relative authentication redirects rejects an unsafe redirect: dashboard",
+              "status": "passed"
+            },
+            {
+              "title": "relative authentication redirects rejects a tab-prefixed path that a URL parser resolves to another origin",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/fe-auth/src/session.spec.ts",
+          "tests": [
+            {
+              "title": "jwtSessionKey identifies a session by the configured claims only",
+              "status": "passed"
+            },
+            {
+              "title": "jwtSessionKey returns null for missing, empty, non-integer or malformed claims",
+              "status": "passed"
+            },
+            {
+              "title": "jwtSessionKey decodes base64url payloads that need padding and URL-safe characters",
+              "status": "passed"
+            },
+            {
+              "title": "acceptsSessionToken accepts credential rotation within the same session",
+              "status": "passed"
+            },
+            {
+              "title": "acceptsSessionToken rejects a token for another session, user or credential version",
+              "status": "passed"
+            },
+            {
+              "title": "acceptsSessionToken never accepts a token while signed out",
+              "status": "passed"
+            },
+            {
+              "title": "acceptsSessionToken falls back to exact equality for unidentifiable tokens",
+              "status": "passed"
+            },
+            {
+              "title": "createSessionRequestScope keeps requests alive across token rotation and aborts them when the session changes",
+              "status": "passed"
+            },
+            {
+              "title": "createSessionRequestScope detects a change that happened before signal() even without a notification",
+              "status": "passed"
+            },
+            {
+              "title": "createSessionRequestScope unsubscribes and aborts outstanding requests on dispose",
+              "status": "passed"
+            },
+            {
+              "title": "sessionIdentity changes with the user or the session, not with credential rotation",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/fe-auth/src/store.consumer.spec.ts",
+          "tests": [
+            {
+              "title": "consumer auth policies preserves typed user data and omits refresh tokens from selected persistence",
+              "status": "passed"
+            },
+            {
+              "title": "consumer auth policies clears authentication even when product cleanup fails, then runs the navigation hook",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/fe-auth/src/store.persistence.spec.ts",
+          "tests": [
+            {
+              "title": "consumer auth persistence policy restores an existing versioned session on initial hydration",
+              "status": "passed"
+            },
+            {
+              "title": "consumer auth persistence policy lets cookie-based consumers omit refresh tokens from persisted state",
+              "status": "passed"
+            },
+            {
+              "title": "consumer auth persistence policy preserves the existing default persistence contract",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/fe-auth/src/store.spec.ts",
+          "tests": [
+            {
+              "title": "fe-auth createAuthStore should initialize with unauthenticated state",
+              "status": "passed"
+            },
+            {
+              "title": "fe-auth createAuthStore should set auth state with token, user and permissions",
+              "status": "passed"
+            },
+            {
+              "title": "fe-auth createAuthStore should logout and clear state + storage",
+              "status": "passed"
+            },
+            {
+              "title": "fe-auth createAuthStore should update user and persist to storage",
+              "status": "passed"
+            },
+            {
+              "title": "fe-auth createAuthStore should update token and persist to storage",
+              "status": "passed"
+            },
+            {
+              "title": "fe-auth createAuthStore should update permissions",
+              "status": "passed"
+            },
+            {
+              "title": "fe-auth createAuthStore hasPermission should return false with no permissions",
+              "status": "passed"
+            },
+            {
+              "title": "fe-auth createAuthStore hasPermission should match exact permission",
+              "status": "passed"
+            },
+            {
+              "title": "fe-auth createAuthStore hasPermission should grant all with superadmin or wildcard",
+              "status": "passed"
+            },
+            {
+              "title": "fe-auth createAuthStore hasPermission should match resource wildcard (resource:*)",
+              "status": "passed"
+            },
+            {
+              "title": "fe-auth createAuthStore hasAnyPermission / hasAllPermissions hasAnyPermission returns true if any match",
+              "status": "passed"
+            },
+            {
+              "title": "fe-auth createAuthStore hasAnyPermission / hasAllPermissions hasAllPermissions returns true only if all match",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/fe-auth/src/store.storage.spec.ts",
+          "tests": [
+            {
+              "title": "auth store and typed storage integration makes login, token refresh and profile updates available through storage auth accessors",
+              "status": "passed"
+            },
+            {
+              "title": "auth store and typed storage integration restores a persisted session into the HTTP client token storage before the consumer hydration callback",
+              "status": "passed"
+            },
+            {
+              "title": "auth store and typed storage integration preserves explicit refresh-token consumers without inventing storage keys",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/fe-http-client/src/axios-refresh-cancel.spec.ts",
+          "tests": [
+            {
+              "title": "does not clear identity or retry an aborted Axios request when refresh later resolve",
+              "status": "passed"
+            },
+            {
+              "title": "does not clear identity or retry an aborted Axios request when refresh later reject",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/fe-http-client/src/base.service.spec.ts",
+          "tests": [
+            {
+              "title": "client CRUD contracts maps filters, date ranges and pagination to the shared query transport",
+              "status": "passed"
+            },
+            {
+              "title": "client CRUD contracts removes configured read-only fields without mutating the input and preserves PATCH routing",
+              "status": "passed"
+            },
+            {
+              "title": "client CRUD contracts encodes record ids so they cannot change the request path",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/fe-http-client/src/binary-errors.spec.ts",
+          "tests": [
+            {
+              "title": "binary error normalization decodes Chinese JSON and keeps original response bytes",
+              "status": "passed"
+            },
+            {
+              "title": "binary error normalization decodes Chinese JSON and keeps original response bytes",
+              "status": "passed"
+            },
+            {
+              "title": "binary error normalization falls back safely for non-object, malformed or oversized bodies",
+              "status": "passed"
+            },
+            {
+              "title": "binary error normalization falls back safely for non-object, malformed or oversized bodies",
+              "status": "passed"
+            },
+            {
+              "title": "binary error normalization falls back safely for non-object, malformed or oversized bodies",
+              "status": "passed"
+            },
+            {
+              "title": "binary error normalization does not apply a stale 401 response after cancellation while decoding",
+              "status": "passed"
+            },
+            {
+              "title": "binary error normalization does not apply a stale 401 response after cancellation while decoding",
+              "status": "passed"
+            },
+            {
+              "title": "binary error normalization does not apply a stale 403 response after cancellation while decoding",
+              "status": "passed"
+            },
+            {
+              "title": "binary error normalization does not apply a stale 400 response after cancellation while decoding",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/fe-http-client/src/cookie-refresh-exchange.spec.ts",
+          "tests": [
+            {
+              "title": "refresh exchange across navigation reproduces the logout: an exchange cut off after rotation leaves a stale cookie and the next one is denied",
+              "status": "passed"
+            },
+            {
+              "title": "refresh exchange across navigation retries a denied exchange while an interrupted predecessor document is still completing (keepalive)",
+              "status": "passed"
+            },
+            {
+              "title": "refresh exchange across navigation flags the marker even when the browser rejects the fetch before pagehide",
+              "status": "passed"
+            },
+            {
+              "title": "refresh exchange across navigation does not wait for a concurrent exchange of another live tab",
+              "status": "passed"
+            },
+            {
+              "title": "refresh exchange across navigation ignores an interrupted marker written by the same document",
+              "status": "passed"
+            },
+            {
+              "title": "refresh exchange across navigation keeps the marker when the request is rejected without an HTTP answer and clears it on any answer",
+              "status": "passed"
+            },
+            {
+              "title": "refresh exchange across navigation stops retrying for other errors and at the end of the grace period",
+              "status": "passed"
+            },
+            {
+              "title": "refresh exchange across navigation times out a hanging exchange: aborts the transport, keeps the marker and rejects without a status",
+              "status": "passed"
+            },
+            {
+              "title": "keepalive cookie refresh transport posts with credentials and keepalive so an unload cannot cancel the exchange",
+              "status": "passed"
+            },
+            {
+              "title": "keepalive cookie refresh transport reports the HTTP status, including for a malformed 200",
+              "status": "passed"
+            },
+            {
+              "title": "combineAbortSignals aborts when any input aborts and passes a single signal through",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/fe-http-client/src/cookie-refresh.spec.ts",
+          "tests": [
+            {
+              "title": "cookie refresh transport uses credentials and exposes only the access token from a response envelope",
+              "status": "passed"
+            },
+            {
+              "title": "cookie refresh transport rejects a missing access token",
+              "status": "passed"
+            },
+            {
+              "title": "cookie refresh transport attaches the HTTP status to a malformed 200 and forwards the abort signal",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/fe-http-client/src/error-message.spec.ts",
+          "tests": [
+            {
+              "title": "error message extraction prefers response text and joins only nonempty message strings in their existing order",
+              "status": "passed"
+            },
+            {
+              "title": "error message extraction falls back through the direct error message, string input and consumer fallback",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/fe-http-client/src/http-client.failures.spec.ts",
+          "tests": [
+            {
+              "title": "transport evidence and caller cancellation retains binary failure response and transport metadata",
+              "status": "passed"
+            },
+            {
+              "title": "transport evidence and caller cancellation retains binary failure response and transport metadata",
+              "status": "passed"
+            },
+            {
+              "title": "transport evidence and caller cancellation clears stale identity on a login page without redirecting",
+              "status": "passed"
+            },
+            {
+              "title": "transport evidence and caller cancellation does not toast or clear identity when a caller cancels pending response headers",
+              "status": "passed"
+            },
+            {
+              "title": "transport evidence and caller cancellation does not retry or clear authentication if cancelled during shared refresh",
+              "status": "passed"
+            },
+            {
+              "title": "transport evidence and caller cancellation carries the original signal into a refreshed stream request",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/fe-http-client/src/http-client.refresh.spec.ts",
+          "tests": [
+            {
+              "title": "HTTP refresh compatibility preserves credentials after a axios refresh fails with 503 and recovers on the next request",
+              "status": "passed"
+            },
+            {
+              "title": "HTTP refresh compatibility preserves credentials after a axios refresh fails with 500 and recovers on the next request",
+              "status": "passed"
+            },
+            {
+              "title": "HTTP refresh compatibility preserves credentials after a axios refresh fails with 0 and recovers on the next request",
+              "status": "passed"
+            },
+            {
+              "title": "HTTP refresh compatibility preserves credentials after a stream refresh fails with 503 and recovers on the next request",
+              "status": "passed"
+            },
+            {
+              "title": "HTTP refresh compatibility preserves credentials after a stream refresh fails with 500 and recovers on the next request",
+              "status": "passed"
+            },
+            {
+              "title": "HTTP refresh compatibility preserves credentials after a stream refresh fails with 0 and recovers on the next request",
+              "status": "passed"
+            },
+            {
+              "title": "HTTP refresh compatibility clears credentials when axios refresh definitively rejects them with 401",
+              "status": "passed"
+            },
+            {
+              "title": "HTTP refresh compatibility clears credentials when axios refresh definitively rejects them with 403",
+              "status": "passed"
+            },
+            {
+              "title": "HTTP refresh compatibility clears credentials when stream refresh definitively rejects them with 401",
+              "status": "passed"
+            },
+            {
+              "title": "HTTP refresh compatibility clears credentials when stream refresh definitively rejects them with 403",
+              "status": "passed"
+            },
+            {
+              "title": "HTTP refresh compatibility preserves direct 503 evidence without refreshing or clearing axios credentials",
+              "status": "passed"
+            },
+            {
+              "title": "HTTP refresh compatibility preserves direct 503 evidence without refreshing or clearing stream credentials",
+              "status": "passed"
+            },
+            {
+              "title": "HTTP refresh compatibility coalesces concurrent cookie refresh without reading or persisting a refresh token",
+              "status": "passed"
+            },
+            {
+              "title": "HTTP refresh compatibility coordinates different clients with the same browser refresh lock",
+              "status": "passed"
+            },
+            {
+              "title": "HTTP refresh compatibility retains explicit refresh-token compatibility",
+              "status": "passed"
+            },
+            {
+              "title": "HTTP refresh compatibility exposes structured business failures without treating them as lost authentication",
+              "status": "passed"
+            },
+            {
+              "title": "HTTP refresh compatibility does not report deliberate request cancellation as a failure",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/fe-http-client/src/http-client.session.spec.ts",
+          "tests": [
+            {
+              "title": "bearer scope (M9) sends the bearer to baseURL-relative and same-API-origin requests only",
+              "status": "passed"
+            },
+            {
+              "title": "bearer scope (M9) allows explicitly trusted extra origins",
+              "status": "passed"
+            },
+            {
+              "title": "bearer scope (M9) does not send the bearer from fetchStream to a foreign origin",
+              "status": "passed"
+            },
+            {
+              "title": "bearer scope (M9) does not clear the session on a 401 from a foreign origin",
+              "status": "passed"
+            },
+            {
+              "title": "bearer scope without baseURL (N-L4) with a (jsdom) location, resolves like the browser: /\\evil.example is another origin and gets no bearer",
+              "status": "passed"
+            },
+            {
+              "title": "bearer scope without baseURL (N-L4) with a location, a trusted origin is still honoured",
+              "status": "passed"
+            },
+            {
+              "title": "bearer scope without baseURL (N-L4) without a window treats /\\x, \\\\x and URLs with leading whitespace or control characters as untrusted",
+              "status": "passed"
+            },
+            {
+              "title": "bearer scope without baseURL (N-L4) without a window still trusts unambiguous relative paths and the configured API origin",
+              "status": "passed"
+            },
+            {
+              "title": "response-header token adoption (M9) adopts a rotated token from the API origin for the current session",
+              "status": "passed"
+            },
+            {
+              "title": "response-header token adoption (M9) ignores tokens from foreign origins",
+              "status": "passed"
+            },
+            {
+              "title": "response-header token adoption (M9) never restores a session that signed out while the request was in flight",
+              "status": "passed"
+            },
+            {
+              "title": "response-header token adoption (M9) honours acceptResponseToken",
+              "status": "passed"
+            },
+            {
+              "title": "refresh after sign-out (M9) does not store cookie refresh results when the user signed out meanwhile",
+              "status": "passed"
+            },
+            {
+              "title": "refresh after sign-out (M9) does not store refresh-token refresh results when the user signed out meanwhile",
+              "status": "passed"
+            },
+            {
+              "title": "refresh with a mid-flight access token change (N-L4) stores the rotated refresh token when the access token changed but the stored refresh token is unchanged",
+              "status": "passed"
+            },
+            {
+              "title": "refresh with a mid-flight access token change (N-L4) does not store the rotated refresh token when the stored refresh token changed meanwhile (another session)",
+              "status": "passed"
+            },
+            {
+              "title": "refresh with a mid-flight access token change (N-L4) cookie refresh never reads or persists a refresh token",
+              "status": "passed"
+            },
+            {
+              "title": "refresh with a mid-flight access token change (N-L4) still cancels when the session ended (no access token) during the refresh",
+              "status": "passed"
+            },
+            {
+              "title": "envelope status (L13) rejects a non-success business status without a message",
+              "status": "passed"
+            },
+            {
+              "title": "fetchStream timeout with a caller signal (L12) still applies the timeout when a signal is passed",
+              "status": "passed"
+            },
+            {
+              "title": "fetchStream error body exposes the JSON error code and body of a refused stream like an axios error",
+              "status": "passed"
+            },
+            {
+              "title": "fetchStream error body keeps status only for a non-JSON body",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/fe-http-client/src/http-client.spec.ts",
+          "tests": [
+            {
+              "title": "HttpClient should create an axios instance with correct config",
+              "status": "passed"
+            },
+            {
+              "title": "HttpClient should set up request and response interceptors",
+              "status": "passed"
+            },
+            {
+              "title": "HttpClient request interceptor should attach Bearer token to requests",
+              "status": "passed"
+            },
+            {
+              "title": "HttpClient request interceptor should skip token when getToken returns null",
+              "status": "passed"
+            },
+            {
+              "title": "HttpClient request interceptor should remove Content-Type for FormData",
+              "status": "passed"
+            },
+            {
+              "title": "HttpClient response interceptor — success should unwrap { status, result } envelope",
+              "status": "passed"
+            },
+            {
+              "title": "HttpClient response interceptor — success should reject when business status is not success code",
+              "status": "passed"
+            },
+            {
+              "title": "HttpClient response interceptor — success should pass through non-envelope data as-is",
+              "status": "passed"
+            },
+            {
+              "title": "HttpClient response interceptor — success should update token from x-auth-token header",
+              "status": "passed"
+            },
+            {
+              "title": "HttpClient response interceptor — 401 + token refresh should attempt token refresh on first 401",
+              "status": "passed"
+            },
+            {
+              "title": "HttpClient response interceptor — 401 + token refresh should reject queued requests without clearing credentials on a transient refresh failure",
+              "status": "passed"
+            },
+            {
+              "title": "HttpClient response interceptor — 401 + token refresh should call onUnauthorized after retry 401",
+              "status": "passed"
+            },
+            {
+              "title": "HttpClient response interceptor — other errors should call onForbidden on 403",
+              "status": "passed"
+            },
+            {
+              "title": "HttpClient response interceptor — other errors should handle network error (no response)",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/fe-http-client/src/package-review.regression.spec.ts",
+          "tests": [
+            {
+              "title": "Package review regressions R01: old-account POST is cancelled after account switches (before-refresh)",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions R01: old-account POST is cancelled after account switches (during-refresh)",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions cancels stale stream writes without clearing the new session (before-response)",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions cancels stale stream writes without clearing the new session (refresh-success)",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions cancels stale stream writes without clearing the new session (refresh-failure)",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions checks the session again after waiting for the browser refresh lock",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions rejects a refreshed token identified as another session before storing it",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/fe-http-client/src/proxy.spec.ts",
+          "tests": [
+            {
+              "title": "Web request proxy preserves authentication and SSE response streaming without draining the body",
+              "status": "passed"
+            },
+            {
+              "title": "Web request proxy retries only transport failures of GET requests using the configured delays",
+              "status": "passed"
+            },
+            {
+              "title": "Web request proxy forwards an application error status without retrying it",
+              "status": "passed"
+            },
+            {
+              "title": "Web request proxy forwards a mutation body once without replaying a failed request",
+              "status": "passed"
+            },
+            {
+              "title": "Web request proxy cancels a retry wait when the caller aborts and never opens another request",
+              "status": "passed"
+            },
+            {
+              "title": "Web request proxy never forwards client-chosen forwarding or hop-by-hop headers",
+              "status": "passed"
+            },
+            {
+              "title": "Web request proxy sets X-Forwarded-For from the trusted client address",
+              "status": "passed"
+            },
+            {
+              "title": "Web request proxy drops encoding and length headers that no longer describe the decoded body",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/fe-http-client/src/raw-response.spec.ts",
+          "tests": [
+            {
+              "title": "explicit raw JSON responses preserves third-party status/result fields and headers without changing ordinary unwrapping",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/fe-http-client/src/sse.spec.ts",
+          "tests": [
+            {
+              "title": "parseSseEventBlock parses event, multiline data, id and retry fields",
+              "status": "passed"
+            },
+            {
+              "title": "parseSseEventBlock recognizes heartbeat comment blocks",
+              "status": "passed"
+            },
+            {
+              "title": "parseSseEventBlock ignores empty non-event blocks",
+              "status": "passed"
+            },
+            {
+              "title": "readSseStream reassembles events split across network chunks",
+              "status": "passed"
+            },
+            {
+              "title": "readSseStream stops reading when the consumer returns false",
+              "status": "passed"
+            },
+            {
+              "title": "readSseStream limits (L12) rejects an unterminated event larger than maxBufferLength",
+              "status": "passed"
+            },
+            {
+              "title": "connectSse lifecycle (L12) does not reconnect after onEvent returns false and re-evaluates headers per connection",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/fe-http-client/src/stream-lifecycle.spec.ts",
+          "tests": [
+            {
+              "title": "stream refresh lifecycle rejects a cancelled waiter immediately without cancelling shared refresh",
+              "status": "passed"
+            },
+            {
+              "title": "stream refresh lifecycle checks refreshed HTTP 403 instead of returning an error response",
+              "status": "passed"
+            },
+            {
+              "title": "stream refresh lifecycle checks refreshed HTTP 500 instead of returning an error response",
+              "status": "passed"
+            },
+            {
+              "title": "stream refresh lifecycle does not revoke successful refresh on a retry transport failure",
+              "status": "passed"
+            },
+            {
+              "title": "stream refresh lifecycle cancels upstream and preserves parser failure even if cancellation fails",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/i18n/src/i18n.spec.ts",
+          "tests": [
+            {
+              "title": "i18n nested parameter resolution should resolve message with positional args",
+              "status": "passed"
+            },
+            {
+              "title": "i18n nested parameter resolution should resolve message with single arg",
+              "status": "passed"
+            },
+            {
+              "title": "i18n nested parameter resolution should resolve message with three args",
+              "status": "passed"
+            },
+            {
+              "title": "i18n nested parameter resolution should return static message without args",
+              "status": "passed"
+            },
+            {
+              "title": "i18n nested parameter resolution should preserve unmatched placeholders when args are insufficient",
+              "status": "passed"
+            },
+            {
+              "title": "i18n nested parameter resolution should resolve nested key with arg",
+              "status": "passed"
+            },
+            {
+              "title": "i18n nested parameter resolution should handle validation error format",
+              "status": "passed"
+            },
+            {
+              "title": "i18n nested parameter resolution should handle numeric args properly",
+              "status": "passed"
+            },
+            {
+              "title": "i18n nested parameter resolution should return code when message not found",
+              "status": "passed"
+            },
+            {
+              "title": "i18n nested parameter resolution should return default message for unknown code",
+              "status": "passed"
+            },
+            {
+              "title": "i18n nested parameter resolution CompositeMessageSource with nested params should resolve through composite with args",
+              "status": "passed"
+            },
+            {
+              "title": "i18n nested parameter resolution CompositeMessageSource with nested params should fallback through sources with args",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/i18n/src/locale-context.spec.ts",
+          "tests": [
+            {
+              "title": "LocaleInterceptor keeps language-only behaviour for the default locales",
+              "status": "passed"
+            },
+            {
+              "title": "LocaleInterceptor selects region-qualified supported locales, case-insensitively",
+              "status": "passed"
+            },
+            {
+              "title": "LocaleInterceptor honours quality order and ignores q=0",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/i18n/src/locale-utils.spec.ts",
+          "tests": [
+            {
+              "title": "LocaleUtils resolveMessage should resolve message using default locale",
+              "status": "passed"
+            },
+            {
+              "title": "LocaleUtils resolveMessage should resolve message using current locale context",
+              "status": "passed"
+            },
+            {
+              "title": "LocaleUtils resolveMessage should return code when message source is not set",
+              "status": "passed"
+            },
+            {
+              "title": "LocaleUtils resolveMessage should return code when message not found",
+              "status": "passed"
+            },
+            {
+              "title": "LocaleUtils resolveMessageWithDefault should return default message when code not found",
+              "status": "passed"
+            },
+            {
+              "title": "LocaleUtils resolveMessageWithDefault should return default when message source is null",
+              "status": "passed"
+            },
+            {
+              "title": "LocaleUtils doWith should execute function within specified locale context",
+              "status": "passed"
+            },
+            {
+              "title": "LocaleUtils doWith should restore locale after execution",
+              "status": "passed"
+            },
+            {
+              "title": "LocaleUtils doWith should support nested doWith calls",
+              "status": "passed"
+            },
+            {
+              "title": "LocaleUtils doWithAsync should execute async function within locale context",
+              "status": "passed"
+            },
+            {
+              "title": "LocaleUtils resolveMessageForLocale should resolve for a specific locale ignoring context",
+              "status": "passed"
+            },
+            {
+              "title": "LocaleUtils resolveMessageForLocale should return default when source is null",
+              "status": "passed"
+            },
+            {
+              "title": "LocaleUtils resolveMessageFrom should resolve from specific source with current locale",
+              "status": "passed"
+            },
+            {
+              "title": "LocaleUtils current should return default locale when no context is set",
+              "status": "passed"
+            },
+            {
+              "title": "LocaleUtils current should return context locale when set",
+              "status": "passed"
+            },
+            {
+              "title": "LocaleUtils getMessageSource should return the configured message source",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/i18n/src/message-source.spec.ts",
+          "tests": [
+            {
+              "title": "CompositeMessageSource resolve should resolve message from first source",
+              "status": "passed"
+            },
+            {
+              "title": "CompositeMessageSource resolve should resolve message from second source when not in first",
+              "status": "passed"
+            },
+            {
+              "title": "CompositeMessageSource resolve should return first source match when key exists in multiple sources",
+              "status": "passed"
+            },
+            {
+              "title": "CompositeMessageSource resolve should return default message when code not found in any source",
+              "status": "passed"
+            },
+            {
+              "title": "CompositeMessageSource resolve should return the code itself when no match and no default",
+              "status": "passed"
+            },
+            {
+              "title": "CompositeMessageSource resolve should pass args through to the matching source",
+              "status": "passed"
+            },
+            {
+              "title": "CompositeMessageSource addSource should add a new source and resolve from it",
+              "status": "passed"
+            },
+            {
+              "title": "CompositeMessageSource addSources should add multiple sources at once",
+              "status": "passed"
+            },
+            {
+              "title": "CompositeMessageSource getSourceCount should return the number of registered sources",
+              "status": "passed"
+            },
+            {
+              "title": "CompositeMessageSource empty composite should return default message with no sources",
+              "status": "passed"
+            },
+            {
+              "title": "CompositeMessageSource empty composite should return code when no sources and no default",
+              "status": "passed"
+            },
+            {
+              "title": "FileMessageSource locale validation reads valid locales and refuses path traversal without caching misses",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/i18n/src/package-review.regression.spec.ts",
+          "tests": [
+            {
+              "title": "Package review regressions R02: LocaleInterceptor unsubscribe tears down the source",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions preserves async locale context and cleans up on complete",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions preserves async locale context and cleans up on error",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/network/src/codec.spec.ts",
+          "tests": [
+            {
+              "title": "JsonCodec should have correct id and transport",
+              "status": "passed"
+            },
+            {
+              "title": "JsonCodec should encode object to JSON Buffer",
+              "status": "passed"
+            },
+            {
+              "title": "JsonCodec should decode JSON Buffer to object",
+              "status": "passed"
+            },
+            {
+              "title": "JsonCodec should roundtrip encode/decode",
+              "status": "passed"
+            },
+            {
+              "title": "JsonCodec should throw on invalid JSON decode",
+              "status": "passed"
+            },
+            {
+              "title": "JsonCodec should handle null values",
+              "status": "passed"
+            },
+            {
+              "title": "JsonCodec should handle arrays",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/network/src/network-manager.spec.ts",
+          "tests": [
+            {
+              "title": "DefaultNetworkManager should register and retrieve a provider",
+              "status": "passed"
+            },
+            {
+              "title": "DefaultNetworkManager should return undefined for unregistered provider",
+              "status": "passed"
+            },
+            {
+              "title": "DefaultNetworkManager should create network on first getNetwork call",
+              "status": "passed"
+            },
+            {
+              "title": "DefaultNetworkManager should return cached network on subsequent calls",
+              "status": "passed"
+            },
+            {
+              "title": "DefaultNetworkManager should throw for unsupported network type",
+              "status": "passed"
+            },
+            {
+              "title": "DefaultNetworkManager should throw for disabled config",
+              "status": "passed"
+            },
+            {
+              "title": "DefaultNetworkManager should list all created networks",
+              "status": "passed"
+            },
+            {
+              "title": "DefaultNetworkManager should reload an existing network",
+              "status": "passed"
+            },
+            {
+              "title": "DefaultNetworkManager should create network on reload if not cached",
+              "status": "passed"
+            },
+            {
+              "title": "DefaultNetworkManager should shutdown a network without removing from cache",
+              "status": "passed"
+            },
+            {
+              "title": "DefaultNetworkManager should do nothing when shutting down non-existent network",
+              "status": "passed"
+            },
+            {
+              "title": "DefaultNetworkManager should destroy a network and remove from cache",
+              "status": "passed"
+            },
+            {
+              "title": "DefaultNetworkManager should auto-reload dead networks with autoReload=true",
+              "status": "passed"
+            },
+            {
+              "title": "DefaultNetworkManager should not reload alive networks",
+              "status": "passed"
+            },
+            {
+              "title": "DefaultNetworkManager creates a network once for concurrent getNetwork calls",
+              "status": "passed"
+            },
+            {
+              "title": "DefaultNetworkManager retries creation after a failed concurrent create",
+              "status": "passed"
+            },
+            {
+              "title": "DefaultNetworkManager reload shuts down and removes a network whose config was disabled",
+              "status": "passed"
+            },
+            {
+              "title": "DefaultNetworkManager does not auto-reload a network that was explicitly shut down",
+              "status": "passed"
+            },
+            {
+              "title": "DefaultNetworkManager does not overlap health-check ticks while a reload is slow",
+              "status": "passed"
+            },
+            {
+              "title": "DefaultNetworkManager should shutdown all networks on module destroy",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/network/src/network-type.spec.ts",
+          "tests": [
+            {
+              "title": "networkType should create a NetworkType with id and name",
+              "status": "passed"
+            },
+            {
+              "title": "networkType should default name to id when not provided",
+              "status": "passed"
+            },
+            {
+              "title": "NetworkTypes should define TCP_CLIENT",
+              "status": "passed"
+            },
+            {
+              "title": "NetworkTypes should define all built-in types",
+              "status": "passed"
+            },
+            {
+              "title": "networkTypeRegistry should lookup built-in types (case insensitive)",
+              "status": "passed"
+            },
+            {
+              "title": "networkTypeRegistry should return undefined for unknown type",
+              "status": "passed"
+            },
+            {
+              "title": "networkTypeRegistry should register a custom type",
+              "status": "passed"
+            },
+            {
+              "title": "networkTypeRegistry should register multiple types at once",
+              "status": "passed"
+            },
+            {
+              "title": "networkTypeRegistry should list all registered types",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/network/src/package-review.regression.spec.ts",
+          "tests": [
+            {
+              "title": "Package review regressions R03: pending network creation is disposed during (destroy)",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions R03: pending network creation is disposed during (module-destroy)",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions closes a late health reload result during shutdown",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions closes a late health reload result during destroy",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions closes a late health reload result during module-destroy",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions refuses new work after module destruction",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/network/src/transport.spec.ts",
+          "tests": [
+            {
+              "title": "createTransport should create a Transport with protocol and schema",
+              "status": "passed"
+            },
+            {
+              "title": "createTransport should create UDP transport",
+              "status": "passed"
+            },
+            {
+              "title": "Transports should define TCP constant",
+              "status": "passed"
+            },
+            {
+              "title": "Transports should define UDP constant",
+              "status": "passed"
+            },
+            {
+              "title": "Transports should define HTTP/HTTPS as TCP-based",
+              "status": "passed"
+            },
+            {
+              "title": "Transports should define MQTT/MQTTS as TCP-based",
+              "status": "passed"
+            },
+            {
+              "title": "Transports should define WS/WSS as TCP-based",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/provider/src/file-resource-provider.spec.ts",
+          "tests": [
+            {
+              "title": "FileResourceProvider path containment reads files inside the base directory",
+              "status": "passed"
+            },
+            {
+              "title": "FileResourceProvider path containment rejects a sibling directory sharing the base prefix",
+              "status": "passed"
+            },
+            {
+              "title": "FileResourceProvider path containment rejects parent and absolute paths",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/provider/src/package-review.regression.spec.ts",
+          "tests": [
+            {
+              "title": "Package review regressions R06: disposing an old registration preserves its replacement",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions a handle owns its registration even when the same provider object is registered again",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/rule-engine/src/package-review.regression.spec.ts",
+          "tests": [
+            {
+              "title": "Package review regressions R09: failed rule startup releases every acquired trigger",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/rule-engine/src/rule-engine.service.spec.ts",
+          "tests": [
+            {
+              "title": "RuleEngineService startRule() / stopRule() startRule 후 isRuleActive()가 true여야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "RuleEngineService startRule() / stopRule() stopRule 후 isRuleActive()가 false여야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "RuleEngineService startRule() / stopRule() 같은 id로 startRule을 두 번 호출하면 이전 인스턴스가 교체되어야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "RuleEngineService startRule() / stopRule() 존재하지 않는 규칙을 stopRule해도 오류가 없어야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "RuleEngineService startRule() / stopRule() getActiveRules()는 시작된 규칙 정의를 반환해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "RuleEngineService pauseRule() / resumeRule() pauseRule 후 getRuleState()는 PAUSED여야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "RuleEngineService pauseRule() / resumeRule() resumeRule 후 getRuleState()는 STARTED여야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "RuleEngineService pauseRule() / resumeRule() PAUSED 상태에서 executeRule을 호출해도 action이 실행되지 않아야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "RuleEngineService 조건 평가 TERMS 조건이 충족되면 action이 실행되어야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "RuleEngineService 조건 평가 TERMS 조건이 충족되지 않으면 action이 실행되지 않아야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "RuleEngineService 조건 평가 EXPRESSION 조건이 충족되면 action이 실행되어야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "RuleEngineService 조건 평가 다중 AND 조건 모두 충족 시에만 action이 실행되어야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "RuleEngineService 조건 평가 알 수 없는 조건 타입은 false로 평가되어야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "RuleEngineService action 실행 병렬 실행 모드에서 여러 action이 모두 실행되어야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "RuleEngineService action 실행 직렬 실행 모드에서 이전 action 결과가 다음 action의 data로 병합되어야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "RuleEngineService action 실행 알 수 없는 action 타입은 경고만 남기고 계속 진행해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "RuleEngineService EVENT 트리거 이벤트 버스가 없으면 EVENT 트리거 설정을 건너뛰어야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "RuleEngineService EVENT 트리거 이벤트 버스가 있으면 EVENT 트리거가 이벤트를 받아 규칙을 실행해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "RuleEngineService TIMER 트리거 TIMER 트리거가 지정된 인터벌마다 규칙을 실행해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "RuleEngineService stopAll() / onModuleDestroy() stopAll() 후 getActiveRules()는 비어 있어야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "RuleEngineService stopAll() / onModuleDestroy() onModuleDestroy()는 모든 규칙을 종료해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "RuleEngineService branches 실행 branches 조건이 충족되면 해당 action group이 실행되어야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "RuleEngineService branches 실행 branches 조건 미충족 시 action이 실행되지 않아야 한다",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/storage/src/buffered-file-manager-store.spec.ts",
+          "tests": [
+            {
+              "title": "BufferedFileManagerStore buffers within the explicit budget and retains reported size for integrity verification",
+              "status": "passed"
+            },
+            {
+              "title": "BufferedFileManagerStore destroys oversized streams whether metadata or actual chunks exceed the budget",
+              "status": "passed"
+            },
+            {
+              "title": "BufferedFileManagerStore forces private uploads and rejects oversized bodies before calling the provider",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/storage/src/local-storage.spec.ts",
+          "tests": [
+            {
+              "title": "LocalFileStorage should report providerType as local",
+              "status": "passed"
+            },
+            {
+              "title": "LocalFileStorage should always be configured",
+              "status": "passed"
+            },
+            {
+              "title": "LocalFileStorage should upload and download a file",
+              "status": "passed"
+            },
+            {
+              "title": "LocalFileStorage should upload to nested directory",
+              "status": "passed"
+            },
+            {
+              "title": "LocalFileStorage should delete a file",
+              "status": "passed"
+            },
+            {
+              "title": "LocalFileStorage should not throw when deleting a non-existent file",
+              "status": "passed"
+            },
+            {
+              "title": "LocalFileStorage propagates real directory permission denial instead of reporting missing or deleted",
+              "status": "passed"
+            },
+            {
+              "title": "LocalFileStorage treats a non-directory ancestor as absent for lookup but does not report a successful delete",
+              "status": "passed"
+            },
+            {
+              "title": "LocalFileStorage should reject path traversal with ../",
+              "status": "passed"
+            },
+            {
+              "title": "LocalFileStorage should reject path traversal on download",
+              "status": "passed"
+            },
+            {
+              "title": "LocalFileStorage should reject path traversal on delete",
+              "status": "passed"
+            },
+            {
+              "title": "LocalFileStorage should reject path traversal on exists",
+              "status": "passed"
+            },
+            {
+              "title": "LocalFileStorage should list files in a directory",
+              "status": "passed"
+            },
+            {
+              "title": "LocalFileStorage should return empty list for non-existent directory",
+              "status": "passed"
+            },
+            {
+              "title": "LocalFileStorage should produce correct MD5 hash of uploaded file",
+              "status": "passed"
+            },
+            {
+              "title": "LocalFileStorage should produce correct SHA256 hash of uploaded file",
+              "status": "passed"
+            },
+            {
+              "title": "LocalFileStorage should return public URL",
+              "status": "passed"
+            },
+            {
+              "title": "LocalFileStorage should return key as URL when no baseUrl",
+              "status": "passed"
+            },
+            {
+              "title": "LocalFileStorage should return file info for existing file",
+              "status": "passed"
+            },
+            {
+              "title": "LocalFileStorage should return undefined for non-existent file",
+              "status": "passed"
+            },
+            {
+              "title": "LocalFileStorage should copy a file",
+              "status": "passed"
+            },
+            {
+              "title": "LocalFileStorage should move a file",
+              "status": "passed"
+            },
+            {
+              "title": "LocalFileStorage should download a range of a file",
+              "status": "passed"
+            },
+            {
+              "title": "LocalFileStorage should support chunked upload workflow",
+              "status": "passed"
+            },
+            {
+              "title": "LocalFileStorage should reject invalid chunk index",
+              "status": "passed"
+            },
+            {
+              "title": "LocalFileStorage should abort chunked upload",
+              "status": "passed"
+            },
+            {
+              "title": "LocalFileStorage should save file with auto-generated date-based key",
+              "status": "passed"
+            },
+            {
+              "title": "LocalFileStorage should handle fileType with leading dot",
+              "status": "passed"
+            },
+            {
+              "title": "LocalFileStorage should apply file permissions without throwing",
+              "status": "passed"
+            },
+            {
+              "title": "LocalFileStorage should upload from a ReadStream",
+              "status": "passed"
+            },
+            {
+              "title": "LocalFileStorage ignores abort requests for unknown or crafted upload ids (no traversal)",
+              "status": "passed"
+            },
+            {
+              "title": "LocalFileStorage validates chunk counts and indices as bounded integers",
+              "status": "passed"
+            },
+            {
+              "title": "LocalFileStorage expires abandoned chunked uploads",
+              "status": "passed"
+            },
+            {
+              "title": "LocalFileStorage rejects ranges that start outside the file and encodes public URLs",
+              "status": "passed"
+            },
+            {
+              "title": "LocalFileStorage streams uploads through a temporary file and leaves no partial object on failure",
+              "status": "passed"
+            },
+            {
+              "title": "LocalFileStorage round-2 hardening uploads and streams a file whose basename is 255 bytes",
+              "status": "passed"
+            },
+            {
+              "title": "LocalFileStorage round-2 hardening leaves no temp file after a failing stream",
+              "status": "passed"
+            },
+            {
+              "title": "LocalFileStorage round-2 hardening does not list the temp file of an in-flight uploadStream",
+              "status": "passed"
+            },
+            {
+              "title": "LocalFileStorage round-2 hardening completeChunkedUpload with a deleted chunk file throws and leaves no file under the final key",
+              "status": "passed"
+            },
+            {
+              "title": "LocalFileStorage round-2 hardening completeChunkedUpload failure leaves no temp file on disk",
+              "status": "passed"
+            },
+            {
+              "title": "LocalFileStorage round-2 hardening downloadRange on an empty file: position 0 is an empty range, position 1 is a RangeError",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/storage/src/package-review.regression.spec.ts",
+          "tests": [
+            {
+              "title": "Package review regressions R05: completing chunks respects stream backpressure",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/storage/src/private-file-asset.service.spec.ts",
+          "tests": [
+            {
+              "title": "private file asset metadata and recovery reserves metadata before private upload and verifies bytes before marking ready",
+              "status": "passed"
+            },
+            {
+              "title": "private file asset metadata and recovery reuses an identical idempotent upload and rejects changed content or request metadata before object IO",
+              "status": "passed"
+            },
+            {
+              "title": "private file asset metadata and recovery enforces authorization before metadata or object IO on every entry",
+              "status": "passed"
+            },
+            {
+              "title": "private file asset metadata and recovery does not expose another scope and scopes idempotency independently",
+              "status": "passed"
+            },
+            {
+              "title": "private file asset metadata and recovery resumes an uncertain remote upload through a new service without uploading again",
+              "status": "passed"
+            },
+            {
+              "title": "private file asset metadata and recovery keeps the object and reservation recoverable after metadata commit failure",
+              "status": "passed"
+            },
+            {
+              "title": "private file asset metadata and recovery performs no storage IO when reservation fails and does not treat unknown existence as missing",
+              "status": "passed"
+            },
+            {
+              "title": "private file asset metadata and recovery does not claim missing, unknown or corrupt pending content is ready",
+              "status": "passed"
+            },
+            {
+              "title": "private file asset metadata and recovery never overwrites or serves conflicting stored bytes",
+              "status": "passed"
+            },
+            {
+              "title": "private file asset metadata and recovery enforces the current byte budget on previously stored files before reading them",
+              "status": "passed"
+            },
+            {
+              "title": "private file asset metadata and recovery atomically reserves one identity across concurrent service instances",
+              "status": "passed"
+            },
+            {
+              "title": "private file asset metadata and recovery rejects a concurrent idempotency conflict before writing different bytes",
+              "status": "passed"
+            },
+            {
+              "title": "private file asset metadata and recovery bounds input and snapshots scope, idempotency, filename and bytes before asynchronous authorization",
+              "status": "passed"
+            },
+            {
+              "title": "private file asset metadata and recovery keeps a failed deletion logically inaccessible and retries cleanup after service replacement",
+              "status": "passed"
+            },
+            {
+              "title": "private file asset metadata and recovery requires a durable tombstone before touching the object",
+              "status": "passed"
+            },
+            {
+              "title": "private file asset metadata and recovery recovers a deletion whose object removal succeeded but metadata acknowledgement failed",
+              "status": "passed"
+            },
+            {
+              "title": "private file asset metadata and recovery does not confirm cleanup when deletion is ineffective or absence is unknown",
+              "status": "passed"
+            },
+            {
+              "title": "private file asset metadata and recovery does not resurrect deleted metadata when an earlier upload finishes late",
+              "status": "passed"
+            },
+            {
+              "title": "private file asset metadata and recovery retains retryable cleanup when compensating for a late upload fails",
+              "status": "passed"
+            },
+            {
+              "title": "private file asset metadata and recovery retained tombstones reconcile remote writes that arrive after a previous absence observation",
+              "status": "passed"
+            },
+            {
+              "title": "private file asset metadata and recovery refuses to release file bytes when deletion wins during a read",
+              "status": "passed"
+            },
+            {
+              "title": "private file asset metadata and recovery refuses to release bytes when the final metadata read is no longer ready",
+              "status": "passed"
+            },
+            {
+              "title": "private file asset metadata and recovery cannot restore ready state when deletion wins during recovery verification",
+              "status": "passed"
+            },
+            {
+              "title": "private file asset metadata and recovery uses the existing bounded FileManager adapter against real temporary local objects",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/storage/src/public-asset.service.spec.ts",
+          "tests": [
+            {
+              "title": "PublicAssetService sniffs raster magic bytes only",
+              "status": "passed"
+            },
+            {
+              "title": "PublicAssetService stores identical concurrent uploads once and returns the existing URL",
+              "status": "passed"
+            },
+            {
+              "title": "PublicAssetService rejects SVG, unknown, oversize and undecodable input before writing",
+              "status": "passed"
+            },
+            {
+              "title": "PublicAssetService passes the repository quota refusal through",
+              "status": "passed"
+            },
+            {
+              "title": "PublicAssetService does not serve pending, missing or mismatched names",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/storage/src/s3-storage.minio.spec.ts",
+          "tests": [
+            {
+              "title": "S3Storage multipart against MinIO round-trips 0 bytes with the exact size and hash, leaving no pending upload",
+              "status": "skipped"
+            },
+            {
+              "title": "S3Storage multipart against MinIO round-trips 1 bytes with the exact size and hash, leaving no pending upload",
+              "status": "skipped"
+            },
+            {
+              "title": "S3Storage multipart against MinIO round-trips 5242879 bytes with the exact size and hash, leaving no pending upload",
+              "status": "skipped"
+            },
+            {
+              "title": "S3Storage multipart against MinIO round-trips 5242880 bytes with the exact size and hash, leaving no pending upload",
+              "status": "skipped"
+            },
+            {
+              "title": "S3Storage multipart against MinIO round-trips 5242881 bytes with the exact size and hash, leaving no pending upload",
+              "status": "skipped"
+            },
+            {
+              "title": "S3Storage multipart against MinIO round-trips 10485760 bytes with the exact size and hash, leaving no pending upload",
+              "status": "skipped"
+            },
+            {
+              "title": "S3Storage multipart against MinIO round-trips 10485761 bytes with the exact size and hash, leaving no pending upload",
+              "status": "skipped"
+            },
+            {
+              "title": "S3Storage multipart against MinIO round-trips 15728633 bytes with the exact size and hash, leaving no pending upload",
+              "status": "skipped"
+            },
+            {
+              "title": "S3Storage multipart against MinIO a source that fails after parts were uploaded aborts the upload: no object, no pending multipart",
+              "status": "skipped"
+            },
+            {
+              "title": "S3Storage multipart against MinIO an UploadPart that fails mid-way (real server holds earlier parts) is aborted and never half-visible",
+              "status": "skipped"
+            },
+            {
+              "title": "S3Storage multipart against MinIO destroying the source stream mid-upload also leaves nothing behind",
+              "status": "skipped"
+            },
+            {
+              "title": "S3Storage multipart against MinIO a failed re-upload leaves the previous object untouched",
+              "status": "skipped"
+            },
+            {
+              "title": "S3Storage multipart against MinIO concurrent uploads of different keys do not mix their parts",
+              "status": "skipped"
+            },
+            {
+              "title": "S3Storage multipart against MinIO buffers about one part: a 150 MiB stream does not grow external memory with the object size",
+              "status": "skipped"
+            },
+            {
+              "title": "S3Storage multipart against MinIO rejects public ACL on a no-ACL provider before opening a multipart upload",
+              "status": "skipped"
+            },
+            {
+              "title": "S3Storage multipart against MinIO refuses invalid part sizes at construction",
+              "status": "skipped"
+            }
+          ]
+        },
+        {
+          "file": "packages/storage/src/s3-storage.spec.ts",
+          "tests": [
+            {
+              "title": "S3Storage should report providerType as s3",
+              "status": "passed"
+            },
+            {
+              "title": "S3Storage should always be configured",
+              "status": "passed"
+            },
+            {
+              "title": "S3Storage does not disclose the bucket in lifecycle logs",
+              "status": "passed"
+            },
+            {
+              "title": "S3Storage should upload a buffer to S3",
+              "status": "passed"
+            },
+            {
+              "title": "S3Storage should use default content type when none provided",
+              "status": "passed"
+            },
+            {
+              "title": "S3Storage omits ACL headers for providers without object ACL support",
+              "status": "passed"
+            },
+            {
+              "title": "S3Storage rejects public object ACL requests when ACL support is disabled",
+              "status": "passed"
+            },
+            {
+              "title": "S3Storage should download a file from S3",
+              "status": "passed"
+            },
+            {
+              "title": "S3Storage rejects a non-stream response instead of casting it to a filesystem stream",
+              "status": "passed"
+            },
+            {
+              "title": "S3Storage should throw when download body is empty",
+              "status": "passed"
+            },
+            {
+              "title": "S3Storage should delete a file from S3",
+              "status": "passed"
+            },
+            {
+              "title": "S3Storage should return true for existing file",
+              "status": "passed"
+            },
+            {
+              "title": "S3Storage should return false for NotFound",
+              "status": "passed"
+            },
+            {
+              "title": "S3Storage should return false for 404 status code",
+              "status": "passed"
+            },
+            {
+              "title": "S3Storage should rethrow unexpected errors in exists",
+              "status": "passed"
+            },
+            {
+              "title": "S3Storage should return publicUrl-based URL",
+              "status": "passed"
+            },
+            {
+              "title": "S3Storage should keep public and signed URL contracts separate",
+              "status": "passed"
+            },
+            {
+              "title": "S3Storage should list objects by prefix",
+              "status": "passed"
+            },
+            {
+              "title": "S3Storage should return empty list when no Contents",
+              "status": "passed"
+            },
+            {
+              "title": "S3Storage should follow every list continuation token",
+              "status": "passed"
+            },
+            {
+              "title": "S3Storage should return file info via HeadObject",
+              "status": "passed"
+            },
+            {
+              "title": "S3Storage should return undefined for non-existent file",
+              "status": "passed"
+            },
+            {
+              "title": "S3Storage should copy a file within S3",
+              "status": "passed"
+            },
+            {
+              "title": "S3Storage should move a file (copy + delete)",
+              "status": "passed"
+            },
+            {
+              "title": "S3Storage should upload from a stream by collecting chunks",
+              "status": "passed"
+            },
+            {
+              "title": "S3Storage multipart uploadStream rejects part sizes outside the S3 limits",
+              "status": "passed"
+            },
+            {
+              "title": "S3Storage multipart uploadStream sends a stream that ends within the first part as one PutObject",
+              "status": "passed"
+            },
+            {
+              "title": "S3Storage multipart uploadStream stores an empty stream as an empty object",
+              "status": "passed"
+            },
+            {
+              "title": "S3Storage multipart uploadStream uploads 60 MiB in numbered parts holding at most one part in memory",
+              "status": "passed"
+            },
+            {
+              "title": "S3Storage multipart uploadStream aborts the multipart upload and destroys the source when the stream fails mid-way",
+              "status": "passed"
+            },
+            {
+              "title": "S3Storage multipart uploadStream aborts when an UploadPart or Complete request fails, and keeps the original error",
+              "status": "passed"
+            },
+            {
+              "title": "S3Storage multipart uploadStream does not start a multipart upload when the single PutObject fails",
+              "status": "passed"
+            },
+            {
+              "title": "S3Storage multipart uploadStream refuses public ACLs before reading the stream when object ACLs are disabled",
+              "status": "passed"
+            },
+            {
+              "title": "S3Storage should destroy S3 client on module destroy",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/storage/src/storage-interface.spec.ts",
+          "tests": [
+            {
+              "title": "isFileDenied requires every configured allow-list to pass",
+              "status": "passed"
+            },
+            {
+              "title": "isFileDenied evaluates deny-lists before allow-lists",
+              "status": "passed"
+            },
+            {
+              "title": "isFileDenied checks the sniffed MIME type against the same lists",
+              "status": "passed"
+            },
+            {
+              "title": "isFileDenied blocks DANGEROUS_EXTENSIONS by default unless explicitly allowed",
+              "status": "passed"
+            },
+            {
+              "title": "isFileDenied rejects trailing dots and spaces",
+              "status": "passed"
+            },
+            {
+              "title": "DANGEROUS_EXTENSIONS additions denies .html by default",
+              "status": "passed"
+            },
+            {
+              "title": "DANGEROUS_EXTENSIONS additions denies .htm by default",
+              "status": "passed"
+            },
+            {
+              "title": "DANGEROUS_EXTENSIONS additions denies .xhtml by default",
+              "status": "passed"
+            },
+            {
+              "title": "DANGEROUS_EXTENSIONS additions denies .shtml by default",
+              "status": "passed"
+            },
+            {
+              "title": "DANGEROUS_EXTENSIONS additions denies .mjs by default",
+              "status": "passed"
+            },
+            {
+              "title": "DANGEROUS_EXTENSIONS additions denies .hta by default",
+              "status": "passed"
+            },
+            {
+              "title": "DANGEROUS_EXTENSIONS additions denies .swf by default",
+              "status": "passed"
+            },
+            {
+              "title": "DANGEROUS_EXTENSIONS additions denies .xml by default",
+              "status": "passed"
+            },
+            {
+              "title": "DANGEROUS_EXTENSIONS additions allowDangerousExtensions: [\"html\"] allows .html but not other dangerous types",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/storage/src/storage-url-hydrator.spec.ts",
+          "tests": [
+            {
+              "title": "hydrateStorageUrls hydrates nested storage references without mutating the source value",
+              "status": "passed"
+            },
+            {
+              "title": "hydrateStorageUrls does not sign values without a storage key and reuses signatures per key",
+              "status": "passed"
+            },
+            {
+              "title": "hydrateStorageUrls does not sign a storage key that is absent from the ownership allowlist",
+              "status": "passed"
+            },
+            {
+              "title": "hydrateStorageUrls rejects signing failures without modifying persisted source data",
+              "status": "passed"
+            },
+            {
+              "title": "hydrateStorageUrls rejects cyclic and overly deep graphs but accepts shared subgraphs",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/storage/src/unavailable-file-manager.spec.ts",
+          "tests": [
+            {
+              "title": "UnavailableFileManager keeps unconfigured reads empty and data operations explicitly rejected",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/storage/src/verified-object-transfer.spec.ts",
+          "tests": [
+            {
+              "title": "verified object transfer never uploads a dry-run or unauthorized planned object",
+              "status": "passed"
+            },
+            {
+              "title": "verified object transfer writes privately then verifies returned bytes before reporting uploaded",
+              "status": "passed"
+            },
+            {
+              "title": "verified object transfer reuses matching objects but never overwrites conflicting bytes",
+              "status": "passed"
+            },
+            {
+              "title": "verified object transfer rejects corrupt source/upload sizes and preserves custom error mapping",
+              "status": "passed"
+            },
+            {
+              "title": "verified object transfer distinguishes stored size and MIME conflicts before hash mismatch",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/storage/src/webdav-connection.spec.ts",
+          "tests": [
+            {
+              "title": "WEBDAV_STORAGE_CONNECTION_DESCRIPTOR declares the webdav-storage profile with a secret password and an endpoint field",
+              "status": "passed"
+            },
+            {
+              "title": "webDavOptionsFromConnection parses a complete environment into frozen options",
+              "status": "passed"
+            },
+            {
+              "title": "webDavOptionsFromConnection trims values, defaults the base path to / and keeps the password verbatim",
+              "status": "passed"
+            },
+            {
+              "title": "webDavOptionsFromConnection refuses {}",
+              "status": "passed"
+            },
+            {
+              "title": "webDavOptionsFromConnection refuses {\"WEBDAV_BASE_URL\":\"\"}",
+              "status": "passed"
+            },
+            {
+              "title": "webDavOptionsFromConnection refuses {\"WEBDAV_BASE_URL\":\"not a url\"}",
+              "status": "passed"
+            },
+            {
+              "title": "webDavOptionsFromConnection refuses {\"WEBDAV_BASE_URL\":\"ftp://dav.example.invalid\"}",
+              "status": "passed"
+            },
+            {
+              "title": "webDavOptionsFromConnection refuses {\"WEBDAV_BASE_URL\":\"file:///etc/passwd\"}",
+              "status": "passed"
+            },
+            {
+              "title": "webDavOptionsFromConnection refuses {\"WEBDAV_BASE_URL\":\"javascript:alert(1)\"}",
+              "status": "passed"
+            },
+            {
+              "title": "webDavOptionsFromConnection refuses {\"WEBDAV_BASE_URL\":\"https://u:p@dav.example.invalid\"}",
+              "status": "passed"
+            },
+            {
+              "title": "webDavOptionsFromConnection refuses {\"WEBDAV_BASE_URL\":\"https://user@dav.example.invalid\"}",
+              "status": "passed"
+            },
+            {
+              "title": "webDavOptionsFromConnection refuses {\"WEBDAV_BASE_URL\":\"https://dav.example.invalid/?token=x\"}",
+              "status": "passed"
+            },
+            {
+              "title": "webDavOptionsFromConnection refuses {\"WEBDAV_BASE_URL\":\"https://dav.example.invalid/#frag\"}",
+              "status": "passed"
+            },
+            {
+              "title": "webDavOptionsFromConnection refuses {}",
+              "status": "passed"
+            },
+            {
+              "title": "webDavOptionsFromConnection refuses {\"WEBDAV_PASSWORD\":\"\"}",
+              "status": "passed"
+            },
+            {
+              "title": "webDavOptionsFromConnection refuses {}",
+              "status": "passed"
+            },
+            {
+              "title": "webDavOptionsFromConnection refuses {\"WEBDAV_USERNAME\":\"   \"}",
+              "status": "passed"
+            },
+            {
+              "title": "webDavOptionsFromConnection refuses {\"WEBDAV_BASE_PATH\":\"relative\"}",
+              "status": "passed"
+            },
+            {
+              "title": "webDavOptionsFromConnection refuses {\"WEBDAV_BASE_PATH\":\"/a/../b\"}",
+              "status": "passed"
+            },
+            {
+              "title": "webDavOptionsFromConnection refuses {\"WEBDAV_BASE_PATH\":\"/a/./b\"}",
+              "status": "passed"
+            },
+            {
+              "title": "webDavOptionsFromConnection refuses {\"WEBDAV_BASE_PATH\":\"/..\"}",
+              "status": "passed"
+            },
+            {
+              "title": "webDavOptionsFromConnection refuses {\"WEBDAV_BASE_PATH\":\"/a\\\\b\"}",
+              "status": "passed"
+            },
+            {
+              "title": "webDavOptionsFromConnection refuses {\"WEBDAV_BASE_PATH\":\"/a\\nb\"}",
+              "status": "passed"
+            },
+            {
+              "title": "webDavOptionsFromConnection refuses {\"WEBDAV_BASE_PATH\":\"/a\\u0000b\"}",
+              "status": "passed"
+            },
+            {
+              "title": "webDavOptionsFromConnection never echoes a value in the error message",
+              "status": "passed"
+            },
+            {
+              "title": "webDavOptionsFromConnection anonymous access is an explicit consumer decision",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/storage/src/webdav-storage.spec.ts",
+          "tests": [
+            {
+              "title": "WebDavStorage should report providerType as webdav",
+              "status": "passed"
+            },
+            {
+              "title": "WebDavStorage should be configured after construction",
+              "status": "passed"
+            },
+            {
+              "title": "WebDavStorage rejects incomplete credentials before creating a client",
+              "status": "passed"
+            },
+            {
+              "title": "WebDavStorage only allows missing credentials under explicit anonymous policy",
+              "status": "passed"
+            },
+            {
+              "title": "WebDavStorage does not disclose the endpoint or credentials in lifecycle logs",
+              "status": "passed"
+            },
+            {
+              "title": "WebDavStorage should upload a buffer via putFileContents",
+              "status": "passed"
+            },
+            {
+              "title": "WebDavStorage coalesces concurrent creation of the same directory",
+              "status": "passed"
+            },
+            {
+              "title": "WebDavStorage accepts a cross-process directory creation conflict after verifying existence",
+              "status": "passed"
+            },
+            {
+              "title": "WebDavStorage should download a file",
+              "status": "passed"
+            },
+            {
+              "title": "WebDavStorage streams uploads without collecting the body and destroys the source on remote failure",
+              "status": "passed"
+            },
+            {
+              "title": "WebDavStorage cancels active upload and download streams and rejects directory downloads",
+              "status": "passed"
+            },
+            {
+              "title": "WebDavStorage destroys uploads for pre-abort, source failure and directory setup failure",
+              "status": "passed"
+            },
+            {
+              "title": "WebDavStorage supports shallow directory entries, strict missing and public directory creation",
+              "status": "passed"
+            },
+            {
+              "title": "WebDavStorage should delete a file",
+              "status": "passed"
+            },
+            {
+              "title": "WebDavStorage should ignore 404 on delete",
+              "status": "passed"
+            },
+            {
+              "title": "WebDavStorage should rethrow non-404 errors on delete",
+              "status": "passed"
+            },
+            {
+              "title": "WebDavStorage should check file existence",
+              "status": "passed"
+            },
+            {
+              "title": "WebDavStorage should return public URL",
+              "status": "passed"
+            },
+            {
+              "title": "WebDavStorage should return key when no publicUrl",
+              "status": "passed"
+            },
+            {
+              "title": "WebDavStorage should list files in a directory",
+              "status": "passed"
+            },
+            {
+              "title": "WebDavStorage should return empty list on 404",
+              "status": "passed"
+            },
+            {
+              "title": "WebDavStorage should return file info",
+              "status": "passed"
+            },
+            {
+              "title": "WebDavStorage should return undefined for directory",
+              "status": "passed"
+            },
+            {
+              "title": "WebDavStorage should return undefined on 404",
+              "status": "passed"
+            },
+            {
+              "title": "WebDavStorage should copy a file",
+              "status": "passed"
+            },
+            {
+              "title": "WebDavStorage should move a file",
+              "status": "passed"
+            },
+            {
+              "title": "WebDavStorage should reject path traversal on upload",
+              "status": "passed"
+            },
+            {
+              "title": "WebDavStorage should reject path traversal on download",
+              "status": "passed"
+            },
+            {
+              "title": "WebDavStorage should reject path traversal on delete",
+              "status": "passed"
+            },
+            {
+              "title": "WebDavStorage should reject path traversal on exists",
+              "status": "passed"
+            },
+            {
+              "title": "WebDavStorage should reject path traversal on list",
+              "status": "passed"
+            },
+            {
+              "title": "WebDavStorage should reject path traversal on getFileInfo",
+              "status": "passed"
+            },
+            {
+              "title": "WebDavStorage uploads a Node readable and reports counted bytes",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/storage/src/webdav-stream-http.spec.ts",
+          "tests": [
+            {
+              "title": "WebDAV real SDK against synthetic HTTP aborts the real SDK request and destroys the source during a pending upload",
+              "status": "passed"
+            },
+            {
+              "title": "WebDAV real SDK against synthetic HTTP sends bytes before upload EOF and returns download before response EOF",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/tracing/src/package-review.regression.spec.ts",
+          "tests": [
+            {
+              "title": "Package review regressions R10: trace stays open until completion or cancellation",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions ends each subscription once on complete",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions ends each subscription once on error",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions ends each subscription once on throw",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/tracing/src/span.spec.ts",
+          "tests": [
+            {
+              "title": "Span should create a span with generated traceId and spanId",
+              "status": "passed"
+            },
+            {
+              "title": "Span should accept custom traceId and parentSpanId",
+              "status": "passed"
+            },
+            {
+              "title": "Span should set and chain attributes",
+              "status": "passed"
+            },
+            {
+              "title": "Span should set multiple attributes at once",
+              "status": "passed"
+            },
+            {
+              "title": "Span should add events with timestamps",
+              "status": "passed"
+            },
+            {
+              "title": "Span should add links to other traces",
+              "status": "passed"
+            },
+            {
+              "title": "Span should set status and status message",
+              "status": "passed"
+            },
+            {
+              "title": "Span should end the span and compute duration",
+              "status": "passed"
+            },
+            {
+              "title": "Span should accept initial attributes via options",
+              "status": "passed"
+            },
+            {
+              "title": "SpanBuilder should build a span with the given name",
+              "status": "passed"
+            },
+            {
+              "title": "SpanBuilder should set traceId via builder",
+              "status": "passed"
+            },
+            {
+              "title": "SpanBuilder should set parentSpanId via builder",
+              "status": "passed"
+            },
+            {
+              "title": "SpanBuilder should set attributes via builder",
+              "status": "passed"
+            },
+            {
+              "title": "SpanBuilder should add links via builder",
+              "status": "passed"
+            },
+            {
+              "title": "SpanBuilder should chain builder methods fluently",
+              "status": "passed"
+            },
+            {
+              "title": "SpanBuilder should create independent span instances",
+              "status": "passed"
+            },
+            {
+              "title": "SpanBuilder should build span with all options combined",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/tracing/src/trace-middleware.spec.ts",
+          "tests": [
+            {
+              "title": "TraceMiddleware W3C traceparent parsing should parse valid traceparent header",
+              "status": "passed"
+            },
+            {
+              "title": "TraceMiddleware W3C traceparent parsing should extract parentSpanId from traceparent",
+              "status": "passed"
+            },
+            {
+              "title": "TraceMiddleware W3C traceparent parsing should generate new traceId when traceparent is missing",
+              "status": "passed"
+            },
+            {
+              "title": "TraceMiddleware W3C traceparent parsing should generate new traceId for invalid traceparent format",
+              "status": "passed"
+            },
+            {
+              "title": "TraceMiddleware W3C traceparent parsing should reject version other than 00",
+              "status": "passed"
+            },
+            {
+              "title": "TraceMiddleware W3C traceparent parsing should reject traceparent with wrong length traceId",
+              "status": "passed"
+            },
+            {
+              "title": "TraceMiddleware response headers should set traceparent response header",
+              "status": "passed"
+            },
+            {
+              "title": "TraceMiddleware response headers should propagate tracestate header",
+              "status": "passed"
+            },
+            {
+              "title": "TraceMiddleware trace context propagation should store tracestate in context",
+              "status": "passed"
+            },
+            {
+              "title": "generateTraceparent should generate valid W3C traceparent with sampled flag",
+              "status": "passed"
+            },
+            {
+              "title": "generateTraceparent should set flag to 00 when not sampled",
+              "status": "passed"
+            },
+            {
+              "title": "generateTraceparent should default to sampled=true",
+              "status": "passed"
+            },
+            {
+              "title": "runWithTraceContext should run function within trace context",
+              "status": "passed"
+            },
+            {
+              "title": "runWithTraceContext should support async context propagation",
+              "status": "passed"
+            },
+            {
+              "title": "TraceMiddleware propagation hardening links the response traceparent to the recorded server span and validates tracestate",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/tracing/src/tracer.spec.ts",
+          "tests": [
+            {
+              "title": "InMemoryTracer should start a span and store it",
+              "status": "passed"
+            },
+            {
+              "title": "InMemoryTracer should start a span with options",
+              "status": "passed"
+            },
+            {
+              "title": "InMemoryTracer should return a copy of spans via getSpans",
+              "status": "passed"
+            },
+            {
+              "title": "InMemoryTracer should filter spans by traceId",
+              "status": "passed"
+            },
+            {
+              "title": "InMemoryTracer should clear all spans",
+              "status": "passed"
+            },
+            {
+              "title": "InMemoryTracer should evict old spans when exceeding maxSpans",
+              "status": "passed"
+            },
+            {
+              "title": "InMemoryTracer with AlwaysOffSampler should not store dropped spans",
+              "status": "passed"
+            },
+            {
+              "title": "InMemoryTracer with AlwaysOnSampler should store all spans",
+              "status": "passed"
+            },
+            {
+              "title": "Samplers AlwaysOnSampler should always return RECORD_AND_SAMPLE",
+              "status": "passed"
+            },
+            {
+              "title": "Samplers AlwaysOffSampler should always return DROP",
+              "status": "passed"
+            },
+            {
+              "title": "Samplers RatioSampler should clamp ratio to 0-1 range",
+              "status": "passed"
+            },
+            {
+              "title": "Samplers RatioSampler should drop all when ratio is 0",
+              "status": "passed"
+            },
+            {
+              "title": "Samplers ParentBasedSampler should sample when parent span exists",
+              "status": "passed"
+            },
+            {
+              "title": "Samplers ParentBasedSampler should delegate to root sampler when no parent",
+              "status": "passed"
+            },
+            {
+              "title": "Samplers ParentBasedSampler should delegate to root sampler when parent is undefined",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/timeseries/src/memory-timeseries.spec.ts",
+          "tests": [
+            {
+              "title": "MemoryTimeSeriesService aggregation (review L17) computes MIN/MAX over more values than the argument limit",
+              "status": "passed"
+            },
+            {
+              "title": "MemoryTimeSeriesService aggregation (review L17) keeps groups apart when tag values contain separators",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/timeseries/src/package-review.regression.spec.ts",
+          "tests": [
+            {
+              "title": "Package review regressions R07: legitimate zero aggregation is preserved (undefined)",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions R07: legitimate zero aggregation is preserved (10)",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions uses defaults only for missing values (interval undefined)",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions uses defaults only for missing values (interval 10)",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/fe-admin/src/app/session-restore.spec.tsx",
+          "tests": [
+            {
+              "title": "session restore runs a single refresh exchange per page load, also under StrictMode",
+              "status": "passed"
+            },
+            {
+              "title": "session restore completes and applies the exchange when the user navigates inside the app while it is pending",
+              "status": "passed"
+            },
+            {
+              "title": "session restore does not move the page into another account whose cookie it received",
+              "status": "passed"
+            },
+            {
+              "title": "session restore lets a sign-in wait for a pending restore so the restore cannot replace it",
+              "status": "passed"
+            },
+            {
+              "title": "session restore reports a hanging refresh as a failed restore instead of spinning forever",
+              "status": "passed"
+            },
+            {
+              "title": "session restore leaves the failed-restore screen for the sign-in page with \"Login again\"",
+              "status": "passed"
+            },
+            {
+              "title": "cross-tab session and request scope signs this tab out when another tab signs out",
+              "status": "passed"
+            },
+            {
+              "title": "cross-tab session and request scope leaves another tab’s account summary intact when this tab is dropped",
+              "status": "passed"
+            },
+            {
+              "title": "cross-tab session and request scope aborts requests of the signed-in session when it signs out",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/fe-admin/src/app/session.reload-on-focus.spec.tsx",
+          "tests": [
+            {
+              "title": "session.reloadOnFocus is off by default: focus and online never re-read the account",
+              "status": "passed"
+            },
+            {
+              "title": "session.reloadOnFocus does nothing within 30 s of mounting or of the previous reload (throttled), then reloads once per window",
+              "status": "passed"
+            },
+            {
+              "title": "session.reloadOnFocus applies revoked and granted permissions without a reload",
+              "status": "passed"
+            },
+            {
+              "title": "session.reloadOnFocus ignores a failed reload: no crash, the session stays and the next window retries",
+              "status": "passed"
+            },
+            {
+              "title": "session.reloadOnFocus does not apply an answer for a different account",
+              "status": "passed"
+            },
+            {
+              "title": "session.reloadOnFocus does not read the account when signed out, and stops listening after unmount",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/rule-engine/src/action/data-mapping-action.spec.ts",
+          "tests": [
+            {
+              "title": "DataMappingAction should map source fields to target fields",
+              "status": "passed"
+            },
+            {
+              "title": "DataMappingAction should keep source data when keepSourceData is true",
+              "status": "passed"
+            },
+            {
+              "title": "DataMappingAction should apply type conversion to string",
+              "status": "passed"
+            },
+            {
+              "title": "DataMappingAction should apply type conversion to number",
+              "status": "passed"
+            },
+            {
+              "title": "DataMappingAction should apply type conversion to integer (truncates)",
+              "status": "passed"
+            },
+            {
+              "title": "DataMappingAction should apply type conversion to boolean",
+              "status": "passed"
+            },
+            {
+              "title": "DataMappingAction should support expression interpolation with ${field}",
+              "status": "passed"
+            },
+            {
+              "title": "DataMappingAction should support nested field access via dot notation",
+              "status": "passed"
+            },
+            {
+              "title": "DataMappingAction should skip mappings whose source resolves to null or undefined",
+              "status": "passed"
+            },
+            {
+              "title": "DataMappingAction should apply type conversion to date",
+              "status": "passed"
+            },
+            {
+              "title": "DataMappingAction should return null for invalid date conversion",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/rule-engine/src/action/delay-action.spec.ts",
+          "tests": [
+            {
+              "title": "DelayAction should apply fixed delay in seconds",
+              "status": "passed"
+            },
+            {
+              "title": "DelayAction should apply fixed delay in milliseconds",
+              "status": "passed"
+            },
+            {
+              "title": "DelayAction should apply fixed delay in minutes",
+              "status": "passed"
+            },
+            {
+              "title": "DelayAction should apply fixed delay in hours",
+              "status": "passed"
+            },
+            {
+              "title": "DelayAction should use upstream delay value for delayv type",
+              "status": "passed"
+            },
+            {
+              "title": "DelayAction should return 0 delay for delayv when data.delay is undefined",
+              "status": "passed"
+            },
+            {
+              "title": "DelayAction should return 0 delay for delayv when data.delay is not a finite number",
+              "status": "passed"
+            },
+            {
+              "title": "DelayAction should return 0 delay for rate type (handled at stream level)",
+              "status": "passed"
+            },
+            {
+              "title": "DelayAction should apply random delay within bounds",
+              "status": "passed"
+            },
+            {
+              "title": "DelayAction should return data unchanged for unknown pause type",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/rule-engine/src/action/http-action.spec.ts",
+          "tests": [
+            {
+              "title": "HttpAction validate() 빈 URL이면 오류를 던져야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction validate() 공백만 있는 URL이면 오류를 던져야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction validate() 지원하지 않는 HTTP 메서드면 오류를 던져야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction validate() 유효한 설정이면 오류를 던지지 않아야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction GET 요청 정상 응답을 JSON으로 파싱해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction GET 요청 응답이 JSON이 아니면 텍스트 그대로 반환해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction POST 요청 body를 JSON으로 직렬화하여 전송해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction URL 템플릿 변수 치환 URL 안의 ${variable}을 data에서 치환해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction URL 템플릿 변수 치환 중첩 경로 ${a.b}를 치환해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction URL 템플릿 변수 치환 body 템플릿 변수도 치환해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction URL 템플릿 변수 치환 headers 템플릿 변수도 치환해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction 에러 처리 HTTP 4xx/5xx 응답이면 오류를 던져야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction 에러 처리 네트워크 오류면 오류를 전파해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction 에러 처리 retryCount 지정 시 실패 후 재시도해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction 에러 처리 모든 재시도 실패 시 마지막 오류를 던져야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction injection and destination policy quotes in data cannot inject JSON body fields",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction injection and destination policy URL placeholders are percent-encoded",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction injection and destination policy refuses private or non-http destination http://127.0.0.1/x by default",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction injection and destination policy refuses private or non-http destination http://169.254.169.254/latest/meta-data by default",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction injection and destination policy refuses private or non-http destination http://10.0.0.5/ by default",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction injection and destination policy refuses private or non-http destination http://localhost:8080/ by default",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction injection and destination policy refuses private or non-http destination http://[::1]/ by default",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction injection and destination policy refuses private or non-http destination http://[::ffff:127.0.0.1]/ by default",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction injection and destination policy refuses private or non-http destination file:///etc/passwd by default",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction injection and destination policy allowPrivateNetwork opt-in permits internal destinations",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction injection and destination policy caps response size",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction destination policy (M2) refuses http://localhost./",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction destination policy (M2) refuses http://metadata.google.internal./",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction destination policy (M2) refuses http://foo.local./",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction destination policy (M2) refuses http://127.0.0.1./",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction destination policy (M2) refuses http://[fec0::1]/",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction destination policy (M2) refuses http://[64:ff9b::7f00:1]/",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction destination policy (M2) refuses http://[::7f00:1]/",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction destination policy (M2) refuses http://[2002:7f00:1::]/",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction destination policy (M2) refuses http://redis:6379/",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction destination policy (M2) refuses http://kubernetes.default.svc/",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction destination policy (M2) refuses http://[fe80::1]/",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction destination policy (M2) refuses http://[fd00::1]/",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction destination policy (M2) refuses http://[::ffff:127.0.0.1]/",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction destination policy (M2) refuses http://169.254.169.254/",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction destination policy (M2) refuses http://user:pw@pub.example/",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction destination policy (M2) refuses ftp://pub.example/",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction destination policy (M2) allows http://pub.example/",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction destination policy (M2) allows http://pub.example./",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction destination policy (M2) allows http://v6.example/",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction destination policy (M2) allows http://8.8.8.8/",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction destination policy (M2) allows http://[2606:4700::1]/",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction destination policy (M2) allows http://[2002:5db8:d822::1]/",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction destination policy (M2) allows http://[64:ff9b::5db8:d822]/",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction destination policy (M2) refuses a public-looking name that resolves to a private address",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction destination policy (M2) refuses when any resolved address is private (mixed public + private)",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction destination policy (M2) execute() rejects with \"not allowed\" for a name resolving to 10.0.0.5 and never calls fetch",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction redirects (M2) refuses a redirect to a private address with followRedirects: true",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction redirects (M2) refuses a redirect to a name resolving to a private address",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction redirects (M2) follows a public redirect and re-vets each hop",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction redirects (M2) drops configured headers on a cross-origin hop but keeps them same-origin",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction redirects (M2) a 303 switches to GET and drops the body",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction redirects (M2) fails on the 6th redirect hop (max 5 followed)",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction redirects (M2) without followRedirects the error says \"redirect not followed\"",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction opt-ins, retries and pinning (M2) allowPrivateNetwork permits trailing dots, single-label, internal names and private IPs",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction opt-ins, retries and pinning (M2) allowPrivateNetwork lets a redirect reach a private address",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction opt-ins, retries and pinning (M2) a refused destination is not retried even with retryCount: 2",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction opt-ins, retries and pinning (M2) pins the connection to the vetted address: a loopback server is not reached",
+              "status": "passed"
+            },
+            {
+              "title": "HttpAction opt-ins, retries and pinning (M2) the built-in transport does reach a server when the vetted address is the server (positive control)",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/rule-engine/src/action/notify-action.spec.ts",
+          "tests": [
+            {
+              "title": "NotifyAction validate() notifyType이 없으면 오류를 던져야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "NotifyAction validate() 공백만 있는 notifyType이면 오류를 던져야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "NotifyAction validate() 수신자 목록이 비어 있으면 오류를 던져야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "NotifyAction validate() 유효한 설정이면 오류를 던지지 않아야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "NotifyAction execute() 기본 동작 sender가 없어도 정상 완료되어야 한다 (로그만)",
+              "status": "passed"
+            },
+            {
+              "title": "NotifyAction execute() 기본 동작 sender가 등록되면 NotifyEvent를 전달해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "NotifyAction 템플릿 변수 치환 title 및 message의 ${variable}을 data에서 치환해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "NotifyAction 템플릿 변수 치환 중첩 경로 ${a.b}를 title에서 치환해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "NotifyAction 템플릿 변수 치환 존재하지 않는 변수는 빈 문자열로 치환해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "NotifyAction variables 매핑 해소 variables 맵을 data에서 해소하여 resolvedVariables에 담아야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "NotifyAction variables 매핑 해소 단순 키 변수도 해소해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "NotifyAction variables 매핑 해소 variables가 없으면 resolvedVariables는 빈 객체여야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "NotifyAction templateId 라우팅 templateId를 이벤트에 포함해야 한다",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/rule-engine/src/action/script-action.spec.ts",
+          "tests": [
+            {
+              "title": "ScriptAction validate() 스크립트 내용이 없으면 오류를 던져야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "ScriptAction validate() 공백만 있는 스크립트면 오류를 던져야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "ScriptAction validate() 지원하지 않는 언어면 오류를 던져야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "ScriptAction validate() lang이 js이면 오류를 던지지 않아야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "ScriptAction validate() lang이 javascript이면 오류를 던지지 않아야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "ScriptAction validate() lang이 없으면 js로 간주하여 오류를 던지지 않아야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "ScriptAction execute() 기본 동작 스크립트 반환값을 그대로 반환해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "ScriptAction execute() 기본 동작 스크립트에서 null을 반환하면 null을 반환해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "ScriptAction execute() 기본 동작 스크립트에서 undefined를 반환하면 null을 반환해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "ScriptAction execute() 기본 동작 스크립트에서 객체를 반환해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "ScriptAction context 주입 data 값이 스크립트 컨텍스트로 주입되어야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "ScriptAction context 주입 context 별칭으로도 data에 접근해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "ScriptAction handler.onMessage 패턴 onMessage로 등록된 콜백을 data와 함께 호출해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "ScriptAction 반환값 정규화 Map을 반환하면 일반 객체로 변환해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "ScriptAction sandbox hardening (C1 / M11) handler and data objects do not expose the host Function constructor",
+              "status": "passed"
+            },
+            {
+              "title": "ScriptAction sandbox hardening (C1 / M11) onMessage handlers run under the script timeout",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/rule-engine/src/condition/branch-evaluator.spec.ts",
+          "tests": [
+            {
+              "title": "BranchEvaluator should match the first branch whose terms condition is met",
+              "status": "passed"
+            },
+            {
+              "title": "BranchEvaluator should not match branches whose conditions are not met",
+              "status": "passed"
+            },
+            {
+              "title": "BranchEvaluator should implement if/else-if semantics — skip subsequent branches after a match",
+              "status": "passed"
+            },
+            {
+              "title": "BranchEvaluator should treat empty when conditions as else branch",
+              "status": "passed"
+            },
+            {
+              "title": "BranchEvaluator should support executeAnyway branches that always run",
+              "status": "passed"
+            },
+            {
+              "title": "BranchEvaluator should return branchId when specified",
+              "status": "passed"
+            },
+            {
+              "title": "BranchEvaluator should support expression-based conditions",
+              "status": "passed"
+            },
+            {
+              "title": "BranchEvaluator should support shake limit suppression",
+              "status": "passed"
+            },
+            {
+              "title": "BranchEvaluator should allow reset of shake limits",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/rule-engine/src/condition/expression-evaluator.spec.ts",
+          "tests": [
+            {
+              "title": "ExpressionEvaluator 기본 표현식 평가 참 리터럴 표현식은 true를 반환해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "ExpressionEvaluator 기본 표현식 평가 거짓 리터럴 표현식은 false를 반환해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "ExpressionEvaluator 기본 표현식 평가 숫자 비교 표현식을 평가해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "ExpressionEvaluator 기본 표현식 평가 논리 AND 표현식을 평가해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "ExpressionEvaluator 기본 표현식 평가 논리 OR 표현식을 평가해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "ExpressionEvaluator context 변수 접근 data의 변수를 표현식에서 참조해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "ExpressionEvaluator context 변수 접근 여러 변수를 조합한 표현식을 평가해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "ExpressionEvaluator context 변수 접근 문자열 변수를 표현식에서 비교해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "ExpressionEvaluator context 변수 접근 정의되지 않은 변수는 undefined로 처리해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "ExpressionEvaluator 불리언 결과 강제 변환 truthy 값을 반환하는 표현식은 true를 반환해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "ExpressionEvaluator 불리언 결과 강제 변환 falsy 값을 반환하는 표현식은 false를 반환해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "ExpressionEvaluator 보안 샌드박스 process에 접근하면 undefined이어야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "ExpressionEvaluator 보안 샌드박스 require에 접근하면 undefined이어야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "ExpressionEvaluator realm escape regressions (H5) blocks this.constructor.constructor('return process.pid')()",
+              "status": "passed"
+            },
+            {
+              "title": "ExpressionEvaluator realm escape regressions (H5) blocks constructor.constructor('return Object.keys(process.env).length')()",
+              "status": "passed"
+            },
+            {
+              "title": "ExpressionEvaluator realm escape regressions (H5) blocks device.constructor.constructor('return process.version')()",
+              "status": "passed"
+            },
+            {
+              "title": "ExpressionEvaluator realm escape regressions (H5) blocks device['constr' + 'uctor']['constr' + 'uctor']('return process')()",
+              "status": "passed"
+            },
+            {
+              "title": "ExpressionEvaluator realm escape regressions (H5) bounds infinite loops",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/rule-engine/src/condition/terms-evaluator.spec.ts",
+          "tests": [
+            {
+              "title": "TermsEvaluator should evaluate eq operator",
+              "status": "passed"
+            },
+            {
+              "title": "TermsEvaluator should evaluate neq operator",
+              "status": "passed"
+            },
+            {
+              "title": "TermsEvaluator should evaluate numeric comparison operators (gt, gte, lt, lte)",
+              "status": "passed"
+            },
+            {
+              "title": "TermsEvaluator should evaluate like and nlike operators",
+              "status": "passed"
+            },
+            {
+              "title": "TermsEvaluator should evaluate in and nin operators",
+              "status": "passed"
+            },
+            {
+              "title": "TermsEvaluator should evaluate isnull, notnull, empty, nempty operators",
+              "status": "passed"
+            },
+            {
+              "title": "TermsEvaluator should evaluate between operator",
+              "status": "passed"
+            },
+            {
+              "title": "TermsEvaluator should evaluate starts_with, ends_with, contains_all, contains_any",
+              "status": "passed"
+            },
+            {
+              "title": "TermsEvaluator should combine terms with AND/OR logic",
+              "status": "passed"
+            },
+            {
+              "title": "TermsEvaluator should support nested conditions",
+              "status": "passed"
+            },
+            {
+              "title": "TermsEvaluator should support nested property access via dot notation",
+              "status": "passed"
+            },
+            {
+              "title": "TermsEvaluator should throw for unknown term type",
+              "status": "passed"
+            },
+            {
+              "title": "TermsEvaluator should support custom operator registration",
+              "status": "passed"
+            },
+            {
+              "title": "TermsEvaluator does not resolve inherited Object.prototype members as operators (L15)",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/rule-engine/src/core/rule-model.spec.ts",
+          "tests": [
+            {
+              "title": "RuleModel should create a model with id, name, and type",
+              "status": "passed"
+            },
+            {
+              "title": "RuleModel should add nodes and retrieve them by id",
+              "status": "passed"
+            },
+            {
+              "title": "RuleModel should create links between nodes",
+              "status": "passed"
+            },
+            {
+              "title": "RuleModel should get downstream and upstream node ids",
+              "status": "passed"
+            },
+            {
+              "title": "RuleModel should produce a valid topological sort for a DAG",
+              "status": "passed"
+            },
+            {
+              "title": "RuleModel should detect cycles via topological sort (sorted.length < nodes.length)",
+              "status": "passed"
+            },
+            {
+              "title": "RuleModel should validate: no errors for a valid DAG",
+              "status": "passed"
+            },
+            {
+              "title": "RuleModel should validate: report cycle error",
+              "status": "passed"
+            },
+            {
+              "title": "RuleModel should validate: report unknown node references in links",
+              "status": "passed"
+            },
+            {
+              "title": "RuleModel should handle diamond-shaped DAG in topological sort",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/rule-engine/src/core/shake-limit.spec.ts",
+          "tests": [
+            {
+              "title": "createShakeLimit should always allow when disabled",
+              "status": "passed"
+            },
+            {
+              "title": "createShakeLimit should allow up to threshold within the time window",
+              "status": "passed"
+            },
+            {
+              "title": "createShakeLimit should reset the window after time expires",
+              "status": "passed"
+            },
+            {
+              "title": "createShakeLimit should support manual reset",
+              "status": "passed"
+            },
+            {
+              "title": "createShakeLimit should treat threshold=0 as threshold=1 (safeThreshold)",
+              "status": "passed"
+            },
+            {
+              "title": "createShakeLimit should treat time=0 as time=1 (safeTime)",
+              "status": "passed"
+            },
+            {
+              "title": "createShakeLimit should handle multiple windows correctly",
+              "status": "passed"
+            },
+            {
+              "title": "createShakeLimit should count from 1 after window reset (first acquire starts new window)",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/rule-engine/src/executor/shake-limit.spec.ts",
+          "tests": [
+            {
+              "title": "ShakeLimiter (executor) 비활성 모드 (enabled=false) enabled=false이면 push마다 즉시 콜백이 호출되어야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "ShakeLimiter (executor) 비활성 모드 (enabled=false) time=0이면 즉시 콜백을 호출해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "ShakeLimiter (executor) alarmFirst=false 모드 (윈도우 종료 후 마지막 데이터 콜백) 임계값 미달이면 윈도우가 끝나도 콜백이 호출되지 않아야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "ShakeLimiter (executor) alarmFirst=false 모드 (윈도우 종료 후 마지막 데이터 콜백) 임계값 충족 시 윈도우 종료 시점에 마지막 데이터로 콜백이 호출되어야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "ShakeLimiter (executor) alarmFirst=false 모드 (윈도우 종료 후 마지막 데이터 콜백) 윈도우 종료 후 두 번째 윈도우에서도 독립적으로 동작해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "ShakeLimiter (executor) alarmFirst=true 모드 (임계값 도달 즉시 첫 데이터 콜백) 임계값 도달 즉시 첫 번째 데이터로 콜백이 호출되어야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "ShakeLimiter (executor) alarmFirst=true 모드 (임계값 도달 즉시 첫 데이터 콜백) 임계값 도달 후 같은 윈도우에서 추가 push는 콜백을 호출하지 않아야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "ShakeLimiter (executor) getCurrentCount() 및 dispose() getCurrentCount()는 현재 윈도우 내 카운트를 반환해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "ShakeLimiter (executor) getCurrentCount() 및 dispose() dispose() 후 상태가 초기화되어야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "ShakeLimiter (executor) getCurrentCount() 및 dispose() dispose() 후 타이머가 발화하지 않아야 한다",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/rule-engine/src/trigger/cron.spec.ts",
+          "tests": [
+            {
+              "title": "parseCron 5-field minute/hour/dow schedule (Mondays 09:00)",
+              "status": "passed"
+            },
+            {
+              "title": "parseCron 6-field schedule with seconds (daily 02:00:00)",
+              "status": "passed"
+            },
+            {
+              "title": "parseCron steps, ranges, lists and names",
+              "status": "passed"
+            },
+            {
+              "title": "parseCron day-of-month OR day-of-week when both are restricted",
+              "status": "passed"
+            },
+            {
+              "title": "parseCron honours timezone",
+              "status": "passed"
+            },
+            {
+              "title": "parseCron handles Feb 29 and impossible dates",
+              "status": "passed"
+            },
+            {
+              "title": "parseCron rejects invalid fields",
+              "status": "passed"
+            },
+            {
+              "title": "parseCron DST and day-field semantics (M4) fixed time inside a repeated hour fires once (New York fall-back)",
+              "status": "passed"
+            },
+            {
+              "title": "parseCron DST and day-field semantics (M4) a time skipped by a spring-forward gap fires once right after the jump (New York)",
+              "status": "passed"
+            },
+            {
+              "title": "parseCron DST and day-field semantics (M4) midnight skipped by a gap fires after the jump (Havana)",
+              "status": "passed"
+            },
+            {
+              "title": "parseCron DST and day-field semantics (M4) Lord Howe half-hour DST gap fires at the first instant after the gap",
+              "status": "passed"
+            },
+            {
+              "title": "parseCron DST and day-field semantics (M4) */15 across both New York transitions has no skipped or duplicated real-time runs",
+              "status": "passed"
+            },
+            {
+              "title": "parseCron DST and day-field semantics (M4) a day field starting with * is unrestricted: \"0 0 */2 * 1\" fires on Mondays only",
+              "status": "passed"
+            },
+            {
+              "title": "parseCron DST and day-field semantics (M4) \"0 0 13 * 5\" keeps OR semantics (13th or Friday)",
+              "status": "passed"
+            },
+            {
+              "title": "parseCron DST and day-field semantics (M4) \"0 0 ? * ?\" equals \"0 0 * * *\"",
+              "status": "passed"
+            },
+            {
+              "title": "parseCron DST and day-field semantics (M4) a zone without DST is unchanged (Asia/Shanghai)",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/rule-engine/src/trigger/event-trigger.spec.ts",
+          "tests": [
+            {
+              "title": "EventTrigger start() / stop() start 후 isRunning()이 true여야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "EventTrigger start() / stop() stop 후 isRunning()이 false여야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "EventTrigger start() / stop() stop을 두 번 호출해도 오류가 나지 않아야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "EventTrigger 이벤트 수신 시 handler 실행 구독한 topic으로 이벤트가 오면 handler가 호출되어야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "EventTrigger 이벤트 수신 시 handler 실행 다른 topic의 이벤트에는 반응하지 않아야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "EventTrigger 이벤트 수신 시 handler 실행 이벤트가 여러 번 오면 handler도 여러 번 호출되어야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "EventTrigger 취소 구독 (unsubscribe) stop 후에는 이벤트를 받아도 handler가 호출되지 않아야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "EventTrigger 비동기 handler async handler가 정상적으로 호출되어야 한다",
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "file": "packages/rule-engine/src/trigger/timer-trigger.spec.ts",
+          "tests": [
+            {
+              "title": "TimerTrigger validate() cron이 없으면 오류를 던져야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "TimerTrigger validate() cron 필드가 4개 이하면 오류를 던져야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "TimerTrigger validate() cron 필드가 8개 이상이면 오류를 던져야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "TimerTrigger validate() 유효한 5-필드 cron이면 오류를 던지지 않아야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "TimerTrigger validate() 유효한 6-필드 cron이면 오류를 던지지 않아야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "TimerTrigger start() / stop() start 후 isRunning()이 true여야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "TimerTrigger start() / stop() stop 후 isRunning()이 false여야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "TimerTrigger start() / stop() stop 후 타이머가 발화하지 않아야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "TimerTrigger 인터벌 실행 분 단위 cron에서 매 분마다 handler가 호출되어야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "TimerTrigger 인터벌 실행 */2 * * * * * 는 2초마다 handler를 호출해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "TimerTrigger 인터벌 실행 handler 오류가 발생해도 계속 실행되어야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "TimerTrigger 실행 횟수 추적 getExecutionCount()는 handler 호출 횟수를 반환해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "TimerTrigger 실행 횟수 추적 maxTimes 도달 시 자동으로 stop되어야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "TimerTrigger 실행 횟수 추적 getLastExecutionTime()은 마지막 실행 시간을 반환해야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "TimerTrigger reload() reload 후 새 설정으로 다시 시작되어야 한다",
+              "status": "passed"
+            },
+            {
+              "title": "TimerTrigger cron semantics a daily 02:00 cron does not fire every second or minute",
+              "status": "passed"
+            },
+            {
+              "title": "TimerTrigger cron semantics skips ticks while the previous run is in flight",
+              "status": "passed"
+            },
+            {
+              "title": "TimerTrigger cron semantics after reload() a tick does not overlap a handler still running from before the reload (L7)",
+              "status": "passed"
+            },
+            {
+              "title": "TimerTrigger cron semantics rejects unsupported syntax instead of approximating it",
+              "status": "passed"
+            }
+          ]
+        }
+      ]
+    },
+    "web": {
+      "files": 1,
+      "numPassedTests": 7,
+      "numFailedTests": 0,
+      "numPendingTests": 0,
+      "success": true,
+      "cases": [
+        {
+          "file": "templates/web/test/account-session.spec.ts",
+          "tests": [
+            {
+              "title": "Web session identity across the main and shell clients shell refuses another account from the shared refresh cookie",
+              "status": "passed"
+            },
+            {
+              "title": "Web session identity across the main and shell clients main refuses another account from the shared refresh cookie",
+              "status": "passed"
+            },
+            {
+              "title": "Web session identity across the main and shell clients accepts credential rotation within the same session and retries with that token",
+              "status": "passed"
+            },
+            {
+              "title": "Web session identity across the main and shell clients drops a stale tab on a storage account switch without erasing the other tab account",
+              "status": "passed"
+            },
+            {
+              "title": "Web session identity across the main and shell clients aborts old account requests and streams instead of replaying a late mutation for the new account",
+              "status": "passed"
+            },
+            {
+              "title": "Web session identity across the main and shell clients adopts an explicit login atomically and lets OAuth use the same flow",
+              "status": "passed"
+            },
+            {
+              "title": "Web session identity across the main and shell clients does not install a partial identity or cookie-refresh after a refused explicit sign-in",
+              "status": "passed"
+            }
+          ]
+        }
+      ]
+    },
+    "regressions": {
+      "files": 1,
+      "numPassedTests": 42,
+      "numFailedTests": 0,
+      "numPendingTests": 0,
+      "success": true,
+      "cases": [
+        {
+          "file": "docs/reviews/2026-11-16-package-review/reproduce.spec.ts",
+          "tests": [
+            {
+              "title": "Package review regressions R01: old-account POST is cancelled after account switches (before-refresh)",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions R01: old-account POST is cancelled after account switches (during-refresh)",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions cancels stale stream writes without clearing the new session (before-response)",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions cancels stale stream writes without clearing the new session (refresh-success)",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions cancels stale stream writes without clearing the new session (refresh-failure)",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions checks the session again after waiting for the browser refresh lock",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions rejects a refreshed token identified as another session before storing it",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions R02: LocaleInterceptor unsubscribe tears down the source",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions preserves async locale context and cleans up on complete",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions preserves async locale context and cleans up on error",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions R03: pending network creation is disposed during (shutdown)",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions R03: pending network creation is disposed during (destroy)",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions R03: pending network creation is disposed during (module-destroy)",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions closes a late health reload result during shutdown",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions closes a late health reload result during destroy",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions closes a late health reload result during module-destroy",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions refuses new work after module destruction",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions R04: datasource reload cannot resurrect a removed source",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions a newer close supersedes a pending reload",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions a newer register supersedes a pending reload",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions a newer reload supersedes a pending reload",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions removing a pending add disposes its result without publishing its configuration",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions R05: completing chunks respects stream backpressure",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions R06: disposing an old registration preserves its replacement",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions a handle owns its registration even when the same provider object is registered again",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions R07: legitimate zero aggregation is preserved (undefined)",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions R07: legitimate zero aggregation is preserved (10)",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions uses defaults only for missing values (interval undefined)",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions uses defaults only for missing values (interval 10)",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions R08: stale restore failure 401 preserves a newly adopted account",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions R08: stale restore failure 403 preserves a newly adopted account",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions discards restore success after sign-out and a new summary for the same user",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions R09: failed rule startup releases every acquired trigger",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions R10: trace stays open until completion or cancellation",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions ends each subscription once on complete",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions ends each subscription once on error",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions ends each subscription once on throw",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions R11: direct hybrid writes expire within the L1 bound",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions caps direct L1 writes without shortening L2 TTL undefined",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions caps direct L1 writes without shortening L2 TTL 1000",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions caps direct L1 writes without shortening L2 TTL 5",
+              "status": "passed"
+            },
+            {
+              "title": "Package review regressions zero L1 TTL disables direct writes and backfill",
+              "status": "passed"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "sourceSha256": {
+    "packages/fe-http-client/src/package-review.regression.spec.ts": "39029a625b1ed4e05a0be367abfaa9e1e42b26e5136a112fe68dc733f1e7b004",
+    "packages/i18n/src/package-review.regression.spec.ts": "ff0e17040408f3707d928b6e67e07dc0751194ecb15a0f2850f5ae90f35c5390",
+    "packages/network/src/package-review.regression.spec.ts": "3771f554ca2ff157143c011d275602be4afc670d17288a37c613d8f9f702bdbd",
+    "packages/datasource/src/package-review.regression.spec.ts": "ee90c926a341d4bd2f6ac3fa0b149c1eeb1c6d866a227b498daa83b10d5ba38c",
+    "packages/storage/src/package-review.regression.spec.ts": "435c82e5845720ba24bc58357749ef05045c481612f5738ea6da4e1ea639f13e",
+    "packages/provider/src/package-review.regression.spec.ts": "81f4daf0d261da3d453a260ede144b5623b0f4e29fd3e7383086a7046f98ba20",
+    "packages/timeseries/src/package-review.regression.spec.ts": "66f33f98dc87ddf84d0dee79b5500881a7da12a57880e892a1ab6c40c0b48bf5",
+    "packages/fe-auth/src/package-review.regression.spec.ts": "41c910e05793a9e5f51603400f06999a318ffdb95560d9940f52cbc77e976900",
+    "packages/rule-engine/src/package-review.regression.spec.ts": "e49b16f8888e5255927043cc0a0182dc84b8e78ecb0230a24f92f343977546df",
+    "packages/tracing/src/package-review.regression.spec.ts": "fd2d205c9c92fc10bc06df6bfc2baf37313c97030f99a2077443b096e73c008a",
+    "packages/cache/src/package-review.regression.spec.ts": "21e3b8adc61b61490c639a5d4de5e3ee07b0ec03fb544abf3c9cb8d24c1c5750",
+    "packages/fe-http-client/src/http-client.ts": "31abe73337d33115697f1a6457df1dff7b157b002a9146d3e3754619586dc37d",
+    "packages/i18n/src/locale-context.ts": "d2624beee9734914fdb58c411ed3b3bbace3b3ea232b9430f5c83c78a2f27c70",
+    "packages/network/src/network-manager.ts": "3c8f3f2f736c1d99d124e0b9caf563b96b888fd206b13c5006e85714772eb74e",
+    "packages/datasource/src/datasource-manager.ts": "62f19633c177c5bd05f2e3e1a10060301e2bd9f6708121605a206e636a739b69",
+    "packages/storage/src/local-storage.ts": "99f411521121ffd420366b7982b517fe4a9715896e16f5408633334650afc67d",
+    "packages/provider/src/provider-registry.ts": "613c9c6f0ff9ed4fd4cccd8f539bc6375607a10f1f9622d1f9d5c52bfdec340f",
+    "packages/timeseries/src/memory-timeseries.ts": "0a2775caee947c5ef8c4710e628deb9f1d3ffb8b1d8c3bf018d5d09f524d15a6",
+    "packages/fe-auth/src/cookie-session.ts": "da21946c5729ec6e4c62a647f19c23e075d5e58fca499851f62b27fb3f272d6c",
+    "packages/rule-engine/src/rule-engine.service.ts": "b6cd65894d80b54160282ee4255ab22c7605674c9da108aa8eeee69e32556c2c",
+    "packages/tracing/src/trace-interceptor.ts": "a48d682e129e9b4713e95641e7cfdf981f6f5283c8efd6706ff628078a570283",
+    "packages/cache/src/hybrid-cache.ts": "7b404a6cb329516a769573d5788f921163b13ffd51de7bad76ebdb9a18fd1ff4",
+    "packages/fe-http-client/src/types.ts": "de427872b49da870ca5e14fe386d609f54da7a83833026008f20229dce809e79",
+    "packages/fe-admin/src/app/session.ts": "fee00fa96b64533848319f7e22fb8c277f61208bb50bd5c5dc338b9279b02293",
+    "templates/web/src/lib/account-session.ts": "e3e99f177a5a92430fdcc62836b61fef4b90236cff5603d30f91125a61ad7d5f"
+  },
+  "testTypeFollowup": {
+    "typechecks": {
+      "fe-auth": {
+        "command": "pnpm exec tsc --noEmit -p packages/fe-auth/tsconfig.json",
+        "exitCode": 0
+      },
+      "network": {
+        "command": "pnpm exec tsc --noEmit -p packages/network/tsconfig.json",
+        "exitCode": 0
+      },
+      "tracing": {
+        "command": "pnpm exec tsc --noEmit -p packages/tracing/tsconfig.json",
+        "exitCode": 0
+      }
+    },
+    "targetedTestsPassed": 34,
+    "packageTests": {
+      "numPassedTests": 180,
+      "numFailedTests": 0,
+      "numPendingTests": 5,
+      "success": true
+    },
+    "testFiles": 21,
+    "skipped": "5 opt-in Chromium tests; browser execution not enabled",
+    "devDependency": "fe-auth @types/node ^20.19.43, resolved to workspace override 20.19.43",
+    "sourceSha256": {
+      "packages/fe-auth/package.json": "64b4ed1c4ad8cae263733981df92344985a64349474624105e99311871777ccb",
+      "packages/fe-auth/tsconfig.json": "80cc66509b29b518510c559b9f45b39e809adb0068820cb0f368fa4092f5ca56",
+      "packages/fe-auth/src/store.spec.ts": "d7395d9335cadffcaf7d09eb6afc2c79b28f984a8f932c78c84839f79407a7df",
+      "packages/network/src/nest-common-shim.d.ts": "1e36b89c4975db1c70e1ba46540afa4992641a92995da730fbd5c3c185af45f6",
+      "packages/tracing/src/tracer.spec.ts": "0e2a75ca9209f3ab0a75e03e2410d804338ca3007ee08211b0bf4af167679403"
+    }
+  },
+  "preCommitValidation": {
+    "scope": "All current source and review deliverables authorized by the user; .pnpm-store excluded",
+    "branch": "codex/package-review-fixes",
+    "runs": {
+      "all-initial": {
+        "testFiles": 582,
+        "numPassedTests": 6621,
+        "numFailedTests": 1,
+        "numPendingTests": 125,
+        "success": false
+      },
+      "all-rerun": {
+        "testFiles": 582,
+        "numPassedTests": 6621,
+        "numFailedTests": 1,
+        "numPendingTests": 125,
+        "success": false
+      },
+      "web": {
+        "testFiles": 3,
+        "numPassedTests": 14,
+        "numFailedTests": 0,
+        "numPendingTests": 0,
+        "success": true
+      },
+      "ai-compat-isolated": {
+        "testFiles": 1,
+        "numPassedTests": 13,
+        "numFailedTests": 0,
+        "numPendingTests": 0,
+        "success": true
+      }
+    },
+    "nodeTestsPassed": 65,
+    "changedFileEslint": {
+      "root": {
+        "files": 112,
+        "errors": 0,
+        "warnings": 90
+      },
+      "web": {
+        "files": 12,
+        "errors": 0
+      },
+      "server": {
+        "files": 7,
+        "errors": 0,
+        "warnings": 2
+      }
+    },
+    "knownFailure": "Both complete runs timed out at the default 5s in ai/langchain-openai-compatibility.spec.ts jsonMode structured output. Isolated 13-test run passed. Disposable instrumentation with a 15s limit measured 5.776s invocation, with assertions passing. Original test and limits unchanged; cause not determined.",
+    "note": "No production build, package publication or deployment. Historical review logs and patch artifacts retained byte-for-byte."
+  },
+  "aiSdkTimeoutFollowup": {
+    "rootCause": "Streaming structured invoke estimates tokens through BaseLanguageModel.getNumTokens; first use downloads https://tiktoken.pages.dev/js/gpt2.json through ambient fetch, bypassing the injected OpenAI transport.",
+    "diagnostics": {
+      "cpuProfileSeconds": 4.287,
+      "idleSeconds": 4.118,
+      "networkGuardBeforeFix": {
+        "testFiles": 1,
+        "numPassedTests": 0,
+        "numFailedTests": 1,
+        "numPendingTests": 12,
+        "success": false,
+        "unexpectedTokenizerRequests": 2,
+        "jsonModeDurationMs": 248.669
+      }
+    },
+    "fix": "Stub public token counting in this transport compatibility suite; reject and assert against ambient fetch, using AbortError to avoid retry backoff; restore mocks and globals after each case. Original assertions and default timeout retained.",
+    "runs": {
+      "compatibility": {
+        "testFiles": 1,
+        "numPassedTests": 13,
+        "numFailedTests": 0,
+        "numPendingTests": 0,
+        "success": true
+      },
+      "aiAndRelatedPackages": {
+        "testFiles": 53,
+        "numPassedTests": 432,
+        "numFailedTests": 0,
+        "numPendingTests": 22,
+        "success": true
+      },
+      "rootSuite": {
+        "testFiles": 582,
+        "numPassedTests": 6622,
+        "numFailedTests": 0,
+        "numPendingTests": 125,
+        "success": true
+      }
+    },
+    "jsonModeDurationMs": {
+      "isolated": 3.598,
+      "rootSuite": 8.568
+    },
+    "checks": {
+      "targetTypeScript": {
+        "exitCode": 0,
+        "scope": "Compatibility test and imported dependencies, using a temporary config extending packages/ai/tsconfig.json"
+      },
+      "targetEslint": {
+        "errors": 0,
+        "warnings": 0
+      },
+      "packageTypeScript": {
+        "exitCode": 2,
+        "existingErrors": 49,
+        "unchangedTestFiles": 6,
+        "note": "Missing Vitest globals; missing MediaGenerationConfig.apiKey; obsolete NativeStreamOptions.maxAttempts. No diagnostics in the changed compatibility test."
+      }
+    },
+    "sha256": {
+      "packages/ai/src/langchain-openai-compatibility.spec.ts": "be127ea1a37f218b67ea421bb66ceea8674aec9d78d0e09afc4e9124b694a0a0"
+    },
+    "impact": "Test and documentation only; no runtime, dependency, public API, migration or publication changes. Previous preCommitValidation failures retained as historical evidence."
+  }
+}
