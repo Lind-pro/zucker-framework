@@ -1,7 +1,8 @@
 import { PostgresTaskRepository, TASK_STATUSES, type PostgresTaskClient, type TaskStatus } from '@zucker-framework/task';
 import type {
-  AITaskHoldState, AITaskKind, AITaskManagementView, AITaskOutputView, AITaskPayload, AITaskStoredOutput, AITaskView,
+  AITaskExecutionState, AITaskHoldState, AITaskKind, AITaskManagementView, AITaskOutputView, AITaskPayload, AITaskStoredOutput, AITaskView,
 } from './types';
+import type { AIMediaResultLike } from './ports';
 
 /** Verified provider outcome waiting for the lease owner (never an unverified callback body). */
 export type StoredCallbackOutcome =
@@ -27,6 +28,8 @@ export interface AITaskRow {
   wakeRequestedAt: Date | null;
   deadlineAt: Date;
   callbackOutcome: StoredCallbackOutcome | null;
+  executionState?: AITaskExecutionState;
+  generatedOutputs?: AIMediaResultLike[] | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -86,6 +89,8 @@ function toRow(raw: Record<string, unknown>): AITaskRow {
     wakeRequestedAt: optionalDate(raw.wakeRequestedAt),
     deadlineAt: date(raw.deadlineAt),
     callbackOutcome: raw.callbackOutcome == null ? null : json<StoredCallbackOutcome>(raw.callbackOutcome),
+    executionState: raw.executionState as AITaskExecutionState,
+    generatedOutputs: raw.generatedOutputs == null ? null : json<AIMediaResultLike[]>(raw.generatedOutputs),
     createdAt: date(raw.createdAt),
     updatedAt: date(raw.updatedAt),
   };
@@ -149,6 +154,29 @@ export class PostgresAITaskStore {
   async findOwned(client: PostgresTaskClient, ownerId: string, id: string, forUpdate = false): Promise<AITaskJoinedRow | null> {
     const row = await this.find(client, id, forUpdate);
     return row && row.ownerId === ownerId ? row : null;
+  }
+
+  /** Writes a recoverable execution checkpoint under the same lease fence as task transitions. */
+  async checkpoint(client: PostgresTaskClient, input: {
+    id: string; leaseToken: string; now: Date; state: AITaskExecutionState;
+    providerTaskId?: string; outputs?: readonly AIMediaResultLike[]; stored?: readonly AITaskStoredOutput[];
+  }): Promise<boolean> {
+    if (!(await this.lockJob(client, input.id))) return false;
+    const result = await client.query<{ id: string }>(
+      `UPDATE ai_tasks AS a SET "executionState" = $3,
+         "providerTaskId" = COALESCE($4, a."providerTaskId"),
+         "generatedOutputs" = CASE WHEN $3 = 'STORED' THEN NULL ELSE COALESCE($5::jsonb, a."generatedOutputs") END,
+         "updatedAt" = $6
+       FROM async_jobs AS j
+       WHERE a."id" = $1 AND j."id" = a."id" AND j."leaseToken" = $2
+         AND j."leaseExpiresAt" > $7 AND j."status"::text = 'PROCESSING'
+         AND ($3 <> 'SUBMITTING' OR a."executionState" = 'NEW') RETURNING a."id"`,
+      [input.id, input.leaseToken, input.state, input.providerTaskId ?? null,
+        input.outputs ? JSON.stringify(input.outputs) : null, input.now, input.now],
+    );
+    if (!result.rows.length) return false;
+    if (input.stored) await this.insertOutputs(client, input.stored, input.now);
+    return true;
   }
 
   /**
@@ -232,6 +260,11 @@ export class PostgresAITaskStore {
     return result.rows.length === 1;
   }
 
+  /** Terminal tasks no longer need provider URLs or inline result bytes for recovery. */
+  async clearGeneratedOutputs(client: PostgresTaskClient, id: string): Promise<void> {
+    await client.query('UPDATE ai_tasks SET "generatedOutputs" = NULL WHERE "id" = $1', [id]);
+  }
+
   async insertOutputs(client: PostgresTaskClient, outputs: readonly AITaskStoredOutput[], now: Date): Promise<void> {
     for (const output of outputs) {
       await client.query(
@@ -305,7 +338,7 @@ export class PostgresAITaskStore {
   async findOrphanedHolds(client: PostgresTaskClient, limit: number): Promise<string[]> {
     const result = await client.query<{ id: string }>(
       `SELECT a."id" FROM ai_tasks a JOIN async_jobs j ON j."id" = a."id"
-       WHERE a."holdState" = 'HELD' AND j."status"::text IN ('FAILED', 'CANCELLED')
+       WHERE (a."holdState" = 'HELD' OR a."generatedOutputs" IS NOT NULL) AND j."status"::text IN ('FAILED', 'CANCELLED')
        ORDER BY a."updatedAt" ASC LIMIT $1`,
       [limit],
     );
@@ -339,7 +372,8 @@ export class PostgresAITaskStore {
        WHERE ($1::text IS NULL OR a."ownerId" = $1)
          AND ($2::text IS NULL OR a."kind" = $2)
          AND ($3::text IS NULL OR (CASE
-               WHEN j."status"::text IN ('QUEUED', 'RETRYING') AND a."providerTaskId" IS NOT NULL THEN 'WAITING_PROVIDER'
+               WHEN j."status"::text IN ('QUEUED', 'RETRYING') AND a."providerTaskId" IS NOT NULL
+                 AND a."executionState" NOT IN ('GENERATED', 'STORED') THEN 'WAITING_PROVIDER'
                ELSE j."status"::text END) = $3)
          AND ($4::boolean OR (a."createdAt", a."id") < ($5, $6))
        ORDER BY a."createdAt" DESC, a."id" DESC
@@ -359,8 +393,9 @@ function outputViews(outputs: readonly AITaskStoredOutput[] | undefined): AITask
  * A task whose provider already accepted the request is waiting for the provider even while its
  * durable row is QUEUED/RETRYING between polls (no lease is held while waiting).
  */
-export function projectedStatus(row: Pick<AITaskJoinedRow, 'status' | 'providerTaskId'>): TaskStatus {
-  return (row.status === 'QUEUED' || row.status === 'RETRYING') && row.providerTaskId ? 'WAITING_PROVIDER' : row.status;
+export function projectedStatus(row: Pick<AITaskJoinedRow, 'status' | 'providerTaskId' | 'executionState'>): TaskStatus {
+  return (row.status === 'QUEUED' || row.status === 'RETRYING') && row.providerTaskId
+    && row.executionState !== 'GENERATED' && row.executionState !== 'STORED' ? 'WAITING_PROVIDER' : row.status;
 }
 
 export function toView(row: AITaskJoinedRow, outputs?: readonly AITaskStoredOutput[], promptLimit?: number): AITaskView {

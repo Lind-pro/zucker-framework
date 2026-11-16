@@ -1,4 +1,5 @@
 import { ICache } from './cache.interface';
+import { assertSequenceArguments, assertSequenceValue } from './sequence';
 
 export interface MemoryCacheOptions {
   defaultTtlMs?: number;
@@ -74,6 +75,28 @@ export class MemoryCache<T = unknown> implements ICache<T> {
     if (this.getSync(key) === undefined) return undefined;
     const entry = this.store.get(key)!;
     return entry.expiresAt === null ? null : Math.max(0, entry.expiresAt - Date.now());
+  }
+
+  async readSequence(key: string): Promise<number | undefined> {
+    const value = this.getSync(key);
+    if (value !== undefined) assertSequenceValue(value);
+    return value as number | undefined;
+  }
+
+  async advanceSequence(key: string, minimum: number, ttlMs: number): Promise<number> {
+    assertSequenceArguments(minimum, ttlMs);
+    // No await between the read and write: concurrent calls in this process are atomic.
+    const previous = this.getSync(key);
+    if (previous !== undefined) assertSequenceValue(previous);
+    const next = Math.max(minimum, ((previous as number | undefined) ?? 0) + 1);
+    assertSequenceValue(next);
+    const expiry = this.store.get(key)?.expiresAt;
+    const effectiveTtl = expiry === null ? undefined : Math.max(ttlMs, (expiry ?? 0) - Date.now());
+    this.setSync(key, next as T, effectiveTtl);
+    // An explicitly disabled cache cannot claim to have persisted the sequence.
+    if (this.getSync(key) !== next) throw new Error('Cache cannot retain a sequence');
+    if (expiry === null) this.store.get(key)!.expiresAt = null;
+    return next;
   }
 
   async del(key: string): Promise<void> {

@@ -22,6 +22,8 @@ model AITask {
   wakeRequestedAt DateTime?      @db.Timestamptz(3)
   deadlineAt      DateTime       @db.Timestamptz(3)
   callbackOutcome Json?
+  executionState  String         @default("NEW")
+  generatedOutputs Json?
   createdAt       DateTime       @db.Timestamptz(3)
   updatedAt       DateTime       @db.Timestamptz(3)
   outputs         AITaskOutput[]

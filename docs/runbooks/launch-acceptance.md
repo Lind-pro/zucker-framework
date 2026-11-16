@@ -22,7 +22,7 @@ Output: `<work>/report.json` (one entry per step: `id`, `title`, `status` pass/f
 | Phase | What it does |
 |---|---|
 | `pack` | `pnpm build:packages`, then `pnpm pack` for every public package into `<work>/pack/tarballs` and `manifest.json` (`release: false`; a dirty tree is allowed). The CLI rebuilds its template bundle whenever `templates/**` or `docs/templates/**` change. |
-| `create` | Starts `scripts/acceptance/file-registry.mjs` on 127.0.0.1 (a dependency-free registry that serves only the packed `@zucker-framework/*` versions) and runs `pnpm dlx @zucker-framework/cli@<version> create my-saas` with `@zucker-framework:registry` pointing at it and `offline=true`. Then checks step 1. |
+| `create` | Starts `scripts/acceptance/file-registry.mjs` on 127.0.0.1, warms every packed Framework package with `pnpm store add`, then runs `pnpm dlx @zucker-framework/cli@<version> create my-saas` with `offline=true`. The scope points at this registry, which serves only the packed versions. Then checks step 1. |
 | `install` | `pnpm store add` of every framework package (puts their metadata in the local cache), then `pnpm install --offline`. The lockfile must carry exactly the packed tarballs' integrity for every framework package and no registry URL. |
 | `host` | Throwaway PostgreSQL container, `pnpm db:migrate`, `pnpm setup:admin`, `content:check`, `pnpm build`, `pnpm lint`. |
 | `compose` | Rewrites the generated `.env` to free ports, builds the images with `scripts/acceptance/compose.acceptance.yml` (host build network, `NPM_REGISTRY` = the local registry in proxy mode), `docker compose up --wait`, administrator setup through the `migrate` image, then the checks of `scripts/acceptance/checks.mjs`. |
@@ -30,8 +30,11 @@ Output: `<work>/report.json` (one entry per step: `id`, `title`, `status` pass/f
 
 ## Registry modes and fallbacks
 
-- **Offline (default) for `create`:** framework packages come only from the packed tarballs; third-party
-  packages must already be in this machine's pnpm store and metadata cache.
+- **Offline CLI execution for `create`:** before `dlx`, `pnpm store add` fetches the explicit Framework
+  package list from the loopback registry to populate its fresh metadata cache and tarball store. It
+  does not resolve or install their dependencies. The CLI then runs offline; third-party packages
+  must already be in this machine's pnpm store and metadata cache. Missing third-party cache entries
+  stop this phase without falling back to the public registry.
 - **Install fallback:** if `pnpm install --offline` lacks metadata for a third-party range, the run retries
   with `--prefer-offline` and records it in the `install` step (`method`). Framework packages still come only
   from the local registry (the scoped registry never forwards `@zucker-framework/*`), so the result is the

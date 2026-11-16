@@ -1,0 +1,133 @@
+packages/back-office/src/accounts/account-security.transaction.spec.ts(3,51): error TS2305: Module '"@zucker-framework/auth"' has no exported member 'generateTotpCode'.
+packages/back-office/src/accounts/account-security.transaction.spec.ts(67,111): error TS2554: Expected 4 arguments, but got 6.
+packages/back-office/src/accounts/account-security.transaction.spec.ts(69,52): error TS2554: Expected 2 arguments, but got 3.
+packages/back-office/src/accounts/account-security.transaction.spec.ts(72,52): error TS2554: Expected 2 arguments, but got 3.
+packages/back-office/src/accounts/account-security.transaction.spec.ts(88,67): error TS2554: Expected 2 arguments, but got 3.
+packages/back-office/src/accounts/account-security.transaction.spec.ts(95,67): error TS2554: Expected 2 arguments, but got 3.
+packages/back-office/src/accounts/account-security.transaction.spec.ts(109,68): error TS2554: Expected 1 arguments, but got 2.
+packages/back-office/src/accounts/account.service.spec.ts(4,40): error TS2305: Module '"@zucker-framework/auth"' has no exported member 'generateTotpCode'.
+packages/back-office/src/accounts/account.service.spec.ts(54,30): error TS2554: Expected 1 arguments, but got 2.
+packages/back-office/src/accounts/account.service.ts(219,12): error TS2554: Expected 1 arguments, but got 2.
+packages/back-office/src/accounts/accounts.contract.integration.spec.ts(229,73): error TS2554: Expected 1 arguments, but got 2.
+packages/back-office/src/accounts/accounts.contract.integration.spec.ts(236,110): error TS2554: Expected 1 arguments, but got 2.
+packages/back-office/src/accounts/accounts.contract.integration.spec.ts(246,64): error TS2554: Expected 1 arguments, but got 2.
+packages/back-office/src/accounts/accounts.contract.integration.spec.ts(247,92): error TS2554: Expected 1 arguments, but got 2.
+packages/back-office/src/accounts/accounts.contract.integration.spec.ts(257,68): error TS2554: Expected 1 arguments, but got 2.
+packages/back-office/src/accounts/accounts.contract.integration.spec.ts(258,100): error TS2554: Expected 1 arguments, but got 2.
+packages/back-office/src/accounts/accounts.contract.integration.spec.ts(267,80): error TS2554: Expected 1 arguments, but got 2.
+packages/back-office/src/accounts/accounts.contract.integration.spec.ts(275,117): error TS2554: Expected 1 arguments, but got 2.
+packages/back-office/src/accounts/accounts.contract.integration.spec.ts(278,135): error TS2554: Expected 1 arguments, but got 2.
+packages/back-office/src/accounts/admin-user-hooks.ts(3,15): error TS2305: Module '"@zucker-framework/admin"' has no exported member 'AdminUserHooks'.
+packages/back-office/src/accounts/admin-user-hooks.ts(3,31): error TS2305: Module '"@zucker-framework/admin"' has no exported member 'AdminUserSensitiveChange'.
+packages/back-office/src/accounts/admin-user-hooks.ts(23,29): error TS7006: Parameter 'field' implicitly has an 'any' type.
+packages/back-office/src/accounts/login-identifier.spec.ts(4,10): error TS2305: Module '"@zucker-framework/auth"' has no exported member 'generateTotpCode'.
+packages/back-office/src/accounts/login-identifier.spec.ts(70,7): error TS2554: Expected 1 arguments, but got 2.
+packages/back-office/src/accounts/oauth/oauth.service.ts(244,92): error TS2554: Expected 1 arguments, but got 2.
+packages/back-office/src/accounts/two-factor/two-factor.service.ts(4,18): error TS2305: Module '"@zucker-framework/auth"' has no exported member 'generateRecoveryCodes'.
+packages/back-office/src/accounts/two-factor/two-factor.service.ts(4,41): error TS2305: Module '"@zucker-framework/auth"' has no exported member 'generateTotpSecret'.
+packages/back-office/src/accounts/two-factor/two-factor.service.ts(4,61): error TS2305: Module '"@zucker-framework/auth"' has no exported member 'hashRecoveryCode'.
+packages/back-office/src/accounts/two-factor/two-factor.service.ts(4,79): error TS2305: Module '"@zucker-framework/auth"' has no exported member 'normalizeRecoveryCode'.
+packages/back-office/src/accounts/two-factor/two-factor.service.ts(4,102): error TS2305: Module '"@zucker-framework/auth"' has no exported member 'totpProvisioningUri'.
+packages/back-office/src/accounts/two-factor/two-factor.service.ts(72,92): error TS2353: Object literal may only specify known properties, and 'maxAttempts' does not exist in type '{ period?: number | undefined; digits?: number | undefined; window?: number | undefined; secretResolver?: ((userId: string) => Promise<string | null>) | undefined; }'.
+packages/back-office/src/accounts/two-factor/two-factor.service.ts(211,30): error TS2339: Property 'isLockedOut' does not exist on type 'TotpValidator'.
+packages/back-office/src/accounts/two-factor/two-factor.service.ts(215,49): error TS2339: Property 'recordFailedAttempt' does not exist on type 'TotpValidator'.
+packages/back-office/src/accounts/two-factor/two-factor.service.ts(226,39): error TS2339: Property 'verifyUnclaimed' does not exist on type 'TotpValidator'.
+packages/back-office/src/accounts/two-factor/two-factor.service.ts(233,51): error TS2339: Property 'recordFailedAttempt' does not exist on type 'TotpValidator'.
+packages/back-office/src/accounts/two-factor/two-factor.service.ts(234,31): error TS2339: Property 'recordSuccessfulAttempt' does not exist on type 'TotpValidator'.
+packages/back-office/src/billing/payment-credential-retention.ts(2,45): error TS7016: Could not find a declaration file for module '@zucker-framework/config/connections'. '/Users/lind/Documents/projects/zucker-framework/packages/config/dist/connections.mjs' implicitly has an 'any' type.
+  Try `npm i --save-dev @types/zucker-framework__config` if it exists or add a new declaration (.d.ts) file containing `declare module '@zucker-framework/config/connections';`
+packages/back-office/src/billing/payment-credential-retention.ts(156,25): error TS7006: Parameter 'row' implicitly has an 'any' type.
+packages/back-office/src/mail/mail.module.spec.ts(10,8): error TS2307: Cannot find module '@zucker-framework/back-office/mail' or its corresponding type declarations.
+packages/back-office/src/management/management.module.spec.ts(7,73): error TS2307: Cannot find module '@zucker-framework/back-office/management' or its corresponding type declarations.
+packages/back-office/src/management/management.routes.spec.ts(5,10): error TS2305: Module '"@zucker-framework/admin"' has no exported member 'ACCESS_LOG_RECORD_FIELDS'.
+packages/back-office/src/management/management.routes.spec.ts(5,36): error TS2305: Module '"@zucker-framework/admin"' has no exported member 'OPERATION_LOG_RECORD_FIELDS'.
+packages/back-office/src/management/management.routes.spec.ts(5,65): error TS2305: Module '"@zucker-framework/admin"' has no exported member 'OPERATION_LOG_STATUSES'.
+packages/back-office/src/management/management.routes.spec.ts(5,156): error TS2305: Module '"@zucker-framework/admin"' has no exported member 'parseLogRecordsQuery'.
+packages/back-office/src/management/management.service.ts(13,10): error TS2305: Module '"@zucker-framework/admin"' has no exported member 'listLogRecords'.
+packages/back-office/src/settings/connection-errors.ts(2,41): error TS7016: Could not find a declaration file for module '@zucker-framework/config/connections'. '/Users/lind/Documents/projects/zucker-framework/packages/config/dist/connections.mjs' implicitly has an 'any' type.
+  Try `npm i --save-dev @types/zucker-framework__config` if it exists or add a new declaration (.d.ts) file containing `declare module '@zucker-framework/config/connections';`
+packages/back-office/src/settings/connection-errors.ts(7,7): error TS18046: 'error' is of type 'unknown'.
+packages/back-office/src/settings/connection-errors.ts(7,60): error TS18046: 'error' is of type 'unknown'.
+packages/back-office/src/settings/connection-errors.ts(8,7): error TS18046: 'error' is of type 'unknown'.
+packages/back-office/src/settings/connection-errors.ts(8,58): error TS18046: 'error' is of type 'unknown'.
+packages/back-office/src/settings/connection-errors.ts(9,42): error TS18046: 'error' is of type 'unknown'.
+packages/back-office/src/settings/connection-pins.ts(4,8): error TS7016: Could not find a declaration file for module '@zucker-framework/config/connections'. '/Users/lind/Documents/projects/zucker-framework/packages/config/dist/connections.mjs' implicitly has an 'any' type.
+  Try `npm i --save-dev @types/zucker-framework__config` if it exists or add a new declaration (.d.ts) file containing `declare module '@zucker-framework/config/connections';`
+packages/back-office/src/settings/connection-pins.ts(25,49): error TS7006: Parameter 'field' implicitly has an 'any' type.
+packages/back-office/src/settings/connection-pins.ts(50,18): error TS4112: This member cannot have an 'override' modifier because its containing class 'PinnedConnectionProfileStore' does not extend another class.
+packages/back-office/src/settings/connection-pins.ts(53,18): error TS4112: This member cannot have an 'override' modifier because its containing class 'PinnedConnectionProfileStore' does not extend another class.
+packages/back-office/src/settings/connection-pins.ts(57,18): error TS4112: This member cannot have an 'override' modifier because its containing class 'PinnedConnectionProfileStore' does not extend another class.
+packages/back-office/src/settings/connection-pins.ts(58,29): error TS2339: Property 'definition' does not exist on type 'PinnedConnectionProfileStore'.
+packages/back-office/src/settings/connection-settings.service.ts(8,8): error TS7016: Could not find a declaration file for module '@zucker-framework/config/connections'. '/Users/lind/Documents/projects/zucker-framework/packages/config/dist/connections.mjs' implicitly has an 'any' type.
+  Try `npm i --save-dev @types/zucker-framework__config` if it exists or add a new declaration (.d.ts) file containing `declare module '@zucker-framework/config/connections';`
+packages/back-office/src/settings/connection-settings.service.ts(138,13): error TS7006: Parameter 'message' implicitly has an 'any' type.
+packages/back-office/src/settings/connection-settings.service.ts(139,21): error TS7006: Parameter 'tx' implicitly has an 'any' type.
+packages/back-office/src/settings/connection-settings.service.ts(139,25): error TS7006: Parameter 'entry' implicitly has an 'any' type.
+packages/back-office/src/settings/connection-settings.service.ts(180,45): error TS7006: Parameter 'error' implicitly has an 'any' type.
+packages/back-office/src/settings/connection-settings.service.ts(211,58): error TS7006: Parameter 'field' implicitly has an 'any' type.
+packages/back-office/src/settings/connection-settings.service.ts(219,64): error TS7006: Parameter 'field' implicitly has an 'any' type.
+packages/back-office/src/settings/connection-settings.service.ts(219,100): error TS7006: Parameter 'field' implicitly has an 'any' type.
+packages/back-office/src/settings/connection-settings.service.ts(220,34): error TS7006: Parameter 'field' implicitly has an 'any' type.
+packages/back-office/src/settings/connection-settings.service.ts(241,86): error TS7006: Parameter 'tx' implicitly has an 'any' type.
+packages/back-office/src/settings/connection-settings.service.ts(242,39): error TS2339: Property 'retainedCounts' does not exist on type 'PinnedConnectionProfileStore'.
+packages/back-office/src/settings/connection-settings.service.ts(251,70): error TS7006: Parameter 'tx' implicitly has an 'any' type.
+packages/back-office/src/settings/connection-settings.service.ts(252,39): error TS2339: Property 'retainedCounts' does not exist on type 'PinnedConnectionProfileStore'.
+packages/back-office/src/settings/connection-settings.service.ts(260,30): error TS7006: Parameter 'field' implicitly has an 'any' type.
+packages/back-office/src/settings/connection-settings.service.ts(265,11): error TS18046: 'action' is of type 'unknown'.
+packages/back-office/src/settings/connection-settings.service.ts(275,37): error TS18046: 'saved' is of type 'unknown'.
+packages/back-office/src/settings/connection-settings.service.ts(275,51): error TS18046: 'saved' is of type 'unknown'.
+packages/back-office/src/settings/data-location.guard.ts(70,37): error TS18046: 'current' is of type 'unknown'.
+packages/back-office/src/settings/data-location.guard.ts(72,23): error TS18046: 'current' is of type 'unknown'.
+packages/back-office/src/settings/data-location.guard.ts(72,43): error TS7006: Parameter 'row' implicitly has an 'any' type.
+packages/back-office/src/settings/hot-apply.ts(5,8): error TS7016: Could not find a declaration file for module '@zucker-framework/config/connections'. '/Users/lind/Documents/projects/zucker-framework/packages/config/dist/connections.mjs' implicitly has an 'any' type.
+  Try `npm i --save-dev @types/zucker-framework__config` if it exists or add a new declaration (.d.ts) file containing `declare module '@zucker-framework/config/connections';`
+packages/back-office/src/settings/hot-apply.ts(44,25): error TS7006: Parameter 'profileIds' implicitly has an 'any' type.
+packages/back-office/src/settings/hot-apply.ts(45,48): error TS7006: Parameter 'id' implicitly has an 'any' type.
+packages/back-office/src/settings/hot-apply.ts(64,23): error TS7006: Parameter 'error' implicitly has an 'any' type.
+packages/back-office/src/settings/hot-apply.ts(64,30): error TS7006: Parameter 'revisions' implicitly has an 'any' type.
+packages/back-office/src/settings/hot-apply.ts(119,46): error TS7006: Parameter 'instance' implicitly has an 'any' type.
+packages/back-office/src/settings/hot-apply.ts(127,26): error TS7006: Parameter 'instance' implicitly has an 'any' type.
+packages/back-office/src/settings/hot-apply.ts(151,26): error TS7006: Parameter 'instance' implicitly has an 'any' type.
+packages/back-office/src/settings/hot-apply.ts(156,16): error TS7006: Parameter 'error' implicitly has an 'any' type.
+packages/back-office/src/settings/index.ts(44,8): error TS7016: Could not find a declaration file for module '@zucker-framework/config/connections'. '/Users/lind/Documents/projects/zucker-framework/packages/config/dist/connections.mjs' implicitly has an 'any' type.
+  Try `npm i --save-dev @types/zucker-framework__config` if it exists or add a new declaration (.d.ts) file containing `declare module '@zucker-framework/config/connections';`
+packages/back-office/src/settings/policy.service.ts(3,64): error TS7016: Could not find a declaration file for module '@zucker-framework/config/connections'. '/Users/lind/Documents/projects/zucker-framework/packages/config/dist/connections.mjs' implicitly has an 'any' type.
+  Try `npm i --save-dev @types/zucker-framework__config` if it exists or add a new declaration (.d.ts) file containing `declare module '@zucker-framework/config/connections';`
+packages/back-office/src/settings/policy.service.ts(110,51): error TS7006: Parameter 'tx' implicitly has an 'any' type.
+packages/back-office/src/settings/policy.service.ts(143,60): error TS7006: Parameter 'tx' implicitly has an 'any' type.
+packages/back-office/src/settings/policy.service.ts(150,44): error TS7006: Parameter 'tx' implicitly has an 'any' type.
+packages/back-office/src/settings/policy.service.ts(184,58): error TS7006: Parameter 'tx' implicitly has an 'any' type.
+packages/back-office/src/settings/settings.integration.spec.ts(7,129): error TS7016: Could not find a declaration file for module '@zucker-framework/config/connections'. '/Users/lind/Documents/projects/zucker-framework/packages/config/dist/connections.mjs' implicitly has an 'any' type.
+  Try `npm i --save-dev @types/zucker-framework__config` if it exists or add a new declaration (.d.ts) file containing `declare module '@zucker-framework/config/connections';`
+packages/back-office/src/settings/settings.integration.spec.ts(83,15): error TS7006: Parameter 'environment' implicitly has an 'any' type.
+packages/back-office/src/settings/settings.integration.spec.ts(126,20): error TS2345: Argument of type 'unknown' is not assignable to parameter of type '{ fields: { key: string; }[]; }'.
+packages/back-office/src/settings/settings.integration.spec.ts(127,20): error TS2345: Argument of type 'unknown' is not assignable to parameter of type '{ fields: { key: string; }[]; }'.
+packages/back-office/src/settings/settings.integration.spec.ts(128,20): error TS2345: Argument of type 'unknown' is not assignable to parameter of type '{ fields: { key: string; }[]; }'.
+packages/back-office/src/settings/settings.integration.spec.ts(129,20): error TS2345: Argument of type 'unknown' is not assignable to parameter of type '{ fields: { key: string; }[]; }'.
+packages/back-office/src/settings/settings.integration.spec.ts(132,14): error TS2571: Object is of type 'unknown'.
+packages/back-office/src/settings/settings.integration.spec.ts(132,52): error TS7006: Parameter 'row' implicitly has an 'any' type.
+packages/back-office/src/settings/settings.integration.spec.ts(169,20): error TS2345: Argument of type 'unknown' is not assignable to parameter of type '{ fields: { key: string; }[]; }'.
+packages/back-office/src/settings/settings.integration.spec.ts(170,14): error TS18046: 'view' is of type 'unknown'.
+packages/back-office/src/settings/settings.integration.spec.ts(182,14): error TS18046: 'view' is of type 'unknown'.
+packages/back-office/src/settings/settings.integration.spec.ts(186,14): error TS2571: Object is of type 'unknown'.
+packages/back-office/src/settings/settings.integration.spec.ts(187,14): error TS2571: Object is of type 'unknown'.
+packages/back-office/src/settings/settings.integration.spec.ts(187,51): error TS7006: Parameter 'row' implicitly has an 'any' type.
+packages/back-office/src/settings/settings.integration.spec.ts(247,20): error TS2345: Argument of type 'unknown' is not assignable to parameter of type '{ fields: { key: string; }[]; }'.
+packages/back-office/src/settings/settings.module.ts(2,41): error TS7016: Could not find a declaration file for module '@zucker-framework/config/connections'. '/Users/lind/Documents/projects/zucker-framework/packages/config/dist/connections.mjs' implicitly has an 'any' type.
+  Try `npm i --save-dev @types/zucker-framework__config` if it exists or add a new declaration (.d.ts) file containing `declare module '@zucker-framework/config/connections';`
+packages/back-office/src/settings/settings.options.ts(2,50): error TS7016: Could not find a declaration file for module '@zucker-framework/config/connections'. '/Users/lind/Documents/projects/zucker-framework/packages/config/dist/connections.mjs' implicitly has an 'any' type.
+  Try `npm i --save-dev @types/zucker-framework__config` if it exists or add a new declaration (.d.ts) file containing `declare module '@zucker-framework/config/connections';`
+packages/back-office/src/subscriptions/payment-history.ts(1,44): error TS2724: '"@zucker-framework/payment"' has no exported member named 'SubscriptionPaymentApplication'. Did you mean 'SubscriptionPaymentInput'?
+packages/back-office/src/subscriptions/payment-history.ts(1,81): error TS2724: '"@zucker-framework/payment"' has no exported member named 'SubscriptionPaymentHistory'. Did you mean 'SubscriptionPaymentInput'?
+packages/back-office/src/subscriptions/payment-history.ts(52,29): error TS7006: Parameter 'tx' implicitly has an 'any' type.
+packages/back-office/src/subscriptions/payment-history.ts(52,33): error TS7006: Parameter 'application' implicitly has an 'any' type.
+packages/back-office/src/subscriptions/payment-history.ts(57,27): error TS7006: Parameter 'tx' implicitly has an 'any' type.
+packages/back-office/src/subscriptions/payment-history.ts(57,31): error TS7006: Parameter 'reference' implicitly has an 'any' type.
+packages/back-office/src/subscriptions/payment-history.ts(62,24): error TS7006: Parameter 'tx' implicitly has an 'any' type.
+packages/back-office/src/subscriptions/payment-history.ts(62,28): error TS7006: Parameter 'reference' implicitly has an 'any' type.
+packages/back-office/src/subscriptions/payment-history.ts(62,39): error TS7006: Parameter 'userId' implicitly has an 'any' type.
+packages/back-office/src/subscriptions/payment-history.ts(68,22): error TS7006: Parameter 'tx' implicitly has an 'any' type.
+packages/back-office/src/subscriptions/payment-history.ts(68,26): error TS7006: Parameter 'reference' implicitly has an 'any' type.
+packages/back-office/src/subscriptions/payment-writeback.ts(6,32): error TS2724: '"@zucker-framework/payment"' has no exported member named 'SubscriptionPaymentHistory'. Did you mean 'SubscriptionPaymentInput'?
+packages/back-office/src/subscriptions/user-subscription.store.ts(3,48): error TS2724: '"@zucker-framework/payment"' has no exported member named 'SubscriptionPaymentHistory'. Did you mean 'SubscriptionPaymentInput'?
+packages/back-office/src/subscriptions/user-subscription.store.ts(73,5): error TS2353: Object literal may only specify known properties, and 'paymentHistory' does not exist in type 'UserSubscriptionStore<DatabaseAdapter>'.

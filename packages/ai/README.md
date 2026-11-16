@@ -135,3 +135,21 @@ never touch the network.
 - `reset()` on the chat and media fakes drops unconsumed steps and recorded calls so one instance can
   be reused across tests. `fakeTokenCount(text)` (`ceil(length / 4)`) and `FAKE_PNG_BASE64` help
   compute expectations.
+
+### Media quantities and reference-image capabilities
+
+`MediaProvider.getCapabilities?(modelId)` declares `maxOutputs`, `maxReferences`, and an optional
+`referenceInput` (`single`, `multiple`, or `frames`). `getMediaGenerationCapabilities` validates the
+contract and defaults undeclared providers to one output and no references. Consumers should check
+these limits before reserving credits; the server template also exposes them in its public catalog.
+DALL-E 3 accepts one image; DALL-E 2 supports up to ten and returns every requested image in
+`MediaGenerationResult.outputs`. Top-level fields retain the first image and aggregate cost for
+existing consumers. This generation adapter refuses reference images instead of silently ignoring them.
+
+HTTP async adapters explicitly declare `maxOutputs` (values above one require `submit.fields.count`).
+For multiple references, set `maxReferences` and map `submit.fields.referenceImageUrls` to the vendor's
+array field. A mapped `referenceImageUrl` supports one image; `firstFrameUrl` plus `lastFrameUrl` supports
+two ordered video frames. The server resolves every accepted reference under the owner's file access
+policy and forwards verified inline bytes. Unsupported counts/references are rejected before billing.
+`submit.fields.clientRequestId` optionally forwards the stable application request identity for
+vendor-supported lookup; this field alone does not claim that the vendor implements idempotent creation.

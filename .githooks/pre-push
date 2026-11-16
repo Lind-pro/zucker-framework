@@ -33,6 +33,7 @@ pnpm verify:package-content
 
 step "unit tests"
 pnpm test
+pnpm test:web
 
 step "lint"
 pnpm lint

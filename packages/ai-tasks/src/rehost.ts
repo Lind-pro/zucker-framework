@@ -55,19 +55,28 @@ async function fetchBounded(url: string, options: DownloadOutputOptions): Promis
   }
   if (!response.body) return Buffer.alloc(0);
   const reader = response.body.getReader();
+  const onAbort = () => { void reader.cancel(options.signal.reason).catch(() => undefined); };
+  options.signal.addEventListener('abort', onAbort, { once: true });
   const chunks: Uint8Array[] = [];
   let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > options.maxBytes) {
-      await reader.cancel().catch(() => undefined);
-      throw new AITaskOutputRejectedError('too-large');
+  try {
+    for (;;) {
+      options.signal.throwIfAborted();
+      const { done, value } = await reader.read();
+      options.signal.throwIfAborted();
+      if (done) break;
+      total += value.byteLength;
+      if (total > options.maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        throw new AITaskOutputRejectedError('too-large');
+      }
+      chunks.push(value);
     }
-    chunks.push(value);
+    return Buffer.concat(chunks, total);
+  } finally {
+    options.signal.removeEventListener('abort', onAbort);
+    reader.releaseLock();
   }
-  return Buffer.concat(chunks, total);
 }
 
 /** Bytes read before the first byte is handed on: enough for every magic number `sniffMediaType` checks. */
@@ -114,8 +123,19 @@ export async function openOutput(output: AIMediaResultLike, options: OpenOutputO
     }
     if (!response.body) throw new AITaskOutputRejectedError('empty');
     const reader = response.body.getReader();
-    source = { next: async () => { const { done, value } = await reader.read(); return done ? { done: true, value: undefined } : { done: false, value }; } };
-    cancelSource = () => reader.cancel().catch(() => undefined);
+    const onAbort = () => { void reader.cancel(options.signal.reason).catch(() => undefined); };
+    options.signal.addEventListener('abort', onAbort, { once: true });
+    source = { next: async () => {
+      options.signal.throwIfAborted();
+      const { done, value } = await reader.read();
+      options.signal.throwIfAborted();
+      if (done) options.signal.removeEventListener('abort', onAbort);
+      return done ? { done: true, value: undefined } : { done: false, value };
+    } };
+    cancelSource = async () => {
+      options.signal.removeEventListener('abort', onAbort);
+      await reader.cancel().catch(() => undefined);
+    };
   } else if (typeof output.base64 === 'string' && output.base64) {
     const body = decodeInline(output.base64, options.maxBytes);
     let sent = false;

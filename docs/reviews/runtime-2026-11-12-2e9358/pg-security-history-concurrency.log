@@ -1,0 +1,13 @@
+
+ RUN  v4.1.11 /Users/lind/Documents/projects/zucker-framework
+
+ ✓ packages/back-office/src/accounts/account-security.transaction.spec.ts (6 tests) 1283ms
+     ✓ admits only one simultaneous durable claim for the same TOTP  368ms
+ ✓ packages/back-office/src/subscriptions/payment-history.integration.spec.ts (9 tests) 321ms
+
+ Test Files  2 passed (2)
+      Tests  15 passed (15)
+   Start at  15:08:08
+   Duration  3.82s (transform 1.11s, setup 17ms, import 2.04s, tests 1.60s, environment 0ms)
+
+JSON report written to /Users/lind/Documents/projects/zucker-framework/docs/reviews/runtime-2026-11-12-2e9358/pg-security-history-concurrency.json

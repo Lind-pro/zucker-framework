@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isMainModule } from './cli-entry.mjs';
 
 const frameworkRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const permittedLicenses = new Set(['MIT', 'MIT-0', 'Apache-2.0', 'ISC', 'BSD-2-Clause',
@@ -89,7 +90,7 @@ export function preparePackageLegal(packageDirectory, rootDir = frameworkRoot) {
   return { name: manifest.name, bundled: dependencies.map(({ name, version, license }) => ({ name, version, license })) };
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (isMainModule(import.meta.url)) {
   try {
     const all = process.argv.slice(2).includes('--all');
     const directories = all ? readdirSync(join(frameworkRoot, 'packages'), { withFileTypes: true })

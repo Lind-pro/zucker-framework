@@ -107,17 +107,41 @@ export class TotpValidator implements TwoFactorValidatorProvider {
     // Serialised per user: concurrent copies of one code cannot all pass the replay guard, and
     // concurrent wrong guesses cannot all pass the lockout check before their failures count.
     return this.exclusive(userId, async () => {
-      if (await this.isLocked(userId)) return false;
-      const resolved = secret ?? (await this.secretResolver(userId));
-      if (!resolved) return false;
-      const counter = typeof code === 'string' ? this.matchCounter(code.trim(), resolved) : null;
-      if (counter === null || !(await this.advanceLastCounter(userId, counter))) {
+      const counter = await this.unclaimedCounter(userId, code, secret);
+      if (counter === null) return false;
+      if (!(await this.advanceLastCounter(userId, counter))) {
         await this.recordFailure(userId);
         return false;
       }
       await this.clearFailures(userId);
       return true;
     });
+  }
+
+  /**
+   * Validate a factor and return its time step WITHOUT spending it or clearing failures.
+   * Only for callers whose durable transaction atomically claims that step with the protected
+   * action. A match alone must never authorize an action: replay protection belongs to that claim.
+   * After a successful claim call `recordSuccessfulAttempt`; on a lost claim record a failure.
+   * A failed/rolled-back database claim leaves this validator unchanged for valid retries.
+   */
+  async verifyUnclaimed(userId: string, code: string, secret?: string): Promise<number | null> {
+    if (typeof userId !== 'string' || !userId) return null;
+    return this.exclusive(userId, () => this.unclaimedCounter(userId, code, secret));
+  }
+
+  async recordSuccessfulAttempt(userId: string): Promise<void> {
+    if (typeof userId !== 'string' || !userId) return;
+    await this.exclusive(userId, () => this.clearFailures(userId));
+  }
+
+  private async unclaimedCounter(userId: string, code: string, secret?: string): Promise<number | null> {
+    if (await this.isLocked(userId)) return null;
+    const resolved = secret ?? (await this.secretResolver(userId));
+    if (!resolved) return null;
+    const counter = typeof code === 'string' ? this.matchCounter(code.trim(), resolved) : null;
+    if (counter === null) await this.recordFailure(userId);
+    return counter;
   }
 
   /**

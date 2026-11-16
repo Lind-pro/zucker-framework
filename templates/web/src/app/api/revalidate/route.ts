@@ -1,11 +1,34 @@
 import { revalidateTag } from 'next/cache';
-import { REVALIDATE_MIN_SECRET_LENGTH, ReplayGuard, verifyRevalidation } from '@/features/content/revalidate';
+import { REVALIDATE_MAX_BODY_BYTES, REVALIDATE_MIN_SECRET_LENGTH, ReplayGuard, verifyRevalidation } from '@/features/content/revalidate';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const replays = new ReplayGuard();
 const headers = { 'Cache-Control': 'no-store' };
+
+/** Content-Length is optional and untrusted: cap actual bytes before decoding/buffering the body. */
+async function readBody(request: Request): Promise<string | null> {
+  if (!request.body) return '';
+  const reader = request.body.getReader();
+  const decoder = new TextDecoder();
+  let bytes = 0;
+  let body = '';
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) return body + decoder.decode();
+      bytes += value.byteLength;
+      if (bytes > REVALIDATE_MAX_BODY_BYTES) {
+        await reader.cancel().catch(() => {});
+        return null;
+      }
+      body += decoder.decode(value, { stream: true });
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
 
 /**
  * `POST /api/revalidate`: signed cache invalidation from the Server after a content change. This
@@ -16,12 +39,22 @@ export async function POST(request: Request) {
   const secret = process.env.REVALIDATE_SECRET ?? '';
   if (secret.length < REVALIDATE_MIN_SECRET_LENGTH) return new Response(null, { status: 404, headers });
   const length = Number(request.headers.get('content-length') ?? '0');
-  if (length > 16 * 1024) return Response.json({ revalidated: false }, { status: 413, headers });
+  if (length > REVALIDATE_MAX_BODY_BYTES) {
+    await request.body?.cancel().catch(() => {});
+    return Response.json({ revalidated: false }, { status: 413, headers });
+  }
+  let rawBody: string | null;
+  try {
+    rawBody = await readBody(request);
+  } catch {
+    return Response.json({ revalidated: false }, { status: 400, headers });
+  }
+  if (rawBody === null) return Response.json({ revalidated: false }, { status: 413, headers });
   const verdict = verifyRevalidation({
     secret,
     timestamp: request.headers.get('x-revalidate-timestamp'),
     signature: request.headers.get('x-revalidate-signature'),
-    rawBody: await request.text(),
+    rawBody,
   });
   if (!verdict.ok) {
     // Redacted: the reason only, never the body, signature or secret.

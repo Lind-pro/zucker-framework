@@ -21,6 +21,7 @@ import {
   AITaskFatalError,
   AITaskIdempotencyConflictError,
   AITaskOutputRejectedError,
+  AITaskValidationError,
 } from './errors';
 import { DEFAULT_AI_OUTPUT_CONTENT_TYPES } from './media-content';
 import type {
@@ -70,6 +71,8 @@ export interface AITaskOutputLimits {
   contentTypes?: Partial<Record<AITaskKind, readonly string[]>>;
   /** Download attempts per output for transient network errors, default 3. */
   downloadAttempts?: number;
+  /** Total download/storage time per output, including retry delays. Default 120 seconds. */
+  downloadTimeoutMs?: number;
 }
 
 export interface AITaskLogger {
@@ -171,6 +174,9 @@ const fatal = {
   attemptsExhausted: () => new AITaskFatalError('AI_TASK_ATTEMPTS_EXHAUSTED', 'INTERNAL', 'The task could not be processed'),
   storageFailed: () => new AITaskFatalError('AI_OUTPUT_STORAGE_FAILED', 'INTERNAL', 'The generated output could not be stored'),
   outputQuota: () => new AITaskFatalError('AI_OUTPUT_QUOTA_EXCEEDED', 'VALIDATION', 'Your storage is full; delete files and try again'),
+  submissionUnknown: () => new AITaskFatalError('AI_PROVIDER_SUBMISSION_UNKNOWN', 'INTERNAL', 'The provider submission outcome could not be recovered; it was not submitted again'),
+  outputCount: () => new AITaskFatalError('AI_OUTPUT_COUNT_MISMATCH', 'INTERNAL', 'The provider did not return the requested number of outputs'),
+  outputTimeout: () => new AITaskFatalError('AI_OUTPUT_TIMEOUT', 'NETWORK', 'The generated output could not be stored in time'),
 };
 
 function isOutboundRejection(error: unknown): boolean {
@@ -202,7 +208,8 @@ export function normalizeProviderResult(result: AIMediaResultLike | AIMediaTaskL
     const progress = typeof task.progress === 'number' && Number.isFinite(task.progress) ? task.progress : undefined;
     return { state: 'pending', providerTaskId: task.taskId, progress };
   }
-  return { state: 'succeeded', outputs: [result as AIMediaResultLike] };
+  const sync = result as AIMediaResultLike;
+  return { state: 'succeeded', outputs: Array.isArray(sync.outputs) && sync.outputs.length ? [...sync.outputs] : [sync] };
 }
 
 /**
@@ -237,6 +244,14 @@ export class AITaskService<Tx extends PostgresTaskClient = PostgresTaskClient> {
     const maxAttempts = options.maxAttempts ?? 3;
     if (!Number.isSafeInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 10) throw new RangeError('maxAttempts must be 1..10');
     this.infraAttempts = maxAttempts;
+    const outputCount = options.outputLimits?.maxOutputs ?? 4;
+    if (!Number.isSafeInteger(outputCount) || outputCount < 1 || outputCount > 16) throw new RangeError('maxOutputs must be 1..16');
+    for (const value of Object.values(options.outputLimits?.maxBytes ?? {})) {
+      if (!Number.isSafeInteger(value) || value < 1) throw new RangeError('Output byte limits must be positive integers');
+    }
+    const downloadTimeout = options.outputLimits?.downloadTimeoutMs ?? 120_000;
+    if (!Number.isSafeInteger(downloadTimeout) || downloadTimeout < 1 || downloadTimeout > 2_147_000_000)
+      throw new RangeError('downloadTimeoutMs must be a positive integer below the timer limit');
     this.handler = {
       execute: (context) => this.execute(context),
       complete: (context, result) => this.complete(context, result),
@@ -279,6 +294,9 @@ export class AITaskService<Tx extends PostgresTaskClient = PostgresTaskClient> {
    */
   async submit(tx: Tx, input: SubmitAITaskCommand): Promise<SubmitAITaskResult> {
     const command = validateSubmitCommand(structuredClone(input), this.options.inputLimits);
+    const requestedCount = command.input.options?.count;
+    if (requestedCount !== undefined && (typeof requestedCount !== 'number' || !Number.isSafeInteger(requestedCount)
+      || requestedCount < 1 || requestedCount > (this.options.outputLimits?.maxOutputs ?? 4))) throw new AITaskValidationError('options.count');
     const identity = AITaskService.identity(command.ownerId, command.idempotencyKey);
     // The price is not part of the request identity: a replay after a price change returns the original task.
     const fingerprint = createTaskFingerprint({
@@ -366,7 +384,10 @@ export class AITaskService<Tx extends PostgresTaskClient = PostgresTaskClient> {
     if (!isTerminalTaskStatus(existing.status)) {
       // Lock order everywhere (see PostgresAITaskStore): async_jobs first, then ai_tasks, then the ledger.
       const cancelled = await new PostgresTaskRepository(tx).cancel(taskId, this.now());
-      if (cancelled) await this.settleHold(tx, taskId, 'RELEASED', 'cancelled');
+      if (cancelled) {
+        await this.store.clearGeneratedOutputs(tx, taskId);
+        await this.settleHold(tx, taskId, 'RELEASED', 'cancelled');
+      }
     }
     const row = await this.store.find(tx, taskId);
     return row ? toView(row, (await this.store.outputs(tx, [taskId])).get(taskId)) : null;
@@ -512,6 +533,8 @@ export class AITaskService<Tx extends PostgresTaskClient = PostgresTaskClient> {
     return this.options.transactions.runInTransaction(async (tx) => {
       const row = await this.store.find(tx, taskId);
       if (!row || (row.status !== 'FAILED' && row.status !== 'CANCELLED')) return false;
+      await this.store.lockJob(tx, taskId);
+      await this.store.clearGeneratedOutputs(tx, taskId);
       return this.settleHold(tx, taskId, 'RELEASED', row.status === 'CANCELLED' ? 'cancelled' : 'failed');
     });
   }
@@ -540,18 +563,41 @@ export class AITaskService<Tx extends PostgresTaskClient = PostgresTaskClient> {
       if (row.status !== 'PROCESSING') throw new AITaskStoppedError(taskId);
       // Runs that ended by scheduling the next poll are not failures; everything else counts.
       if (context.task.attempt - 1 - row.deferrals >= this.infraAttempts) throw fatal.attemptsExhausted();
-      if (row.providerTaskId && this.now().getTime() >= row.deadlineAt.getTime()) throw fatal.timeout();
+      // STORED is a settlement retry, independent of provider availability or its expired URLs.
+      if (row.executionState === 'STORED') {
+        const outputs = await this.options.transactions.runInTransaction(async tx => (await this.store.outputs(tx, [taskId])).get(taskId) ?? []);
+        if (!outputs.length) throw fatal.stateMissing();
+        return { outputs };
+      }
+      if (row.executionState !== 'GENERATED' && this.now().getTime() >= row.deadlineAt.getTime()) throw fatal.timeout();
 
-      let outcome: ProviderOutcome | undefined = row.callbackOutcome
+      let outcome: ProviderOutcome | undefined = row.generatedOutputs
+        ? { state: 'succeeded', outputs: row.generatedOutputs }
+        : row.callbackOutcome
         ? (row.callbackOutcome.state === 'failed' ? { state: 'failed' } : { state: 'succeeded', outputs: row.callbackOutcome.outputs })
         : undefined;
       if (!outcome) {
         const { provider, config } = await this.resolveProvider(row);
         if (!row.providerTaskId) {
-          await context.reportProgress('submitting', 5);
-          outcome = await this.submitToProvider(context, provider, row.payload.input.prompt, config);
+          if (row.executionState === 'SUBMITTING') {
+            // A prior process may have paid the provider. Recover by the stable task identity; a
+            // missing response or lost DB acknowledgement is never permission to submit again.
+            const recover = this.options.providers.recoverSubmission;
+            if (!recover) throw fatal.submissionUnknown();
+            const recovered = await this.callWrapper.callWithRetry(({ signal }) => recover.call(this.options.providers, {
+              taskId: row.id, ownerId: row.ownerId, kind: row.kind, providerId: row.providerId,
+              model: row.model, input: row.payload.input,
+            }, signal), { maxAttempts: 1, timeoutMs: this.options.pollTimeoutMs ?? 30_000, signal: context.signal });
+            if (!recovered) return await this.deferRun(context, row, { pollCount: row.pollCount + 1, pollErrors: 0 });
+            outcome = normalizeProviderResult(recovered);
+          } else {
+            await context.reportProgress('submitting', 5);
+            await this.checkpoint(context, { state: 'SUBMITTING' });
+            outcome = await this.submitToProvider(context, provider, row.payload.input.prompt, config);
+          }
           if (outcome.state === 'pending') {
             if (!outcome.providerTaskId || !PROVIDER_TASK_ID.test(outcome.providerTaskId) || !provider.getTaskStatus) throw fatal.unsupported();
+            await this.checkpoint(context, { state: 'ACCEPTED', providerTaskId: outcome.providerTaskId });
             // Persisting the provider task id with the deferral means a later run polls, never submits again.
             return await this.deferRun(context, row, { providerTaskId: outcome.providerTaskId, pollCount: 0, pollErrors: 0, progress: 10 });
           }
@@ -583,8 +629,12 @@ export class AITaskService<Tx extends PostgresTaskClient = PostgresTaskClient> {
         }
       }
       if (outcome.state !== 'succeeded') throw fatal.failed();
+      const outputs = this.snapshotOutputs(row, outcome.outputs);
+      if (row.executionState !== 'GENERATED') await this.checkpoint(context, { state: 'GENERATED', outputs });
       await context.reportProgress('storing', 90);
-      return { outputs: await this.rehost(context, row, outcome.outputs, Boolean(row.providerTaskId)) };
+      const stored = await this.rehost(context, row, outputs, true);
+      await this.checkpoint(context, { state: 'STORED', stored });
+      return { outputs: stored };
     } catch (error) {
       if (context.signal.aborted || error instanceof DurableTaskRetryScheduledError || error instanceof AITaskStoppedError
         || error instanceof DurableTaskLeaseLostError) throw error;
@@ -601,6 +651,42 @@ export class AITaskService<Tx extends PostgresTaskClient = PostgresTaskClient> {
     }
   }
 
+  /** Persist only bounded result bytes/URLs, never provider metadata or credentials. */
+  private snapshotOutputs(row: AITaskJoinedRow, outputs: readonly AIMediaResultLike[]): AIMediaResultLike[] {
+    const maximum = this.options.outputLimits?.maxOutputs ?? 4;
+    const count = row.payload.input.options?.count;
+    if (typeof count === 'number' && (outputs.length !== count || count > maximum)) throw fatal.outputCount();
+    const selected = outputs.slice(0, maximum);
+    if (!selected.length) throw fatal.outputMissing();
+    const maxBytes = this.options.outputLimits?.maxBytes?.[row.kind] ?? DEFAULT_MAX_BYTES[row.kind];
+    return selected.map(output => {
+      if (typeof output?.url === 'string' && output.url && output.url.length <= 4096) return { url: output.url };
+      if (typeof output?.base64 === 'string' && output.base64 && output.base64.length <= Math.ceil(maxBytes / 3) * 4 + 128)
+        return { base64: output.base64 };
+      throw fatal.outputRejected();
+    });
+  }
+
+  private async checkpoint(context: DurableTaskAttemptContext<AITaskPayload, AITaskExecution>,
+    input: Pick<Parameters<PostgresAITaskStore['checkpoint']>[1], 'state' | 'providerTaskId' | 'outputs' | 'stored'>): Promise<void> {
+    // Retry writing an already obtained provider answer, not the provider call. This also tolerates
+    // a committed write whose acknowledgement was lost (all checkpoints except NEW->SUBMITTING are idempotent).
+    const attempts = input.state === 'SUBMITTING' ? 1 : 3;
+    for (let attempt = 1; ; attempt += 1) {
+      context.signal.throwIfAborted();
+      try {
+        const saved = await this.options.transactions.runInTransaction(tx => this.store.checkpoint(tx, {
+          id: context.task.id, leaseToken: context.leaseToken, now: this.now(), ...input,
+        }));
+        if (!saved) throw new DurableTaskLeaseLostError(context.task.id, 'execution checkpoint');
+        return;
+      } catch (error) {
+        if (context.signal.aborted || error instanceof DurableTaskLeaseLostError || attempt >= attempts) throw error;
+        await this.sleep(100 * attempt, context.signal);
+      }
+    }
+  }
+
   private async resolveProvider(row: AITaskJoinedRow): Promise<{ provider: AITaskMediaProvider; config: Record<string, unknown> }> {
     let resolved: Awaited<ReturnType<AITaskProviderResolver['resolve']>>;
     try {
@@ -613,7 +699,7 @@ export class AITaskService<Tx extends PostgresTaskClient = PostgresTaskClient> {
     const provider = resolved?.provider;
     if (!provider || !provider.supportedTypes.some((type) => String(type).toLowerCase() === row.kind)) throw fatal.unsupported();
     // Server-trusted configuration wins over caller options; the model comes from the stored task.
-    return { provider, config: { ...(row.payload.input.options ?? {}), ...resolved.config, modelId: row.model } };
+    return { provider, config: { ...(row.payload.input.options ?? {}), ...resolved.config, modelId: row.model, clientRequestId: row.id } };
   }
 
   /**
@@ -670,8 +756,12 @@ export class AITaskService<Tx extends PostgresTaskClient = PostgresTaskClient> {
       return normalizeProviderResult(result);
     } catch (error) {
       if (context.signal.aborted) throw error;
-      // The provider may or may not have accepted it; failing (and releasing the hold) avoids double generation.
-      throw fatal.rejected();
+      const status = error && typeof error === 'object' ? (error as { status?: unknown }).status : undefined;
+      // An explicit client refusal is terminal. Transport/5xx failures may hide an accepted paid
+      // request: a subsequent durable attempt can query recoverSubmission, never generate again.
+      if (typeof status === 'number' && status >= 400 && status < 500 && status !== 408) throw fatal.rejected();
+      if (!this.options.providers.recoverSubmission) throw fatal.submissionUnknown();
+      throw error;
     }
   }
 
@@ -688,14 +778,42 @@ export class AITaskService<Tx extends PostgresTaskClient = PostgresTaskClient> {
     const allowed = limits.contentTypes?.[row.kind] ?? DEFAULT_AI_OUTPUT_CONTENT_TYPES[row.kind];
     const attempts = Math.max(1, limits.downloadAttempts ?? 3);
     const stored: AITaskStoredOutput[] = [];
+    const previous = await this.options.transactions.runInTransaction(async tx => (await this.store.outputs(tx, [row.id])).get(row.id) ?? []);
     for (const [index, output] of selected.entries()) {
-      const download = { fetch: this.fetch, maxBytes, allowedContentTypes: allowed, signal: context.signal };
-      const putStream = this.options.outputs.putStream?.bind(this.options.outputs);
-      stored.push(putStream
-        ? await this.rehostStreaming(context, row, index, output, download, attempts, resumable, putStream)
-        : await this.rehostBuffered(context, row, index, output, download, attempts, resumable));
+      const existing = previous.find(item => item.index === index);
+      if (existing) { stored.push(existing); continue; }
+      const value = await this.withOutputDeadline(context, async bounded => {
+        const download = { fetch: this.fetch, maxBytes, allowedContentTypes: allowed, signal: bounded.signal };
+        const putStream = this.options.outputs.putStream?.bind(this.options.outputs);
+        return putStream
+          ? this.rehostStreaming(bounded, row, index, output, download, attempts, resumable, putStream)
+          : this.rehostBuffered(bounded, row, index, output, download, attempts, resumable);
+      });
+      await this.checkpoint(context, { state: 'GENERATED', stored: [value] });
+      stored.push(value);
     }
     return stored;
+  }
+
+  private async withOutputDeadline<T>(context: DurableTaskAttemptContext<AITaskPayload, AITaskExecution>,
+    work: (bounded: DurableTaskAttemptContext<AITaskPayload, AITaskExecution>) => Promise<T>): Promise<T> {
+    const controller = new AbortController();
+    const signal = AbortSignal.any([context.signal, controller.signal]);
+    const timer = setTimeout(() => controller.abort(fatal.outputTimeout()), this.options.outputLimits?.downloadTimeoutMs ?? 120_000);
+    let onAbort: (() => void) | undefined;
+    try {
+      signal.throwIfAborted();
+      const aborted = new Promise<never>((_resolve, reject) => {
+        onAbort = () => reject(signal.reason);
+        signal.addEventListener('abort', onAbort, { once: true });
+        if (signal.aborted) onAbort();
+      });
+      // Subscribe before starting user-supplied transports/stores: they may synchronously abort the host.
+      return await Promise.race([Promise.resolve().then(() => { signal.throwIfAborted(); return work({ ...context, signal }); }), aborted]);
+    } finally {
+      clearTimeout(timer);
+      if (onAbort) signal.removeEventListener('abort', onAbort);
+    }
   }
 
   /** Storage failure policy shared by both paths. */
@@ -725,6 +843,7 @@ export class AITaskService<Tx extends PostgresTaskClient = PostgresTaskClient> {
       }
     }
     await context.assertActive();
+    context.signal.throwIfAborted();
     try {
       const { storageKey } = await this.options.outputs.put({
         taskId: row.id, ownerId: row.ownerId, kind: row.kind, index, body: downloaded.body,
@@ -761,6 +880,7 @@ export class AITaskService<Tx extends PostgresTaskClient = PostgresTaskClient> {
       }
       try {
         await context.assertActive();
+        context.signal.throwIfAborted();
         const result = await putStream({
           taskId: row.id, ownerId: row.ownerId, kind: row.kind, index, contentType: opened.contentType,
           maxBytes: download.maxBytes, stream: opened.stream, signal: context.signal,
@@ -817,6 +937,7 @@ export class AITaskService<Tx extends PostgresTaskClient = PostgresTaskClient> {
         id: context.task.id, from: current.status, to: 'FAILED', leaseToken: context.leaseToken, error, now: this.now(),
       });
       if (!failed) return false;
+      await this.store.clearGeneratedOutputs(tx, context.task.id);
       await this.settleHold(tx, context.task.id, 'RELEASED', error.code === 'AI_PROVIDER_TIMEOUT' ? 'timeout' : 'failed');
       return true;
     });

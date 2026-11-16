@@ -118,8 +118,8 @@ export interface CookieSessionOptions<TUser extends { id: string }, TAccount> {
   /** Cross-tab lock shared with the HTTP client's refresh (`navigator.locks`); null disables it. */
   lockName?: string | null;
   locks?: Pick<LockManager, 'request'> | null;
-  /** Summary storage guard created for the same store (enables cross-tab identity protection). */
-  summary?: SessionSummaryStorage<unknown>;
+  /** Summary storage guard created for the same store; the session only needs its identity-write permit. */
+  summary?: Pick<SessionSummaryStorage<unknown>, 'allowIdentityChange'>;
   /** Persist key observed through `storage` events (default: none, no cross-tab listener). */
   persistKey?: string;
   /** Event source for `storage` events (default `window` when available). */
@@ -201,7 +201,15 @@ export function createCookieSession<TUser extends { id: string }, TAccount exten
     return result;
   }
 
+  // Observe transitions, including sign-out/sign-in back to the same identity.
+  let generation = 0;
+  const unsubscribe = store.subscribe((state, previous) => {
+    if (state.token !== previous.token || state.user?.id !== previous.user?.id ||
+        state.isAuthenticated !== previous.isAuthenticated) generation++;
+  });
+  const currentOutcome = (): CookieSessionRestoreResult => store.getState().token ? 'authenticated' : 'anonymous';
   async function restoreOnce(): Promise<CookieSessionRestoreResult> {
+    const startedGeneration = generation;
     // The persisted summary names the session this page expects to continue.
     const expectedUser = store.getState().user?.id;
     try {
@@ -212,18 +220,20 @@ export function createCookieSession<TUser extends { id: string }, TAccount exten
         const state = store.getState();
         // Signed in (or out) in this page while the exchange ran: keep that state. The rotated
         // cookie has been stored either way, so nothing is lost by discarding this result.
-        if (state.token || !state.isAuthenticated) return 'superseded' as const;
+        if (generation !== startedGeneration || state.token || !state.isAuthenticated) return 'superseded' as const;
         // The shared cookie now belongs to another account (another tab signed in).
         if (expectedUser && account.id !== expectedUser) return 'identity-changed' as const;
         adopt(access_token, account);
         return 'adopted' as const;
       });
+      if (outcome !== 'adopted' && generation !== startedGeneration) return currentOutcome();
       if (outcome === 'identity-changed') {
         store.getState().logout();
         return 'anonymous';
       }
       return outcome === 'adopted' || store.getState().token ? 'authenticated' : 'anonymous';
     } catch (error) {
+      if (generation !== startedGeneration) return currentOutcome();
       const status = statusOf(error);
       if (status === 401 || status === 403) {
         store.getState().logout();
@@ -271,6 +281,10 @@ export function createCookieSession<TUser extends { id: string }, TAccount exten
       return account;
     },
     withLock,
-    dispose: () => events?.removeEventListener('storage', onStorage),
+    dispose: () => {
+      generation++;
+      unsubscribe();
+      events?.removeEventListener('storage', onStorage);
+    },
   };
 }

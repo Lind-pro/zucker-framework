@@ -45,7 +45,6 @@ export class PersistenceBuffer<T> {
   private readonly maxDeadLetterSize: number;
   private disposed = false;
   private readonly instanceId = `${process.pid}-${randomBytes(4).toString('hex')}`;
-  private reclaimed = false;
   private dirChecked = false;
   /** Optional error callback for non-fatal flush failures */
   onError?: (err: unknown) => void;
@@ -157,10 +156,8 @@ export class PersistenceBuffer<T> {
     }
     // Reclaim stale claims of dead processes before deciding there is nothing to do: an idle
     // buffer would otherwise only notice them once new work arrives.
-    if (!this.reclaimed) {
-      this.reclaimed = true;
-      this.reclaimStale();
-    }
+    // A peer can die after our first flush; live instances must keep recovering its claims.
+    this.reclaimStale();
     if (this.buffer.length === 0 && !this.hasFileQueue()) return;
     const run = this.runFlush();
     this.flushPromise = run;

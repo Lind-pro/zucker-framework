@@ -254,6 +254,33 @@ describe('N-M6: writes made while Redis is degraded are replayed with their rema
     expect(client.del).toHaveBeenCalledWith('profile');
     expect(client.store.has('profile')).toBe(false);
     await expect(cache.get('profile')).resolves.toBeNull();
+    expect(service.pendingInvalidationCount).toBe(0);
+    await cache.set('profile', { name: 'after-recovery' }, 60);
+    await expect(cache.get('profile')).resolves.toEqual({ name: 'after-recovery' });
+    service.onModuleDestroy();
+  });
+
+  it('keeps a newer pending operation recorded while an expired write is being deleted', async () => {
+    vi.useFakeTimers();
+    const { service, client } = await connected();
+    service.markPendingWrite('profile', 'expired', 1);
+    await vi.advanceTimersByTimeAsync(2000);
+    const entered = deferred<void>();
+    const release = deferred<void>();
+    client.del.mockImplementationOnce(async (...keys: string[]) => {
+      entered.resolve();
+      await release.promise;
+      keys.forEach(key => client.store.delete(key));
+      return keys.length;
+    });
+    const firstRead = service.get('probe');
+    await entered.promise;
+    service.markPendingWrite('profile', 'latest', 60);
+    release.resolve();
+    await firstRead;
+    expect(service.pendingInvalidationCount).toBe(1);
+    await expect(service.get('profile')).resolves.toBe('latest');
+    expect(service.pendingInvalidationCount).toBe(0);
     service.onModuleDestroy();
   });
 

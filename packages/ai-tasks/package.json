@@ -32,6 +32,7 @@
     "dist",
     "assets/ai-tasks.prisma",
     "assets/ai-tasks.postgresql.sql",
+    "assets/ai-tasks.execution-checkpoints.postgresql.sql",
     "LICENSE",
     "NOTICE",
     "THIRD_PARTY_NOTICES"
@@ -58,6 +59,7 @@
     }
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
     "@types/node": "^20.19.43",
     "@types/pg": "8.23.1",
     "@zucker-framework/ai": "workspace:*",

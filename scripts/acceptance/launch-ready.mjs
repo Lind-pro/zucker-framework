@@ -7,7 +7,7 @@
  *
  * Phases (default: all, in this order):
  *   pack      build:packages + pnpm pack of every public package (scripts/acceptance/pack.mjs)
- *   create    local file registry (127.0.0.1) + `pnpm dlx @zucker-framework/cli@<v> create my-saas`
+ *   create    warm packed framework packages from the local registry, then offline `pnpm dlx ... create`
  *   install   framework metadata from the registry (`pnpm store add`), `pnpm install --offline`;
  *             fallback recorded in the report: `--prefer-offline` (third-party packages from the network)
  *   host      throwaway PostgreSQL container, db:migrate, setup:admin, content:check, build (all apps)
@@ -27,6 +27,7 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isMainModule } from '../cli-entry.mjs';
 import { pack } from './pack.mjs';
 import { runChecks } from './checks.mjs';
 import { auditAgentInstructions } from '../../packages/cli/tooling/agent-instructions.mjs';
@@ -153,6 +154,34 @@ function walk(directory, visit, depth = 0) {
   }
 }
 
+/**
+ * A fresh loopback registry has no pnpm metadata cache yet. `store add` fetches only the explicitly
+ * named packages (not their dependencies); warm every packed framework package before offline dlx
+ * resolves the CLI and its framework peers. Third-party packages must already be cached.
+ */
+export function createPackedWorkspace({ packages, directory, name, npmrc, run, env = process.env }) {
+  const cli = packages.find((entry) => entry.name === '@zucker-framework/cli');
+  if (!cli) throw new Error('Packed manifest has no @zucker-framework/cli');
+  const specs = packages.map((entry) => {
+    if (!/^@zucker-framework\/[a-z0-9][a-z0-9._-]*$/.test(entry.name)
+      || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(entry.version)) {
+      throw new Error('Cache warming accepts only versioned packed framework packages');
+    }
+    return `${entry.name}@${entry.version}`;
+  });
+  const project = join(directory, name);
+  if (existsSync(project)) throw new Error(`${project} already exists; use a new --work directory`);
+  const environment = { ...env, NPM_CONFIG_USERCONFIG: npmrc };
+  // The supplied npmrc routes this scope to the local registry, which never proxies framework names.
+  run('create-cache', 'pnpm', ['store', 'add', ...specs], {
+    cwd: directory, env: { ...environment, npm_config_offline: 'false', npm_config_prefer_offline: 'false' },
+  });
+  run('create', 'pnpm', ['dlx', `${cli.name}@${cli.version}`, 'create', name], {
+    cwd: directory, env: { ...environment, npm_config_offline: 'true' },
+  });
+  return { cli: cli.version, directory: project, warmedFrameworkPackages: specs.length };
+}
+
 export async function main(argv = process.argv.slice(2)) {
   const options = parseArgs(argv);
   const { work, id } = options;
@@ -220,16 +249,12 @@ export async function main(argv = process.argv.slice(2)) {
     }
 
     // ── create (PLAN §2 step 1) ───────────────────────────────────────────────────────────────
-    const cliVersion = () => manifest().packages.find((entry) => entry.name === '@zucker-framework/cli').version;
     if (want('create')) {
       await ensureRegistry('offline');
       mkdirSync(projects, { recursive: true });
       await report.step('create', `pnpm dlx @zucker-framework/cli create ${options.project} (packed CLI, offline)`, () => {
-        if (existsSync(project)) throw new Error(`${project} already exists; use a new --work directory`);
-        run('create', 'pnpm', ['dlx', `@zucker-framework/cli@${cliVersion()}`, 'create', options.project], {
-          cwd: projects, env: { ...process.env, NPM_CONFIG_USERCONFIG: npmrc(), npm_config_offline: 'true' },
-        });
-        return { cli: cliVersion(), directory: project };
+        return createPackedWorkspace({ packages: manifest().packages, directory: projects,
+          name: options.project, npmrc: npmrc(), run });
       });
       await report.step('1', 'Workspace layout, one root .env (0600, distinct secrets), AGENTS.md, skills, no local references', () => {
         for (const path of ['apps/server/package.json', 'apps/web/package.json', 'apps/admin/package.json', 'docker-compose.yml', '.env', 'AGENTS.md', 'pnpm-workspace.yaml'])
@@ -424,6 +449,6 @@ export async function main(argv = process.argv.slice(2)) {
   return failed.length ? 1 : 0;
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (isMainModule(import.meta.url)) {
   main().then((code) => { process.exitCode = code; }, (error) => { process.stderr.write(`${error.stack ?? error}\n`); process.exitCode = 1; });
 }

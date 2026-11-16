@@ -2,6 +2,8 @@
 
 `MemoryCache`, `RedisCache`, `HybridCache`, and `ICache` use millisecond TTLs and `undefined` for misses. `MemoryCache` accepts `maxEntries` to evict the oldest inserted key when its configured capacity is reached. Storage remains in the existing primitives. `size` reports resident entries; `getSync` / `setSync` share the same implementation with async `get` / `set` for process-local state whose consumer API must remain synchronous.
 
+`ICache` optionally exposes `advanceSequence(key, minimum, ttlMs)` and `readSequence(key)` for monotonic coordination values, such as a session revocation watermark. Advancement atomically returns `max(minimum, previous + 1)` (missing values start at zero), refreshes expiry without shortening it, and rejects corrupt values or safe-integer overflow. Inputs are non-negative safe-integer minima and positive safe-integer millisecond TTLs. Reserve these keys for the sequence API; retention must cover the consumer's full validity window. Memory provides process-local atomicity; Redis requires Lua `EVAL` and propagates backend errors; Hybrid delegates both operations to L2 and bypasses L1 on reads. A custom cache must implement both methods before a consumer relies on this guarantee. The best-effort `CacheService` / `RedisCacheService` fallback APIs do not provide this contract.
+
 For a managed application cache, configure `ZuckerCacheModule` once at the composition root:
 
 ```ts
@@ -33,3 +35,8 @@ The fallback cache is reconstructable and process-local. It does not provide dis
 The new services are additive. Existing millisecond-based primitive APIs and default Redis prefixes are unchanged; service mode uses the caller's original keys without an added prefix. Rollback requires reverting the consumer imports/configuration along with the package version; no database schema or key-format migration is needed.
 
 Regression source covers TTL/capacity, coalescing, invalidation, late completion, write failure, hanging Redis commands, circuit recovery, redaction, and lifecycle ownership. These tests and real Redis acceptance have not been executed for this migration batch.
+
+
+`HybridCache` applies `l1BackfillTtlMs` to direct writes as well as L2 backfill: L1 receives the smaller
+of the business TTL and the finite L1 cap, while L2 retains the requested TTL. Omitting a business TTL
+cannot make L1 permanent. A cap of zero disables L1 population; negative/non-finite caps are rejected.

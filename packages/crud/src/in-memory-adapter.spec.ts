@@ -144,6 +144,15 @@ describe('InMemoryAdapter', () => {
       await model.create({ data: { id: '3', name: 'Goodbye' } });
     });
 
+    it('case-insensitive equality is exact and not uses the same comparison', async () => {
+      const where = { name: { equals: 'HELLO WORLD', mode: 'insensitive' } };
+      expect(await model.findMany({ where })).toEqual([expect.objectContaining({ id: '1' })]);
+      expect(await model.findMany({ where: { name: { equals: 'HELLO', mode: 'insensitive' } } })).toEqual([]);
+      expect(await model.findMany({ where: { name: { equals: 'HELLO WORLD' } } })).toEqual([]);
+      expect(await model.findMany({ where: { name: { not: 'HELLO WORLD', mode: 'insensitive' } } }))
+        .toEqual([expect.objectContaining({ id: '2' }), expect.objectContaining({ id: '3' })]);
+    });
+
     it('contains', async () => {
       const results = await model.findMany({ where: { name: { contains: 'World' } } });
       expect(results).toHaveLength(1);

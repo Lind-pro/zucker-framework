@@ -109,6 +109,9 @@ export class UsersController {
     @Optional() @Inject(ADMIN_USER_HOOKS) private readonly hooks?: AdminUserHooks,
     @Optional() @Inject(ROLE_ASSIGNMENT_OPTIONS) roleAssignments?: ResolvedRoleAssignmentOptions,
   ) {
+    if (hooks?.sensitiveFieldsChanged && !hooks.sensitiveFieldsChanging) {
+      throw new TypeError('[admin/users] sensitiveFieldsChanged is not transactional; migrate to sensitiveFieldsChanging(change, tx) before editing credentials');
+    }
     this.options = options ?? {};
     // Only when the auth module was configured with roleAssignments.expiry: the column may not exist.
     this.roleExpiry = roleAssignments?.expiry === true;
@@ -198,20 +201,23 @@ export class UsersController {
     const input = this.writableBody(body, [
       ...USER_PROFILE_FIELDS, ...USER_SENSITIVE_FIELDS, ...(this.options.writableFields ?? []),
     ]);
-    const existing = await this.userService.findById(id);
-    if (!existing) {
-      throw new NotFoundException(`User ${id} not found`);
-    }
     await this.requireNotOutranked(request, id);
-    const sensitive = (USER_SENSITIVE_FIELDS as readonly string[]).filter(field => field in input
-      && (field === 'password' ? !!input.password : !sameStoredValue(input[field], existing[field])));
-    if (sensitive.length) await this.requirePermission(request, 'users:authorize',
-      `Changing ${sensitive.join(', ')} requires users:authorize`);
-    // updateUser never inserts: a row deleted after the check above fails instead of being recreated.
-    const updated = await this.userService.updateUser(id, input as Partial<UserEntity>);
-    if (sensitive.length && this.hooks?.sensitiveFieldsChanged) {
-      await this.hooks.sensitiveFieldsChanged({ userId: id, fields: sensitive, actorId: request?.user?.id });
-    }
+    const updated = await this.db.$transaction(async tx => {
+      await this.lockUser(tx, id);
+      const existing = await tx.model('users').findUnique({ where: { id } }) as UserEntity | null;
+      if (!existing) throw new NotFoundException(`User ${id} not found`);
+      // Compare the row we locked, so concurrent updates cannot skip required revocation.
+      const sensitive = (USER_SENSITIVE_FIELDS as readonly string[]).filter(field => field in input
+        && (field === 'password' ? !!input.password : !sameStoredValue(input[field], existing[field])));
+      if (sensitive.length) await this.requirePermission(request, 'users:authorize',
+        `Changing ${sensitive.join(', ')} requires users:authorize`);
+      await this.hooks?.userChanging?.({ userId: id, changes: input, actorId: request?.user?.id }, tx);
+      const updated = await this.userService.updateUser(id, input as Partial<UserEntity>, { transaction: tx });
+      if (sensitive.length && this.hooks?.sensitiveFieldsChanging) {
+        await this.hooks.sensitiveFieldsChanging({ userId: id, fields: sensitive, actorId: request?.user?.id }, tx);
+      }
+      return updated;
+    });
     return this.view(updated);
   }
 
@@ -292,6 +298,7 @@ export class UsersController {
       // Locking only existing links would allow concurrent replacements of an empty set to merge.
       const locked = await tx.model('users').updateMany({ where: { id }, data: { id } });
       if (!locked.count) throw new NotFoundException(`User ${id} not found`);
+      await this.hooks?.userRolesChanging?.({ userId: id, roleIds, expiries, actorId: request?.user?.id }, tx);
       // Pin referenced roles through commit; deletion follows the same role -> link order.
       // Sorting prevents two users assigning the same roles in opposite order from deadlocking.
       for (const roleId of [...roleIds].sort()) {
@@ -371,7 +378,16 @@ export class UsersController {
       await this.lockUser(tx, id);
       // Replace only the links of this grant type; other grant types are managed elsewhere.
       await tx.model('userPermissions').deleteMany({ where: { userId: id, grantType } });
-      if (grantType === 'direct') await tx.model('userPermissions').deleteMany({ where: { userId: id, grantType: null } });
+      if (grantType === 'direct') {
+        // Some consumers make grantType non-nullable: Prisma rejects a null
+        // predicate even when no legacy rows exist. Inspect stored links, then
+        // remove only actual legacy ids without changing other grant types.
+        const links = await tx.model('userPermissions').findMany({
+          where: { userId: id }, select: { id: true, grantType: true },
+        }) as Array<{ id: string; grantType?: string | null }>;
+        const legacyIds = links.filter(link => link.grantType == null).map(link => link.id);
+        if (legacyIds.length) await tx.model('userPermissions').deleteMany({ where: { userId: id, id: { in: legacyIds } } });
+      }
       for (const permissionId of permissionIds) {
         await tx.model('userPermissions').create({
           data: { userId: id, permissionId, grantType },
@@ -452,6 +468,13 @@ export class UsersController {
     for (const key of ['status', 'emailVerified'])
       if (input[key] !== undefined && typeof input[key] !== 'boolean')
         throw new ValidationException({ [key]: ['Must be a boolean'] }, 'Invalid user');
+    if (typeof input.email === 'string') {
+      const email = input.email.trim().toLowerCase();
+      if (email && (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)))
+        throw new ValidationException({ email: ['Must be a valid email address'] }, 'Invalid user');
+      // Empty optional input clears the address; all host writes share the same canonical form.
+      input.email = email || null;
+    }
     return input;
   }
 

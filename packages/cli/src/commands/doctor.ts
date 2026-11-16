@@ -66,6 +66,7 @@ export function checkOrigins(env: NodeJS.ProcessEnv): CheckResult[] {
   const production = env.NODE_ENV === 'production';
   for (const key of ['WEB_URL', 'SITE_URL', 'ADMIN_URL']) {
     const value = env[key]?.trim();
+    // `create --no-web` / `--no-admin` leave absent frontend URLs unset or empty intentionally.
     if (!value) continue;
     const origin = parseOrigin(value);
     if (!origin) results.push({ name: key, status: 'error', message: 'Not an http(s) URL.' });

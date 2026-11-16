@@ -268,21 +268,16 @@ export class LocalFileStorage implements FileManager {
     // partial file under the final key.
     const tempPath = this.tempPathFor(filePath);
     const writeStream = fs.createWriteStream(tempPath);
-    const finished = new Promise<void>((resolve, reject) => {
-      writeStream.once('finish', resolve);
-      writeStream.once('error', reject);
-    });
-    // Observed on every path: when the loop throws first, a later stream error (ENOSPC, ...)
-    // must not become an unhandled rejection.
-    finished.catch(() => {});
-    try {
-      for (let i = 0; i < state.totalChunks; i++) {
-        const chunkPath = path.join(this.chunksDir(uploadId), `chunk-${i}`);
-        const chunkData = fs.readFileSync(chunkPath);
-        writeStream.write(chunkData);
+    const chunksDir = this.chunksDir(uploadId);
+    const totalChunks = state.totalChunks;
+    async function* chunks() {
+      for (let i = 0; i < totalChunks; i++) {
+        // Stream each chunk with bounded buffers; pipeline propagates sink backpressure/errors.
+        yield* fs.createReadStream(path.join(chunksDir, `chunk-${i}`));
       }
-      writeStream.end();
-      await finished;
+    }
+    try {
+      await pipeline(chunks(), writeStream);
       fs.renameSync(tempPath, filePath);
     } catch (error) {
       // The file is opened asynchronously: wait until the stream has closed its descriptor,

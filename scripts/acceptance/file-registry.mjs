@@ -16,7 +16,7 @@
 import { createReadStream, readFileSync, appendFileSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { dirname, resolve, basename } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { isMainModule } from '../cli-entry.mjs';
 
 const SCOPE = '@zucker-framework';
 const PACKAGE_NAME = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;
@@ -153,7 +153,7 @@ function option(args, name, fallback) {
   return index >= 0 ? args[index + 1] : fallback;
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (isMainModule(import.meta.url)) {
   const args = process.argv.slice(2);
   const manifest = option(args, '--manifest');
   if (!manifest) throw new Error('usage: file-registry.mjs --manifest <manifest.json> [--port n] [--host h] [--upstream url] [--log file]');

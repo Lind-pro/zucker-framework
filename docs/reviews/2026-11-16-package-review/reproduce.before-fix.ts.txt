@@ -1,0 +1,214 @@
+/**
+ * Audit evidence, intentionally asserting the observed defects, NOT desired behavior.
+ * No network services or paid providers. Once fixed, invert the corresponding assertion
+ * and move the regression to its owning package. Excluded from the regular unit suite.
+ */
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { AxiosError, type AxiosAdapter } from 'axios';
+import { Observable, Subject, type Subscriber } from 'rxjs';
+import fs from 'fs';
+import os from 'node:os';
+import path from 'node:path';
+import { HttpClient } from '../../../packages/fe-http-client/src/http-client';
+import { createAuthStore } from '../../../packages/fe-auth/src/store';
+import { createCookieSession } from '../../../packages/fe-auth/src/cookie-session';
+import { LocaleInterceptor } from '../../../packages/i18n/src/locale-context';
+import { DefaultNetworkManager } from '../../../packages/network/src/network-manager';
+import { NetworkTypes } from '../../../packages/network/src/network-type';
+import { DataSourceManager } from '../../../packages/datasource/src/datasource-manager';
+import { DefaultProviderRegistry } from '../../../packages/provider/src/provider-registry';
+import { LocalFileStorage } from '../../../packages/storage/src/local-storage';
+import { MemoryTimeSeriesManager } from '../../../packages/timeseries/src/memory-timeseries';
+import { AggregationType } from '../../../packages/timeseries/src/timeseries-service';
+import { RuleEngineService, RuleTriggerType } from '../../../packages/rule-engine/src/rule-engine.service';
+import { TraceInterceptor } from '../../../packages/tracing/src/trace-interceptor';
+import { InMemoryTracer } from '../../../packages/tracing/src/tracer';
+import { HybridCache } from '../../../packages/cache/src/hybrid-cache';
+import { MemoryCache } from '../../../packages/cache/src/memory-cache';
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+const httpContext = () => ({
+  switchToHttp: () => ({
+    getRequest: () => ({ headers: {}, method: 'GET', url: '/events' }),
+    getResponse: () => ({ statusCode: 200 }),
+  }),
+}) as never;
+afterEach(() => { vi.restoreAllMocks(); localStorage.clear(); });
+
+describe('2026-11-16 defect characterizations', () => {
+  it.each(['before-refresh', 'during-refresh'] as const)('R01: old-account POST is replayed as new account (%s)', async timing => {
+    let token = 'account-A';
+    const credentials: unknown[] = [];
+    const bodies: unknown[] = [];
+    const refresh = vi.fn(async () => {
+      token = 'account-B';
+      return { access_token: 'account-A-refreshed' };
+    });
+    const adapter: AxiosAdapter = async config => {
+      credentials.push(config.headers.get('Authorization'));
+      bodies.push(config.data);
+      if (credentials.length === 1) {
+        if (timing === 'before-refresh') token = 'account-B';
+        throw new AxiosError('expired', 'ERR_BAD_REQUEST', config, undefined, {
+          config, status: 401, statusText: '', headers: {}, data: { message: 'expired' },
+        });
+      }
+      return { config, status: 200, statusText: '', headers: {}, data: { status: 200, result: 'written' } };
+    };
+    const client = new HttpClient({ baseURL: '/api', getToken: () => token, refreshWithCookie: refresh });
+    await client.post('/profile', { displayName: 'intended for account A' }, undefined, { adapter });
+    expect(credentials).toEqual(['Bearer account-A', 'Bearer account-B']);
+    expect(bodies[1]).toBe(bodies[0]);
+    expect(refresh).toHaveBeenCalledTimes(timing === 'before-refresh' ? 0 : 1);
+  });
+
+  it('R02: LocaleInterceptor unsubscribe does not tear down the source', () => {
+    const cleanup = vi.fn();
+    let upstream!: Subscriber<unknown>;
+    const source = new Observable(subscriber => { upstream = subscriber; return cleanup; });
+    const subscription = new LocaleInterceptor().intercept(httpContext(), { handle: () => source }).subscribe();
+    subscription.unsubscribe();
+    expect(cleanup).not.toHaveBeenCalled();
+    expect(upstream.closed).toBe(false);
+    upstream.unsubscribe(); // clean up the intentionally orphaned subscription
+  });
+
+  it.each(['destroy', 'module-destroy'] as const)('R03: pending network creation survives %s', async mode => {
+    const creation = deferred<any>();
+    const started = deferred<void>();
+    const network = { id: 'n', type: NetworkTypes.TCP_SERVER, shutdown: vi.fn(async () => {}), isAlive: () => true, isAutoReload: () => false };
+    const manager = new DefaultNetworkManager({ getConfig: async () => ({ id: 'n', type: 'TCP_SERVER', name: 'n', enabled: true, configurations: {} }) });
+    manager.registerProvider({ type: NetworkTypes.TCP_SERVER, createConfig: async value => value,
+      createNetwork: () => { started.resolve(); return creation.promise; }, reload: async () => network, isReusable: () => false });
+    const pending = manager.getNetwork(NetworkTypes.TCP_SERVER, 'n');
+    await started.promise;
+    if (mode === 'destroy') await manager.destroy(NetworkTypes.TCP_SERVER, 'n');
+    else await manager.onModuleDestroy();
+    creation.resolve(network);
+    expect(await pending).toBe(network);
+    expect(network.shutdown).not.toHaveBeenCalled();
+    expect(manager.getNetworks()).toHaveLength(mode === 'destroy' ? 1 : 0);
+    await manager.onModuleDestroy();
+    await network.shutdown();
+  });
+
+  it('R04: datasource reload resurrects an explicitly removed source', async () => {
+    const creation = deferred<any>();
+    const old = { model: vi.fn(), $transaction: vi.fn(), close: vi.fn() };
+    const fresh = { model: vi.fn(), $transaction: vi.fn(), close: vi.fn() };
+    const manager = new DataSourceManager();
+    manager.registerFactory('test', () => creation.promise);
+    manager.register('db', old, { id: 'db', name: 'db', type: 'test', url: 'synthetic' });
+    const reloading = manager.reload('db');
+    manager.remove('db');
+    creation.resolve(fresh);
+    await reloading;
+    expect(manager.has('db')).toBe(true);
+    expect(manager.getDataSource('db')).toBe(fresh);
+    expect(manager.getConfigs()).toEqual([]);
+    manager.remove('db');
+  });
+
+  it('R05: completing chunks buffers the whole file despite stream backpressure', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'zf-review-chunks-'));
+    const write = fs.WriteStream.prototype.write;
+    let peakBuffered = 0;
+    vi.spyOn(fs.WriteStream.prototype, 'write').mockImplementation(function (this: fs.WriteStream, ...input: Parameters<typeof write>) {
+      const result = write.apply(this, input);
+      peakBuffered = Math.max(peakBuffered, this.writableLength);
+      return result;
+    } as typeof write);
+    try {
+      const storage = new LocalFileStorage({ basePath: root });
+      const chunk = Buffer.alloc(256 * 1024, 1);
+      const id = await storage.initChunkedUpload('file.bin', 8, chunk.length * 8);
+      for (let i = 0; i < 8; i++) await storage.uploadChunk(id, i, chunk);
+      const result = await storage.completeChunkedUpload(id);
+      expect(result.size).toBe(2 * 1024 * 1024);
+      expect(peakBuffered).toBe(result.size);
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
+
+  it('R06: disposing an old registration deletes its replacement', () => {
+    const registry = new DefaultProviderRegistry();
+    const oldHandle = registry.register({ id: 'provider', instance: 'old' });
+    const fresh = { id: 'provider', instance: 'new' };
+    registry.register(fresh);
+    expect(registry.get('provider')).toBe(fresh);
+    oldHandle.dispose();
+    expect(registry.get('provider')).toBeUndefined();
+  });
+
+  it.each([undefined, 10])('R07: legitimate zero aggregation is replaced by the default (interval %s)', async interval => {
+    const manager = new MemoryTimeSeriesManager();
+    manager.registerMetric({ metric: 'm', fields: [], tags: [] } as never);
+    const service = manager.getService('m');
+    await service.saveBatch([{ timestamp: 1, tags: {}, values: { v: 1 } }, { timestamp: 2, tags: {}, values: { v: -1 } }]);
+    const results = await service.aggregate({ metric: 'm', from: 0, to: 10, field: 'v', aggregation: AggregationType.SUM,
+      interval, columns: [{ property: 'v', aggregation: AggregationType.SUM, defaultValue: 99 }] });
+    expect(results[0].value).toBe(99); // actual sum is zero
+  });
+
+  it('R08: a stale restore rejection logs out a newly adopted account', async () => {
+    const refresh = deferred<{ access_token: string }>();
+    const store = createAuthStore<{ id: string }>({ persistKey: 'audit-cookie-session' });
+    store.setState({ isAuthenticated: true, user: { id: 'A' }, token: null });
+    const session = createCookieSession({ store, refresh: () => refresh.promise,
+      fetchAccount: async () => ({ id: 'B' }), toState: user => ({ user, permissions: [] }),
+      sessionKey: token => token, locks: null, events: null });
+    const restoring = session.restore();
+    await session.adoptToken('account-B');
+    expect(store.getState().user?.id).toBe('B');
+    refresh.reject(Object.assign(new Error('old cookie rejected'), { status: 401 }));
+    expect(await restoring).toBe('anonymous');
+    expect(store.getState().user).toBeNull();
+    session.dispose();
+  });
+
+  it('R09: failed rule startup leaves an untracked event trigger after shutdown', async () => {
+    const listeners = new Set<unknown>();
+    const eventBus = { subscribe: (_topic: string, handler: unknown) => {
+      listeners.add(handler); return { unsubscribe: () => listeners.delete(handler) };
+    } };
+    const service = new RuleEngineService(eventBus as never);
+    await expect(service.startRule({ id: 'r', name: 'r', enabled: true, conditions: [], actions: [], triggers: [
+      { type: RuleTriggerType.EVENT, config: { topic: 'test' } },
+      { type: RuleTriggerType.TIMER, config: { cron: 'invalid' } },
+    ] })).rejects.toThrow();
+    expect(service.isRuleActive('r')).toBe(false);
+    service.onModuleDestroy();
+    expect(listeners.size).toBe(1);
+    listeners.clear();
+  });
+
+  it('R10: trace ends at first emission and never ends an empty cancelled stream', () => {
+    const tracer = new InMemoryTracer();
+    const interceptor = new TraceInterceptor(tracer);
+    const source = new Subject();
+    const subscription = interceptor.intercept(httpContext(), { handle: () => source }).subscribe();
+    source.next('first event');
+    expect(subscription.closed).toBe(false);
+    expect(tracer.getSpans()[0].isRecording()).toBe(false);
+    subscription.unsubscribe();
+    const empty = interceptor.intercept(httpContext(), { handle: () => new Subject() }).subscribe();
+    empty.unsubscribe();
+    expect(tracer.getSpans()[1].isRecording()).toBe(true);
+  });
+
+  it('R11: direct hybrid writes stay stale beyond the advertised L1 bound', async () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(0);
+    const shared = new MemoryCache<string>();
+    const a = new HybridCache(new MemoryCache<string>(), shared, { l1BackfillTtlMs: 60_000 });
+    const b = new HybridCache(new MemoryCache<string>(), shared, { l1BackfillTtlMs: 60_000 });
+    await a.set('setting', 'old');
+    await b.set('setting', 'new');
+    clock.mockReturnValue(120_000);
+    expect(await shared.get('setting')).toBe('new');
+    expect(await a.get('setting')).toBe('old');
+  });
+});

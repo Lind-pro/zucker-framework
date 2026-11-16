@@ -20,6 +20,7 @@ export type HttpAsyncTaskRequestParam =
   | 'quality'
   | 'style'
   | 'referenceImageUrl'
+  | 'referenceImageUrls'
   | 'imageStrength'
   | 'duration'
   | 'fps'
@@ -31,7 +32,8 @@ export type HttpAsyncTaskRequestParam =
   | 'instrumental'
   | 'voice'
   | 'audioTags'
-  | 'callbackUrl';
+  | 'callbackUrl'
+  | 'clientRequestId';
 
 /** How the API key (`MediaGenerationConfig.apiKey`) is sent. Default `{ type: 'bearer' }`. */
 export type HttpAsyncTaskAuth =
@@ -111,6 +113,10 @@ export interface HttpAsyncTaskAdapterConfig {
   costPerTask?: number;
   /** Largest accepted response body. Default 1 MiB. */
   maxResponseBytes?: number;
+  /** Explicit vendor-supported count limit (default 1); values above 1 require a mapped count field. */
+  maxOutputs?: number;
+  /** Explicit vendor-supported reference limit (default inferred from singular/frame field mappings). */
+  maxReferences?: number;
 }
 
 /** Transport overrides, mainly for tests. */

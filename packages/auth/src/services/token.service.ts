@@ -802,25 +802,32 @@ export class TokenService implements OnApplicationBootstrap {
   }
 
   private async markUserRevoked(userId: string): Promise<number> {
-    // Strictly increasing per user within a process, so an `rva` claim issued under an older
-    // watermark can never equal a newer one written in the same millisecond.
-    const previous = await this.getUserRevokedAt(userId);
-    const now = Math.max(Date.now(), previous !== undefined ? previous + 1 : 0);
     const cache = this.getCache();
     if (cache) {
-      await cache.set(`${REVOKED_AFTER_PREFIX}${userId}`, now, this.blacklistTtlMs);
-    } else {
-      this.pruneRevocations();
-      this.revokedAfter.set(userId, { at: now, expiresAt: now + this.blacklistTtlMs });
+      // A read followed by set can complete out of order across replicas, lowering the
+      // watermark and resurrecting already revoked tokens. The shared store owns the CAS.
+      if (!cache.advanceSequence || !cache.readSequence) {
+        throw new Error('[TokenService] shared revocation requires atomic advanceSequence and authoritative readSequence');
+      }
+      return cache.advanceSequence(`${REVOKED_AFTER_PREFIX}${userId}`, Date.now(), this.blacklistTtlMs);
     }
+    // No await between reading and writing process-local state: concurrent local calls
+    // also receive different watermarks when the wall clock has not advanced.
+    this.pruneRevocations();
+    const previous = this.revokedAfter.get(userId)?.at;
+    const now = Math.max(Date.now(), previous !== undefined ? previous + 1 : 0);
+    this.revokedAfter.set(userId, { at: now, expiresAt: Date.now() + this.blacklistTtlMs });
     return now;
   }
 
   private async getUserRevokedAt(userId: string): Promise<number | undefined> {
     const cache = this.getCache();
     if (cache) {
-      const value = await cache.get(`${REVOKED_AFTER_PREFIX}${userId}`);
-      return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+      // Never use a hybrid cache's process-local value for an authorization decision.
+      if (!cache.advanceSequence || !cache.readSequence) {
+        throw new Error('[TokenService] shared revocation requires atomic advanceSequence and authoritative readSequence');
+      }
+      return cache.readSequence(`${REVOKED_AFTER_PREFIX}${userId}`);
     }
     const entry = this.revokedAfter.get(userId);
     if (!entry) return undefined;

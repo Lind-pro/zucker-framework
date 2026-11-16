@@ -1,6 +1,7 @@
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isMainModule } from './cli-entry.mjs';
 import { CONSUMER_SKILL_LIMITS, validateConsumerSkills } from '../packages/cli/tooling/agent-instructions.mjs';
 import { collectTemplateAssets, validateProjectBundle, workspaceRequiredAssets } from '../packages/cli/tooling/project-templates.mjs';
 
@@ -48,6 +49,6 @@ export function prepareCliTemplates(rootDir, outputDirectory = join(rootDir, 'pa
   writeFileSync(join(outputDirectory, 'project-templates.json'), JSON.stringify(bundle) + '\n');
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (isMainModule(import.meta.url)) {
   prepareCliTemplates(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
 }

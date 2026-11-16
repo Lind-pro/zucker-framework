@@ -130,7 +130,8 @@ export class FakeMediaProvider implements AudioGenerationProvider {
       if ((step.outcome ?? 'success') === 'failure') {
         throw new ProviderHttpError(this.name, step.throwStatus ?? 422, step.error ?? 'fake provider failure');
       }
-      return this.outputs(taskId, step, type, model)[0];
+      const outputs = this.outputs(taskId, step, type, model);
+      return { ...outputs[0], ...(outputs.length > 1 ? { outputs } : {}) };
     }
     this.tasks.set(taskId, { step, polls: 0, model, type });
     return { taskId, status: MediaTaskStatus.PENDING, progress: 0, provider: this.id };
@@ -162,6 +163,8 @@ export class FakeMediaProvider implements AudioGenerationProvider {
   getModels(): MediaModelInfo[] {
     return this.models.map((model) => ({ ...model }));
   }
+
+  getCapabilities() { return { maxOutputs: 4, maxReferences: 4, referenceInput: 'multiple' as const }; }
 
   private typeOf(modelId: string): MediaType {
     return this.models.find((model) => model.id === modelId)?.mediaType ?? this.supportedTypes[0] ?? MediaType.IMAGE;

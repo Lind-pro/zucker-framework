@@ -15,6 +15,14 @@ Cookie-refresh sessions (`cookie-session.ts`) are for apps whose access token li
 
 `refresh` is typically `createRefreshExchange` + `createKeepaliveCookieRefresh` from `@zucker-framework/fe-http-client`; `@zucker-framework/fe-admin` composes both. Tests: `src/cookie-session.spec.ts`.
 
+The session's `summary` option uses only `allowIdentityChange()`, so a `SessionSummaryStorage<S>`
+typed to the application's persisted state can be passed directly without casting its storage to `unknown`.
+
 Sign-in identifier (`login-identifier.ts`): `loginIdentifierInput(identifier = 'username')` returns the request field (`username`, `email` or `login`), input `type`, `inputMode` and `autoComplete` (`username`, the login-form identifier token, also for addresses) for the account host's `login.identifier` option (`'username' | 'email' | 'username-or-email'`); `loginRequestBody(identifier, value, password)` builds the `POST /authorize/login` body with the identifier trimmed and the password as typed. Labels stay in the application's i18n. Tests: `src/login-identifier.spec.ts`.
 
 The package keeps React and Zustand as peer dependencies and has no dependency on a product or backend package. New exports require validation and an immutable package release before published consumers can adopt them. Focused test sources are `src/hydration.spec.tsx`, `src/redirect.spec.ts` and the existing store tests.
+
+
+Cookie session restore tracks store session transitions. A stale success or 401/403 failure cannot replace
+or sign out a newer session, including a sign-out/sign-in transition back to the same user. Call `dispose()`
+to release both the store subscription and the cross-tab event listener.

@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { getMediaGenerationCapabilities, type MediaGenerationCapabilities } from '@zucker-framework/ai';
 import { PolicyService } from '@zucker-framework/back-office/settings';
 import { AI_CONNECTIONS, aiConnectionConfig, type AIConnectionDefinition } from '../ai-connections/ai-connections.config';
 import { AI_CONNECTION_ENVIRONMENT } from '../ai-connections/ai-connections.module';
@@ -15,6 +16,7 @@ export interface PublicCatalogEntry extends CatalogEntry {
 export interface PublicMediaCatalogEntry extends PublicCatalogEntry {
   /** Credits per output (`count` multiplies it). */
   cost: number;
+  capabilities: MediaGenerationCapabilities;
 }
 
 /** Reads `ai-catalog` / `ai-pricing` (hot policies) and the startup provider configuration. */
@@ -70,7 +72,8 @@ export class AICatalogService {
   async publicView() {
     const media = Object.fromEntries(await Promise.all(AI_MEDIA_KINDS.map(async kind => [kind,
       await Promise.all((await this.catalog(kind)).map(async (entry): Promise<PublicMediaCatalogEntry> => ({
-        ...entry, cost: await this.unitPrice(kind, entry.model), available: !!this.mediaProvider(entry.providerId, kind) })))]))) as
+        ...entry, cost: await this.unitPrice(kind, entry.model), available: !!this.mediaProvider(entry.providerId, kind),
+        capabilities: getMediaGenerationCapabilities(this.mediaProvider(entry.providerId, kind)?.provider ?? {}, entry.model) })))]))) as
       Record<AIMediaKind, PublicMediaCatalogEntry[]>;
     const chat: PublicCatalogEntry[] = (await this.catalog('chat')).map(entry => ({ ...entry, available: !!this.chatConnection(entry.providerId) }));
     return { ...media, chat, chatPricing: await this.chatPrice() };

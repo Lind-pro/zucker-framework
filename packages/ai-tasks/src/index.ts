@@ -12,6 +12,7 @@ export type {
   AITaskPayload,
   AITaskResult,
   AITaskHoldState,
+  AITaskExecutionState,
   AITaskView,
   AITaskOutputView,
   AITaskManagementView,

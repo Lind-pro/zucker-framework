@@ -43,6 +43,10 @@ export interface HttpClientConfig {
   tokenKey?: string;
   /** Retrieve the current access token for Authorization headers. */
   getToken?: () => string | null | undefined;
+  /** Stable session identity for a token (e.g. jwtSessionKey from fe-auth).
+   * Enables safe reuse after cross-tab rotation; null falls back to exact credentials.
+   * Include a session id, not only an account id. Never used for authorization. */
+  sessionKey?: (token: string) => string | null;
   /** Retrieve the current refresh token for silent renewal. */
   getRefreshToken?: () => string | null | undefined;
   /** Persist a new access token after refresh or header update. */

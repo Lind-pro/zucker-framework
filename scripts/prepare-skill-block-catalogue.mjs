@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isMainModule } from './cli-entry.mjs';
 
 /**
  * Generates `docs/templates/skills/page-builder/references/blocks.md` (the block catalogue shipped to
@@ -245,7 +246,7 @@ export function prepareSkillBlockCatalogue(rootDir, { check = false } = {}) {
   return { stale: false, output };
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (isMainModule(import.meta.url)) {
   const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
   const check = process.argv.includes('--check');
   const { stale } = prepareSkillBlockCatalogue(rootDir, { check });

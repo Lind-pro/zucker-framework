@@ -392,8 +392,9 @@ export class AccountService implements OnApplicationShutdown {
 
   /**
    * The account a login identifier names under the configured option, or null. Addresses are trimmed and
-   * lower-cased — the form every host write stores — and must name exactly one account (an address shared
-   * by several legacy rows signs in nobody). With `'username-or-email'` and an `@` in the value both lookups
+   * lower-cased; a case-insensitive exact lookup also supports legacy mixed-case addresses. It must name
+   * exactly one account (including case variants: ambiguous legacy addresses sign in nobody).
+   * With `'username-or-email'` and an `@` in the value both lookups
    * run, so the query cost does not depend on which one matches.
    */
   async findLoginAccount(identifier: string): Promise<UserEntity | null> {
@@ -409,7 +410,7 @@ export class AccountService implements OnApplicationShutdown {
   private async findByLoginEmail(value: string): Promise<UserEntity | null> {
     const email = value.trim().toLowerCase();
     if (!email || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return null;
-    const rows = await this.model('users').findMany({ where: { email }, take: 2 }) as UserEntity[];
+    const rows = await this.model('users').findMany({ where: { email: { equals: email, mode: 'insensitive' } }, take: 2 }) as UserEntity[];
     return rows.length === 1 ? rows[0]! : null;
   }
   /** Compares against the account's hash, or a dummy hash in the configured format when there is none. */

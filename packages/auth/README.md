@@ -88,3 +88,27 @@ Validation on 2026-09-11: all 24 auth unit-test files (178 tests) passed, includ
 `GoogleIdTokenVerifier` verifies Google One Tap credentials against official JWKS and a server-stored nonce, with bounded caching, rotation and sanitized errors. `OAuthProofService` reuses one-time tickets for distinct login/linking handoffs bound to the browser and, for linking, the authenticated user/session. Wrong context is rejected before claiming. The generic third-party binding endpoint now requires `{ proof }` and a configured `thirdPartyAccounts.resolveBindingProof`; raw client profiles are rejected. Low-level `bindAccount` remains available for trusted server integrations. See [identity verification, proof contracts and transaction boundaries](docs/oauth-identity-proofs.md).
 
 `ApiKeyService.renameApiKey(keyId, userId, name)` performs one atomic, owner-scoped metadata update restricted to an active, unrevoked and unexpired key. It returns only `{ id, name }`; it does not read/return the hash, rotate the secret, change scopes or reactivate a key. A missing owner/key or lost active-state predicate fails closed. Consumer HTTP handlers retain name-length/content policy, allowed origins and a name-only field whitelist; the broader existing administrative update API remains separate.
+
+## Atomic shared revocation and transactional user updates
+
+A `TokenService` shared cache must implement both `advanceSequence(key, minimum, ttlMs)` and
+`readSequence(key)`. The first atomically stores a strictly increasing watermark; the second reads
+its authoritative value, bypassing a hybrid cache's process-local tier. Framework `MemoryCache`,
+`RedisCache` and `HybridCache` implement these operations. A custom `TOKEN_CACHE` without either
+operation fails explicitly when issuing/checking a user token or revoking the user; there is no
+non-atomic `get`/`set` fallback. Redis errors and invalid stored watermarks propagate. Move auth and
+cache implementations together, and replace every old revocation writer before relying on the
+new guarantee: an old instance can still overwrite the same cache key. No key format or database
+schema changes are made.
+
+`UserService.updateUser(id, changes, { transaction })` joins the caller's `DatabaseAdapter`
+transaction while retaining its encoder and validators. User events are deferred through
+`TransactionHolder.afterCommit` when the adapter supplies that context. Any configured shared-token
+revocation is performed before the transaction can commit (a failure aborts the write); it is
+conservative and cannot itself be undone on database rollback.
+
+`TotpValidator.verifyUnclaimed(userId, code, secret?)` returns the matching time step without spending
+it. This is for hosts that atomically claim the step in their own database transaction with the
+protected action. A match is not sufficient authorization. Record a successful attempt only after
+that claim succeeds; record a failed attempt if another transaction already claimed it. Ordinary
+callers should continue using `verifyOnce`, which owns its replay guard.

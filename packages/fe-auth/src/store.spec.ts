@@ -1,3 +1,4 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createAuthStore, type StorageAdapter } from './store';
 
 describe('fe-auth createAuthStore', () => {

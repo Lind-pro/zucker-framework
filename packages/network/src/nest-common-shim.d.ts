@@ -32,8 +32,3 @@ declare module '@nestjs/common' {
   export function Module(_metadata?: Record<string, unknown>): ClassDecorator;
   export function Injectable(): ClassDecorator;
 }
-
-declare class Buffer extends Uint8Array {
-  static from(data: string): Buffer;
-  toString(encoding?: string): string;
-}

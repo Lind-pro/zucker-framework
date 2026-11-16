@@ -45,6 +45,8 @@ class RedisOperationTimeoutError extends Error {
   }
 }
 
+type PendingInvalidation = { op: 'del' } | { op: 'set'; value: unknown; expiresAt: number };
+
 /** Best-effort Redis cache. Misses return null, and TTL arguments are seconds.
  * Owns exactly one connection. Timed-out commands cannot remain queued or replayed.
  */
@@ -66,10 +68,8 @@ export class RedisCacheService implements OnModuleInit, OnModuleDestroy {
    * wins. Note: a value another instance wrote after recovery but before this replay is
    * overwritten (last writer wins).
    */
-  private readonly pendingInvalidations = new Map<
-    string,
-    { op: 'del' } | { op: 'set'; value: unknown; expiresAt: number }
-  >();
+  private readonly pendingInvalidations = new Map<string, PendingInvalidation>();
+  private replayInFlight?: Promise<void>;
   private pendingOverflowWarned = false;
 
   constructor(private readonly options: RedisCacheServiceOptions = {}) {}
@@ -200,7 +200,7 @@ export class RedisCacheService implements OnModuleInit, OnModuleDestroy {
     this.remember(key, { op: 'set', value, expiresAt: Date.now() + Math.ceil(ttlSeconds * 1000) });
   }
 
-  private remember(key: string, entry: { op: 'del' } | { op: 'set'; value: unknown; expiresAt: number }): void {
+  private remember(key: string, entry: PendingInvalidation): void {
     if (!this.options.url || this.shuttingDown) return;
     const max = this.options.maxPendingInvalidations ?? 10_000;
     if (this.pendingInvalidations.size >= max && !this.pendingInvalidations.has(key)) {
@@ -221,26 +221,41 @@ export class RedisCacheService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async replayInvalidations(): Promise<void> {
+    if (this.replayInFlight) return this.replayInFlight;
     if (this.pendingInvalidations.size === 0 || !this.client) return;
+    const run = this.replayPendingEntries();
+    this.replayInFlight = run;
+    try {
+      await run;
+    } finally {
+      if (this.replayInFlight === run) this.replayInFlight = undefined;
+    }
+  }
+
+  private async replayPendingEntries(): Promise<void> {
     const now = Date.now();
-    const deletes: string[] = [];
-    const writes: Array<[string, unknown, number]> = [];
+    const deletes: Array<[string, PendingInvalidation]> = [];
+    const writes: Array<[string, Extract<PendingInvalidation, { op: 'set' }>]> = [];
     for (const [key, entry] of this.pendingInvalidations) {
-      if (entry.op === 'set' && entry.expiresAt > now) writes.push([key, entry.value, entry.expiresAt - now]);
-      else deletes.push(key);
+      if (entry.op === 'set' && entry.expiresAt > now) writes.push([key, entry]);
+      else deletes.push([key, entry]);
     }
     for (let i = 0; i < deletes.length; i += 500) {
-      const batch = deletes.slice(i, i + 500);
-      await this.client.del(...batch.map((k) => this.prefixed(k)));
-      for (const k of batch) {
+      const batch = deletes.slice(i, i + 500).filter(([key, entry]) => this.pendingInvalidations.get(key) === entry);
+      if (batch.length === 0) continue;
+      await this.client!.del(...batch.map(([key]) => this.prefixed(key)));
+      for (const [key, entry] of batch) {
         // Keep a newer operation recorded while this replay was running.
-        if (this.pendingInvalidations.get(k)?.op === 'del') this.pendingInvalidations.delete(k);
+        // Expired SET entries are completed by DEL too and must not delete future writes.
+        if (this.pendingInvalidations.get(key) === entry) this.pendingInvalidations.delete(key);
       }
     }
     const cache = this.cache<unknown>();
-    for (const [key, value, remainingMs] of writes) {
-      const entry = this.pendingInvalidations.get(key);
-      await cache.set(key, value, Math.max(1, remainingMs));
+    for (const [key, entry] of writes) {
+      if (this.pendingInvalidations.get(key) !== entry) continue;
+      const remainingMs = entry.expiresAt - Date.now();
+      if (remainingMs > 0) await cache.set(key, entry.value, remainingMs);
+      else await cache.del(key);
       if (this.pendingInvalidations.get(key) === entry) this.pendingInvalidations.delete(key);
     }
     this.pendingOverflowWarned = false;

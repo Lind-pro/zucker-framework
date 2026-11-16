@@ -1,0 +1,13 @@
+
+ RUN  v4.1.11 /Users/lind/Documents/projects/zucker-framework
+
+ ✓ packages/admin/src/users/users-policy-hooks.spec.ts (3 tests) 5ms
+[Nest] 17686  - 11/12/2026, 4:08:46 PM   DEBUG [UsersController] dimensionUsers cleanup skipped for target: relation "dimension_users" does not exist
+ ✓ packages/admin/src/users/users.controller.spec.ts (21 tests) 57ms
+
+ Test Files  2 passed (2)
+      Tests  24 passed (24)
+   Start at  16:08:45
+   Duration  1.62s (transform 472ms, setup 17ms, import 1.37s, tests 62ms, environment 0ms)
+
+JSON report written to /Users/lind/Documents/projects/zucker-framework/docs/reviews/runtime-2026-11-12-2e9358/admin-policy-hooks-fixed.json

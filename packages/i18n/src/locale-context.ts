@@ -64,23 +64,9 @@ export class LocaleInterceptor implements NestInterceptor {
 
     // Wrap the entire Observable subscription inside AsyncLocalStorage.run
     // so the locale context is available during data emission, not just creation.
-    return new Observable((subscriber) => {
-      LocaleContext.runAsync(locale, async () => {
-        return new Promise<void>((resolve, reject) => {
-          next.handle().subscribe({
-            next: (value) => subscriber.next(value),
-            error: (err) => {
-              subscriber.error(err);
-              reject(err);
-            },
-            complete: () => {
-              subscriber.complete();
-              resolve();
-            },
-          });
-        });
-      }).catch((err) => subscriber.error(err));
-    });
+    return new Observable((subscriber) =>
+      LocaleContext.run(locale, () => next.handle().subscribe(subscriber)),
+    );
   }
 
   private parseLocale(header: string): string {

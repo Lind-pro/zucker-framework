@@ -14,6 +14,14 @@ tables of `@zucker-framework/task` (`async_jobs`, `async_job_outbox`). `ai_tasks
 `async_jobs.id`; the durable row owns status, lease and fencing. Add the CHECK constraints from the
 SQL file to the Prisma migration. Prompts live in `async_jobs.payload`; credentials are never stored.
 
+Existing installations must apply `assets/ai-tasks.execution-checkpoints.postgresql.sql` before
+starting the new worker (the server template includes the same additive migration). Stop/drain old
+workers first: mixing old/new workers is unsafe because old workers do not understand the paid-submit
+checkpoint. The upgrade treats already-attempted legacy rows without a provider task id as an unknown
+submission, never as a fresh request. Before rolling back to old workers, finish or explicitly cancel
+all active checkpointed tasks; retaining the new columns alone does not make an old worker safe.
+No existing migration is rewritten. The additional fields are `executionState` and `generatedOutputs`.
+
 ## Service
 
 ```ts
@@ -74,8 +82,25 @@ path, `DurableTaskRetryScheduledError`), so long video/audio jobs cannot starve 
 `maxAttempts` (default 3) is the failure budget. The durable row's `maxAttempts` additionally allows
 one claim per poll run up to the deadline (`polling.maxPolls` overrides); `ai_tasks.deferrals`
 separates poll runs from failed runs. Provider submission is never retried automatically (it is
-billed and not idempotent); an error there fails the task and releases the hold. Every worker write
+billed and not idempotent). Every worker write
 is fenced by the attempt lease, so a stale attempt cannot write results, schedule polls or settle holds.
+
+The execution checkpoint is separate from the task lease: `NEW → SUBMITTING` is committed before a
+paid call; `ACCEPTED` records an async provider id; `GENERATED` records bounded output URLs/inline bytes;
+`STORED` records all verified private outputs and clears the generated snapshot. Storage retries use
+the snapshot and per-index output rows. Settlement retries use `STORED`, without contacting the provider
+or uploading again. Terminal failure/cancellation clears the snapshot and releases the hold atomically.
+Inline snapshots can be as large as the configured output cap; they are private recovery data, never
+logs or owner/management projections, and are removed after storage or terminal settlement.
+
+A process interruption, ambiguous transport failure or lost checkpoint acknowledgement can leave
+`SUBMITTING`. An optional `providers.recoverSubmission(request, signal)` port performs a **read-only**
+lookup by `request.taskId`; it must never generate. The same task id is sent as trusted
+`MediaGenerationConfig.clientRequestId` (HTTP adapters may explicitly map it to a vendor request field).
+Return a known task/result, or `null` while still unknown; polling/retry remains bounded by the original
+deadline. Without a recovery port, an unknown outcome ends with `AI_PROVIDER_SUBMISSION_UNKNOWN` and a
+refund, never a second paid call. This prevents automatic duplicate submission; it does not claim that
+an external provider can guarantee exactly-once effects or that an unknown paid result was recovered.
 
 ## Lock order
 
@@ -94,6 +119,13 @@ image 20 MiB, video 200 MiB, audio 50 MiB), accepted only when its sniffed type 
 raster/audio/video type (never SVG/HTML), hashed and handed to `OutputStorePort`. URLs are fetched with
 core's `createPublicFetch` by default: https on port 443, public resolved addresses pinned for the
 connection, no redirects. A declared `Content-Length` above the cap is refused before reading.
+`outputLimits.downloadTimeoutMs` (default 120 seconds) bounds each output's download and storage,
+including retries and stream reads. A timeout aborts the signal, cancels the source reader, fails the
+task with `AI_OUTPUT_TIMEOUT` and releases its hold. Ports must check cancellation before starting new
+operations and stop/clean partial writes when their underlying storage supports cancellation.
+
+When `input.options.count` is supplied, the complete provider batch must match it; a short batch fails
+with `AI_OUTPUT_COUNT_MISMATCH` and refunds the hold instead of charging for undelivered outputs.
 
 When the port implements `putStream`, nothing is buffered whole: the first 64 bytes are read and
 sniffed before any byte reaches the store, then the output flows through a stream that hashes and
@@ -112,8 +144,15 @@ without retrying. Inline base64 is decoded in memory, bounded by the cap before 
   `BatchCreditLedger` wallet holds (optional peer `@zucker-framework/credit`).
 - `createVerifiedOutputStore({ store, prefix })` writes through `transferVerifiedObject` of
   `@zucker-framework/storage` (optional peer) under `<prefix>/<taskId>/<index>.<ext>`.
+  It checks cancellation before/after every buffered-store operation, preventing a late read/exists
+  completion from starting another upload. The legacy `BufferedObjectStore` has no abort/delete API:
+  an already-started remote write cannot be forcibly cancelled or deleted by this adapter. Use a
+  cancellation-aware `putStream` implementation when that storage guarantee is required.
 
 ## Tests
 
 `src/ai-task.integration.spec.ts`, `src/ai-task.gates.integration.spec.ts` and
 `src/ai-task.output-cap.integration.spec.ts` run against PostgreSQL when `TEST_DATABASE_URL` is set.
+`src/ai-task.recovery.spec.ts` uses embedded PGlite for checkpoint rollback, recovery, migration and
+settlement contracts; it does not replace real PostgreSQL concurrency tests. `output-deadline.spec.ts`
+checks abort races around lease renewal and the buffered storage adapter.

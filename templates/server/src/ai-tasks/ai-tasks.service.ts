@@ -1,6 +1,7 @@
 import { Readable } from 'node:stream';
 import { BadRequestException, HttpException, Inject, Injectable, Logger, NotFoundException, ServiceUnavailableException, type OnModuleInit } from '@nestjs/common';
 import { DATABASE_ADAPTER } from '@zucker-framework/core';
+import { getMediaGenerationCapabilities } from '@zucker-framework/ai';
 import {
   AI_OUTPUT_EXTENSIONS,
   AITaskCostChangedError,
@@ -154,7 +155,8 @@ export class AITasksService implements OnModuleInit {
       throw new BadRequestException({ code: 'AI_TASK_INVALID', message: 'providerId, model and prompt are required' });
     if (!(await this.catalog.offered(kind, input.providerId, input.model)))
       throw new BadRequestException({ code: 'AI_MODEL_NOT_OFFERED', message: 'This model is not offered' });
-    if (!this.catalog.mediaProvider(input.providerId, kind))
+    const provider = this.catalog.mediaProvider(input.providerId, kind);
+    if (!provider)
       throw new ServiceUnavailableException({ code: 'AI_PROVIDER_UNAVAILABLE', message: 'This model is not available right now' });
     let options: Record<string, AITaskOptionValue> | undefined;
     if (input.options !== undefined) {
@@ -174,6 +176,11 @@ export class AITasksService implements OnModuleInit {
         throw new BadRequestException({ code: 'AI_TASK_INVALID', message: 'references are up to 4 of your image file ids', reason: 'AI_TASK_INVALID', details: { field: 'references' } });
       references = [...new Set(input.references as string[])];
     }
+    const capabilities = getMediaGenerationCapabilities(provider.provider, input.model);
+    if (this.count(options) > capabilities.maxOutputs)
+      throw new BadRequestException({ code: 'AI_TASK_UNSUPPORTED_COUNT', message: 'This model does not support the requested number of outputs' });
+    if ((references?.length ?? 0) > capabilities.maxReferences)
+      throw new BadRequestException({ code: 'AI_TASK_UNSUPPORTED_REFERENCES', message: 'This model does not support the requested reference images' });
     if (input.cost !== undefined && (!Number.isSafeInteger(input.cost) || (input.cost as number) < 0))
       throw new BadRequestException({ code: 'AI_TASK_INVALID', message: 'Invalid cost', reason: 'AI_TASK_INVALID', details: { field: 'cost' } });
     return { kind, providerId: input.providerId, model: input.model, prompt: input.prompt, options, references, ...(input.cost === undefined ? {} : { cost: input.cost as number }) };
@@ -277,16 +284,26 @@ export class AITasksService implements OnModuleInit {
     };
   }
 
-  private async resolveProvider(request: { ownerId: string; kind: AITaskKind; providerId: string; input: { references?: readonly string[] } }) {
+  private async resolveProvider(request: { ownerId: string; kind: AITaskKind; providerId: string; model: string; input: { references?: readonly string[]; options?: Readonly<Record<string, AITaskOptionValue>> } }) {
     const entry = this.catalog.mediaProvider(request.providerId, request.kind);
     if (!entry) throw new Error('AI media provider is not configured');
     const config: { apiKey: string } & Record<string, unknown> = { ...entry.config };
-    const [reference] = request.input.references ?? [];
-    if (reference) {
+    const references = request.input.references ?? [];
+    const capabilities = getMediaGenerationCapabilities(entry.provider, request.model);
+    if (references.length > capabilities.maxReferences || this.count(request.input.options) > capabilities.maxOutputs)
+      throw new Error('Provider capabilities changed after submission');
+    const images: string[] = [];
+    for (const reference of references) {
       // Providers receive the owner's verified bytes inline; private storage URLs are never exposed.
       const file = await this.files.read(request.ownerId, reference);
       if (!REFERENCE_MIME.has(file.asset.mimeType) || file.body.length > MAX_REFERENCE_BYTES) throw new Error('Reference image is no longer usable');
-      config[request.kind === 'video' ? 'firstFrameUrl' : 'referenceImageUrl'] = `data:${file.asset.mimeType};base64,${file.body.toString('base64')}`;
+      images.push(`data:${file.asset.mimeType};base64,${file.body.toString('base64')}`);
+    }
+    if (images.length && capabilities.referenceInput === 'multiple') config.referenceImageUrls = images;
+    if (images.length && capabilities.referenceInput === 'single') config.referenceImageUrl = images[0];
+    if (images.length && capabilities.referenceInput === 'frames') {
+      config.firstFrameUrl = images[0];
+      if (images[1]) config.lastFrameUrl = images[1];
     }
     const web = this.env.WEB_URL?.trim();
     if (entry.verifier && web?.startsWith('https://'))

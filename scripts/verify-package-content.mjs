@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isMainModule } from './cli-entry.mjs';
 import { validateProjectBundle } from '../packages/cli/tooling/project-templates.mjs';
 
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -115,7 +116,7 @@ export function verifyPackageDirectories(directories) {
   return fileCount;
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (isMainModule(import.meta.url)) {
   try {
     const args = process.argv.slice(2);
     if (args[0] === '--tarball') {

@@ -1,7 +1,7 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { DATABASE_ADAPTER, SecretCipher, type DatabaseAdapter, type ModelOperations } from '@zucker-framework/core';
 import {
-  TotpValidator, generateRecoveryCodes, generateTotpCode, generateTotpSecret, hashRecoveryCode, normalizeRecoveryCode, totpProvisioningUri,
+  TotpValidator, generateRecoveryCodes, generateTotpSecret, hashRecoveryCode, normalizeRecoveryCode, totpProvisioningUri,
 } from '@zucker-framework/auth';
 import { ACCOUNT_SECURITY_ERRORS as E, accountSecurityError, systemAccountSecurityClock, type AccountSecurityClock } from '../account-security';
 import { resolveAccountsOptions, table, type ResolvedAccountsOptions } from '../accounts.options';
@@ -46,7 +46,7 @@ export function twoFactorCipher(keys: AccountTwoFactorKeys | undefined): SecretC
  * configured key (`AccountTwoFactorKeys`) and returned exactly once. Without a key, enrolment and every
  * check of an enrolled account fail closed with 503 `TWO_FACTOR_UNAVAILABLE`; nothing is written.
  *
- * Replay: the validator's per-process guard and lockout (5 wrong codes → 15 minutes) run first, then a
+ * Replay: the validator's lockout (5 wrong codes → 15 minutes) and pure factor check run first, then a
  * conditional update of `lastUsedStep` (`WHERE lastUsedStep IS NULL OR lastUsedStep < step`, affected
  * rows checked) makes a step usable once across every instance. Wrong recovery codes count toward the
  * same lockout; the `two-factor` limiter bounds guesses per account. Recovery codes are stored as SHA-256
@@ -221,8 +221,9 @@ export class AccountTwoFactorService {
     let secret: string;
     try { secret = this.cipher!.decrypt(row.secretCiphertext); }
     catch { throw accountSecurityError(503, E.twoFactorUnavailable, 'Two-factor secrets cannot be read with the configured key'); }
-    if (!await this.validator.verifyOnce(row.userId, code, secret)) return false;
-    const step = this.matchedStep(secret, code);
+    // The database claim is the replay authority. Spending a process-local step here would
+    // outlive a failed update/rollback and incorrectly reject the user's next valid retry.
+    const step = await this.validator.verifyUnclaimed(row.userId, code, secret);
     if (step === null) return false;
     // Cross-instance replay guard: a step (or an older one) is accepted once per enrolment.
     const claimed = await this.model('accountTwoFactor', tx).updateMany({
@@ -230,15 +231,8 @@ export class AccountTwoFactorService {
       data: { lastUsedStep: step, updatedAt: this.clock() } });
     // Another instance accepted this step first: a replay, counted like any wrong code.
     if (claimed.count !== 1) await this.validator.recordFailedAttempt(row.userId);
+    else await this.validator.recordSuccessfulAttempt(row.userId);
     return claimed.count === 1;
-  }
-
-  private matchedStep(secret: string, code: string): number | null {
-    const now = this.clock().getTime(), current = Math.floor(now / 1000 / TOTP_PERIOD_SECONDS);
-    for (let offset = -TOTP_WINDOW; offset <= TOTP_WINDOW; offset++) {
-      if (generateTotpCode({ secret, time: (current + offset) * TOTP_PERIOD_SECONDS * 1000, period: TOTP_PERIOD_SECONDS }) === code) return current + offset;
-    }
-    return null;
   }
 
   private async replaceRecoveryCodes(tx: DatabaseAdapter, userId: string): Promise<string[]> {

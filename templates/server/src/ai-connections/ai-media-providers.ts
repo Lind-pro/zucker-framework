@@ -21,7 +21,7 @@ export interface AIMediaProviderEntry {
   providerId: string;
   name: string;
   kinds: readonly AIMediaKind[];
-  provider: Pick<MediaProvider, 'id' | 'supportedTypes' | 'generate' | 'getTaskStatus'>;
+  provider: Pick<MediaProvider, 'id' | 'supportedTypes' | 'generate' | 'getTaskStatus' | 'getCapabilities'>;
   config: { apiKey: string } & Record<string, unknown>;
   /** Present when the provider signs callbacks (`POST /api/ai/tasks/callbacks/:providerId`). */
   verifier?: Pick<AIProviderCallbackVerifier, 'verify' | 'hint'>;

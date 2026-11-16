@@ -17,6 +17,9 @@ export class HybridCache<T = unknown> implements ICache<T> {
     options?: { l1BackfillTtlMs?: number },
   ) {
     this.l1BackfillTtlMs = options?.l1BackfillTtlMs ?? 60_000;
+    if (!Number.isFinite(this.l1BackfillTtlMs) || this.l1BackfillTtlMs < 0) {
+      throw new RangeError('l1BackfillTtlMs must be finite and non-negative');
+    }
   }
 
   async get(key: string): Promise<T | undefined> {
@@ -37,9 +40,23 @@ export class HybridCache<T = unknown> implements ICache<T> {
 
   async set(key: string, value: T, ttlMs?: number): Promise<void> {
     await Promise.all([
-      this.l1.set(key, value, ttlMs),
+      this.l1BackfillTtlMs === 0
+        ? this.l1.del(key)
+        : this.l1.set(key, value, Math.min(ttlMs ?? this.l1BackfillTtlMs, this.l1BackfillTtlMs)),
       this.l2.set(key, value, ttlMs),
     ]);
+  }
+
+  async readSequence(key: string): Promise<number | undefined> {
+    if (!this.l2.readSequence) throw new Error('Hybrid cache requires authoritative sequence reads from L2');
+    return this.l2.readSequence(key);
+  }
+
+  async advanceSequence(key: string, minimum: number, ttlMs: number): Promise<number> {
+    if (!this.l2.advanceSequence) throw new Error('Hybrid cache requires atomic sequence advancement from L2');
+    const next = await this.l2.advanceSequence(key, minimum, ttlMs);
+    await this.l1.del(key);
+    return next;
   }
 
   async del(key: string): Promise<void> {

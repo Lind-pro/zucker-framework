@@ -197,6 +197,8 @@ export type {
   UserSubscriptionWrite,
   AssignablePlan,
   SubscriptionPaymentEvidence,
+  SubscriptionPaymentApplication,
+  SubscriptionPaymentHistory,
   PendingPaymentBlock,
   UserSubscriptionStore,
   SubscriptionAssignmentErrorReason,

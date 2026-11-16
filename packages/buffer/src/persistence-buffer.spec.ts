@@ -326,8 +326,6 @@ describe('PersistenceBuffer file queue across instances (L4)', () => {
     expect(seen.sort()).toEqual(['fresh', 'mine-orphan']);
   });
 
-  // IMPLEMENTATION BUG (low): flush() returns early when memory and the *.json queue are empty
-  // (hasFileQueue ignores *.processing), so a stale claim is only reclaimed once other work arrives.
   it('reclaims a stale .processing file even when the buffer is otherwise idle', async () => {
     fs.writeFileSync(path.join(dir, 'buffer-1-1-w.json.2147483646-deadbeef.processing'), JSON.stringify(['stranded']));
     const buf = make();
@@ -335,6 +333,18 @@ describe('PersistenceBuffer file queue across instances (L4)', () => {
     buf.onFlush(async (items) => { seen.push(...items); });
     await buf.flush();
     expect(seen).toEqual(['stranded']);
+  });
+
+  it('recovers peer claims that become stale after this instance has already flushed', async () => {
+    const buf = make();
+    const seen: string[] = [];
+    buf.onFlush(async items => { seen.push(...items); });
+    await buf.flush();
+    fs.writeFileSync(path.join(dir, 'buffer-1-1-later.json.2147483646-deadbeef.processing'), JSON.stringify(['later']));
+    await buf.flush();
+    expect(seen).toEqual(['later']);
+    expect(fs.readdirSync(dir)).toEqual([]);
+    await buf.stop();
   });
 
   it('does not reclaim a claim held by a live instance of this process', async () => {
@@ -349,6 +359,10 @@ describe('PersistenceBuffer file queue across instances (L4)', () => {
     expect(seen).toEqual([]);
     expect(fs.existsSync(path.join(dir, `buffer-1-1-z.json.${id}.processing`))).toBe(true);
     await holder.stop();
+    await other.flush();
+    expect(seen).toEqual(['held']);
+    expect(fs.readdirSync(dir)).toEqual([]);
+    await other.stop();
   });
 
   it('removes an orphan .tmp file', async () => {

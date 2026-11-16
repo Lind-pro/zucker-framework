@@ -1,0 +1,14 @@
+
+ RUN  v4.1.11 /Users/lind/Documents/projects/zucker-framework
+
+ ✓ packages/back-office/src/accounts/account-security.transaction.spec.ts (8 tests) 1818ms
+     ✓ accepts normalized admin emails and unambiguous legacy mixed-case addresses, refusing case collisions  451ms
+     ✓ admits only one simultaneous durable claim for the same TOTP  433ms
+ ✓ packages/back-office/src/subscriptions/payment-history.integration.spec.ts (9 tests) 407ms
+
+ Test Files  2 passed (2)
+      Tests  17 passed (17)
+   Start at  16:41:17
+   Duration  4.81s (transform 1.27s, setup 19ms, import 2.39s, tests 2.23s, environment 0ms)
+
+JSON report written to /Users/lind/Documents/projects/zucker-framework/docs/reviews/runtime-2026-11-12-2e9358/pg-policy-hook-rollback.json

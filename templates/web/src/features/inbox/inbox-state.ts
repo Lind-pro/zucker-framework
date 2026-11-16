@@ -46,7 +46,12 @@ export function inboxReducer(state: InboxState, action: InboxAction): InboxState
       const items = state.unreadOnly
         ? state.items.filter((item) => item.id !== action.id)
         : state.items.map((item) => (item.id === action.id ? { ...item, isRead: true, readAt: action.readAt } : item));
-      return { ...state, items, total: state.unreadOnly ? Math.max(0, state.total - 1) : state.total, unreadCount: Math.max(0, state.unreadCount - 1) };
+      const total = state.unreadOnly ? Math.max(0, state.total - 1) : state.total;
+      const page = Math.min(state.page, pageCount({ total }));
+      // Marking the final unread row read can remove the last page. Moving the page in state
+      // triggers the component's real list request; never render an empty, unreachable page 2/1.
+      return { ...state, items, total, page, status: page === state.page ? state.status : 'loading',
+        unreadCount: Math.max(0, state.unreadCount - 1) };
     }
     case 'readAll':
       return { ...state, unreadCount: 0, items: state.unreadOnly ? [] : state.items.map((item) => (item.isRead ? item : { ...item, isRead: true, readAt: action.readAt })),

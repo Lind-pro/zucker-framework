@@ -49,6 +49,7 @@ export class DataSourceManager {
   private configs = new Map<string, DataSourceConfig>();
   private factories = new Map<string, DataSourceFactory>();
   private closedSources = new Set<string>();
+  private generations = new Map<string, symbol>();
   private defaultId: string | null = null;
   private disposal: Required<DataSourceDisposalOptions> = { disposeOnReplace: true, drainDelayMs: 0 };
 
@@ -76,7 +77,9 @@ export class DataSourceManager {
       throw new NotFoundException(`No factory registered for datasource type: ${config.type}`);
     }
 
+    const generation = this.invalidate(config.id);
     const adapter = await factory(config);
+    this.acceptCreated(config.id, generation, adapter);
     const previous = this.dataSources.get(config.id);
     this.dataSources.set(config.id, adapter);
     this.configs.set(config.id, config);
@@ -93,6 +96,7 @@ export class DataSourceManager {
    * 注册已创建的数据源
    */
   register(id: string, adapter: DatabaseAdapter, config?: DataSourceConfig): void {
+    this.invalidate(id);
     const previous = this.dataSources.get(id);
     this.dataSources.set(id, adapter);
     if (previous && previous !== adapter) this.dispose(id, previous);
@@ -139,6 +143,7 @@ export class DataSourceManager {
    * 删除数据源
    */
   remove(id: string): void {
+    this.invalidate(id);
     const adapter = this.dataSources.get(id);
     this.dataSources.delete(id);
     if (adapter) this.dispose(id, adapter);
@@ -159,6 +164,7 @@ export class DataSourceManager {
     if (!this.dataSources.has(id)) {
       throw new DataSourceNotFoundException(id);
     }
+    this.invalidate(id);
     const adapter = this.dataSources.get(id);
     this.dataSources.delete(id);
     this.closedSources.add(id);
@@ -215,7 +221,9 @@ export class DataSourceManager {
       throw new NotFoundException(`No factory registered for datasource type: ${config.type}`);
     }
 
+    const generation = this.invalidate(id);
     const adapter = await factory(config);
+    this.acceptCreated(id, generation, adapter);
     const previous = this.dataSources.get(id);
     this.dataSources.set(id, adapter);
     this.closedSources.delete(id);
@@ -228,6 +236,18 @@ export class DataSourceManager {
    * An adapter that is still registered under another id (or was registered again before the
    * drain delay elapsed) is not released.
    */
+  private invalidate(id: string): symbol {
+    const generation = Symbol(id);
+    this.generations.set(id, generation);
+    return generation;
+  }
+
+  private acceptCreated(id: string, generation: symbol, adapter: DatabaseAdapter): void {
+    if (this.generations.get(id) === generation) return;
+    this.dispose(id, adapter);
+    throw new Error(`DataSource operation superseded: ${id}`);
+  }
+
   private dispose(id: string, adapter: DatabaseAdapter): void {
     if (!this.disposal.disposeOnReplace) return;
     const release = adapter.$disconnect ?? adapter.close;

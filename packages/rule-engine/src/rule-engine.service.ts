@@ -141,8 +141,18 @@ export class RuleEngineService implements OnModuleDestroy {
       activeRule.branchEvaluator = new BranchEvaluator();
     }
 
-    for (const trigger of definition.triggers) {
-      this.setupTrigger(trigger, definition, activeRule);
+    try {
+      for (const trigger of definition.triggers) {
+        this.setupTrigger(trigger, definition, activeRule);
+      }
+    } catch (error) {
+      // Startup is atomic: even a later invalid trigger must release earlier subscriptions/timers.
+      for (const trigger of [...activeRule.eventTriggers, ...activeRule.timerTriggers]) {
+        try { trigger.stop(); } catch (cleanupError) {
+          this.logger.warn('Failed to stop trigger after startup failure', cleanupError);
+        }
+      }
+      throw error;
     }
 
     this.activeRules.set(definition.id, activeRule);
@@ -325,19 +335,19 @@ export class RuleEngineService implements OnModuleDestroy {
         return;
       }
       const eventTrigger = new EventTrigger();
+      activeRule.eventTriggers.push(eventTrigger);
       eventTrigger.start(
         trigger.config as unknown as EventTriggerConfig,
         this.eventBus,
         (payload) => this.executeRule(definition, payload as Record<string, unknown>),
       );
-      activeRule.eventTriggers.push(eventTrigger);
     } else if (trigger.type === RuleTriggerType.TIMER) {
       const timerTrigger = new TimerTrigger();
+      activeRule.timerTriggers.push(timerTrigger);
       timerTrigger.start(
         trigger.config as unknown as TimerTriggerConfig,
         () => this.executeRule(definition, {}),
       );
-      activeRule.timerTriggers.push(timerTrigger);
     }
   }
 

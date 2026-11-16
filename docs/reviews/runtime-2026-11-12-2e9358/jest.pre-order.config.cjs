@@ -1,0 +1,1 @@
+const base=require("./jest.source-joint.config.cjs");module.exports={...base,moduleNameMapper:{...base.moduleNameMapper,"^\\./copyright-admin-user-hooks$":"/Users/lind/Documents/projects/zucker-framework/docs/reviews/runtime-2026-11-12-2e9358/pre-order-protection-hook.cjs"}};

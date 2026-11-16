@@ -19,6 +19,7 @@ export interface AITaskInputLimits {
 const FORBIDDEN_OPTION_KEYS = new Set([
   'apikey', 'api_key', 'baseurl', 'base_url', 'proxyurl', 'proxy_url', 'callbackurl', 'callback_url',
   'modelid', 'model', 'signal', 'timeoutms', 'headers', 'endpoint', 'url', 'webhook', 'webhookurl',
+  'clientrequestid',
   '__proto__', 'constructor', 'prototype',
 ]);
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,127}$/;

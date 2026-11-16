@@ -1,0 +1,41 @@
+ts-jest[config] (WARN) [94mmessage[0m[90m TS151002: [0mUsing hybrid module kind (Node16/18/Next) is only supported in "isolatedModules: true". Please set "isolatedModules: true" in your tsconfig.json. To disable this message, you can set "diagnostics.ignoreCodes" to include 151002 in your ts-jest config. See more at https://kulshekhar.github.io/ts-jest/docs/getting-started/options/diagnostics
+ts-jest[config] (WARN) [94mmessage[0m[90m TS151002: [0mUsing hybrid module kind (Node16/18/Next) is only supported in "isolatedModules: true". Please set "isolatedModules: true" in your tsconfig.json. To disable this message, you can set "diagnostics.ignoreCodes" to include 151002 in your ts-jest config. See more at https://kulshekhar.github.io/ts-jest/docs/getting-started/options/diagnostics
+ts-jest[config] (WARN) [94mmessage[0m[90m TS151002: [0mUsing hybrid module kind (Node16/18/Next) is only supported in "isolatedModules: true". Please set "isolatedModules: true" in your tsconfig.json. To disable this message, you can set "diagnostics.ignoreCodes" to include 151002 in your ts-jest config. See more at https://kulshekhar.github.io/ts-jest/docs/getting-started/options/diagnostics
+ts-jest[config] (WARN) [94mmessage[0m[90m TS151002: [0mUsing hybrid module kind (Node16/18/Next) is only supported in "isolatedModules: true". Please set "isolatedModules: true" in your tsconfig.json. To disable this message, you can set "diagnostics.ignoreCodes" to include 151002 in your ts-jest config. See more at https://kulshekhar.github.io/ts-jest/docs/getting-started/options/diagnostics
+Synthetic concurrent protected-role HTTP statuses [200,200]
+FAIL src/test/contracts/account-safety.phase2.spec.ts (5.605 s)
+  Phase 2: account safety on PostgreSQL
+    ✕ HTTP concurrent disable and revoke preserve at least one enabled superadmin (250 ms)
+    ○ skipped CLI bootstrap rejects its independent password-policy boundary abcdef
+    ○ skipped CLI bootstrap rejects its independent password-policy boundary abcdefgh
+    ○ skipped CLI bootstrap rejects its independent password-policy boundary Abcdefgh
+    ○ skipped CLI bootstrap accepts a compliant password and preserves the existing account on retry
+    ○ skipped CLI concurrent grants create one binding and ordinary revoke is idempotent
+    ○ skipped CLI concurrent protected-role revocations preserve one holder
+    ○ skipped HTTP refuses to disable its sole superadmin
+    ○ skipped HTTP refuses to revoke its sole superadmin
+    ○ skipped HTTP deletion preserves all links while billing is active
+    ○ skipped HTTP deletion preserves all links while billing is unknown
+    ○ skipped HTTP deletion blocks a queued Dossier billed to the target
+    ○ skipped HTTP deletion blocks a running Dossier billed to the target
+    ○ skipped HTTP deletion rolls link removal back when the final user delete fails inside PostgreSQL
+    ○ skipped HTTP refuses to disable the last enabled superadmin with a disabled alternate
+    ○ skipped HTTP refuses to revoke the last enabled superadmin with a disabled alternate
+    ○ skipped CLI refuses to revoke the last enabled superadmin with a disabled alternate
+    ○ skipped CLI grant racing HTTP deletion does not leave an orphan role binding
+
+  ● Phase 2: account safety on PostgreSQL › HTTP concurrent disable and revoke preserve at least one enabled superadmin
+
+    expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 1
+    Received:    0
+
+      at Object.<anonymous> (test/contracts/file:/Users/lind/Documents/projects/zucker-ccopyright/apps/server/src/test/contracts/account-safety.phase2.spec.ts:210:125)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 17 skipped, 18 total
+Snapshots:   0 total
+Time:        5.778 s, estimated 9 s
+Ran all test suites within paths "src/test/contracts/account-safety.phase2.spec.ts".
+Test results written to: ../../../zucker-framework/docs/reviews/runtime-2026-11-12-2e9358/joint-published-baseline.json

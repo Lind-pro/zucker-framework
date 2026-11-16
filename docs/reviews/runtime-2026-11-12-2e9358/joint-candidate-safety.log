@@ -1,0 +1,633 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /Users/lind/Documents/projects/zucker-ccopyright/apps/server/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+[Nest] 18953  - 11/12/2026, 4:14:12 PM     LOG [FilterOperatorFactory] 过滤操作符已注册: eq, neq, like, notLike, contains, startsWith, endsWith, gt, gte, lt, lte, in, notIn, isNull, isNotNull, between, has, hasSome, empty, notEmpty
+FAIL src/test/contracts/account-safety.phase2.spec.ts (5.575 s)
+  ● Phase 2: account safety on PostgreSQL › CLI bootstrap rejects its independent password-policy boundary abcdef
+
+    Nest can't resolve dependencies of the RateLimitGuard (?, RATE_LIMITER_SERVICE). Please make sure that the argument Reflector at index [0] is available in the ZuckerRateLimiterModule module.
+
+    Potential solutions:
+    - Is ZuckerRateLimiterModule a valid NestJS module?
+    - If Reflector is a provider, is it part of the current ZuckerRateLimiterModule?
+    - If Reflector is exported from a separate @Module, is that module imported within ZuckerRateLimiterModule?
+      @Module({
+        imports: [ /* the Module containing Reflector */ ]
+      })
+
+    For more common dependency resolution issues, see: https://docs.nestjs.com/faq/common-errors
+
+      at TestingInjector.lookupComponentInParentModules (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:346:19)
+      at TestingInjector.resolveComponentWrapper (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-injector.js:16:45)
+      at resolveParam (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:150:38)
+          at async Promise.all (index 0)
+      at TestingInjector.resolveConstructorParams (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:182:27)
+      at TestingInjector.loadInstance (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:76:13)
+      at TestingInjector.loadProvider (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:110:9)
+      at ../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:58:13
+          at async Promise.all (index 5)
+      at TestingInstanceLoader.createInstancesOfProviders (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:57:9)
+      at ../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:42:13
+          at async Promise.all (index 10)
+      at TestingInstanceLoader.createInstances (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:41:9)
+      at TestingInstanceLoader.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:24:13)
+      at TestingInstanceLoader.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-instance-loader.js:6:9)
+      at TestingModuleBuilder.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-module.builder.js:119:9)
+      at TestingModuleBuilder.compile (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-module.builder.js:72:9)
+      at createAccountTestApp (test/contracts/file:/Users/lind/Documents/projects/zucker-ccopyright/apps/server/src/test/contracts/account-host.ts:142:18)
+      at Object.<anonymous> (test/contracts/file:/Users/lind/Documents/projects/zucker-ccopyright/apps/server/src/test/contracts/account-safety.phase2.spec.ts:52:16)
+
+  ● Phase 2: account safety on PostgreSQL › CLI bootstrap rejects its independent password-policy boundary abcdefgh
+
+    Nest can't resolve dependencies of the RateLimitGuard (?, RATE_LIMITER_SERVICE). Please make sure that the argument Reflector at index [0] is available in the ZuckerRateLimiterModule module.
+
+    Potential solutions:
+    - Is ZuckerRateLimiterModule a valid NestJS module?
+    - If Reflector is a provider, is it part of the current ZuckerRateLimiterModule?
+    - If Reflector is exported from a separate @Module, is that module imported within ZuckerRateLimiterModule?
+      @Module({
+        imports: [ /* the Module containing Reflector */ ]
+      })
+
+    For more common dependency resolution issues, see: https://docs.nestjs.com/faq/common-errors
+
+      at TestingInjector.lookupComponentInParentModules (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:346:19)
+      at TestingInjector.resolveComponentWrapper (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-injector.js:16:45)
+      at resolveParam (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:150:38)
+          at async Promise.all (index 0)
+      at TestingInjector.resolveConstructorParams (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:182:27)
+      at TestingInjector.loadInstance (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:76:13)
+      at TestingInjector.loadProvider (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:110:9)
+      at ../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:58:13
+          at async Promise.all (index 5)
+      at TestingInstanceLoader.createInstancesOfProviders (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:57:9)
+      at ../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:42:13
+          at async Promise.all (index 10)
+      at TestingInstanceLoader.createInstances (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:41:9)
+      at TestingInstanceLoader.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:24:13)
+      at TestingInstanceLoader.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-instance-loader.js:6:9)
+      at TestingModuleBuilder.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-module.builder.js:119:9)
+      at TestingModuleBuilder.compile (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-module.builder.js:72:9)
+      at createAccountTestApp (test/contracts/file:/Users/lind/Documents/projects/zucker-ccopyright/apps/server/src/test/contracts/account-host.ts:142:18)
+      at Object.<anonymous> (test/contracts/file:/Users/lind/Documents/projects/zucker-ccopyright/apps/server/src/test/contracts/account-safety.phase2.spec.ts:52:16)
+
+  ● Phase 2: account safety on PostgreSQL › CLI bootstrap rejects its independent password-policy boundary Abcdefgh
+
+    Nest can't resolve dependencies of the RateLimitGuard (?, RATE_LIMITER_SERVICE). Please make sure that the argument Reflector at index [0] is available in the ZuckerRateLimiterModule module.
+
+    Potential solutions:
+    - Is ZuckerRateLimiterModule a valid NestJS module?
+    - If Reflector is a provider, is it part of the current ZuckerRateLimiterModule?
+    - If Reflector is exported from a separate @Module, is that module imported within ZuckerRateLimiterModule?
+      @Module({
+        imports: [ /* the Module containing Reflector */ ]
+      })
+
+    For more common dependency resolution issues, see: https://docs.nestjs.com/faq/common-errors
+
+      at TestingInjector.lookupComponentInParentModules (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:346:19)
+      at TestingInjector.resolveComponentWrapper (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-injector.js:16:45)
+      at resolveParam (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:150:38)
+          at async Promise.all (index 0)
+      at TestingInjector.resolveConstructorParams (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:182:27)
+      at TestingInjector.loadInstance (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:76:13)
+      at TestingInjector.loadProvider (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:110:9)
+      at ../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:58:13
+          at async Promise.all (index 5)
+      at TestingInstanceLoader.createInstancesOfProviders (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:57:9)
+      at ../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:42:13
+          at async Promise.all (index 10)
+      at TestingInstanceLoader.createInstances (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:41:9)
+      at TestingInstanceLoader.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:24:13)
+      at TestingInstanceLoader.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-instance-loader.js:6:9)
+      at TestingModuleBuilder.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-module.builder.js:119:9)
+      at TestingModuleBuilder.compile (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-module.builder.js:72:9)
+      at createAccountTestApp (test/contracts/file:/Users/lind/Documents/projects/zucker-ccopyright/apps/server/src/test/contracts/account-host.ts:142:18)
+      at Object.<anonymous> (test/contracts/file:/Users/lind/Documents/projects/zucker-ccopyright/apps/server/src/test/contracts/account-safety.phase2.spec.ts:52:16)
+
+  ● Phase 2: account safety on PostgreSQL › CLI bootstrap accepts a compliant password and preserves the existing account on retry
+
+    Nest can't resolve dependencies of the RateLimitGuard (?, RATE_LIMITER_SERVICE). Please make sure that the argument Reflector at index [0] is available in the ZuckerRateLimiterModule module.
+
+    Potential solutions:
+    - Is ZuckerRateLimiterModule a valid NestJS module?
+    - If Reflector is a provider, is it part of the current ZuckerRateLimiterModule?
+    - If Reflector is exported from a separate @Module, is that module imported within ZuckerRateLimiterModule?
+      @Module({
+        imports: [ /* the Module containing Reflector */ ]
+      })
+
+    For more common dependency resolution issues, see: https://docs.nestjs.com/faq/common-errors
+
+      at TestingInjector.lookupComponentInParentModules (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:346:19)
+      at TestingInjector.resolveComponentWrapper (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-injector.js:16:45)
+      at resolveParam (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:150:38)
+          at async Promise.all (index 0)
+      at TestingInjector.resolveConstructorParams (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:182:27)
+      at TestingInjector.loadInstance (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:76:13)
+      at TestingInjector.loadProvider (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:110:9)
+      at ../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:58:13
+          at async Promise.all (index 5)
+      at TestingInstanceLoader.createInstancesOfProviders (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:57:9)
+      at ../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:42:13
+          at async Promise.all (index 10)
+      at TestingInstanceLoader.createInstances (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:41:9)
+      at TestingInstanceLoader.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:24:13)
+      at TestingInstanceLoader.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-instance-loader.js:6:9)
+      at TestingModuleBuilder.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-module.builder.js:119:9)
+      at TestingModuleBuilder.compile (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-module.builder.js:72:9)
+      at createAccountTestApp (test/contracts/file:/Users/lind/Documents/projects/zucker-ccopyright/apps/server/src/test/contracts/account-host.ts:142:18)
+      at Object.<anonymous> (test/contracts/file:/Users/lind/Documents/projects/zucker-ccopyright/apps/server/src/test/contracts/account-safety.phase2.spec.ts:52:16)
+
+  ● Phase 2: account safety on PostgreSQL › CLI concurrent grants create one binding and ordinary revoke is idempotent
+
+    Nest can't resolve dependencies of the RateLimitGuard (?, RATE_LIMITER_SERVICE). Please make sure that the argument Reflector at index [0] is available in the ZuckerRateLimiterModule module.
+
+    Potential solutions:
+    - Is ZuckerRateLimiterModule a valid NestJS module?
+    - If Reflector is a provider, is it part of the current ZuckerRateLimiterModule?
+    - If Reflector is exported from a separate @Module, is that module imported within ZuckerRateLimiterModule?
+      @Module({
+        imports: [ /* the Module containing Reflector */ ]
+      })
+
+    For more common dependency resolution issues, see: https://docs.nestjs.com/faq/common-errors
+
+      at TestingInjector.lookupComponentInParentModules (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:346:19)
+      at TestingInjector.resolveComponentWrapper (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-injector.js:16:45)
+      at resolveParam (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:150:38)
+          at async Promise.all (index 0)
+      at TestingInjector.resolveConstructorParams (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:182:27)
+      at TestingInjector.loadInstance (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:76:13)
+      at TestingInjector.loadProvider (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:110:9)
+      at ../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:58:13
+          at async Promise.all (index 5)
+      at TestingInstanceLoader.createInstancesOfProviders (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:57:9)
+      at ../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:42:13
+          at async Promise.all (index 10)
+      at TestingInstanceLoader.createInstances (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:41:9)
+      at TestingInstanceLoader.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:24:13)
+      at TestingInstanceLoader.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-instance-loader.js:6:9)
+      at TestingModuleBuilder.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-module.builder.js:119:9)
+      at TestingModuleBuilder.compile (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-module.builder.js:72:9)
+      at createAccountTestApp (test/contracts/file:/Users/lind/Documents/projects/zucker-ccopyright/apps/server/src/test/contracts/account-host.ts:142:18)
+      at Object.<anonymous> (test/contracts/file:/Users/lind/Documents/projects/zucker-ccopyright/apps/server/src/test/contracts/account-safety.phase2.spec.ts:52:16)
+
+  ● Phase 2: account safety on PostgreSQL › CLI concurrent protected-role revocations preserve one holder
+
+    Nest can't resolve dependencies of the RateLimitGuard (?, RATE_LIMITER_SERVICE). Please make sure that the argument Reflector at index [0] is available in the ZuckerRateLimiterModule module.
+
+    Potential solutions:
+    - Is ZuckerRateLimiterModule a valid NestJS module?
+    - If Reflector is a provider, is it part of the current ZuckerRateLimiterModule?
+    - If Reflector is exported from a separate @Module, is that module imported within ZuckerRateLimiterModule?
+      @Module({
+        imports: [ /* the Module containing Reflector */ ]
+      })
+
+    For more common dependency resolution issues, see: https://docs.nestjs.com/faq/common-errors
+
+      at TestingInjector.lookupComponentInParentModules (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:346:19)
+      at TestingInjector.resolveComponentWrapper (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-injector.js:16:45)
+      at resolveParam (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:150:38)
+          at async Promise.all (index 0)
+      at TestingInjector.resolveConstructorParams (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:182:27)
+      at TestingInjector.loadInstance (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:76:13)
+      at TestingInjector.loadProvider (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:110:9)
+      at ../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:58:13
+          at async Promise.all (index 5)
+      at TestingInstanceLoader.createInstancesOfProviders (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:57:9)
+      at ../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:42:13
+          at async Promise.all (index 10)
+      at TestingInstanceLoader.createInstances (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:41:9)
+      at TestingInstanceLoader.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:24:13)
+      at TestingInstanceLoader.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-instance-loader.js:6:9)
+      at TestingModuleBuilder.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-module.builder.js:119:9)
+      at TestingModuleBuilder.compile (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-module.builder.js:72:9)
+      at createAccountTestApp (test/contracts/file:/Users/lind/Documents/projects/zucker-ccopyright/apps/server/src/test/contracts/account-host.ts:142:18)
+      at Object.<anonymous> (test/contracts/file:/Users/lind/Documents/projects/zucker-ccopyright/apps/server/src/test/contracts/account-safety.phase2.spec.ts:52:16)
+
+  ● Phase 2: account safety on PostgreSQL › HTTP refuses to disable its sole superadmin
+
+    Nest can't resolve dependencies of the RateLimitGuard (?, RATE_LIMITER_SERVICE). Please make sure that the argument Reflector at index [0] is available in the ZuckerRateLimiterModule module.
+
+    Potential solutions:
+    - Is ZuckerRateLimiterModule a valid NestJS module?
+    - If Reflector is a provider, is it part of the current ZuckerRateLimiterModule?
+    - If Reflector is exported from a separate @Module, is that module imported within ZuckerRateLimiterModule?
+      @Module({
+        imports: [ /* the Module containing Reflector */ ]
+      })
+
+    For more common dependency resolution issues, see: https://docs.nestjs.com/faq/common-errors
+
+      at TestingInjector.lookupComponentInParentModules (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:346:19)
+      at TestingInjector.resolveComponentWrapper (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-injector.js:16:45)
+      at resolveParam (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:150:38)
+          at async Promise.all (index 0)
+      at TestingInjector.resolveConstructorParams (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:182:27)
+      at TestingInjector.loadInstance (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:76:13)
+      at TestingInjector.loadProvider (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:110:9)
+      at ../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:58:13
+          at async Promise.all (index 5)
+      at TestingInstanceLoader.createInstancesOfProviders (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:57:9)
+      at ../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:42:13
+          at async Promise.all (index 10)
+      at TestingInstanceLoader.createInstances (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:41:9)
+      at TestingInstanceLoader.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:24:13)
+      at TestingInstanceLoader.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-instance-loader.js:6:9)
+      at TestingModuleBuilder.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-module.builder.js:119:9)
+      at TestingModuleBuilder.compile (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-module.builder.js:72:9)
+      at createAccountTestApp (test/contracts/file:/Users/lind/Documents/projects/zucker-ccopyright/apps/server/src/test/contracts/account-host.ts:142:18)
+      at Object.<anonymous> (test/contracts/file:/Users/lind/Documents/projects/zucker-ccopyright/apps/server/src/test/contracts/account-safety.phase2.spec.ts:52:16)
+
+  ● Phase 2: account safety on PostgreSQL › HTTP refuses to revoke its sole superadmin
+
+    Nest can't resolve dependencies of the RateLimitGuard (?, RATE_LIMITER_SERVICE). Please make sure that the argument Reflector at index [0] is available in the ZuckerRateLimiterModule module.
+
+    Potential solutions:
+    - Is ZuckerRateLimiterModule a valid NestJS module?
+    - If Reflector is a provider, is it part of the current ZuckerRateLimiterModule?
+    - If Reflector is exported from a separate @Module, is that module imported within ZuckerRateLimiterModule?
+      @Module({
+        imports: [ /* the Module containing Reflector */ ]
+      })
+
+    For more common dependency resolution issues, see: https://docs.nestjs.com/faq/common-errors
+
+      at TestingInjector.lookupComponentInParentModules (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:346:19)
+      at TestingInjector.resolveComponentWrapper (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-injector.js:16:45)
+      at resolveParam (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:150:38)
+          at async Promise.all (index 0)
+      at TestingInjector.resolveConstructorParams (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:182:27)
+      at TestingInjector.loadInstance (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:76:13)
+      at TestingInjector.loadProvider (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:110:9)
+      at ../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:58:13
+          at async Promise.all (index 5)
+      at TestingInstanceLoader.createInstancesOfProviders (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:57:9)
+      at ../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:42:13
+          at async Promise.all (index 10)
+      at TestingInstanceLoader.createInstances (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:41:9)
+      at TestingInstanceLoader.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:24:13)
+      at TestingInstanceLoader.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-instance-loader.js:6:9)
+      at TestingModuleBuilder.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-module.builder.js:119:9)
+      at TestingModuleBuilder.compile (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-module.builder.js:72:9)
+      at createAccountTestApp (test/contracts/file:/Users/lind/Documents/projects/zucker-ccopyright/apps/server/src/test/contracts/account-host.ts:142:18)
+      at Object.<anonymous> (test/contracts/file:/Users/lind/Documents/projects/zucker-ccopyright/apps/server/src/test/contracts/account-safety.phase2.spec.ts:52:16)
+
+  ● Phase 2: account safety on PostgreSQL › HTTP deletion preserves all links while billing is active
+
+    Nest can't resolve dependencies of the RateLimitGuard (?, RATE_LIMITER_SERVICE). Please make sure that the argument Reflector at index [0] is available in the ZuckerRateLimiterModule module.
+
+    Potential solutions:
+    - Is ZuckerRateLimiterModule a valid NestJS module?
+    - If Reflector is a provider, is it part of the current ZuckerRateLimiterModule?
+    - If Reflector is exported from a separate @Module, is that module imported within ZuckerRateLimiterModule?
+      @Module({
+        imports: [ /* the Module containing Reflector */ ]
+      })
+
+    For more common dependency resolution issues, see: https://docs.nestjs.com/faq/common-errors
+
+      at TestingInjector.lookupComponentInParentModules (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:346:19)
+      at TestingInjector.resolveComponentWrapper (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-injector.js:16:45)
+      at resolveParam (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:150:38)
+          at async Promise.all (index 0)
+      at TestingInjector.resolveConstructorParams (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:182:27)
+      at TestingInjector.loadInstance (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:76:13)
+      at TestingInjector.loadProvider (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:110:9)
+      at ../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:58:13
+          at async Promise.all (index 5)
+      at TestingInstanceLoader.createInstancesOfProviders (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:57:9)
+      at ../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:42:13
+          at async Promise.all (index 10)
+      at TestingInstanceLoader.createInstances (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:41:9)
+      at TestingInstanceLoader.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:24:13)
+      at TestingInstanceLoader.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-instance-loader.js:6:9)
+      at TestingModuleBuilder.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-module.builder.js:119:9)
+      at TestingModuleBuilder.compile (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-module.builder.js:72:9)
+      at createAccountTestApp (test/contracts/file:/Users/lind/Documents/projects/zucker-ccopyright/apps/server/src/test/contracts/account-host.ts:142:18)
+      at Object.<anonymous> (test/contracts/file:/Users/lind/Documents/projects/zucker-ccopyright/apps/server/src/test/contracts/account-safety.phase2.spec.ts:52:16)
+
+  ● Phase 2: account safety on PostgreSQL › HTTP deletion preserves all links while billing is unknown
+
+    Nest can't resolve dependencies of the RateLimitGuard (?, RATE_LIMITER_SERVICE). Please make sure that the argument Reflector at index [0] is available in the ZuckerRateLimiterModule module.
+
+    Potential solutions:
+    - Is ZuckerRateLimiterModule a valid NestJS module?
+    - If Reflector is a provider, is it part of the current ZuckerRateLimiterModule?
+    - If Reflector is exported from a separate @Module, is that module imported within ZuckerRateLimiterModule?
+      @Module({
+        imports: [ /* the Module containing Reflector */ ]
+      })
+
+    For more common dependency resolution issues, see: https://docs.nestjs.com/faq/common-errors
+
+      at TestingInjector.lookupComponentInParentModules (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:346:19)
+      at TestingInjector.resolveComponentWrapper (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-injector.js:16:45)
+      at resolveParam (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:150:38)
+          at async Promise.all (index 0)
+      at TestingInjector.resolveConstructorParams (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:182:27)
+      at TestingInjector.loadInstance (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:76:13)
+      at TestingInjector.loadProvider (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:110:9)
+      at ../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:58:13
+          at async Promise.all (index 5)
+      at TestingInstanceLoader.createInstancesOfProviders (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:57:9)
+      at ../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:42:13
+          at async Promise.all (index 10)
+      at TestingInstanceLoader.createInstances (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:41:9)
+      at TestingInstanceLoader.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:24:13)
+      at TestingInstanceLoader.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-instance-loader.js:6:9)
+      at TestingModuleBuilder.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-module.builder.js:119:9)
+      at TestingModuleBuilder.compile (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-module.builder.js:72:9)
+      at createAccountTestApp (test/contracts/file:/Users/lind/Documents/projects/zucker-ccopyright/apps/server/src/test/contracts/account-host.ts:142:18)
+      at Object.<anonymous> (test/contracts/file:/Users/lind/Documents/projects/zucker-ccopyright/apps/server/src/test/contracts/account-safety.phase2.spec.ts:52:16)
+
+  ● Phase 2: account safety on PostgreSQL › HTTP deletion blocks a queued Dossier billed to the target
+
+    Nest can't resolve dependencies of the RateLimitGuard (?, RATE_LIMITER_SERVICE). Please make sure that the argument Reflector at index [0] is available in the ZuckerRateLimiterModule module.
+
+    Potential solutions:
+    - Is ZuckerRateLimiterModule a valid NestJS module?
+    - If Reflector is a provider, is it part of the current ZuckerRateLimiterModule?
+    - If Reflector is exported from a separate @Module, is that module imported within ZuckerRateLimiterModule?
+      @Module({
+        imports: [ /* the Module containing Reflector */ ]
+      })
+
+    For more common dependency resolution issues, see: https://docs.nestjs.com/faq/common-errors
+
+      at TestingInjector.lookupComponentInParentModules (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:346:19)
+      at TestingInjector.resolveComponentWrapper (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-injector.js:16:45)
+      at resolveParam (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:150:38)
+          at async Promise.all (index 0)
+      at TestingInjector.resolveConstructorParams (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:182:27)
+      at TestingInjector.loadInstance (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:76:13)
+      at TestingInjector.loadProvider (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:110:9)
+      at ../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:58:13
+          at async Promise.all (index 5)
+      at TestingInstanceLoader.createInstancesOfProviders (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:57:9)
+      at ../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:42:13
+          at async Promise.all (index 10)
+      at TestingInstanceLoader.createInstances (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:41:9)
+      at TestingInstanceLoader.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:24:13)
+      at TestingInstanceLoader.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-instance-loader.js:6:9)
+      at TestingModuleBuilder.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-module.builder.js:119:9)
+      at TestingModuleBuilder.compile (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-module.builder.js:72:9)
+      at createAccountTestApp (test/contracts/file:/Users/lind/Documents/projects/zucker-ccopyright/apps/server/src/test/contracts/account-host.ts:142:18)
+      at Object.<anonymous> (test/contracts/file:/Users/lind/Documents/projects/zucker-ccopyright/apps/server/src/test/contracts/account-safety.phase2.spec.ts:52:16)
+
+  ● Phase 2: account safety on PostgreSQL › HTTP deletion blocks a running Dossier billed to the target
+
+    Nest can't resolve dependencies of the RateLimitGuard (?, RATE_LIMITER_SERVICE). Please make sure that the argument Reflector at index [0] is available in the ZuckerRateLimiterModule module.
+
+    Potential solutions:
+    - Is ZuckerRateLimiterModule a valid NestJS module?
+    - If Reflector is a provider, is it part of the current ZuckerRateLimiterModule?
+    - If Reflector is exported from a separate @Module, is that module imported within ZuckerRateLimiterModule?
+      @Module({
+        imports: [ /* the Module containing Reflector */ ]
+      })
+
+    For more common dependency resolution issues, see: https://docs.nestjs.com/faq/common-errors
+
+      at TestingInjector.lookupComponentInParentModules (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:346:19)
+      at TestingInjector.resolveComponentWrapper (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-injector.js:16:45)
+      at resolveParam (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:150:38)
+          at async Promise.all (index 0)
+      at TestingInjector.resolveConstructorParams (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:182:27)
+      at TestingInjector.loadInstance (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:76:13)
+      at TestingInjector.loadProvider (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:110:9)
+      at ../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:58:13
+          at async Promise.all (index 5)
+      at TestingInstanceLoader.createInstancesOfProviders (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:57:9)
+      at ../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:42:13
+          at async Promise.all (index 10)
+      at TestingInstanceLoader.createInstances (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:41:9)
+      at TestingInstanceLoader.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:24:13)
+      at TestingInstanceLoader.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-instance-loader.js:6:9)
+      at TestingModuleBuilder.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-module.builder.js:119:9)
+      at TestingModuleBuilder.compile (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-module.builder.js:72:9)
+      at createAccountTestApp (test/contracts/file:/Users/lind/Documents/projects/zucker-ccopyright/apps/server/src/test/contracts/account-host.ts:142:18)
+      at Object.<anonymous> (test/contracts/file:/Users/lind/Documents/projects/zucker-ccopyright/apps/server/src/test/contracts/account-safety.phase2.spec.ts:52:16)
+
+  ● Phase 2: account safety on PostgreSQL › HTTP deletion rolls link removal back when the final user delete fails inside PostgreSQL
+
+    Nest can't resolve dependencies of the RateLimitGuard (?, RATE_LIMITER_SERVICE). Please make sure that the argument Reflector at index [0] is available in the ZuckerRateLimiterModule module.
+
+    Potential solutions:
+    - Is ZuckerRateLimiterModule a valid NestJS module?
+    - If Reflector is a provider, is it part of the current ZuckerRateLimiterModule?
+    - If Reflector is exported from a separate @Module, is that module imported within ZuckerRateLimiterModule?
+      @Module({
+        imports: [ /* the Module containing Reflector */ ]
+      })
+
+    For more common dependency resolution issues, see: https://docs.nestjs.com/faq/common-errors
+
+      at TestingInjector.lookupComponentInParentModules (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:346:19)
+      at TestingInjector.resolveComponentWrapper (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-injector.js:16:45)
+      at resolveParam (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:150:38)
+          at async Promise.all (index 0)
+      at TestingInjector.resolveConstructorParams (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:182:27)
+      at TestingInjector.loadInstance (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:76:13)
+      at TestingInjector.loadProvider (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:110:9)
+      at ../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:58:13
+          at async Promise.all (index 5)
+      at TestingInstanceLoader.createInstancesOfProviders (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:57:9)
+      at ../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:42:13
+          at async Promise.all (index 10)
+      at TestingInstanceLoader.createInstances (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:41:9)
+      at TestingInstanceLoader.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:24:13)
+      at TestingInstanceLoader.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-instance-loader.js:6:9)
+      at TestingModuleBuilder.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-module.builder.js:119:9)
+      at TestingModuleBuilder.compile (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-module.builder.js:72:9)
+      at createAccountTestApp (test/contracts/file:/Users/lind/Documents/projects/zucker-ccopyright/apps/server/src/test/contracts/account-host.ts:142:18)
+      at Object.<anonymous> (test/contracts/file:/Users/lind/Documents/projects/zucker-ccopyright/apps/server/src/test/contracts/account-safety.phase2.spec.ts:52:16)
+
+  ● Phase 2: account safety on PostgreSQL › HTTP refuses to disable the last enabled superadmin with a disabled alternate
+
+    Nest can't resolve dependencies of the RateLimitGuard (?, RATE_LIMITER_SERVICE). Please make sure that the argument Reflector at index [0] is available in the ZuckerRateLimiterModule module.
+
+    Potential solutions:
+    - Is ZuckerRateLimiterModule a valid NestJS module?
+    - If Reflector is a provider, is it part of the current ZuckerRateLimiterModule?
+    - If Reflector is exported from a separate @Module, is that module imported within ZuckerRateLimiterModule?
+      @Module({
+        imports: [ /* the Module containing Reflector */ ]
+      })
+
+    For more common dependency resolution issues, see: https://docs.nestjs.com/faq/common-errors
+
+      at TestingInjector.lookupComponentInParentModules (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:346:19)
+      at TestingInjector.resolveComponentWrapper (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-injector.js:16:45)
+      at resolveParam (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:150:38)
+          at async Promise.all (index 0)
+      at TestingInjector.resolveConstructorParams (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:182:27)
+      at TestingInjector.loadInstance (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:76:13)
+      at TestingInjector.loadProvider (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:110:9)
+      at ../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:58:13
+          at async Promise.all (index 5)
+      at TestingInstanceLoader.createInstancesOfProviders (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:57:9)
+      at ../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:42:13
+          at async Promise.all (index 10)
+      at TestingInstanceLoader.createInstances (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:41:9)
+      at TestingInstanceLoader.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:24:13)
+      at TestingInstanceLoader.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-instance-loader.js:6:9)
+      at TestingModuleBuilder.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-module.builder.js:119:9)
+      at TestingModuleBuilder.compile (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-module.builder.js:72:9)
+      at createAccountTestApp (test/contracts/file:/Users/lind/Documents/projects/zucker-ccopyright/apps/server/src/test/contracts/account-host.ts:142:18)
+      at Object.<anonymous> (test/contracts/file:/Users/lind/Documents/projects/zucker-ccopyright/apps/server/src/test/contracts/account-safety.phase2.spec.ts:52:16)
+
+  ● Phase 2: account safety on PostgreSQL › HTTP refuses to revoke the last enabled superadmin with a disabled alternate
+
+    Nest can't resolve dependencies of the RateLimitGuard (?, RATE_LIMITER_SERVICE). Please make sure that the argument Reflector at index [0] is available in the ZuckerRateLimiterModule module.
+
+    Potential solutions:
+    - Is ZuckerRateLimiterModule a valid NestJS module?
+    - If Reflector is a provider, is it part of the current ZuckerRateLimiterModule?
+    - If Reflector is exported from a separate @Module, is that module imported within ZuckerRateLimiterModule?
+      @Module({
+        imports: [ /* the Module containing Reflector */ ]
+      })
+
+    For more common dependency resolution issues, see: https://docs.nestjs.com/faq/common-errors
+
+      at TestingInjector.lookupComponentInParentModules (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:346:19)
+      at TestingInjector.resolveComponentWrapper (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-injector.js:16:45)
+      at resolveParam (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:150:38)
+          at async Promise.all (index 0)
+      at TestingInjector.resolveConstructorParams (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:182:27)
+      at TestingInjector.loadInstance (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:76:13)
+      at TestingInjector.loadProvider (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:110:9)
+      at ../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:58:13
+          at async Promise.all (index 5)
+      at TestingInstanceLoader.createInstancesOfProviders (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:57:9)
+      at ../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:42:13
+          at async Promise.all (index 10)
+      at TestingInstanceLoader.createInstances (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:41:9)
+      at TestingInstanceLoader.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:24:13)
+      at TestingInstanceLoader.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-instance-loader.js:6:9)
+      at TestingModuleBuilder.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-module.builder.js:119:9)
+      at TestingModuleBuilder.compile (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-module.builder.js:72:9)
+      at createAccountTestApp (test/contracts/file:/Users/lind/Documents/projects/zucker-ccopyright/apps/server/src/test/contracts/account-host.ts:142:18)
+      at Object.<anonymous> (test/contracts/file:/Users/lind/Documents/projects/zucker-ccopyright/apps/server/src/test/contracts/account-safety.phase2.spec.ts:52:16)
+
+  ● Phase 2: account safety on PostgreSQL › CLI refuses to revoke the last enabled superadmin with a disabled alternate
+
+    Nest can't resolve dependencies of the RateLimitGuard (?, RATE_LIMITER_SERVICE). Please make sure that the argument Reflector at index [0] is available in the ZuckerRateLimiterModule module.
+
+    Potential solutions:
+    - Is ZuckerRateLimiterModule a valid NestJS module?
+    - If Reflector is a provider, is it part of the current ZuckerRateLimiterModule?
+    - If Reflector is exported from a separate @Module, is that module imported within ZuckerRateLimiterModule?
+      @Module({
+        imports: [ /* the Module containing Reflector */ ]
+      })
+
+    For more common dependency resolution issues, see: https://docs.nestjs.com/faq/common-errors
+
+      at TestingInjector.lookupComponentInParentModules (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:346:19)
+      at TestingInjector.resolveComponentWrapper (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-injector.js:16:45)
+      at resolveParam (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:150:38)
+          at async Promise.all (index 0)
+      at TestingInjector.resolveConstructorParams (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:182:27)
+      at TestingInjector.loadInstance (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:76:13)
+      at TestingInjector.loadProvider (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:110:9)
+      at ../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:58:13
+          at async Promise.all (index 5)
+      at TestingInstanceLoader.createInstancesOfProviders (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:57:9)
+      at ../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:42:13
+          at async Promise.all (index 10)
+      at TestingInstanceLoader.createInstances (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:41:9)
+      at TestingInstanceLoader.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:24:13)
+      at TestingInstanceLoader.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-instance-loader.js:6:9)
+      at TestingModuleBuilder.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-module.builder.js:119:9)
+      at TestingModuleBuilder.compile (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-module.builder.js:72:9)
+      at createAccountTestApp (test/contracts/file:/Users/lind/Documents/projects/zucker-ccopyright/apps/server/src/test/contracts/account-host.ts:142:18)
+      at Object.<anonymous> (test/contracts/file:/Users/lind/Documents/projects/zucker-ccopyright/apps/server/src/test/contracts/account-safety.phase2.spec.ts:52:16)
+
+  ● Phase 2: account safety on PostgreSQL › HTTP concurrent disable and revoke preserve at least one enabled superadmin
+
+    Nest can't resolve dependencies of the RateLimitGuard (?, RATE_LIMITER_SERVICE). Please make sure that the argument Reflector at index [0] is available in the ZuckerRateLimiterModule module.
+
+    Potential solutions:
+    - Is ZuckerRateLimiterModule a valid NestJS module?
+    - If Reflector is a provider, is it part of the current ZuckerRateLimiterModule?
+    - If Reflector is exported from a separate @Module, is that module imported within ZuckerRateLimiterModule?
+      @Module({
+        imports: [ /* the Module containing Reflector */ ]
+      })
+
+    For more common dependency resolution issues, see: https://docs.nestjs.com/faq/common-errors
+
+      at TestingInjector.lookupComponentInParentModules (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:346:19)
+      at TestingInjector.resolveComponentWrapper (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-injector.js:16:45)
+      at resolveParam (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:150:38)
+          at async Promise.all (index 0)
+      at TestingInjector.resolveConstructorParams (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:182:27)
+      at TestingInjector.loadInstance (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:76:13)
+      at TestingInjector.loadProvider (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:110:9)
+      at ../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:58:13
+          at async Promise.all (index 5)
+      at TestingInstanceLoader.createInstancesOfProviders (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:57:9)
+      at ../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:42:13
+          at async Promise.all (index 10)
+      at TestingInstanceLoader.createInstances (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:41:9)
+      at TestingInstanceLoader.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:24:13)
+      at TestingInstanceLoader.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-instance-loader.js:6:9)
+      at TestingModuleBuilder.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-module.builder.js:119:9)
+      at TestingModuleBuilder.compile (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-module.builder.js:72:9)
+      at createAccountTestApp (test/contracts/file:/Users/lind/Documents/projects/zucker-ccopyright/apps/server/src/test/contracts/account-host.ts:142:18)
+      at Object.<anonymous> (test/contracts/file:/Users/lind/Documents/projects/zucker-ccopyright/apps/server/src/test/contracts/account-safety.phase2.spec.ts:52:16)
+
+  ● Phase 2: account safety on PostgreSQL › CLI grant racing HTTP deletion does not leave an orphan role binding
+
+    Nest can't resolve dependencies of the RateLimitGuard (?, RATE_LIMITER_SERVICE). Please make sure that the argument Reflector at index [0] is available in the ZuckerRateLimiterModule module.
+
+    Potential solutions:
+    - Is ZuckerRateLimiterModule a valid NestJS module?
+    - If Reflector is a provider, is it part of the current ZuckerRateLimiterModule?
+    - If Reflector is exported from a separate @Module, is that module imported within ZuckerRateLimiterModule?
+      @Module({
+        imports: [ /* the Module containing Reflector */ ]
+      })
+
+    For more common dependency resolution issues, see: https://docs.nestjs.com/faq/common-errors
+
+      at TestingInjector.lookupComponentInParentModules (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:346:19)
+      at TestingInjector.resolveComponentWrapper (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-injector.js:16:45)
+      at resolveParam (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:150:38)
+          at async Promise.all (index 0)
+      at TestingInjector.resolveConstructorParams (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:182:27)
+      at TestingInjector.loadInstance (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:76:13)
+      at TestingInjector.loadProvider (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/injector.js:110:9)
+      at ../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:58:13
+          at async Promise.all (index 5)
+      at TestingInstanceLoader.createInstancesOfProviders (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:57:9)
+      at ../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:42:13
+          at async Promise.all (index 10)
+      at TestingInstanceLoader.createInstances (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:41:9)
+      at TestingInstanceLoader.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+core@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0.14._e779ec2c9c93df7002000c3c87d8744e/node_modules/@nestjs/core/injector/instance-loader.js:24:13)
+      at TestingInstanceLoader.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-instance-loader.js:6:9)
+      at TestingModuleBuilder.createInstancesOfDependencies (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-module.builder.js:119:9)
+      at TestingModuleBuilder.compile (../../../node_modules/.pnpm/@nestjs+testing@12.1.0_@nestjs+common@12.1.0_class-transformer@0.5.1_class-validator@0._487fe58f295849ce02f2ff8ae2a3e68c/node_modules/@nestjs/testing/testing-module.builder.js:72:9)
+      at createAccountTestApp (test/contracts/file:/Users/lind/Documents/projects/zucker-ccopyright/apps/server/src/test/contracts/account-host.ts:142:18)
+      at Object.<anonymous> (test/contracts/file:/Users/lind/Documents/projects/zucker-ccopyright/apps/server/src/test/contracts/account-safety.phase2.spec.ts:52:16)
+
+
+  ● Test suite failed to run
+
+    TypeError: Cannot read properties of undefined (reading 'close')
+
+      at Object.<anonymous> (test/contracts/file:/Users/lind/Documents/projects/zucker-ccopyright/apps/server/src/test/contracts/account-safety.phase2.spec.ts:77:15)
+
+Test Suites: 1 failed, 1 total
+Tests:       18 failed, 18 total
+Snapshots:   0 total
+Time:        5.738 s
+Ran all test suites within paths "src/test/contracts/account-safety.phase2.spec.ts".
+Test results written to: ../../../zucker-framework/docs/reviews/runtime-2026-11-12-2e9358/joint-candidate-safety.json
+Jest did not exit one second after the test run has completed.
+
+'This usually means that there are asynchronous operations that weren't stopped in your tests. Consider running Jest with `--detectOpenHandles` to troubleshoot this issue.

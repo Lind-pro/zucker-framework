@@ -267,8 +267,13 @@ export class PaymentCredentialResolver implements HostedCheckoutProviderResolver
     const { current, newest, sequence } = await this.sequence(providerId);
     if (minimum > newest) forged();
     let mode: string | undefined;
-    if (order && minimum > 0) {
+    if (order) {
+      // Revision 0 names this process's bootstrap environment, not an unspecified revision.
+      // It must constrain old orders too; disabled/unassemblable bootstrap credentials cannot
+      // prove the original mode. Across restarts the consumer must preserve that environment or
+      // use a new account scope / a persisted revision when changing account or test/live mode.
       const recorded = sequence.includes(minimum) ? await this.entry(providerId, minimum) : null;
+      if (minimum === 0 && (!recorded || !recorded.mode)) forged();
       if (recorded && recorded.accountScope !== accountScope) forged();
       mode = recorded?.mode;
     }

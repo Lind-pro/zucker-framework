@@ -54,23 +54,30 @@ export interface ProviderRegistry<T> {
 export class DefaultProviderRegistry<T> implements ProviderRegistry<T> {
   private readonly logger = new Logger(DefaultProviderRegistry.name);
   private providers = new Map<string, Provider<T>>();
+  private registrations = new Map<string, symbol>();
   private defaultId: string | null = null;
   private hooks: RegistryHook<T>[] = [];
 
   register(provider: Provider<T>): Disposable {
-    this.providers.set(provider.id, provider);
+    const id = provider.id;
+    const registration = Symbol(id);
+    this.registrations.set(id, registration);
+    this.providers.set(id, provider);
     this.hooks.forEach((h) => h.onRegister?.(provider));
     this.logger.log(`Provider registered: ${provider.id}`);
     if (this.providers.size === 1) {
       this.defaultId = provider.id;
     }
-    return { dispose: () => this.unregister(provider.id) };
+    return { dispose: () => {
+      if (this.registrations.get(id) === registration) this.unregister(id);
+    } };
   }
 
   unregister(id: string): void {
     const provider = this.providers.get(id);
     if (provider) {
       this.providers.delete(id);
+      this.registrations.delete(id);
       this.hooks.forEach((h) => h.onUnregister?.(provider));
       this.logger.log(`Provider unregistered: ${id}`);
       if (this.defaultId === id) {

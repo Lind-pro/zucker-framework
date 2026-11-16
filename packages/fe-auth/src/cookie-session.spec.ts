@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createAuthStore } from './store';
+import { createAuthStore, type AuthState } from './store';
 import { createCookieSession, createSessionSummaryStorage } from './cookie-session';
 import { jwtSessionKey } from './session';
 
@@ -19,12 +19,12 @@ function persisted(userId: string | null) {
 
 /** One tab: its own store over the shared localStorage, with the summary guard and session. */
 function tab(options: { refresh?: () => Promise<{ access_token: string }>; account?: (token: string) => Promise<User> } = {}) {
-  const summary = createSessionSummaryStorage<unknown>({ key: KEY });
+  const summary = createSessionSummaryStorage<Partial<AuthState<User>>>({ key: KEY });
   const events = new EventTarget();
   const store = createAuthStore<User>({
     persistKey: KEY,
     persistOptions: {
-      storage: summary.storage as never,
+      storage: summary.storage,
       partialize: (state) => ({ isAuthenticated: state.isAuthenticated, user: state.user, permissions: state.permissions }),
     },
   });

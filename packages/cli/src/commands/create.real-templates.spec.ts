@@ -4,6 +4,7 @@ import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createCreateCommand } from './create';
+import { checkOrigins } from './doctor';
 // @ts-expect-error plain ESM script without types
 import { prepareCliTemplates } from '../../../../scripts/prepare-cli-templates.mjs';
 import type { ProjectBundle } from '../../tooling/project-templates.mjs';
@@ -88,6 +89,22 @@ describe('bundled real templates', () => {
 });
 
 describe('zucker create with the real templates', () => {
+  it.each([
+    { name: 'all-apps', flags: [], web: true, admin: true },
+    { name: 'web-only', flags: ['--no-admin'], web: true, admin: false },
+    { name: 'admin-only', flags: ['--no-web'], web: false, admin: true },
+    { name: 'server-only', flags: ['--no-web', '--no-admin'], web: false, admin: false },
+  ])('generates doctor-compatible origins for $name', async ({ name, flags, web, admin }) => {
+    await run(name, ...flags);
+    for (const file of ['.env', '.env.example']) {
+      const values = parseEnv(readFileSync(join(cwd, name, file), 'utf8'));
+      expect(values.WEB_URL).toBe(web ? 'http://localhost:4202' : undefined);
+      expect(values.SITE_URL).toBe(web ? 'http://localhost:4202' : undefined);
+      expect(values.ADMIN_URL).toBe(admin ? 'http://localhost:4201' : '');
+      expect(checkOrigins(values).filter(result => result.status === 'error')).toEqual([]);
+    }
+  });
+
   it('references only fixed released versions: no workspace:, link:, file:, ranges or tags for framework packages', async () => {
     await run('proj');
     const root = join(cwd, 'proj');

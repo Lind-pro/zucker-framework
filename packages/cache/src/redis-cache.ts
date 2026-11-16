@@ -1,4 +1,5 @@
-import { ICache } from './cache.interface';
+import type { ICache } from './cache.interface';
+import { assertSequenceArguments, assertSequenceValue } from './sequence';
 
 /** Minimal Redis client interface (compatible with ioredis) */
 export interface RedisClient {
@@ -10,7 +11,30 @@ export interface RedisClient {
   scan(cursor: string, ...args: Array<string | number>): Promise<[string, string[]]>;
   getdel?(key: string): Promise<string | null>;
   pttl?(key: string): Promise<number>;
+  eval?(script: string, numKeys: number, ...args: Array<string | number>): Promise<unknown>;
 }
+
+const ADVANCE_SEQUENCE_SCRIPT = `
+local raw = redis.call('GET', KEYS[1])
+local current = 0
+if raw then
+  local ok, value = pcall(cjson.decode, raw)
+  if not ok or type(value) ~= 'number' or value < 0 or value > 9007199254740991 or value ~= math.floor(value) then
+    return redis.error_reply('Invalid cache sequence')
+  end
+  current = value
+end
+if current >= 9007199254740991 then return redis.error_reply('Cache sequence overflow') end
+local next = math.max(tonumber(ARGV[1]), current + 1)
+local encoded = string.format('%.0f', next)
+local ttl = tonumber(ARGV[2])
+local previousTtl = redis.call('PTTL', KEYS[1])
+if previousTtl == -1 then
+  redis.call('SET', KEYS[1], encoded)
+else
+  redis.call('SET', KEYS[1], encoded, 'PX', math.max(ttl, previousTtl))
+end
+return encoded`;
 
 export class RedisCache<T = unknown> implements ICache<T> {
   private readonly prefix: string;
@@ -51,6 +75,26 @@ export class RedisCache<T = unknown> implements ICache<T> {
     const ttl = await this.redis.pttl(this.key(key));
     if (ttl === -2) return undefined;
     return ttl < 0 ? null : ttl;
+  }
+
+  async readSequence(key: string): Promise<number | undefined> {
+    const raw = await this.redis.get(this.key(key));
+    if (raw === null) return undefined;
+    const value: unknown = JSON.parse(raw);
+    assertSequenceValue(value);
+    return value;
+  }
+
+  async advanceSequence(key: string, minimum: number, ttlMs: number): Promise<number> {
+    assertSequenceArguments(minimum, ttlMs);
+    if (!this.redis.eval) throw new Error('Redis cache sequences require atomic EVAL support');
+    const reply = await this.redis.eval(ADVANCE_SEQUENCE_SCRIPT, 1, this.key(key), minimum, ttlMs);
+    // Return a bulk decimal string from Lua: some RESP integer parsers round
+    // MAX_SAFE_INTEGER up before JavaScript can validate the returned number.
+    const result: unknown = typeof reply === 'string' && /^(?:0|[1-9]\d*)$/.test(reply)
+      ? Number(reply) : reply;
+    assertSequenceValue(result);
+    return result;
   }
 
   async del(key: string): Promise<void> {

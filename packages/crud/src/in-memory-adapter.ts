@@ -114,14 +114,17 @@ function matchesWhere(
       const ops = value as Record<string, unknown>;
       const rv = record[key];
       const insensitive = ops.mode === 'insensitive';
+      const equals = (other: unknown) => insensitive && typeof rv === 'string' && typeof other === 'string'
+        ? rv.toLowerCase() === other.toLowerCase()
+        : rv === other;
 
       for (const [op, ov] of Object.entries(ops)) {
         switch (op) {
           case 'equals':
-            if (rv !== ov) return false;
+            if (!equals(ov)) return false;
             break;
           case 'not':
-            if (rv === ov) return false;
+            if (equals(ov)) return false;
             break;
           case 'in':
             if (!Array.isArray(ov) || !(ov as unknown[]).includes(rv)) return false;
@@ -178,7 +181,7 @@ function matchesWhere(
             if (ov === false && (!Array.isArray(rv) || rv.length === 0)) return false;
             break;
           case 'mode':
-            // mode: 'insensitive' — handled by contains/startsWith/endsWith above
+            // mode: 'insensitive' — applied to equality and string matching above
             break;
           default:
             // Unknown operator — skip (optimistic)

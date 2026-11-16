@@ -1,0 +1,22 @@
+{
+  "head": "aee88b9bcd0b4f4bd181ac3b7116897f70af63d2",
+  "sourceDirty": true,
+  "files": {
+    "packages/cache/src/redis-cache.ts": "cd64ca5782eb27b78369091a9cd65a21de4987514bfff0a960bc0d8f8c102ed1",
+    "packages/cache/src/sequence.ts": "810955247dd13a5af060a90af03694e852d181d662263334a9d3bf743356fcf7",
+    "packages/cache/src/cache-sequence.spec.ts": "64d6b3045be81452df992d2d31e0f7eed16ed6176f52df788dbac813ba82c2fe",
+    "packages/cache/src/cache-sequence.integration.spec.ts": "582abc8aa30496c91b942b90d29f283d4ecb38c2235aba931c57fcc9ee58ed09",
+    "packages/auth/src/services/token.service.ts": "2cdb69414a17c399ab3ed547f31a2cbddc2affefa9fab4156d9a47d64f4a7989",
+    "packages/admin/src/users/users.controller.ts": "375d6f5b7e28c591817fb2287fc3175f0a61179732722f91d35a0cfc88246965",
+    "packages/back-office/src/accounts/account.service.ts": "44b8a779154dbaf9b32d49d1d177ec7e53d590818c71a4d358d60044d28528df",
+    "packages/back-office/src/accounts/admin-user-hooks.ts": "2422ea8291a11cea3ecf025660f2235bd9d62d01d86783a3228308144bb9bbea",
+    "packages/back-office/src/accounts/two-factor/two-factor.service.ts": "513e878a0367403d1e9a81c35cdbbe6f37202ce98ec173334a381062f6ae50c1",
+    "packages/back-office/src/accounts/account-security.transaction.spec.ts": "b2f2c885ef7f000a8a4ba7982919b7e6a80e4211595b721e3ba643fe58cda3ba",
+    "packages/back-office/src/subscriptions/payment-history.ts": "6b63513ca2dfb12521c2048172ce2ff73bddd6a5671912df673c5899422673dc",
+    "packages/back-office/src/subscriptions/payment-history.integration.spec.ts": "db64ec4528b1034a8897caf17187a6fd92330fb530c478f912a1dadf56103215",
+    "packages/back-office/src/subscriptions/billing-link.ts": "d79e2369e1d3bed74525f580e5e1094977f0791ffd1c4d5adbf8af153f2bd3d4",
+    "packages/back-office/src/subscriptions/user-subscription.store.ts": "51c0d46ced67bdc8c392ad83a655756a5f25f7e1d93c2ab7e388ce5f03c98628",
+    "packages/back-office/src/testing/transactional-sql-runtime.ts": "4fa8a0edb6b349bc27f4e2c60bf43705316bb5e03a0b7b020fdf3e7983d21739",
+    "packages/payment/src/plans/subscription-assignment.ts": "d6eb047a6c1b09c68a3f172e390b88440c225b28d663c9f7566671d4fc08173d"
+  }
+}

@@ -39,6 +39,17 @@ export interface ICache<T = unknown> {
    * `null` when it never expires. Used by HybridCache so L1 never outlives L2.
    */
   remainingTtlMs?(key: string): Promise<number | null | undefined>;
+
+  /**
+   * Atomically store and return max(minimum, previous + 1), treating a missing key as zero.
+   * Values must be non-negative safe integers; ttlMs must be a positive safe integer.
+   * The expiry is extended by at least ttlMs, never shortened. Reserve the key for this API.
+   * Shared implementations must fail if the authoritative backend cannot guarantee atomicity.
+   */
+  advanceSequence?(key: string, minimum: number, ttlMs: number): Promise<number>;
+
+  /** Authoritative sequence read: bypass process-local backfill and reject corrupt values. */
+  readSequence?(key: string): Promise<number | undefined>;
 }
 
 /**

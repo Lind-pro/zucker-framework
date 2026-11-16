@@ -1,0 +1,14 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /Users/lind/Documents/projects/zucker-ccopyright/apps/server/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+Synthetic concurrent protected-role HTTP statuses [400,200]
+PASS src/test/contracts/account-safety.phase2.spec.ts
+PASS src/test/contracts/account-protected-order.contract.spec.ts
+
+Test Suites: 2 passed, 2 total
+Tests:       19 passed, 19 total
+Snapshots:   0 total
+Time:        4.575 s, estimated 10 s
+Ran all test suites within paths "src/test/contracts/account-safety.phase2.spec.ts", "src/test/contracts/account-protected-order.contract.spec.ts".
+Test results written to: ../../../zucker-framework/docs/reviews/runtime-2026-11-12-2e9358/joint-protected-final.json
+Synthetic grant/revoke lock-order statuses [200,200]
