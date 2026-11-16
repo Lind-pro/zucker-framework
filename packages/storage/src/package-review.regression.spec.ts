@@ -23,7 +23,8 @@ describe('Package review regressions', () => {
       const result = await storage.completeChunkedUpload(id);
       expect(result.size).toBe(2 * 1024 * 1024);
       expect(peakBuffered).toBeLessThanOrEqual(128 * 1024);
-      expect(fs.readFileSync(path.join(root, result.key))).toEqual(Buffer.alloc(result.size, 1));
+      // Compare bytes directly; generic deep equality walks millions of Buffer keys.
+      expect(fs.readFileSync(path.join(root, result.key)).equals(Buffer.alloc(result.size, 1))).toBe(true);
     } finally { fs.rmSync(root, { recursive: true, force: true }); }
   });
 
