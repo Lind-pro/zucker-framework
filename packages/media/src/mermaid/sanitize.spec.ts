@@ -63,6 +63,46 @@ describe('sanitizeMermaidCode', () => {
     expect(sanitizeMermaidCode(normalized)).toBe(normalized);
   });
 
+  it('renames actors whose ids are sequence keywords and keeps their displayed names', async () => {
+    // Shape of a production figure: an "OPT" actor made every export of the draft fail.
+    const source = [
+      '%%{init: {\'theme\': \'neutral\'}}%%',
+      'sequenceDiagram',
+      '    participant OPT as 15d 寻优模块',
+      '    participant MOD as 15a 建模模块',
+      '    participant Loop',
+      '    OPT->>MOD: 提交候选',
+      '    MOD-->>OPT: 返回可行性',
+      '    MOD->>+Loop: 激活',
+      '    loop 按路径执行',
+      '        Loop-->>-OPT: 反馈',
+      '        break 状态异常',
+      '            OPT->>OPT: 停止',
+      '        end',
+      '    end',
+      '    Note over OPT,MOD: 慢环许可',
+      '    activate OPT',
+      '    deactivate OPT',
+    ].join('\n');
+    await expect(mermaid.parse(source)).rejects.toThrow();
+    const sanitized = sanitizeMermaidCode(source);
+    expect(sanitized).toContain('participant OPT_ as 15d 寻优模块');
+    expect(sanitized).toContain('participant Loop_ as Loop');
+    expect(sanitized).toContain('MOD-->>OPT_: 返回可行性');
+    expect(sanitized).toContain('Loop_-->>-OPT_: 反馈');
+    expect(sanitized).toContain('Note over OPT_,MOD: 慢环许可');
+    expect(sanitized).toContain('loop 按路径执行');
+    expect(sanitized).toContain('deactivate OPT_');
+    await expect(mermaid.parse(sanitized)).resolves.toMatchObject({ diagramType: 'sequence' });
+    expect(sanitizeMermaidCode(sanitized)).toBe(sanitized);
+  });
+
+  it.each(['opt', 'LOOP', 'Alt', 'end', 'par', 'and', 'break', 'critical', 'rect', 'box', 'note'])(
+    'parses a message to an actor named %s', async (id) => {
+      const sanitized = sanitizeMermaidCode(`sequenceDiagram\n    participant A\n    participant ${id}\n    A->>${id}: x\n    ${id}-->>A: y`);
+      await expect(mermaid.parse(sanitized)).resolves.toMatchObject({ diagramType: 'sequence' });
+    });
+
   it('preserves sequence alt/else/end and terminates the source', () => {
     const sanitized = sanitizeMermaidCode(onlineSequence);
     expect(sanitized).toContain('\n    end\n    F->>C');

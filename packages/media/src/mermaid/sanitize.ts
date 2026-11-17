@@ -189,6 +189,62 @@ function normalizeSequenceLine(line: string): string {
   return prefix + displayText;
 }
 
+// Sequence keywords Mermaid's lexer matches case-insensitively, even where an
+// actor id is expected: `A->>OPT: x` lexes OPT as the `opt` block and fails.
+const SEQUENCE_KEYWORDS = new Set([
+  'participant', 'actor', 'create', 'destroy', 'box', 'loop', 'rect', 'opt', 'alt', 'else', 'par', 'and',
+  'critical', 'option', 'break', 'end', 'note', 'over', 'activate', 'deactivate', 'autonumber', 'title',
+  'links', 'link', 'properties', 'details', 'off',
+]);
+const SEQUENCE_ID = '[A-Za-z_][A-Za-z0-9_-]*';
+const SEQUENCE_ARROW = '(?:-->>|->>|-->|->|--x|-x|--\\)|-\\))';
+const SEQUENCE_DECLARATION = new RegExp(`^(\\s*(?:create\\s+)?(?:participant|actor)\\s+)(${SEQUENCE_ID})(\\s+as\\s+.*)?\\s*$`, 'iu');
+const SEQUENCE_MESSAGE = new RegExp(`^(\\s*)(${SEQUENCE_ID}?)(\\s*${SEQUENCE_ARROW}\\s*[+-]?)(${SEQUENCE_ID})(\\s*:.*)$`, 'u');
+const SEQUENCE_NOTE = /^(\s*note\s+(?:over|left\s+of|right\s+of)\s+)([^:]+)(:.*)$/iu;
+const SEQUENCE_TARGET = new RegExp(`^(\\s*(?:activate|deactivate|destroy)\\s+)(${SEQUENCE_ID})(\\s*)$`, 'iu');
+
+/**
+ * Give actors named like a sequence keyword (OPT, LOOP, END...) a safe id.
+ * The displayed name is kept, so the rendered figure does not change.
+ */
+function renameKeywordSequenceActors(lines: string[]): string[] {
+  const ids = new Set<string>();
+  for (const line of lines) {
+    const declared = SEQUENCE_DECLARATION.exec(line);
+    if (declared) ids.add(declared[2]);
+    const message = SEQUENCE_MESSAGE.exec(line);
+    if (message) { ids.add(message[2]); ids.add(message[4]); }
+  }
+  const renamed = new Map<string, string>();
+  for (const id of ids) {
+    if (!SEQUENCE_KEYWORDS.has(id.toLowerCase())) continue;
+    let safe = `${id}_`;
+    while (ids.has(safe) || [...renamed.values()].includes(safe)) safe += '_';
+    renamed.set(id, safe);
+  }
+  if (!renamed.size) return lines;
+  const rename = (id: string) => renamed.get(id) ?? id;
+  return lines.map((line) => {
+    const declared = SEQUENCE_DECLARATION.exec(line);
+    if (declared) {
+      const [, head, id, alias] = declared;
+      return renamed.has(id) ? `${head}${rename(id)}${alias ?? ` as ${id}`}` : line;
+    }
+    const message = SEQUENCE_MESSAGE.exec(line);
+    if (message) {
+      const [, indent, from, arrow, to, rest] = message;
+      return `${indent}${rename(from)}${arrow}${rename(to)}${rest}`;
+    }
+    const note = SEQUENCE_NOTE.exec(line);
+    if (note) {
+      const [, head, targets, rest] = note;
+      return `${head}${targets.split(',').map((part) => part.replace(/^(\s*)(\S+)(\s*)$/u, (_, before: string, id: string, after: string) => `${before}${rename(id)}${after}`)).join(',')}${rest}`;
+    }
+    const target = SEQUENCE_TARGET.exec(line);
+    return target ? `${target[1]}${rename(target[2])}${target[3]}` : line;
+  });
+}
+
 function unwrapMermaidFence(code: string): string {
   const trimmed = code.trim();
   const fenced = /^```(?:mermaid)?\s*\r?\n?([\s\S]*?)\r?\n?```$/i.exec(trimmed);
@@ -223,7 +279,7 @@ export function sanitizeMermaidCode(code: string): string {
   const lines = source.split('\n').map(normalizeCommonSymbols);
 
   if (diagramType !== 'flowchart') {
-    const sanitized = (diagramType === 'sequence' ? lines.map(normalizeSequenceLine) : lines).join('\n');
+    const sanitized = (diagramType === 'sequence' ? renameKeywordSequenceActors(lines).map(normalizeSequenceLine) : lines).join('\n');
     return diagramType === 'sequence' ? `${sanitized.trimEnd()}\n` : sanitized;
   }
 
