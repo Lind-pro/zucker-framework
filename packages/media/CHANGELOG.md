@@ -1,5 +1,11 @@
 # @zucker-framework/media
 
+## 1.0.25
+
+### Patch Changes
+
+- Rename Mermaid sequence actors whose ids are keywords (OPT, LOOP, END, ...). Mermaid lexes these case-insensitively even where an actor id is expected, so `A->>OPT: x` failed to parse and the whole figure could not render. The actor keeps its displayed name.
+
 ## 1.0.24
 
 ## 1.0.23

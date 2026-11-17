@@ -1,6 +1,6 @@
 {
   "name": "@zucker-framework/ai-tasks",
-  "version": "1.0.24",
+  "version": "1.0.25",
   "description": "Durable, credit-metered asynchronous AI media generation tasks (submit, poll, callback, re-host) for Zucker applications",
   "main": "dist/index.js",
   "module": "dist/index.mjs",

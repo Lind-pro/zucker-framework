@@ -1,5 +1,22 @@
 # @zucker-framework/admin
 
+## 1.0.25
+
+### Patch Changes
+
+- @zucker-framework/ai@1.0.25
+  - @zucker-framework/auth@1.0.25
+  - @zucker-framework/common@1.0.25
+  - @zucker-framework/config@1.0.25
+  - @zucker-framework/core@1.0.25
+  - @zucker-framework/credit@1.0.25
+  - @zucker-framework/crud@1.0.25
+  - @zucker-framework/dictionary@1.0.25
+  - @zucker-framework/fe-types@1.0.25
+  - @zucker-framework/form@1.0.25
+  - @zucker-framework/logging@1.0.25
+  - @zucker-framework/notification@1.0.25
+
 ## 1.0.24
 
 ### Patch Changes

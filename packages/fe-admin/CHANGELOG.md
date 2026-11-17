@@ -1,5 +1,15 @@
 # @zucker-framework/fe-admin
 
+## 1.0.25
+
+### Patch Changes
+
+- @zucker-framework/fe-auth@1.0.25
+  - @zucker-framework/fe-http-client@1.0.25
+  - @zucker-framework/fe-permission@1.0.25
+  - @zucker-framework/fe-storage@1.0.25
+  - @zucker-framework/fe-types@1.0.25
+
 ## 1.0.24
 
 ### Patch Changes

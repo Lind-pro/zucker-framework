@@ -1,5 +1,11 @@
 # @zucker-framework/common
 
+## 1.0.25
+
+### Patch Changes
+
+- @zucker-framework/core@1.0.25
+
 ## 1.0.24
 
 ### Patch Changes
