@@ -4,6 +4,7 @@
 
 ### Patch Changes
 
+- `ConfigFileWatcher` detects a change by inode, size and modification time, so an atomic replace whose new file keeps the old timestamp is no longer missed.
 - Updated dependencies [e7c1b6e]
   - @zucker-framework/crud@1.0.23
   - @zucker-framework/core@1.0.23

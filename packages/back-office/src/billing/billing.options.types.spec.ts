@@ -29,4 +29,4 @@ it('type-checks consumer billing path and permission overrides without widening 
   // This small consumer checks the public option shape; package/source compilation is a separate gate.
   const diagnostics = program.getSemanticDiagnostics().filter(item => item.file?.fileName === filename);
   expect(diagnostics.map(item => ts.flattenDiagnosticMessageText(item.messageText, '\n'))).toEqual([]);
-});
+}, 60_000); // A full TypeScript program build exceeds the default 5 s when the whole suite shares the CPUs.

@@ -33,7 +33,8 @@ interface WatchedFile {
   watcher: FSWatcher | null;
   debounceTimer: ReturnType<typeof setTimeout> | null;
   deleteGraceTimer: ReturnType<typeof setTimeout> | null;
-  lastModified: number;
+  /** inode, size and mtime: an atomic replace changes the inode even when the timestamp is unchanged. */
+  lastModified: string;
 }
 
 export class ConfigFileWatcher {
@@ -62,7 +63,7 @@ export class ConfigFileWatcher {
       watcher: null,
       debounceTimer: null,
       deleteGraceTimer: null,
-      lastModified: this.getModifiedTime(filePath),
+      lastModified: this.getSignature(filePath),
     };
 
     this.watched.set(filePath, entry);
@@ -157,7 +158,7 @@ export class ConfigFileWatcher {
       entry.debounceTimer = null;
 
       // 检查文件是否真的变了
-      const newModified = this.getModifiedTime(entry.path);
+      const newModified = this.getSignature(entry.path);
       if (newModified === entry.lastModified) return;
       entry.lastModified = newModified;
 
@@ -170,11 +171,12 @@ export class ConfigFileWatcher {
     }, this.stabilityMs);
   }
 
-  private getModifiedTime(filePath: string): number {
+  private getSignature(filePath: string): string {
     try {
-      return statSync(filePath).mtimeMs;
+      const stat = statSync(filePath);
+      return `${stat.ino}:${stat.size}:${stat.mtimeMs}`;
     } catch {
-      return 0;
+      return '';
     }
   }
 }
