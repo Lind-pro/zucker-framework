@@ -41,6 +41,10 @@ pnpm lint
 
 step "package artifacts (same check as CI)"
 # 该脚本拒绝覆盖已有输出目录，每次用新目录，保留旧的评审产物。
-node scripts/verify-package-artifacts.mjs --output "artifacts/review-prepush-$(date +%s)" --allow-dirty
+bundle="artifacts/review-prepush-$(date +%s)"
+node scripts/verify-package-artifacts.mjs --output "$bundle" --allow-dirty
+
+step "registry version preflight (dry run; no upload)"
+node scripts/publish-packages.mjs --bundle "$bundle" --dry-run --allow-dirty --tag latest --new-packages-report "$bundle/new-packages.json"
 
 echo "\n✅ pre-push: 本地门全部通过，允许推送 main" >&2

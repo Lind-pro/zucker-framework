@@ -60,7 +60,10 @@ second SDK merely because a consumer uses the reliability wrapper.
    Unit tests and lint are **not** part of the main-branch pipeline. They run
    locally in `.githooks/pre-push` before any push to `main` (build, legal/content
    checks, `pnpm test`, `pnpm lint`, and the same `verify-package-artifacts` check
-   CI performs) and are repeated on pull requests by `pr-checks.yml`. The hook
+   CI performs) and are repeated on pull requests by `pr-checks.yml`. The hook also
+   runs the publisher's registry dry run against that same local bundle before
+   allowing the push, catching already-published versions with changed bytes
+   without uploading packages. The hook
    refuses the push when any check fails; `ZUCKER_SKIP_PREPUSH=1` is permitted only
    for commits that change no package bytes, and must be noted in the commit.
    The PostgreSQL/Redis durable-runtime contracts no longer gate a `main` push
