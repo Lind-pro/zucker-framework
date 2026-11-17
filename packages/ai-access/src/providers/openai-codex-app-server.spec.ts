@@ -187,3 +187,48 @@ describe('Codex app-server streamed inference', () => {
     });
   });
 });
+
+
+describe('native subscription image output', () => {
+  const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).toString('base64');
+  const imageEvents = (result = png) => [
+    notify('item/started', { item: { type: 'imageGeneration', id: 'image' } }),
+    notify('item/completed', { item: { type: 'imageGeneration', id: 'image', status: 'completed', result } }),
+    notify('thread/tokenUsage/updated', { tokenUsage: { total: { inputTokens: 7, outputTokens: 3 } } }),
+    notify('turn/completed', { turn: { id: 'turn', status: 'completed' } }),
+  ];
+  it('returns PNG bytes and usage without requiring a final text answer', async () => {
+    await fixture(imageEvents(), async (client, directory) => {
+      const result = await client.complete({ input: 'Draw a spring', imageGeneration: true });
+      expect(result.images).toEqual([{ data: png, mimeType: 'image/png' }]);
+      expect(result.tokenUsage.total).toBe(10);
+      const requests = (await readFile(join(directory, 'requests.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line));
+      const thread = requests.find(value => value.method === 'thread/start');
+      expect(thread.params.config['features.image_generation']).toBe(true);
+      expect(thread.params.config['mcp_servers.private_tool.enabled']).toBe(false);
+    });
+  });
+  it('rejects native image activity during text inference', async () => {
+    await fixture(imageEvents(), async client => {
+      await expect(client.complete({ input: 'Text only', onTextDelta() {} })).rejects.toThrow('Unexpected image generation');
+    });
+  });
+  it.each(['invalid', Buffer.from('not an image').toString('base64')])('rejects invalid image data', async data => {
+    await fixture(imageEvents(data), async client => {
+      await expect(client.complete({ input: 'Draw', imageGeneration: true })).rejects.toThrow();
+    });
+  });
+  it('does not report success when the turn completes without an image', async () => {
+    await fixture(successful, async client => {
+      await expect(client.complete({ input: 'Draw', imageGeneration: true })).rejects.toThrow('complete streamed answer');
+    });
+  });
+  it('distinguishes duplicate image output from a missing inline artifact', async () => {
+    await fixture([...imageEvents().slice(0, 2), ...imageEvents()], async client => {
+      await expect(client.complete({ input: 'One image', imageGeneration: true })).rejects.toThrow('multiple images');
+    });
+    await fixture([notify('item/completed', { item: { type: 'imageGeneration', id: 'image', status: 'completed' } })], async client => {
+      await expect(client.complete({ input: 'One image', imageGeneration: true })).rejects.toThrow('without inline image bytes');
+    });
+  });
+});

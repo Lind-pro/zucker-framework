@@ -1,3 +1,5 @@
+import type { AIAccessRequest, AIAccessResult } from '../contracts';
+import { runCodexAppServer } from './openai-codex-app-server';
 import { spawn } from 'node:child_process';
 import { chmod, mkdir, mkdtemp, readFile, rm, unlink, writeFile } from 'node:fs/promises';
 import net from 'node:net';
@@ -121,7 +123,7 @@ export async function startCodexCliHost(options: CodexCliHostOptions): Promise<h
     }
     active += 1;
     try {
-      if (request.method !== 'POST' || request.url !== '/exec') {
+      if (request.method !== 'POST' || !['/exec', '/image'].includes(request.url ?? '')) {
         response.writeHead(404).end();
         return;
       }
@@ -138,6 +140,23 @@ export async function startCodexCliHost(options: CodexCliHostOptions): Promise<h
       }
       const input = validateRequest(JSON.parse(Buffer.concat(chunks).toString('utf8')));
       workdir = await mkdtemp(join(workRoot, 'request-'));
+      if (request.url === '/image') {
+        if (input.schema) throw new Error('Image output cannot use a schema');
+        const controller = new AbortController();
+        const cancel = () => controller.abort();
+        response.on('close', cancel);
+        try {
+          const environment: Record<string, string> = { CODEX_HOME: codexHome };
+          for (const key of ENVIRONMENT_KEYS) if (sourceEnvironment[key]) environment[key] = sourceEnvironment[key]!;
+          const result = await runCodexAppServer({ executable, cwd: workdir, env: environment, timeoutMs,
+            request: { model: input.model, input: input.prompt, imageGeneration: true, signal: controller.signal,
+              instructions: 'Generate exactly one image using only native image generation. Do not use other tools.',
+              reasoningEffort: input.reasoningEffort as AIAccessRequest['reasoningEffort'] } });
+          if (!response.destroyed) response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(result));
+        } finally { response.off('close', cancel); }
+        return;
+      }
+
       let schemaPath: string | undefined;
       if (input.schema) {
         schemaPath = join(workdir, 'schema.json');
@@ -310,4 +329,39 @@ async function removeStaleSocket(socketPath: string): Promise<void> {
     });
   });
   if (live === false) await unlink(socketPath).catch(() => undefined);
+}
+
+
+/** Image bytes cross the socket; host filesystem paths and credentials never do. */
+export async function runCodexCliHostImage(socketPath: string, input: Pick<AIAccessRequest, 'model' | 'input' | 'instructions' | 'reasoningEffort' | 'signal'>): Promise<AIAccessResult> {
+  const body = validateRequest({ prompt: [input.instructions, input.input].filter(Boolean).join('\n'), model: input.model, reasoningEffort: input.reasoningEffort });
+  input.signal?.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const request = http.request({ socketPath, path: '/image', method: 'POST', signal: input.signal }, response => {
+      const chunks: Buffer[] = []; let size = 0;
+      response.on('data', (chunk: Buffer) => {
+        size += chunk.length;
+        if (size > MAX_REQUEST_BYTES) { response.destroy(new Error('Image response is too large')); return; }
+        chunks.push(chunk);
+      });
+      response.on('error', reject);
+      response.on('end', () => {
+        try {
+          if (response.statusCode !== 200) throw new Error('Host image inference failed');
+          const result = JSON.parse(Buffer.concat(chunks).toString('utf8')) as AIAccessResult;
+          const image = result.images?.[0];
+          const usage = result.tokenUsage;
+          if (result.finishReason !== 'completed' || result.images?.length !== 1 ||
+            image?.mimeType !== 'image/png' || typeof image.data !== 'string' ||
+            !/^[A-Za-z0-9+/]+={0,2}$/.test(image.data) ||
+            Buffer.from(image.data, 'base64').subarray(0, 8).toString('hex') !== '89504e470d0a1a0a' ||
+            !usage || ![usage.input, usage.output, usage.total].every(value => Number.isSafeInteger(value) && value >= 0) ||
+            usage.total < usage.input + usage.output) throw new Error('Invalid host image result');
+          resolve(result);
+        } catch (error) { reject(error); }
+      });
+    });
+    request.on('error', reject);
+    request.end(JSON.stringify(body));
+  });
 }

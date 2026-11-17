@@ -39,7 +39,7 @@ export {
   OpenAICodexCliSubscriptionProvider,
   createOpenAICodexCliAccessProvider,
 } from './providers/openai-codex-cli';
-export { startCodexCliHost, runCodexCliHostClient } from './providers/codex-cli-host';
+export { startCodexCliHost, runCodexCliHostClient, runCodexCliHostImage } from './providers/codex-cli-host';
 export type { CodexCliHostOptions, CodexCliHostClientOptions } from './providers/codex-cli-host';
 export type {
   CodexCliCommand,

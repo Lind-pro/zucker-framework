@@ -1,3 +1,4 @@
+import { runCodexCliHostImage } from './codex-cli-host';
 import { spawn } from 'node:child_process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
@@ -79,6 +80,8 @@ export interface CodexSchemaFallbackEvent {
 }
 
 export interface OpenAICodexCliSubscriptionProviderOptions {
+  /** Optional Unix socket host for native images; text keeps its configured executable. */
+  imageHostSocketPath?: string;
   executable?: string;
   codexHome: string;
   workingDirectory: string;
@@ -92,6 +95,7 @@ export interface OpenAICodexCliSubscriptionProviderOptions {
 export class OpenAICodexCliSubscriptionProvider {
   readonly id = 'openai-codex-cli';
   readonly name = 'OpenAI Codex Subscription CLI';
+  private readonly imageHostSocketPath?: string;
   private readonly executable: string;
   private readonly codexHome: string;
   private readonly workingDirectory: string;
@@ -102,6 +106,7 @@ export class OpenAICodexCliSubscriptionProvider {
   private readonly onSchemaFallback?: (event: CodexSchemaFallbackEvent) => void;
 
   constructor(options: OpenAICodexCliSubscriptionProviderOptions) {
+    this.imageHostSocketPath = options.imageHostSocketPath;
     this.executable = options.executable?.trim() || 'codex';
     this.codexHome = requireAbsolutePath(options.codexHome, 'codexHome');
     this.workingDirectory = requireAbsolutePath(options.workingDirectory, 'workingDirectory');
@@ -121,6 +126,7 @@ export class OpenAICodexCliSubscriptionProvider {
       throw new CodexCliSubscriptionError('NOT_CONFIGURED', 'Codex 订阅模型 ID 不能为空。');
     }
     return new OpenAICodexCliSubscriptionClient({
+      imageHostSocketPath: this.imageHostSocketPath,
       executable: this.executable,
       codexHome: this.codexHome,
       workingDirectory: this.workingDirectory,
@@ -178,6 +184,7 @@ export function createOpenAICodexCliAccessProvider(
 }
 
 interface OpenAICodexCliSubscriptionClientOptions {
+  imageHostSocketPath?: string;
   executable: string;
   codexHome: string;
   workingDirectory: string;
@@ -203,7 +210,8 @@ export class OpenAICodexCliSubscriptionClient {
 
     // exec --json only emits completed messages. Use the official app-server
     // delta protocol for live text; never replay a completed answer as a stream.
-    if (request.onTextDelta) {
+    if (request.onTextDelta || request.imageGeneration) {
+      if (request.imageGeneration && request.outputSchema !== undefined) throw new CodexCliSubscriptionError("NOT_CONFIGURED", "Image generation cannot use a text output schema.");
       let outputSchema = request.outputSchema;
       let instructions = request.instructions;
       if (outputSchema !== undefined) {
@@ -224,6 +232,9 @@ export class OpenAICodexCliSubscriptionClient {
           instructions = buildJsonPrompt(instructions, '', outputSchema);
           outputSchema = undefined;
         } else outputSchema = normalizeStrictOutputSchema(outputSchema);
+      }
+      if (request.imageGeneration && this.options.imageHostSocketPath) {
+        return runCodexCliHostImage(this.options.imageHostSocketPath, { ...request, model, input, instructions });
       }
       return runCodexAppServer({
         executable: this.options.executable,

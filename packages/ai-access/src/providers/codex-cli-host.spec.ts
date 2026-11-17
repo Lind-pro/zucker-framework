@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { runCodexCliHostClient, startCodexCliHost } from './codex-cli-host';
+import { runCodexCliHostClient, runCodexCliHostImage, startCodexCliHost } from './codex-cli-host';
 import { codexInferenceConfigArgs } from './codex-inference-config';
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -21,6 +21,24 @@ async function fixture() {
     executable,
     `#!${process.execPath}
 import { readFileSync, statSync } from 'node:fs';
+if (process.argv.includes('app-server')) {
+ const send = event => process.stdout.write(JSON.stringify(event) + '\\n');
+ const {createInterface} = await import('node:readline');
+ createInterface({input:process.stdin}).on('line', line => {
+  const r=JSON.parse(line);
+  if(r.method==='initialize') send({id:r.id,result:{}});
+  if(r.method==='config/read') send({id:r.id,result:{config:{}}});
+  if(r.method==='thread/start') send({id:r.id,result:{thread:{id:'thread'}}});
+  if(r.method==='turn/start') {
+   send({id:r.id,result:{turn:{id:'turn'}}});
+   if(JSON.stringify(r.params).includes('wait')) return;
+   const note=(method,extra)=>send({method,params:{threadId:'thread',turnId:'turn',...extra}});
+   note('item/completed',{item:{type:'imageGeneration',id:'image',status:'completed',result:JSON.stringify(r.params).includes('invalid')?'invalid':'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII='}});
+   note('thread/tokenUsage/updated',{tokenUsage:{total:{inputTokens:7,outputTokens:3}}});
+   note('turn/completed',{turn:{id:'turn',status:'completed'}});
+  }
+ });
+} else {
 let prompt = '';
 process.stdin.setEncoding('utf8');
 for await (const chunk of process.stdin) prompt += chunk;
@@ -37,6 +55,7 @@ if (prompt === 'wait') {
     schemaMode: schemaPath ? statSync(schemaPath).mode & 0o777 : null }) + '\\n');
   process.stderr.write('diagnostic 日本語\\n');
   process.exitCode = 7;
+}
 }
 `,
     { mode: 0o700 },
@@ -147,4 +166,29 @@ describe('Codex Unix socket host/client contract', () => {
     await failure;
     await expect.poll(async () => readdir(f.workRoot)).toEqual([]);
   });
+});
+
+
+it('returns native image bytes and usage through the host and removes scratch files', async () => {
+  const f = await fixture();
+  const result = await runCodexCliHostImage(f.socketPath, { model: 'synthetic-model', input: 'draw' });
+  expect(result).toMatchObject({ finishReason: 'completed', tokenUsage: { input: 7, output: 3, total: 10 }, images: [{ mimeType: 'image/png' }] });
+  expect(Buffer.from(result.images![0].data, 'base64').subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a');
+  await expect.poll(async () => readdir(f.workRoot)).toEqual([]);
+});
+
+it('rejects failed native images without retrying a text or API route', async () => {
+  const f = await fixture();
+  await expect(runCodexCliHostImage(f.socketPath, { model: 'synthetic-model', input: 'invalid' })).rejects.toThrow();
+  await expect.poll(async () => readdir(f.workRoot)).toEqual([]);
+});
+
+it('cancels native image inference and cleans the per-call directory', async () => {
+  const f = await fixture(), controller = new AbortController();
+  const request = runCodexCliHostImage(f.socketPath, { model: 'synthetic-model', input: 'wait', signal: controller.signal });
+  const failure = expect(request).rejects.toThrow();
+  await expect.poll(async () => (await readdir(f.workRoot)).length).toBe(1);
+  controller.abort();
+  await failure;
+  await expect.poll(async () => readdir(f.workRoot)).toEqual([]);
 });

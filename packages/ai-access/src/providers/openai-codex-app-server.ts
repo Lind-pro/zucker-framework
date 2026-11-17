@@ -21,7 +21,7 @@ export async function runCodexAppServer(command: CodexAppServerCommand): Promise
   const { request } = command;
   if (request.signal?.aborted)
     throw new CodexCliSubscriptionError('CANCELLED', 'Codex subscription call cancelled.');
-  const args = ['app-server', '--stdio', '--strict-config', ...codexInferenceConfigArgs()];
+  const args = ['app-server', '--stdio', '--strict-config', ...codexInferenceConfigArgs(), ...(request.imageGeneration ? ['--config', 'features.image_generation=true'] : [])];
 
   return new Promise<AIAccessResult>((resolve, reject) => {
     const child = spawn(command.executable, args, {
@@ -36,6 +36,7 @@ export async function runCodexAppServer(command: CodexAppServerCommand): Promise
     let threadId: string | undefined;
     let turnId: string | undefined;
     let content = '';
+    const images: NonNullable<AIAccessResult['images']> = [];
     let usage: AIAccessResult['tokenUsage'] | undefined;
     let receivedDelta = false;
     const phases = new Map<string, unknown>();
@@ -99,6 +100,7 @@ export async function runCodexAppServer(command: CodexAppServerCommand): Promise
         } else if (message.id === 1) {
           const config: Record<string, unknown> = {
             'features.hooks': false,
+            'features.image_generation': request.imageGeneration === true,
             web_search: 'disabled',
             'tools.web_search': false,
             'apps._default.enabled': false,
@@ -178,6 +180,7 @@ export async function runCodexAppServer(command: CodexAppServerCommand): Promise
         turnId = params.turn.id;
       if (message.method === 'item/started' && record(params.item)) {
         const item = params.item;
+        if (item.type === 'imageGeneration' && !request.imageGeneration) throw invalid('Unexpected image generation during text inference.');
         if (item.type === 'agentMessage' && typeof item.id === 'string')
           phases.set(item.id, item.phase);
         if (
@@ -205,12 +208,24 @@ export async function runCodexAppServer(command: CodexAppServerCommand): Promise
         }
       } else if (message.method === 'item/completed' && record(params.item)) {
         const item = params.item;
+        if (item.type === 'imageGeneration') {
+          if (!request.imageGeneration) throw invalid('Unexpected image generation during text inference.');
+          if (images.length) throw invalid('Codex returned multiple images for a single-image request.');
+          if (item.status !== 'completed' || item.failure) throw invalid('Codex image generation did not complete successfully.');
+          if (typeof item.result !== 'string') throw invalid('Codex completed image generation without inline image bytes.');
+          // Never read a model-supplied path or fetch an untrusted attachment URL.
+          const data = item.result.replace(/^data:image\/png;base64,/, '');
+          if (!/^[A-Za-z0-9+/]+={0,2}$/.test(data) || data.length % 4 || data.length > 16 * 1024 * 1024) throw invalid('Invalid generated image encoding.');
+          const bytes = Buffer.from(data, 'base64');
+          if (!bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) throw invalid('Generated image is not PNG.');
+          images.push({ data, mimeType: 'image/png', ...(typeof item.revisedPrompt === 'string' ? { revisedPrompt: item.revisedPrompt } : {}) });
+        }
         if (
           item.type === 'agentMessage' &&
           item.phase !== 'commentary' &&
           typeof item.text === 'string'
         ) {
-          if (typeof item.id !== 'string' || answers.get(item.id) !== item.text)
+          if ((!request.imageGeneration || item.text) && (typeof item.id !== 'string' || answers.get(item.id) !== item.text))
             throw invalid('Completed answer differs from the streamed answer.');
           content = item.text;
         }
@@ -236,7 +251,7 @@ export async function runCodexAppServer(command: CodexAppServerCommand): Promise
               : 'EXECUTION_FAILED',
             'Codex turn did not complete.',
           );
-        if (!receivedDelta || !content.trim() || !usage)
+        if (!usage || (request.imageGeneration ? images.length !== 1 : !receivedDelta || !content.trim()))
           throw invalid(
             'Codex app server did not return a complete streamed answer and token usage.',
           );
@@ -245,6 +260,7 @@ export async function runCodexAppServer(command: CodexAppServerCommand): Promise
         stop();
         resolve({
           content: content.trim(),
+          ...(request.imageGeneration ? { images } : {}),
           finishReason: 'completed',
           responseId: threadId,
           tokenUsage: usage,

@@ -102,6 +102,8 @@ export interface AIAccessRequest {
   reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
   textVerbosity?: 'low' | 'medium' | 'high';
   outputSchema?: unknown;
+  /** Explicit opt-in to one native generated image (Codex CLI/app-server). */
+  imageGeneration?: boolean;
   sessionId?: string;
   signal?: AbortSignal;
   /** Ordered answer deltas, excluding reasoning. Awaited; failures stop the attempt. */
@@ -109,6 +111,7 @@ export interface AIAccessRequest {
 }
 
 export interface AIAccessResult {
+  images?: Array<{ data: string; mimeType: "image/png"; revisedPrompt?: string }>;
   content: string;
   finishReason: string;
   responseId?: string;
