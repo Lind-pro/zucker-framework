@@ -3,14 +3,20 @@
 # 所以这里是它们唯一的执行点：任一失败即拒绝推送。持久化契约（PostgreSQL/Redis）由
 # pull request 的 pr-checks.yml 运行，也可手动执行 scripts/verify-nas-integration.mjs，不阻塞推送。
 #
+# 检查本身在 scripts/prepush-gate.sh。推荐先单独运行 `pnpm verify:prepush` 再推送：
+# 门要跑很多分钟，若在钩子里运行，推送的 SSH 连接空闲过久会被 GitHub 断开，
+# 检查全部通过后 git 仍以 SIGPIPE（退出码 141）失败。单独运行通过后会记录已验证的
+# 提交，钩子遇到正是该提交时直接放行；其他情况仍在钩子里完整运行。
+#
 # 可选环境变量：
 #   ZUCKER_SKIP_PREPUSH  只允许用于纯文档/流程提交（见 package-release.md 的记录要求）。
 set -eu
 
 remote="$1"
 pushing_main=0
+main_sha=""
 while read -r local_ref local_sha remote_ref remote_sha; do
-  case "$remote_ref" in refs/heads/main) pushing_main=1 ;; esac
+  case "$remote_ref" in refs/heads/main) pushing_main=1; main_sha="$local_sha" ;; esac
 done
 [ "$pushing_main" -eq 1 ] || exit 0
 
@@ -19,32 +25,12 @@ if [ "${ZUCKER_SKIP_PREPUSH:-}" = "1" ]; then
   exit 0
 fi
 
-root="$(git rev-parse --show-toplevel)"
-cd "$root"
+stamp="$(git rev-parse --git-path zucker-prepush-verified)"
+if [ -f "$stamp" ] && [ "$(cat "$stamp")" = "$main_sha" ]; then
+  echo "pre-push: $main_sha 已由 pnpm verify:prepush 在干净工作区验证通过，允许推送 main" >&2
+  exit 0
+fi
 
-step() { printf '\n▶ pre-push: %s\n' "$1" >&2; }
-
-step "build packages"
-pnpm build:packages
-
-step "package content + legal"
-pnpm legal:prepare >/dev/null
-pnpm verify:package-content
-
-step "unit tests"
-pnpm test
-pnpm test:web
-
-step "lint"
-pnpm lint
-
-
-step "package artifacts (same check as CI)"
-# 该脚本拒绝覆盖已有输出目录，每次用新目录，保留旧的评审产物。
-bundle="artifacts/review-prepush-$(date +%s)"
-node scripts/verify-package-artifacts.mjs --output "$bundle" --allow-dirty
-
-step "registry version preflight (dry run; no upload)"
-node scripts/publish-packages.mjs --bundle "$bundle" --dry-run --allow-dirty --tag latest --new-packages-report "$bundle/new-packages.json"
-
+echo "pre-push: 推送的提交尚未验证，现在运行本地门（耗时较长；若推送因连接断开失败，请先运行 pnpm verify:prepush）" >&2
+sh "$(git rev-parse --show-toplevel)/scripts/prepush-gate.sh"
 echo "\n✅ pre-push: 本地门全部通过，允许推送 main" >&2

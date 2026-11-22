@@ -66,6 +66,12 @@ second SDK merely because a consumer uses the reliability wrapper.
    without uploading packages. The hook
    refuses the push when any check fails; `ZUCKER_SKIP_PREPUSH=1` is permitted only
    for commits that change no package bytes, and must be noted in the commit.
+   The checks live in `scripts/prepush-gate.sh`. Run `pnpm verify:prepush` before
+   `git push`: the gate takes many minutes, and inside the hook the push's SSH
+   connection sits idle long enough for GitHub to close it, so git then fails with
+   SIGPIPE (exit 141) even though every check passed. A pass on a clean worktree
+   records the verified commit in the git directory; the hook lets exactly that
+   commit through and runs the full gate for anything else.
    The PostgreSQL/Redis durable-runtime contracts no longer gate a `main` push
    (maintainer decision, 2026-11-09): they run on pull requests in `pr-checks.yml`
    and can be run manually against the NAS (see below).
