@@ -1,5 +1,11 @@
 # @zucker-framework/logging
 
+## 1.0.27
+
+### Patch Changes
+
+- @zucker-framework/core@1.0.27
+
 ## 1.0.26
 
 ### Patch Changes
