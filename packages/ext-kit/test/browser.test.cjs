@@ -18,9 +18,11 @@ before(async () => {
   browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_EXECUTABLE || (fs.existsSync(localChrome) ? localChrome : undefined) });
 });
 after(async () => { await browser?.close(); });
-async function scrollFixture(virtual = false) {
+async function scrollFixture(virtual = false, content = '<p>Loaded row</p>'.repeat(30), options = {}) {
   const page = await browser.newPage();
-  await page.setContent(`<style>body{margin:0}#pane{height:200px;width:600px;overflow:auto}p{height:60px;margin:0}</style><main id="pane" ${virtual ? 'data-virtualized="true"' : ''}>${'<p>Loaded row</p>'.repeat(30)}</main>`);
+  // Image requests to this synthetic host never answer, like a stalled CDN request.
+  await page.route('http://stalled.test/**', () => {});
+  await page.setContent(`<!doctype html><style>body{margin:0}#pane{height:200px;width:600px;overflow:auto}p{height:60px;margin:0}</style><main id="pane" ${virtual ? 'data-virtualized="true"' : ''}>${content}</main>`, { waitUntil: 'domcontentloaded' });
   const original = await page.evaluate(() => {
     document.getElementById('pane').scrollTop = 100;
     return document.getElementById('pane').outerHTML;
@@ -29,7 +31,7 @@ async function scrollFixture(virtual = false) {
   const vm = require('node:vm');
   const box = { crypto: require('node:crypto').webcrypto, setTimeout, clearTimeout };
   vm.runInNewContext(scrollSource, box);
-  const ctx = { options: {}, send: (method, params) => cdp.send(method, params), cleanup: (method, params) => cdp.send(method, params) };
+  const ctx = { options, send: (method, params) => cdp.send(method, params), cleanup: (method, params) => cdp.send(method, params) };
   return { page, original, ctx, capture: box.ZuckerScrollCapture };
 }
 
@@ -71,6 +73,67 @@ test('restoration uses cleanup rather than an aborted command channel', async ()
     await capture.restore(ctx);
     assert.equal(await page.locator('#pane').evaluate((el) => el.outerHTML), original);
     assert.equal(await page.locator('#pane').evaluate((el) => el.scrollTop), 100);
+  } finally { await page.close(); }
+});
+
+test('content sized from the panel height settles instead of growing every pass', async () => {
+  const content = `<div style="min-height:100%">${'<p style="height:20px">Row</p>'.repeat(5)}</div><footer id="foot" style="height:40px">Footer</footer>`;
+  const { page, original, ctx, capture } = await scrollFixture(false, content);
+  try {
+    assert.equal(await capture.prepare(ctx), '');
+    const layout = await page.evaluate(() => {
+      const pane = document.getElementById('pane'), foot = document.getElementById('foot').getBoundingClientRect();
+      return { height: pane.getBoundingClientRect().height, footBottom: foot.bottom, overflow: pane.scrollHeight - pane.clientHeight };
+    });
+    // Original 200px floor is kept, the footer is inside the box, nothing is clipped.
+    assert.equal(layout.height, 200);
+    assert.ok(layout.footBottom <= layout.height);
+    assert.ok(layout.overflow <= 2);
+    await capture.restore(ctx);
+    assert.equal(await page.locator('#pane').evaluate((el) => el.outerHTML), original);
+  } finally { await page.close(); }
+});
+
+test('a stalled tracking pixel does not delay settling', async () => {
+  const content = `${'<p>Loaded row</p>'.repeat(30)}<img src="http://stalled.test/pixel.gif" width="1" height="1">`;
+  const { page, ctx, capture } = await scrollFixture(false, content);
+  try {
+    const started = Date.now();
+    assert.equal(await capture.prepare(ctx), '');
+    assert.ok(Date.now() - started < 6000);
+    await capture.restore(ctx);
+  } finally { await page.close(); }
+});
+
+test('a stalled content image is captured with a warning instead of failing', async () => {
+  const content = `${'<p>Loaded row</p>'.repeat(30)}<img src="http://stalled.test/photo.png" width="200" height="120">`;
+  const { page, original, ctx, capture } = await scrollFixture(false, content);
+  try {
+    assert.match(await capture.prepare(ctx), /images in scrolling areas/);
+    await capture.restore(ctx);
+    assert.equal(await page.locator('#pane').evaluate((el) => el.outerHTML), original);
+  } finally { await page.close(); }
+});
+
+test('allowUnstable captures still-changing scrolling content with a warning', async () => {
+  const content = `${'<p>Loaded row</p>'.repeat(10)}<div id="ticker" style="height:40px"></div>`;
+  const { page, original, ctx, capture } = await scrollFixture(false, content, { allowUnstable: true });
+  try {
+    await page.evaluate(() => {
+      // Start growing only once the pane is expanded, so the scroll phase
+      // completes and the settle phase never sees two identical measurements.
+      const sheet = document.head.appendChild(document.createElement('style'));
+      let extra = 0;
+      const timer = setInterval(() => {
+        if (document.getElementById('pane').clientHeight <= 200) return;
+        sheet.textContent = `#ticker{min-height:${40 + (extra += 7)}px}`;
+      }, 60);
+      window.stopTicker = () => { clearInterval(timer); sheet.remove(); };
+    });
+    assert.match(await capture.prepare(ctx), /still changing/);
+    await capture.restore(ctx);
+    await page.evaluate(() => window.stopTicker());
+    assert.equal(await page.locator('#pane').evaluate((el) => el.outerHTML), original);
   } finally { await page.close(); }
 });
 

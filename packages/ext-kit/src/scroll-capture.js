@@ -1,4 +1,6 @@
 const sessions = new WeakMap();
+// Within the 15 s settle window, how long stable geometry may wait for media.
+const MEDIA_GRACE_MS = 8000;
 function pageTask(action, id, index, leaseMs) {
   const key = "__zuckerScrollCapture";
   let state = window[key];
@@ -74,6 +76,10 @@ function pageTask(action, id, index, leaseMs) {
       changes,
       scrolls,
       boxes: new Map(),
+      // Last applied panel height and growth step, used to detect content whose
+      // size tracks the panel's own height (e.g. min-height:100% plus a footer).
+      growth: new Map(),
+      intrinsic: new Set(),
       watchdog: null,
       leaseMs,
     };
@@ -136,9 +142,20 @@ function pageTask(action, id, index, leaseMs) {
       state.set(el, "scroll-snap-type", "none");
       state.set(el, "overflow-anchor", "none");
     }
+    // Record every panel and ancestor box before any change, so later expansion
+    // passes compare against and keep the original geometry rather than a
+    // partially expanded one.
+    for (const panel of panels)
+      for (let el = panel; el; el = el.parentElement)
+        if (!state.boxes.has(el)) {
+          const rect = el.getBoundingClientRect();
+          state.boxes.set(el, {
+            width: rect.width,
+            height: rect.height,
+            x: rect.x,
+          });
+        }
     for (const panel of panels) {
-      const rect = panel.getBoundingClientRect();
-      state.boxes.set(panel, { width: rect.width, x: rect.x });
       scrolls.set(panel, { x: panel.scrollLeft, y: panel.scrollTop });
       state.set(panel, "scroll-behavior", "auto");
       state.set(panel, "scroll-snap-type", "none");
@@ -181,7 +198,11 @@ function pageTask(action, id, index, leaseMs) {
         if (!state.scrolls.has(el))
           state.scrolls.set(el, { x: el.scrollLeft, y: el.scrollTop });
         if (!state.boxes.has(el))
-          state.boxes.set(el, { width: rect.width, x: rect.x });
+          state.boxes.set(el, {
+            width: rect.width,
+            height: rect.height,
+            x: rect.x,
+          });
         state.set(el, "scroll-behavior", "auto");
         state.set(el, "overflow-anchor", "none");
         state.set(el, "transition", "none");
@@ -198,20 +219,38 @@ function pageTask(action, id, index, leaseMs) {
         if (css.position === "fixed" || css.position === "absolute")
           state.set(el, "bottom", "auto");
         if (state.panels.includes(el)) {
-          const height = el.scrollHeight + el.offsetHeight - el.clientHeight;
-          state.set(el, "height", `${height}px`);
-          state.set(el, "min-height", `${height}px`);
+          const height = el.scrollHeight + el.offsetHeight - el.clientHeight,
+            last = state.growth.get(el);
+          if (
+            !state.intrinsic.has(el) &&
+            last?.step > 1 &&
+            Math.abs(height - last.height - last.step) <= 1
+          )
+            // Growing by the same step again means the content is sized from
+            // the panel's own height, so a fixed height has no fixed point.
+            // Let percentage heights resolve to auto and use the content size.
+            state.intrinsic.add(el);
+          if (state.intrinsic.has(el)) {
+            state.set(el, "height", "auto");
+            state.set(el, "min-height", `${state.boxes.get(el).height}px`);
+          } else {
+            state.growth.set(el, {
+              height,
+              step: last ? height - last.height : 0,
+            });
+            state.set(el, "height", `${height}px`);
+            state.set(el, "min-height", `${height}px`);
+          }
           // Preserve the original scrollbar gutter and horizontal scroll offset.
           state.set(el, "scrollbar-gutter", "stable");
           state.set(el, "overflow-y", "hidden");
           el.scrollTop = 0;
         } else {
           state.set(el, "height", "auto");
-          state.set(
-            el,
-            "min-height",
-            `${Math.max(rect.height, el.clientHeight)}px`,
-          );
+          // Keep the original size as a floor. Using the current, already
+          // expanded size would ratchet and never shrink if a panel switches
+          // to its intrinsic height.
+          state.set(el, "min-height", `${state.boxes.get(el).height}px`);
           // clip on X prevents revealing off-canvas drawers while allowing Y to grow.
           if (/hidden|clip|auto|scroll/.test(css.overflowY)) {
             state.set(el, "overflow-x", "clip");
@@ -242,18 +281,20 @@ function pageTask(action, id, index, leaseMs) {
         document.body?.scrollHeight || 0,
       ),
       panels: state.panels.map((el) => [el.scrollHeight, el.clientHeight]),
-      ready:
-        document.fonts.status === "loaded" &&
-        [...document.images].every(
-          (image) =>
-            image.complete ||
-            !state.panels.some((panel) => panel.contains(image)) ||
-            !image.getClientRects().length ||
-            image.checkVisibility?.({
-              checkOpacity: true,
-              checkVisibilityCSS: true,
-            }) === false,
-        ),
+      fontsPending: document.fonts.status !== "loaded",
+      // Same size floor as the page readiness check: tracking pixels and tiny
+      // icons must not block geometry that is otherwise final.
+      imagesPending: [...document.images].filter(
+        (image) =>
+          !image.complete &&
+          image.width * image.height > 4000 &&
+          state.panels.some((panel) => panel.contains(image)) &&
+          image.getClientRects().length &&
+          image.checkVisibility?.({
+            checkOpacity: true,
+            checkVisibilityCSS: true,
+          }) !== false,
+      ).length,
     };
   }
   return {};
@@ -291,7 +332,7 @@ async function prepare(ctx, waitForContent = async () => {}) {
   );
   if (!initial.count) {
     sessions.delete(ctx);
-    return;
+    return "";
   }
   let deadline = Date.now() + readinessMs + 15000;
   for (let index = 0; index < initial.count; index++) {
@@ -320,7 +361,8 @@ async function prepare(ctx, waitForContent = async () => {}) {
   await waitForContent();
   await command(ctx, id, "expand");
   await waitForContent();
-  deadline = Date.now() + 15000;
+  const started = Date.now();
+  deadline = started + 15000;
   let previous = "",
     stable = 0;
   while (Date.now() < deadline) {
@@ -329,14 +371,23 @@ async function prepare(ctx, waitForContent = async () => {}) {
     const measured = await command(ctx, id, "measure");
     const signature = JSON.stringify([measured.height, measured.panels]);
     stable =
-      measured.ready &&
       signature === previous &&
       measured.panels.every(([full, view]) => full <= view + 2)
         ? stable + 1
         : 0;
-    if (stable >= 2) return;
     previous = signature;
+    if (stable < 2) continue;
+    if (!measured.imagesPending && !measured.fontsPending) return "";
+    // Final geometry with only media still loading: a stalled image request
+    // must not fail an otherwise complete capture. Give media a bounded grace
+    // period, then capture and report it.
+    if (Date.now() - started >= MEDIA_GRACE_MS)
+      return measured.imagesPending
+        ? "Some images in scrolling areas had not finished loading."
+        : "Some web fonts had not finished loading.";
   }
+  if (ctx.options?.allowUnstable)
+    return "Scrolling content was still changing; captured after the timeout at your request.";
   throw new Error(
     "Scrolling content did not settle in time. Wait for it to finish loading and retry.",
   );

@@ -92,7 +92,8 @@ export interface Downloader {
   recover(item: DownloadCheckpoint, signal?: AbortSignal): Promise<DownloadRecord>;
 }
 export interface ScrollCapture {
-  prepare(ctx: CaptureContext, waitForContent?: () => Promise<void>): Promise<void>;
+  /** Resolves with a non-fatal capture warning, if any. */
+  prepare(ctx: CaptureContext, waitForContent?: () => Promise<void>): Promise<string | void>;
   restore(ctx: CaptureContext): Promise<void>;
 }
 export interface ExtTexts {

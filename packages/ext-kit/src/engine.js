@@ -472,8 +472,8 @@ function initExtension(config) {
     try {
       await assertCurrentQuickPage(ctx);
       const warnings = new Set();
-      if (expand)
-        await scrollCapture?.prepare(ctx, async () => {
+      if (expand) {
+        const expandWarning = await scrollCapture?.prepare(ctx, async () => {
           await assertCurrentQuickPage(ctx);
           const warning = await waitForPageStable(
             { tabId: ctx.tabId },
@@ -483,6 +483,8 @@ function initExtension(config) {
           );
           if (warning) warnings.add(warning);
         });
+        if (expandWarning) warnings.add(expandWarning);
+      }
       await assertCurrentQuickPage(ctx);
       const output = await config.capture(ctx);
       await assertCurrentQuickPage(ctx);
