@@ -220,7 +220,8 @@ for (const app of apps) {
       app,
       {
         [`${app}_free_usage`]: {
-          date: new Date().toISOString().slice(0, 10),
+          // Local calendar date, like the product's todayString(); UTC broke this test before 09:00 JST.
+          date: new Date().toLocaleDateString('sv-SE'),
           used: 27,
         },
       },

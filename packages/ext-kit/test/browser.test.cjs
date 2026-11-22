@@ -94,6 +94,75 @@ test('content sized from the panel height settles instead of growing every pass'
   } finally { await page.close(); }
 });
 
+test('self-sized content in a stretched flex panel settles', async () => {
+  const content = `<div style="min-height:100%">${'<p style="height:20px">Row</p>'.repeat(5)}</div><footer id="foot" style="height:40px">Footer</footer>`;
+  const { page, original, ctx, capture } = await scrollFixture(false, content);
+  try {
+    // Sidebar + content row: align-items:stretch gives the panel a definite height.
+    await page.evaluate(() => {
+      const row = document.createElement('div');
+      row.id = 'row';
+      row.style.cssText = 'display:flex;height:300px';
+      row.innerHTML = '<aside style="width:120px">Side</aside>';
+      const pane = document.getElementById('pane');
+      pane.style.cssText = 'flex:1;height:auto;width:auto';
+      pane.before(row); row.append(pane);
+    });
+    const before = await page.locator('#row').evaluate((el) => el.outerHTML);
+    assert.equal(await capture.prepare(ctx), '');
+    const overflow = await page.locator('#pane').evaluate((el) => el.scrollHeight - el.clientHeight);
+    assert.ok(overflow <= 2);
+    await capture.restore(ctx);
+    assert.equal(await page.locator('#row').evaluate((el) => el.outerHTML), before);
+    void original;
+  } finally { await page.close(); }
+});
+
+async function layoutFixture(html) {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+  await page.setContent(`<!doctype html><style>body{margin:0}p{height:40px;margin:0}</style>${html}`);
+  // Compare restoration against the browser's own serialization of the same inline styles.
+  const original = await page.evaluate(() => { for (const el of document.querySelectorAll('[style]')) el.setAttribute('style', el.style.cssText); return document.body.outerHTML; });
+  const cdp = await page.context().newCDPSession(page);
+  const box = { crypto: require('node:crypto').webcrypto, setTimeout, clearTimeout };
+  require('node:vm').runInNewContext(scrollSource, box);
+  const ctx = { options: {}, send: (method, params) => cdp.send(method, params), cleanup: (method, params) => cdp.send(method, params) };
+  return { page, original, ctx, capture: box.ZuckerScrollCapture };
+}
+const rows = (n) => '<p>Row</p>'.repeat(n);
+const selfSizedLayouts = {
+  // Sidebar + top bar admin shell: the panel is flexed inside a stretched column.
+  'admin shell': `<div style="display:flex;height:100vh"><div style="width:220px">Menu</div><div style="flex:1;display:flex;flex-direction:column;min-width:0"><div style="height:64px">Top</div><div id="pane" style="flex:1;overflow:auto;padding:24px"><div style="min-height:100%">${rows(25)}</div><footer id="foot" style="height:60px">Footer</footer></div></div></div>`,
+  // A percentage footer grows by a different amount on every pass.
+  'percentage footer': `<div style="display:flex;height:100vh"><aside style="width:200px">Side</aside><main id="pane" style="flex:1;overflow:auto"><div style="min-height:100%">${rows(8)}</div><footer id="foot" style="height:10%">Footer</footer></main></div>`,
+  // Absolutely positioned content does not contribute to an auto height.
+  'absolute overflow': `<div style="display:flex;height:100vh"><aside style="width:200px">Side</aside><main id="pane" style="flex:1;overflow:auto;position:relative"><div style="min-height:100%">${rows(8)}</div><footer id="foot" style="height:60px">Footer</footer><div style="position:absolute;top:1200px;height:120px;width:200px">Tip</div></main></div>`,
+};
+for (const [name, html] of Object.entries(selfSizedLayouts))
+  test(`self-sized content settles in a ${name}`, async () => {
+    const { page, original, ctx, capture } = await layoutFixture(html);
+    try {
+      assert.equal(await capture.prepare(ctx), '');
+      const layout = await page.evaluate(() => {
+        const pane = document.getElementById('pane');
+        return { overflow: pane.scrollHeight - pane.clientHeight, footer: document.getElementById('foot').getBoundingClientRect().bottom, bottom: pane.getBoundingClientRect().bottom };
+      });
+      assert.ok(layout.overflow <= 2, `clipped ${layout.overflow}px`);
+      assert.ok(layout.footer <= layout.bottom + 1);
+      await capture.restore(ctx);
+      assert.equal(await page.evaluate(() => document.body.outerHTML), original);
+    } finally { await page.close(); }
+  });
+
+test('page changes outside the expanded panels do not block settling', async () => {
+  const { page, ctx, capture } = await layoutFixture(`<div style="display:flex;flex-direction:column;height:100vh"><div id="banner" style="height:80px">Banner</div><main id="pane" style="flex:1;min-height:0;overflow:auto">${rows(40)}</main></div>`);
+  try {
+    await page.evaluate(() => { let tall = false; window.banner = setInterval(() => { document.getElementById('banner').style.height = (tall = !tall) ? '120px' : '80px'; }, 200); });
+    assert.equal(await capture.prepare(ctx), '');
+    await capture.restore(ctx);
+  } finally { await page.evaluate(() => clearInterval(window.banner)); await page.close(); }
+});
+
 test('a stalled tracking pixel does not delay settling', async () => {
   const content = `${'<p>Loaded row</p>'.repeat(30)}<img src="http://stalled.test/pixel.gif" width="1" height="1">`;
   const { page, ctx, capture } = await scrollFixture(false, content);

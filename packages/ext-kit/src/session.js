@@ -209,11 +209,26 @@ function isChallengeError(error) {
   return Boolean(error?.isChallenge);
 }
 function pageProbe() {
-  if (document.documentURI.startsWith("chrome-error://"))
+  if (document.documentURI.startsWith("chrome-error://")) {
+    // Chrome's error page shows the network error code; report it instead of
+    // guessing, so a refused local dev server, a blocking extension and a DNS
+    // failure can be told apart.
+    const code =
+      (document.body?.innerText.match(/\bERR_[A-Z0-9_]+/) || [])[0] || "";
+    const hints = {
+      ERR_CONNECTION_REFUSED:
+        "nothing is accepting connections at this address; check that the server is running",
+      ERR_BLOCKED_BY_CLIENT: "blocked by another browser extension",
+      ERR_NAME_NOT_RESOLVED: "the host name could not be resolved",
+      ERR_INTERNET_DISCONNECTED: "the computer is offline",
+    };
     return {
-      error: "Page failed to load (DNS or network error)",
+      error: code
+        ? `Page failed to load (${code}${hints[code] ? `: ${hints[code]}` : ""})`
+        : "Page failed to load (network error)",
       challenge: "",
     };
+  }
   const shown = (selector) =>
     [...document.querySelectorAll(selector)].some((el) => {
       const r = el.getBoundingClientRect();

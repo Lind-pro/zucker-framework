@@ -220,24 +220,33 @@ function pageTask(action, id, index, leaseMs) {
           state.set(el, "bottom", "auto");
         if (state.panels.includes(el)) {
           const height = el.scrollHeight + el.offsetHeight - el.clientHeight,
-            last = state.growth.get(el);
-          if (
-            !state.intrinsic.has(el) &&
-            last?.step > 1 &&
-            Math.abs(height - last.height - last.step) <= 1
-          )
-            // Growing by the same step again means the content is sized from
-            // the panel's own height, so a fixed height has no fixed point.
-            // Let percentage heights resolve to auto and use the content size.
+            last = state.growth.get(el),
+            grew = Boolean(last && height > last.height + 1);
+          if (!state.intrinsic.has(el) && grew && last.grew)
+            // Growing on consecutive passes means the content is sized from
+            // the panel's own height (min-height:100%, % footers...), so a
+            // fixed height has no fixed point. Let percentages resolve to auto.
             state.intrinsic.add(el);
           if (state.intrinsic.has(el)) {
             state.set(el, "height", "auto");
-            state.set(el, "min-height", `${state.boxes.get(el).height}px`);
+            // Chrome treats stretched flex/grid items and flexed items as
+            // definite even with height:auto. Ancestors are released below.
+            state.set(el, "align-self", "flex-start");
+            // Longhands only: flex-shrink is already overridden, so saving the
+            // `flex` shorthand would record an empty value and lose it on restore.
+            state.set(el, "flex-grow", "0");
+            state.set(el, "flex-basis", "auto");
+            const floor = state.boxes.get(el).height;
+            state.set(el, "min-height", `${floor}px`);
+            // Absolutely positioned content does not contribute to an auto
+            // height. A min-height does not make percentages definite, so
+            // reserving that overflow cannot restart the feedback loop.
+            const needed =
+              el.offsetHeight + Math.max(0, el.scrollHeight - el.clientHeight);
+            if (needed > floor + 1)
+              state.set(el, "min-height", `${needed}px`);
           } else {
-            state.growth.set(el, {
-              height,
-              step: last ? height - last.height : 0,
-            });
+            state.growth.set(el, { height, grew });
             state.set(el, "height", `${height}px`);
             state.set(el, "min-height", `${height}px`);
           }
@@ -251,6 +260,15 @@ function pageTask(action, id, index, leaseMs) {
           // expanded size would ratchet and never shrink if a panel switches
           // to its intrinsic height.
           state.set(el, "min-height", `${state.boxes.get(el).height}px`);
+          if (state.intrinsic.has(panel)) {
+            // A stretched or flexed ancestor would make the panel definite
+            // again. Widths are pinned above, so this only frees heights.
+            state.set(el, "align-self", "flex-start");
+            // Longhands only: flex-shrink is already overridden, so saving the
+            // `flex` shorthand would record an empty value and lose it on restore.
+            state.set(el, "flex-grow", "0");
+            state.set(el, "flex-basis", "auto");
+          }
           // clip on X prevents revealing off-canvas drawers while allowing Y to grow.
           if (/hidden|clip|auto|scroll/.test(css.overflowY)) {
             state.set(el, "overflow-x", "clip");
@@ -369,7 +387,9 @@ async function prepare(ctx, waitForContent = async () => {}) {
     await command(ctx, id, "expand");
     await new Promise((resolve) => setTimeout(resolve, 250));
     const measured = await command(ctx, id, "measure");
-    const signature = JSON.stringify([measured.height, measured.panels]);
+    // Only the expanded panels must be final here. Page-level changes outside
+    // them (rotating banners, ads) belong to the engine's own readiness wait.
+    const signature = JSON.stringify(measured.panels);
     stable =
       signature === previous &&
       measured.panels.every(([full, view]) => full <= view + 2)

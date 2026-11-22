@@ -1,5 +1,8 @@
 function initPopup(config) {
   const byId = (id) => document.getElementById(id);
+  // Bound pathological messages without cutting the hint off ordinary ones.
+  const clip = (text, max = 240) =>
+    text.length > max ? `${text.slice(0, max - 1)}…` : text;
   const el = {
     urls: byId("urls"),
     urlCount: byId("urlCount"),
@@ -486,13 +489,16 @@ function initPopup(config) {
       if (item.error) {
         const err = document.createElement("span");
         err.className = "err";
-        err.textContent = item.error.slice(0, 60);
+        // Errors end with the actionable hint; keep it, wrapping in the row.
+        err.textContent = clip(item.error);
+        err.title = item.error;
         rowEl.append(err);
       }
       if (item.warning) {
         const warning = document.createElement("span");
         warning.className = "warning";
-        warning.textContent = item.warning.slice(0, 100);
+        warning.textContent = clip(item.warning);
+        warning.title = item.warning;
         rowEl.append(warning);
       }
       el.resultList.append(rowEl);
