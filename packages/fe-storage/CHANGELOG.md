@@ -1,5 +1,7 @@
 # @zucker-framework/fe-storage
 
+## 1.0.26
+
 ## 1.0.25
 
 ## 1.0.24

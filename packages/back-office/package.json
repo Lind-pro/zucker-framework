@@ -1,6 +1,6 @@
 {
   "name": "@zucker-framework/back-office",
-  "version": "1.0.25",
+  "version": "1.0.26",
   "description": "Zucker Back Office \u2014 server hosts for accounts, subscriptions, billing, management, mail and settings",
   "main": "dist/index.js",
   "module": "dist/index.mjs",

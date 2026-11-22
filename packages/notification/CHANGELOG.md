@@ -1,5 +1,12 @@
 # @zucker-framework/notification
 
+## 1.0.26
+
+### Patch Changes
+
+- @zucker-framework/core@1.0.26
+  - @zucker-framework/queue@1.0.26
+
 ## 1.0.25
 
 ### Patch Changes

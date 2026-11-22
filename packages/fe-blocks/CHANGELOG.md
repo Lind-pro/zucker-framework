@@ -1,5 +1,11 @@
 # @zucker-framework/fe-blocks
 
+## 1.0.26
+
+### Patch Changes
+
+- @zucker-framework/fe-site@1.0.26
+
 ## 1.0.25
 
 ### Patch Changes

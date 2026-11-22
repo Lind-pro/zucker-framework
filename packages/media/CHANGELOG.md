@@ -1,5 +1,7 @@
 # @zucker-framework/media
 
+## 1.0.26
+
 ## 1.0.25
 
 ### Patch Changes

@@ -1,5 +1,11 @@
 # @zucker-framework/ext-kit
 
+## 1.0.26
+
+### Patch Changes
+
+- Scroll-area expansion no longer fails with "Scrolling content did not settle in time" on panels whose content is sized from the panel's own height (for example `min-height:100%` plus a footer), on stalled tracking pixels, or on large images that never finish loading. Self-sized panels fall back to their intrinsic height, images of 4000px² or less are ignored, stalled media is captured with a warning after an 8s grace, and `allowUnstable` now also applies to this phase. `ScrollCapture.prepare()` now resolves with an optional warning string that the engine merges into the capture result; custom `scrollCapture` implementations may keep returning nothing.
+
 ## 1.0.25
 
 ## 1.0.24
