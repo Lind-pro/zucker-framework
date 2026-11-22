@@ -39,6 +39,18 @@ export {
   OpenAICodexCliSubscriptionProvider,
   createOpenAICodexCliAccessProvider,
 } from './providers/openai-codex-cli';
+export {
+  AnthropicClaudeCliSubscriptionClient,
+  AnthropicClaudeCliSubscriptionProvider,
+  ClaudeCliSubscriptionError,
+  createAnthropicClaudeCliAccessProvider,
+} from './providers/anthropic-claude-cli';
+export type {
+  AnthropicClaudeCliSubscriptionProviderOptions,
+  ClaudeCliCommand,
+  ClaudeCliCommandRunner,
+  ClaudeCliSubscriptionErrorCode,
+} from './providers/anthropic-claude-cli';
 export { startCodexCliHost, runCodexCliHostClient, runCodexCliHostImage } from './providers/codex-cli-host';
 export type { CodexCliHostOptions, CodexCliHostClientOptions } from './providers/codex-cli-host';
 export type {

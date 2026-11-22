@@ -115,10 +115,17 @@ export interface AIAccessResult {
   content: string;
   finishReason: string;
   responseId?: string;
+  /** Model reported by the provider, when it differs from or resolves the requested alias. */
+  model?: string;
   tokenUsage: {
+    /** All prompt tokens processed, including cached ones. */
     input: number;
     output: number;
     total: number;
+    /** Portion of `input` served from the provider prompt cache, when reported. */
+    cacheReadInput?: number;
+    /** Portion of `input` written to the provider prompt cache, when reported. */
+    cacheCreationInput?: number;
   };
 }
 

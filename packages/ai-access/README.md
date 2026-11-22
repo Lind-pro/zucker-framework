@@ -1,6 +1,6 @@
 # AI access
 
-This package owns provider access contracts, credential ownership and runtime adapters, including the external-readonly Codex CLI subscription provider. Applications select configured providers and models, decide routing/fallback, and map business context into their own logs. Provider credentials and auth profiles remain in their configured owner; client sessions do not copy or alter them.
+This package owns provider access contracts, credential ownership and runtime adapters, including the external-readonly Codex CLI and Claude Code CLI subscription providers. Applications select configured providers and models, decide routing/fallback, and map business context into their own logs. Provider credentials and auth profiles remain in their configured owner; client sessions do not copy or alter them.
 
 ## Observed client sessions
 
@@ -32,3 +32,18 @@ The new client-session implementation and independent mocked tests have been wri
 `OpenAICodexCliSubscriptionProvider` accepts `complete({ imageGeneration: true, input })` for one native PNG. The result contains `images: [{ data, mimeType, revisedPrompt? }]` and provider-reported `tokenUsage`; an empty final text is valid only when a completed image exists. Text inference keeps image generation disabled. Shell, web, external tools and approval requests remain disabled for both modes. Image requests cannot use a text output schema.
 
 For a Unix-socket host, configure `imageHostSocketPath` on the provider. `startCodexCliHost` serves `/image` using the same concurrency limit, deadline, isolated scratch directory and credential boundary as text calls. The host returns inline bytes, never local paths. Attachment-only, missing, failed or invalid image receipts fail explicitly; there is no image API fallback. Applications retain model routing, quota, audit and storage policy.
+
+## Claude Code CLI subscription
+
+`AnthropicClaudeCliSubscriptionProvider` (provider id `anthropic-claude-cli`) runs text inference through an installed Claude Code CLI that is already logged in with a subscription account. The CLI owns its login; the adapter only points at it (`configDir` sets `CLAUDE_CONFIG_DIR`, otherwise `HOME` from `environment` locates `~/.claude`) and never reads or copies tokens. `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token` may be passed for headless hosts. `ANTHROPIC_API_KEY` and other non-allow-listed variables are rejected because they would switch the CLI to billed API usage or leak host configuration.
+
+```ts
+const provider = new AnthropicClaudeCliSubscriptionProvider({
+  workingDirectory: '/var/empty/claude-inference',
+  environment: { HOME: process.env.HOME, PATH: process.env.PATH },
+});
+const client = await provider.createModel({ modelId: 'sonnet' });
+const result = await client.complete({ instructions, input });
+```
+
+Each call is `claude -p --output-format json --model <id> --system-prompt-file <private file> --tools "" --strict-mcp-config --disable-slash-commands --setting-sources "" --safe-mode --no-session-persistence`, with the prompt on stdin, optional `--effort` and `--json-schema`. `--bare` is not used because it disables OAuth. With `onTextDelta` the call uses `--output-format stream-json --verbose --include-partial-messages` and forwards ordered, awaited text deltas. The result's `tokenUsage.input` includes cached prompt tokens (`cacheReadInput`, `cacheCreationInput` give the split); `finishReason` is the provider stop reason. Abort and timeout terminate the child; failures carry `ClaudeCliSubscriptionError` codes (`AUTH_REQUIRED`, `RATE_LIMITED`, `TIMEOUT`, `CANCELLED`, `INVALID_OUTPUT`, ...). The adapter does not limit concurrency, retry or fall back; applications own routing, quotas and cost policy.
