@@ -1,5 +1,11 @@
 # @zucker-framework/ext-kit
 
+## 1.0.28
+
+### Patch Changes
+
+- Scroll-area expansion now settles on admin shells (sidebar + top bar), percentage-height footers and panels with absolutely positioned content, and page changes outside the expanded panels no longer block it; the page's original flex styles are restored exactly. Failed page loads report Chrome's network error code with a hint instead of "DNS or network error", and the popup shows result errors and warnings in full (up to 240 characters) instead of cutting them at 60.
+
 ## 1.0.27
 
 ## 1.0.26

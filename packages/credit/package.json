@@ -1,6 +1,6 @@
 {
   "name": "@zucker-framework/credit",
-  "version": "1.0.27",
+  "version": "1.0.28",
   "description": "Credit lifecycle services and PostgreSQL idempotent operation coordination for Zucker applications",
   "main": "dist/index.js",
   "module": "dist/index.mjs",

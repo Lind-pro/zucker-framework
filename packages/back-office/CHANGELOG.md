@@ -1,5 +1,21 @@
 # @zucker-framework/back-office
 
+## 1.0.28
+
+### Patch Changes
+
+- @zucker-framework/admin@1.0.28
+  - @zucker-framework/auth@1.0.28
+  - @zucker-framework/config@1.0.28
+  - @zucker-framework/core@1.0.28
+  - @zucker-framework/credit@1.0.28
+  - @zucker-framework/crud@1.0.28
+  - @zucker-framework/fe-types@1.0.28
+  - @zucker-framework/logging@1.0.28
+  - @zucker-framework/notification@1.0.28
+  - @zucker-framework/payment@1.0.28
+  - @zucker-framework/rate-limiter@1.0.28
+
 ## 1.0.27
 
 ### Patch Changes

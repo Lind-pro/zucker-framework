@@ -1,5 +1,15 @@
 # @zucker-framework/ai-tasks
 
+## 1.0.28
+
+### Patch Changes
+
+- @zucker-framework/ai@1.0.28
+  - @zucker-framework/core@1.0.28
+  - @zucker-framework/credit@1.0.28
+  - @zucker-framework/storage@1.0.28
+  - @zucker-framework/task@1.0.28
+
 ## 1.0.27
 
 ### Patch Changes
