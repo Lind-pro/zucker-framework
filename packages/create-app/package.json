@@ -1,6 +1,6 @@
 {
   "name": "@zucker-framework/create-app",
-  "version": "1.0.28",
+  "version": "1.0.29",
   "description": "Create a Zucker Framework SaaS workspace: pnpm create @zucker-framework/app <name>",
   "bin": {
     "create-app": "./dist/index.js"

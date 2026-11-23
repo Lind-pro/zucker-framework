@@ -1,5 +1,7 @@
 # @zucker-framework/ai-access
 
+## 1.0.29
+
 ## 1.0.28
 
 ## 1.0.27
