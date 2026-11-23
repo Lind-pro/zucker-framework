@@ -3,7 +3,7 @@ import { normalizeUrls, todayString, folderNameFor, hostOf, buildQuickFileName, 
 import { createLicensing } from './licensing.js';
 import { createDownloader } from './download.js';
 import * as defaultScrollCapture from './scroll-capture.js';
-import { debuggerAttach, debuggerDetach, sendCommand, waitForLoad, watchNetwork, preparePageForCapture, waitForPageStable, challengeError, isChallengeError, probePage, waitForVerification, focusTab, autoScroll, getScrollPosition, suppressCaptureDecorations, restoreCaptureDecorations, restorePageAfterQuick } from './session.js';
+import { debuggerAttach, debuggerDetach, sendCommand, captureCommand, waitForLoad, watchNetwork, preparePageForCapture, waitForPageStable, challengeError, isChallengeError, probePage, waitForVerification, focusTab, autoScroll, getScrollPosition, suppressCaptureDecorations, restoreCaptureDecorations, restorePageAfterQuick } from './session.js';
 // Warnings are whole sentences; a later stage can repeat one already recorded.
 function joinWarnings(...parts) {
   const sentences = parts
@@ -705,7 +705,10 @@ function initExtension(config) {
       tabId,
       url,
       options,
-      send: (method, params) => sendCommand(target, method, params, signal),
+      send: (method, params) =>
+        /^Page\.(captureScreenshot|printToPDF)$/.test(method)
+          ? captureCommand(target, method, params, signal)
+          : sendCommand(target, method, params, signal),
       cleanup: (method, params) => sendCommand(target, method, params),
     };
   }

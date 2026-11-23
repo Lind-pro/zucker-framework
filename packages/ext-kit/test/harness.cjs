@@ -36,6 +36,7 @@ function harness(app, initial = {}, options = {}) {
     removed: [],
     downloads: structuredClone(options.downloads || []),
     captures: [],
+    commands: [],
     revoked: [],
     requests: [],
     windowsCreated: [],
@@ -244,11 +245,21 @@ function harness(app, initial = {}, options = {}) {
         queueMicrotask(cb);
       },
       sendCommand(t, m, p, cb) {
+        log.commands.push(m);
+        const injected = options.command?.(m, p);
+        if (injected?.error) {
+          queueMicrotask(() => {
+            chrome.runtime.lastError = { message: injected.error };
+            cb();
+            delete chrome.runtime.lastError;
+          });
+          return;
+        }
         let value = {};
         if (m === "Runtime.evaluate") {
           let result = {};
           if (p.expression.includes("function pageMetrics"))
-            result = {
+            result = options.page?.metrics?.() ?? {
               complete: options.page?.complete ?? true,
               loading: false,
               pendingImages: 0,

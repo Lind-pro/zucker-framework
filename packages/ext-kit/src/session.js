@@ -34,11 +34,20 @@ function sendCommand(target, method, params, signal) {
 // analytics host the network cannot reach) is captured after this grace period
 // instead of failing the whole page.
 const LOAD_GRACE_MS = 10000;
+const CHURN_SETTLE_MS = 3000;
 const RESOURCE_WARNING =
   "Some page resources never finished loading; captured the content that had loaded.";
 // This function runs inside the captured page. Do not depend on extension globals.
 function pageReadiness() {
   return { readyState: document.readyState, href: location.href };
+}
+// A stylesheet that never loads blocks painting, and Page.captureScreenshot then
+// waits for a frame forever. Once the load wait has given up, stop the hung
+// subresources the way the browser's Stop button does so the page can render.
+async function stopHungLoading(target, signal) {
+  await sendCommand(target, "Page.stopLoading", {}, signal).catch(() => {
+    throwIfAborted(signal);
+  });
 }
 async function waitForLoad(tabId, timeoutMs, signal, target) {
   const start = Date.now();
@@ -61,12 +70,55 @@ async function waitForLoad(tabId, timeoutMs, signal, target) {
         !/^about:/.test(page.href || "");
       if (!parsed) parsedSince = 0;
       else if (!parsedSince) parsedSince = Date.now();
-      else if (Date.now() - parsedSince >= LOAD_GRACE_MS) return RESOURCE_WARNING;
+      else if (Date.now() - parsedSince >= LOAD_GRACE_MS) {
+        await stopHungLoading(target, signal);
+        return RESOURCE_WARNING;
+      }
     }
     await delay(250, signal);
   }
-  if (parsedSince) return RESOURCE_WARNING;
+  if (parsedSince) {
+    await stopHungLoading(target, signal);
+    return RESOURCE_WARNING;
+  }
   throw new Error("Page load timeout");
+}
+const CAPTURE_TIMEOUT_MS = 90000;
+// Rendering commands wait for a compositor frame. Bound them so a page that
+// never paints fails on its own instead of stalling the whole batch, and retry
+// Chromium's transient "Unable to capture screenshot" (seen on the first large
+// beyond-viewport capture in a background window; an immediate retry succeeds).
+async function captureCommand(target, method, params, signal) {
+  for (let attempt = 0; ; attempt++) {
+    let timer;
+    try {
+      return await Promise.race([
+        sendCommand(target, method, params, signal),
+        new Promise((_, reject) => {
+          timer = setTimeout(
+            () =>
+              reject(
+                new Error(
+                  "The page did not render for capture in time. Reload it and retry.",
+                ),
+              ),
+            CAPTURE_TIMEOUT_MS,
+          );
+        }),
+      ]);
+    } catch (error) {
+      throwIfAborted(signal);
+      if (
+        attempt >= 2 ||
+        method !== "Page.captureScreenshot" ||
+        !/Unable to capture screenshot/i.test(String(error?.message))
+      )
+        throw error;
+      await delay(300 * (attempt + 1), signal);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
 }
 async function evaluatePage(target, fn, args, signal) {
   const result = await sendCommand(
@@ -185,6 +237,9 @@ function pageMetrics({ maxSeenY = 0 } = {}) {
     loading,
     pendingImages,
     fontsPending,
+    href: location.href,
+    textLength: text.length,
+    height,
     signature: [
       location.href,
       text.length,
@@ -206,6 +261,8 @@ async function waitForPageStable(
   let signature = "",
     stableSince = start,
     contentSince = start,
+    growthSince = start,
+    peak = null,
     last;
   while (Date.now() - start < options.readyTimeoutMs) {
     throwIfAborted(signal);
@@ -223,10 +280,35 @@ async function waitForPageStable(
       contentSince = stableSince = Date.now();
     else if (pending && !network?.stalled) stableSince = Date.now();
     signature = last.signature;
-    if (Date.now() - stableSince >= 1000)
+    // Clocks, tickers and rotating banners change forever without adding
+    // content. Loading adds text or height, so content that keeps changing
+    // but has not grown past its peak for CHURN_SETTLE_MS is settled too.
+    if (
+      !peak ||
+      peak.href !== last.href ||
+      last.textLength > peak.textLength ||
+      last.height > peak.height + 1
+    ) {
+      const same = peak && peak.href === last.href;
+      peak = {
+        href: last.href,
+        textLength: Math.max(last.textLength, same ? peak.textLength : 0),
+        height: Math.max(last.height, same ? peak.height : 0),
+      };
+      growthSince = Date.now();
+    }
+    if (last.loading || (pending && !network?.stalled)) growthSince = Date.now();
+    if (Date.now() - growthSince >= CHURN_SETTLE_MS) {
+      if (!last.complete) await stopHungLoading(target, signal);
       return pending ? RESOURCE_WARNING : "";
+    }
+    if (Date.now() - stableSince >= 1000) {
+      if (!last.complete) await stopHungLoading(target, signal);
+      return pending ? RESOURCE_WARNING : "";
+    }
     if (Date.now() - contentSince >= LOAD_GRACE_MS) {
       if (network) network.stalled = true;
+      if (!last.complete) await stopHungLoading(target, signal);
       return RESOURCE_WARNING;
     }
     await delay(250, signal);
@@ -319,13 +401,19 @@ async function waitForVerification(
   timeoutMs = 180000,
 ) {
   const start = Date.now();
+  let loadingSince = 0;
   while (Date.now() - start < timeoutMs) {
     throwIfAborted(signal);
     if (shouldStop()) return false;
     await delay(2500, signal);
     const tab = await chrome.tabs.get(tabId).catch(() => null);
     if (!tab) return false;
-    if (tab.status !== "complete") continue;
+    // A passed challenge can land on a page whose load never completes (a hung
+    // tracker); probe it after the same grace the load wait uses.
+    if (tab.status !== "complete") {
+      loadingSince ||= Date.now();
+      if (Date.now() - loadingSince < LOAD_GRACE_MS) continue;
+    } else loadingSince = 0;
     const target = { tabId };
     let attached = false;
     try {
@@ -366,9 +454,12 @@ async function autoScroll(target, signal) {
       null,
       signal,
     );
+    // A locked or non-scrolling root never reaches "bottom"; stop once the
+    // position no longer moves instead of spending all 60 steps.
+    const stuck = step > 0 && position.y <= maxSeenY;
     maxSeenY = Math.max(maxSeenY, position.y);
+    if (position.bottom || stuck) break;
     await delay(120, signal);
-    if (position.bottom) break;
   }
   await evaluatePage(
     target,
@@ -434,4 +525,4 @@ function restorePageAfterQuick(target, position) {
   });
 }
 
-export { debuggerAttach, debuggerDetach, sendCommand, waitForLoad, watchNetwork, preparePageForCapture, waitForPageStable, challengeError, isChallengeError, probePage, waitForVerification, focusTab, autoScroll, getScrollPosition, hidePageCaptureDecorations, showPageCaptureDecorations, suppressCaptureDecorations, restoreCaptureDecorations, restorePageAfterQuick };
+export { debuggerAttach, debuggerDetach, sendCommand, captureCommand, waitForLoad, watchNetwork, preparePageForCapture, waitForPageStable, challengeError, isChallengeError, probePage, waitForVerification, focusTab, autoScroll, getScrollPosition, hidePageCaptureDecorations, showPageCaptureDecorations, suppressCaptureDecorations, restoreCaptureDecorations, restorePageAfterQuick };

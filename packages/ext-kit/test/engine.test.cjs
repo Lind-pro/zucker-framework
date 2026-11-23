@@ -262,11 +262,100 @@ for (const app of apps) {
     assert.equal(state.batch.success, 1);
     const [item] = state.batch.items;
     assert.equal(item.status, "success");
+    // Hung subresources are stopped so a blocked stylesheet cannot prevent painting.
+    assert.ok(h.log.commands.includes("Page.stopLoading"));
     // Reported once even though load and both readiness waits saw the stall.
     assert.equal(
       item.warning.match(/Some page resources never finished loading/g)?.length,
       1,
     );
+  });
+  test(`${app}: a transient screenshot failure is retried`, async () => {
+    let shots = 0;
+    const h = harness(app, {}, {
+      command: (method) =>
+        method === "Page.captureScreenshot" && ++shots === 1
+          ? { error: '{"code":-32000,"message":"Unable to capture screenshot"}' }
+          : null,
+      async capture(ctx) {
+        await ctx.send("Page.captureScreenshot", {});
+      },
+    });
+    h.init();
+    assert.equal((await h.send("START", { urls: [url] })).ok, true);
+    const state = await done(h);
+    assert.equal(state.batch.success, 1);
+    assert.equal(shots, 2);
+  });
+  test(`${app}: other screenshot failures are not retried`, async () => {
+    let shots = 0;
+    const h = harness(app, {}, {
+      command: (method) =>
+        method === "Page.captureScreenshot" && ++shots
+          ? { error: "Target closed" }
+          : null,
+      async capture(ctx) {
+        await ctx.send("Page.captureScreenshot", {});
+      },
+    });
+    h.init();
+    assert.equal((await h.send("START", { urls: [url] })).ok, true);
+    const state = await done(h);
+    assert.equal(state.batch.failed, 1);
+    assert.equal(shots, 1);
+  });
+  test(`${app}: a normally loading page is never stopped`, async () => {
+    const h = harness(app);
+    h.init();
+    assert.equal((await h.send("START", { urls: [url] })).ok, true);
+    const state = await done(h);
+    assert.equal(state.batch.success, 1);
+    assert.equal(state.batch.items[0].warning, "");
+    assert.ok(!h.log.commands.includes("Page.stopLoading"));
+  });
+  test(`${app}: a clock or rotating banner that never stops changing is settled`, async () => {
+    let tick = 0;
+    const h = harness(app, {}, {
+      page: {
+        metrics: () => ({
+          complete: true,
+          loading: false,
+          pendingImages: 0,
+          fontsPending: false,
+          href: url,
+          textLength: 500,
+          height: [800, 840][tick % 2],
+          signature: `tick-${tick++}`,
+        }),
+      },
+    });
+    h.init();
+    assert.equal((await h.send("START", { urls: [url] })).ok, true);
+    const state = await done(h);
+    assert.equal(state.batch.success, 1);
+    assert.equal(state.batch.items[0].warning, "");
+  });
+  test(`${app}: content that keeps growing is still reported as not ready`, async () => {
+    let tick = 0;
+    const h = harness(app, {}, {
+      page: {
+        metrics: () => ({
+          complete: true,
+          loading: false,
+          pendingImages: 0,
+          fontsPending: false,
+          href: url,
+          textLength: 500 + tick,
+          height: 800,
+          signature: `grow-${tick++}`,
+        }),
+      },
+    });
+    h.init();
+    assert.equal((await h.send("START", { urls: [url] })).ok, true);
+    const state = await done(h);
+    assert.equal(state.batch.failed, 1);
+    assert.match(state.batch.items[0].error, /still changing/);
   });
   test(`${app}: a page that never parses still fails with a load timeout`, async () => {
     const h = harness(app, {}, {
