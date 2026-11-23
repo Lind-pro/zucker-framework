@@ -1,5 +1,12 @@
 # @zucker-framework/network
 
+## 1.0.30
+
+### Patch Changes
+
+- @zucker-framework/core@1.0.30
+  - @zucker-framework/provider@1.0.30
+
 ## 1.0.29
 
 ### Patch Changes

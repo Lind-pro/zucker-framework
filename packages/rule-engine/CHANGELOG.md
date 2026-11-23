@@ -1,5 +1,13 @@
 # @zucker-framework/rule-engine
 
+## 1.0.30
+
+### Patch Changes
+
+- @zucker-framework/core@1.0.30
+  - @zucker-framework/event@1.0.30
+  - @zucker-framework/script@1.0.30
+
 ## 1.0.29
 
 ### Patch Changes

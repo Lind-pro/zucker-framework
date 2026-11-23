@@ -1,5 +1,13 @@
 # @zucker-framework/auth
 
+## 1.0.30
+
+### Patch Changes
+
+- @zucker-framework/cache@1.0.30
+  - @zucker-framework/core@1.0.30
+  - @zucker-framework/crud@1.0.30
+
 ## 1.0.29
 
 ### Patch Changes

@@ -1,6 +1,6 @@
 {
   "name": "@zucker-framework/ext-server",
-  "version": "1.0.29",
+  "version": "1.0.30",
   "description": "Browser extension licensing/payments server core — activation, Stripe webhook, license email, admin stats. Vendored into consuming NestJS apps via `zucker ext sync-server`.",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
