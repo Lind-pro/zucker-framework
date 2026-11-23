@@ -4,6 +4,13 @@ import { createLicensing } from './licensing.js';
 import { createDownloader } from './download.js';
 import * as defaultScrollCapture from './scroll-capture.js';
 import { debuggerAttach, debuggerDetach, sendCommand, waitForLoad, watchNetwork, preparePageForCapture, waitForPageStable, challengeError, isChallengeError, probePage, waitForVerification, focusTab, autoScroll, getScrollPosition, suppressCaptureDecorations, restoreCaptureDecorations, restorePageAfterQuick } from './session.js';
+// Warnings are whole sentences; a later stage can repeat one already recorded.
+function joinWarnings(...parts) {
+  const sentences = parts
+    .filter(Boolean)
+    .flatMap((part) => String(part).split(/(?<=\.)\s+/));
+  return [...new Set(sentences.filter(Boolean))].join(" ");
+}
 function initExtension(config) {
   if (!Number.isSafeInteger(config.freeDailyLimit) || config.freeDailyLimit < 0)
     throw new RangeError('freeDailyLimit must be an explicit non-negative integer');
@@ -430,7 +437,7 @@ function initExtension(config) {
   }
   async function deliverQuick(item, output, signal) {
     throwIfAborted(signal);
-    item.warning = [item.warning, output.warning].filter(Boolean).join(" ");
+    item.warning = joinWarnings(item.warning, output.warning);
     item.fileName = buildQuickFileName(
       config.brand,
       texts.quickFolder,
@@ -508,7 +515,10 @@ function initExtension(config) {
     if (probe.challenge && !options.ignoreChallenge)
       throw challengeError(probe.challenge);
     if (probe.challenge)
-      item.warning = `Captured a ${probe.challenge} verification page at your request.`;
+      item.warning = joinWarnings(
+        item.warning,
+        `Captured a ${probe.challenge} verification page at your request.`,
+      );
     const scope = config.captureScope?.(options) || "full";
     // Visible-window export records the current view; scrolling or waiting for
     // another application state would violate that contract.
@@ -524,9 +534,7 @@ function initExtension(config) {
       network,
       maxSeenY,
     );
-    item.warning = [
-      ...new Set([item.warning, before, after].filter(Boolean)),
-    ].join(" ");
+    item.warning = joinWarnings(item.warning, before, after);
   }
   async function saveOutput(item, output, signal, save) {
     throwIfAborted(signal);
@@ -644,7 +652,8 @@ function initExtension(config) {
       if (config.beforeScroll) await config.beforeScroll(ctx);
       await preparePageForCapture(target, signal);
       await chrome.tabs.update(tabId, { url: item.url });
-      await waitForLoad(tabId, 30000, signal);
+      item.warning = await waitForLoad(tabId, 30000, signal, target);
+      if (item.warning) network.stalled = true;
       await suppressCaptureDecorations(target, signal);
       const probe = await probePage(target, signal);
       if (probe.challenge && !options.ignoreChallenge && interactive) {
@@ -676,7 +685,7 @@ function initExtension(config) {
       await prepareCapture(target, item, options, run, network);
       const output = await capturePrepared(ctx, options, run, network);
       throwIfAborted(signal);
-      item.warning = [item.warning, output.warning].filter(Boolean).join(" ");
+      item.warning = joinWarnings(item.warning, output.warning);
       item.fileName = buildBatchFileName(job.folder, item, output.extension);
       await saveOutput(item, output, signal, () => persist(job));
     } finally {

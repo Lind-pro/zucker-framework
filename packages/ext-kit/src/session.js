@@ -30,14 +30,42 @@ function sendCommand(target, method, params, signal) {
     signal,
   );
 }
-async function waitForLoad(tabId, timeoutMs, signal) {
+// A parsed document whose load event stays blocked (a hung tracker, a font or
+// analytics host the network cannot reach) is captured after this grace period
+// instead of failing the whole page.
+const LOAD_GRACE_MS = 10000;
+const RESOURCE_WARNING =
+  "Some page resources never finished loading; captured the content that had loaded.";
+// This function runs inside the captured page. Do not depend on extension globals.
+function pageReadiness() {
+  return { readyState: document.readyState, href: location.href };
+}
+async function waitForLoad(tabId, timeoutMs, signal, target) {
   const start = Date.now();
+  let parsedSince = 0;
   while (Date.now() - start < timeoutMs) {
     throwIfAborted(signal);
     const tab = await chrome.tabs.get(tabId);
-    if (tab.status === "complete") return;
+    if (tab.status === "complete") return "";
+    if (target) {
+      const page = await evaluatePage(target, pageReadiness, null, signal).catch(
+        (error) => {
+          throwIfAborted(signal);
+          return null;
+        },
+      );
+      // about:blank is the placeholder document before the navigation commits.
+      const parsed =
+        page &&
+        page.readyState !== "loading" &&
+        !/^about:/.test(page.href || "");
+      if (!parsed) parsedSince = 0;
+      else if (!parsedSince) parsedSince = Date.now();
+      else if (Date.now() - parsedSince >= LOAD_GRACE_MS) return RESOURCE_WARNING;
+    }
     await delay(250, signal);
   }
+  if (parsedSince) return RESOURCE_WARNING;
   throw new Error("Page load timeout");
 }
 async function evaluatePage(target, fn, args, signal) {
@@ -72,9 +100,13 @@ function watchNetwork(target) {
   chrome.debugger.onEvent.addListener(listener);
   return {
     busy: () => pending.size > 0 || Date.now() - changedAt < 750,
-    reset: () => {
+    // Set once this page has shown resources that never finish, so later
+    // readiness checks for the same document do not each wait out the grace.
+    stalled: false,
+    reset() {
       pending.clear();
       changedAt = Date.now();
+      this.stalled = false;
     },
     dispose: () => chrome.debugger.onEvent.removeListener(listener),
   };
@@ -173,22 +205,30 @@ async function waitForPageStable(
   const start = Date.now();
   let signature = "",
     stableSince = start,
+    contentSince = start,
     last;
   while (Date.now() - start < options.readyTimeoutMs) {
     throwIfAborted(signal);
     last = await evaluatePage(target, pageMetrics, { maxSeenY }, signal);
     if (!last) throw new Error("Could not inspect page readiness");
-    if (
-      last.signature !== signature ||
+    // Visible content changes and loading UI always restart the wait. Pending
+    // resources alone only delay capture for LOAD_GRACE_MS, because a request
+    // that never finishes must not block a page whose content has settled.
+    const pending =
       !last.complete ||
-      last.loading ||
       last.pendingImages ||
       last.fontsPending ||
-      network?.busy()
-    )
-      stableSince = Date.now();
+      network?.busy();
+    if (last.signature !== signature || last.loading)
+      contentSince = stableSince = Date.now();
+    else if (pending && !network?.stalled) stableSince = Date.now();
     signature = last.signature;
-    if (Date.now() - stableSince >= 1000) return "";
+    if (Date.now() - stableSince >= 1000)
+      return pending ? RESOURCE_WARNING : "";
+    if (Date.now() - contentSince >= LOAD_GRACE_MS) {
+      if (network) network.stalled = true;
+      return RESOURCE_WARNING;
+    }
     await delay(250, signal);
   }
   const reason = last?.loading

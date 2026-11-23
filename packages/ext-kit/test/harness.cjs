@@ -201,6 +201,9 @@ function harness(app, initial = {}, options = {}) {
       },
       async update(id, args) {
         Object.assign(tabs.get(id), args);
+        // Synthetic page whose load event never fires (a hung subresource).
+        if (args.url && options.page?.tabStatus)
+          tabs.get(id).status = options.page.tabStatus;
         return tabs.get(id);
       },
     },
@@ -246,11 +249,16 @@ function harness(app, initial = {}, options = {}) {
           let result = {};
           if (p.expression.includes("function pageMetrics"))
             result = {
-              complete: true,
+              complete: options.page?.complete ?? true,
               loading: false,
               pendingImages: 0,
               fontsPending: false,
               signature: "ready",
+            };
+          else if (p.expression.includes("function pageReadiness"))
+            result = {
+              readyState: options.page?.readyState ?? "complete",
+              href: tabs.get(t.tabId)?.url,
             };
           else if (p.expression.includes("function pageProbe"))
             result = { error: "", challenge: "" };

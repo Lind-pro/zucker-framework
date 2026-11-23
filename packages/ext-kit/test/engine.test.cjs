@@ -251,6 +251,33 @@ for (const app of apps) {
       assert.match(item.error, /Daily free limit reached/);
     }
   });
+  test(`${app}: a parsed page whose load never finishes is captured with a warning`, async () => {
+    // A hung tracker or unreachable font host keeps the tab loading forever.
+    const h = harness(app, {}, {
+      page: { tabStatus: "loading", readyState: "interactive", complete: false },
+    });
+    h.init();
+    assert.equal((await h.send("START", { urls: [url] })).ok, true);
+    const state = await done(h);
+    assert.equal(state.batch.success, 1);
+    const [item] = state.batch.items;
+    assert.equal(item.status, "success");
+    // Reported once even though load and both readiness waits saw the stall.
+    assert.equal(
+      item.warning.match(/Some page resources never finished loading/g)?.length,
+      1,
+    );
+  });
+  test(`${app}: a page that never parses still fails with a load timeout`, async () => {
+    const h = harness(app, {}, {
+      page: { tabStatus: "loading", readyState: "loading", complete: false },
+    });
+    h.init();
+    assert.equal((await h.send("START", { urls: [url] })).ok, true);
+    const state = await done(h);
+    assert.equal(state.batch.failed, 1);
+    assert.match(state.batch.items[0].error, /Page load timeout/);
+  });
   test(`${app}: Clear reconciles a completed download before deleting its checkpoint`, async () => {
     let fail = true;
     const h = harness(
